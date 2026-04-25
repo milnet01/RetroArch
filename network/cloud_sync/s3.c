@@ -420,12 +420,23 @@ static char* s3_url_encode(const char *input)
    {
       unsigned char c = (unsigned char)input[i];
 
-      /* RFC 3986 unreserved characters: A-Z, a-z, 0-9, -, ., _, ~ */
-      /* Path delimiters that should not be encoded: / */
-      /* Query parameter delimiters that should not be encoded: &, =, ? */
+      /* RFC 3986 unreserved characters: A-Z, a-z, 0-9, -, ., _, ~ plus
+       * '/' (path-segment delimiter; must not be encoded so the
+       * canonical URI keeps its segment structure).
+       *
+       * Earlier code also excluded '&', '=', '?' to "preserve query
+       * delimiters" -- but this function is path-only (s3_url_encode
+       * is invoked from s3_build_request_url for the path part; query
+       * strings go through s3_url_encode_query_value + s3_canonicalize_
+       * query_string). Leaving '?' literal in a path component meant
+       * an object key like "rom?backup.state" had its '?' interpreted
+       * as the path/query boundary by s3_build_canonical_uri_from_url
+       * (line 1017: strpbrk(path_start, "?#")), so the canonical URI
+       * dropped everything after the '?' and the SigV4 signature was
+       * computed on the wrong path. Fix: encode all three. */
       if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-          (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' || 
-          c == '~' || c == '/' || c == '&' || c == '=' || c == '?')
+          (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' ||
+          c == '~' || c == '/')
       {
          output[output_pos++] = c;
       }
@@ -441,21 +452,94 @@ static char* s3_url_encode(const char *input)
    return output;
 }
 
-/* Canonicalize query string parameters */
+/* qsort comparator: SigV4 sorts query parameters by URL-encoded name
+ * (then by URL-encoded value) in byte order. Names and values arrive
+ * pre-encoded from s3_url_encode_query_value at the callers, so plain
+ * strcmp on the raw "key=value" string gives the spec-mandated order
+ * (strcmp compares byte-by-byte until a difference, which sorts the
+ * key part first and uses the '=' / value as the natural tiebreaker). */
+static int s3_query_param_cmp(const void *a, const void *b)
+{
+   return strcmp(*(const char* const*)a, *(const char* const*)b);
+}
+
+/* Canonicalize query string parameters per AWS SigV4 spec.
+ * The earlier `return strdup(query_string)` was a TODO that worked
+ * only by accident -- every existing caller in s3.c happens to pass
+ * already-alphabetical parameters ("partNumber=N&uploadId=X" sorts
+ * because 'p' < 'u'; lone "uploadId=X" is one parameter). The first
+ * caller to pass two parameters out of order would silently produce
+ * a SigV4 mismatch with no other symptom than HTTP 403 from S3. */
 static char* s3_canonicalize_query_string(const char *query_string)
 {
+   size_t  i, count, total, pos;
+   char   *copy;
+   char  **params;
+   char   *out;
+
    if (!query_string || !*query_string)
       return strdup("");
 
-   /* For now, return the query string as-is since most S3 operations don't use
-    * query parameters
-    * A full implementation would:
-    * 1. Split parameters by '&'
-    * 2. URL encode each parameter name and value
-    * 3. Sort parameters alphabetically by name
-    * 4. Join with '&'
-    */
-   return strdup(query_string);
+   /* Working copy we can poke '\0' into. */
+   if (!(copy = strdup(query_string)))
+      return NULL;
+
+   /* Pass 1: count parameters (separators + 1). */
+   count = 1;
+   for (i = 0; copy[i]; i++)
+      if (copy[i] == '&')
+         count++;
+
+   if (!(params = (char**)malloc(count * sizeof(char*))))
+   {
+      free(copy);
+      return NULL;
+   }
+
+   /* Pass 2: turn '&' separators into '\0' and record each piece's
+    * start address.  Produces 'count' nul-terminated "key=value" or
+    * "key" tokens. */
+   params[0] = copy;
+   for (i = 0, count = 1; copy[i]; i++)
+   {
+      if (copy[i] == '&')
+      {
+         copy[i]         = '\0';
+         params[count++] = &copy[i + 1];
+      }
+   }
+
+   /* SigV4 sort.  See comparator. */
+   qsort(params, count, sizeof(char*), s3_query_param_cmp);
+
+   /* Compute output size: sum of token lengths + (count-1) separators
+    * + terminator. */
+   for (i = 0, total = 0; i < count; i++)
+      total += strlen(params[i]);
+   total += (count - 1) + 1;
+
+   if (!(out = (char*)malloc(total)))
+   {
+      free(params);
+      free(copy);
+      return NULL;
+   }
+
+   /* Re-join. */
+   pos = 0;
+   for (i = 0; i < count; i++)
+   {
+      size_t plen = strlen(params[i]);
+      if (i > 0)
+         out[pos++] = '&';
+      memcpy(out + pos, params[i], plen);
+      pos += plen;
+   }
+   out[pos] = '\0';
+
+   free(params);
+   free(copy);
+   return out;
 }
 
 /* Calculate HMAC-SHA256 and return binary result */
