@@ -478,6 +478,15 @@ static bool screenshot_dump(
    if (use_thread)
    {
       retro_task_t *task = task_init();
+      /* task_init() may return NULL on OOM. The recent OOM-hardening
+       * pass missed this site; the field writes below would NULL-deref. */
+      if (!task)
+      {
+         if (state->out_buffer)
+            free(state->out_buffer);
+         free(state);
+         return false;
+      }
 
       task->type         = TASK_TYPE_BLOCKING;
       task->state        = state;

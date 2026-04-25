@@ -1131,7 +1131,17 @@ static void task_overlay_handler(retro_task_t *task)
        * that second fix this branch still crashes at the
        * consumer, just one call further down the stack. */
       if (!data)
+      {
+         /* Without this, task_overlay_free runs on the FINISHED-but-
+          * not-CANCELLED path and skips the allocation-reclaim block
+          * (lines 1071-1084 only fire when CANCELLED is set). The
+          * loader's overlay_path / image_list / overlays would leak
+          * permanently because ownership was supposed to transfer
+          * into 'data' but never did. Promoting the failure to
+          * CANCELLED routes cleanup through the right branch. */
+         task_set_flags(task, RETRO_TASK_FLG_CANCELLED, true);
          return;
+      }
 
       data->overlays                    = loader->overlays;
       data->active                      = loader->active;
