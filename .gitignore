@@ -1,3 +1,6 @@
+# Claude Code session state (this fork only; not in upstream).
+.claude/
+
 *.o
 *.obj
 *.pdb
