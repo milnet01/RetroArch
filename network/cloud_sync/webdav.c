@@ -118,8 +118,73 @@ static void webdav_cleanup_digest(void)
       free(webdav_st->opaque);
    webdav_st->opaque = NULL;
 
+   if (webdav_st->cnonce)
+      free(webdav_st->cnonce);
+   webdav_st->cnonce = NULL;
+
    webdav_st->qop_auth = false;
    webdav_st->nc = 1;
+}
+
+/* Parses `field=<terminator>` style values out of an HTTP digest
+ * challenge into a malloc'd C string and advances *pp past the
+ * terminator.  Closes the cluster of `strchr(ptr, '"') + 1 - ptr`
+ * sites where a missing close-quote (or close-comma) made the
+ * original `_len` calculation read NULL+1 - ptr, producing a huge
+ * size_t that fed `malloc()` -> `strlcpy()` and either crashed on
+ * NULL or read past the buffer.  Returns false on parse fail OR
+ * OOM; caller is responsible for calling webdav_cleanup_digest()
+ * to free any partially-populated state. */
+static bool webdav_parse_quoted_value(char **pp, char terminator, char **out)
+{
+   size_t  len;
+   char   *q  = strchr(*pp, terminator);
+   if (!q)
+      return false;
+   len = (size_t)(q - *pp) + 1;
+   if (!(*out = (char*)malloc(len)))
+      return false;
+   strlcpy(*out, *pp, len);
+   *pp += len;
+   return true;
+}
+
+/* Generate a fresh client-nonce (cnonce) per RFC 7616 §3.4.4.
+ * The previous hardcoded "1a2b3c4f" defeated digest-auth replay
+ * protection entirely (server's `nonce` was fresh per challenge,
+ * but the client side reused the same cnonce indefinitely so an
+ * attacker who recorded one Authorization header could replay it).
+ *
+ * RetroArch / libretro-common does not currently wrap a CSPRNG
+ * (getrandom / BCryptGenRandom / arc4random); when one is added,
+ * this helper should switch to using it.  Until then we mix three
+ * sources that an off-machine attacker cannot jointly observe:
+ *   - time(NULL) to second resolution
+ *   - clock() to clock-tick resolution
+ *   - &local_var (ASLR-randomised stack address)
+ *   - the per-session nonce-count counter
+ * MD5 the mix into 16 bytes and hex-encode.  This is NOT a CSPRNG
+ * and would not stop a co-resident attacker; it does stop the
+ * wire-only replay attack the digest scheme is meant to defend. */
+static char *webdav_create_cnonce(unsigned nc)
+{
+   size_t        i;
+   MD5_CTX       md5;
+   unsigned char digest[16];
+   uint64_t      mix[4];
+   char         *out = (char*)malloc(33);
+   if (!out)
+      return NULL;
+   mix[0] = (uint64_t)time(NULL);
+   mix[1] = (uint64_t)clock();
+   mix[2] = (uint64_t)(uintptr_t)&mix;
+   mix[3] = (uint64_t)nc;
+   MD5_Init(&md5);
+   MD5_Update(&md5, (const unsigned char*)mix, sizeof(mix));
+   MD5_Final(digest, &md5);
+   for (i = 0; i < 16; i++)
+      snprintf(out + i * 2, 3, "%02x", digest[i]);
+   return out;
 }
 
 static char *webdav_create_ha1_hash(char *user, char *realm, char *pass)
@@ -146,7 +211,6 @@ static char *webdav_create_ha1_hash(char *user, char *realm, char *pass)
 
 static bool webdav_create_digest_auth(char *digest)
 {
-   size_t _len;
    webdav_state_t *webdav_st = webdav_state_get_ptr();
    settings_t     *settings  = config_get_ptr();
    char           *ptr       = digest + (sizeof("WWW-Authenticate: Digest")-1);
@@ -171,20 +235,22 @@ static bool webdav_create_digest_auth(char *digest)
       if (string_starts_with(ptr, "realm=\""))
       {
          ptr += (sizeof("realm=\"")-1);
-         _len = strchr(ptr, '"') + 1 - ptr;
-         webdav_st->realm = (char*)malloc(_len);
-         strlcpy(webdav_st->realm, ptr, _len);
-         ptr += _len;
+         if (!webdav_parse_quoted_value(&ptr, '"', &webdav_st->realm))
+            goto parse_fail;
 
          webdav_st->ha1hash = webdav_create_ha1_hash(
                webdav_st->username, webdav_st->realm,
                settings->arrays.webdav_password);
+         if (!webdav_st->ha1hash)
+            goto parse_fail;
       }
       else if (string_starts_with(ptr, "qop=\""))
       {
          char *tail;
          ptr += (sizeof("qop=\"")-1);
          tail = strchr(ptr, '"');
+         if (!tail)
+            goto parse_fail;
          while (ptr < tail)
          {
             if (    string_starts_with(ptr, "auth")
@@ -195,62 +261,66 @@ static bool webdav_create_digest_auth(char *digest)
             }
             while (*ptr != ',' && *ptr != '"' && *ptr != '\0')
                ptr++;
-            ptr++;
+            if (*ptr)
+               ptr++;
          }
          /* not even going to try for auth-int, sorry */
          if (!webdav_st->qop_auth)
-            return false;
-         while (*ptr != ',' && *ptr != '"' && *ptr != '\0')
+            goto parse_fail;
+         /* skip to past the closing '"' */
+         while (*ptr != '"' && *ptr != '\0')
             ptr++;
-         ptr++;
+         if (*ptr == '"')
+            ptr++;
       }
       else if (string_starts_with(ptr, "nonce=\""))
       {
          ptr += (sizeof("nonce=\"")-1);
-         _len = strchr(ptr, '"') + 1 - ptr;
-         webdav_st->nonce = (char*)malloc(_len);
-         strlcpy(webdav_st->nonce, ptr, _len);
-         ptr += _len;
+         if (!webdav_parse_quoted_value(&ptr, '"', &webdav_st->nonce))
+            goto parse_fail;
       }
       else if (string_starts_with(ptr, "algorithm="))
       {
          ptr += (sizeof("algorithm=")-1);
          if (strchr(ptr, ','))
          {
-            _len = strchr(ptr, ',') + 1 - ptr;
-            webdav_st->algo = (char*)malloc(_len);
-            strlcpy(webdav_st->algo, ptr, _len);
-            ptr += _len;
+            if (!webdav_parse_quoted_value(&ptr, ',', &webdav_st->algo))
+               goto parse_fail;
          }
          else
          {
-            webdav_st->algo = strdup(ptr);
+            if (!(webdav_st->algo = strdup(ptr)))
+               goto parse_fail;
             ptr += strlen(ptr);
          }
       }
       else if (string_starts_with(ptr, "opaque=\""))
       {
          ptr += (sizeof("opaque=\"")-1);
-         _len = strchr(ptr, '"') + 1 - ptr;
-         webdav_st->opaque = (char*)malloc(_len);
-         strlcpy(webdav_st->opaque, ptr, _len);
-         ptr += _len;
+         if (!webdav_parse_quoted_value(&ptr, '"', &webdav_st->opaque))
+            goto parse_fail;
       }
       else
       {
          while (*ptr != '=' && *ptr != '\0')
             ptr++;
-         ptr++;
+         if (*ptr)
+            ptr++;
          if (*ptr == '"')
          {
             ptr++;
             while (*ptr != '"' && *ptr != '\0')
                ptr++;
-            ptr++;
+            if (*ptr == '"')
+               ptr++;
          }
          else
          {
-            while (*ptr != ',' && *ptr != ',')
+            /* original: `while (*ptr != ',' && *ptr != ',')`
+             * (the same comparison repeated -- compiler typo).
+             * Without `'\0'`, this read past `end` until it
+             * happened to find a comma in adjacent memory. */
+            while (*ptr != ',' && *ptr != '\0')
                ptr++;
          }
       }
@@ -262,12 +332,19 @@ static bool webdav_create_digest_auth(char *digest)
    }
 
    if (!webdav_st->ha1hash || !webdav_st->nonce)
-      return false;
+      goto parse_fail;
 
-   webdav_st->cnonce = "1a2b3c4f";
+   webdav_st->cnonce = webdav_create_cnonce(webdav_st->nc);
+   if (!webdav_st->cnonce)
+      goto parse_fail;
+
    webdav_st->basic = false;
 
    return true;
+
+parse_fail:
+   webdav_cleanup_digest();
+   return false;
 }
 
 static char *webdav_create_ha1(void)
