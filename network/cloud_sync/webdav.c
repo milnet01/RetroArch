@@ -1031,7 +1031,10 @@ static void webdav_ensure_dir(const char *dir, webdav_mkdir_cb_t cb,
    webdav_mkdir_st->cb_st      = webdav_cb_st;
    webdav_mkdir_st->reauthed   = false;
 
-   /* this is a recursive callback, set it up so it looks like it's still proceeding */
+   /* this is a recursive callback, set it up so it looks like it's still proceeding.
+    * Zero the whole http_transfer_data_t so the callee never reads uninitialised
+    * data/headers/len fields (it is currently saved by short-circuit luck only). */
+   memset(&data, 0, sizeof(data));
    data.status = 200;
    webdav_mkdir_cb(NULL, &data, webdav_mkdir_st, NULL);
 }
