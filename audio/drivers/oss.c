@@ -96,9 +96,11 @@ static void *oss_init(const char *device,
    return ossaudio;
 
 error:
-   close(ossaudio->fd);
    if (ossaudio)
+   {
+      close(ossaudio->fd);
       free(ossaudio);
+   }
    perror("ioctl");
    return NULL;
 }

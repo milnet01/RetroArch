@@ -2167,16 +2167,20 @@ static int vulkan_font_get_message_width(void *data, const char *msg,
    vulkan_raster_t *font = (vulkan_raster_t*)data;
    const char* msg_end   = msg + msg_len;
    int delta_x           = 0;
-   const struct font_glyph* (*get_glyph)(void*, uint32_t)
-                         = font->font_driver->get_glyph;
-   void *font_data       = font->font_data;
+   const struct font_glyph* (*get_glyph)(void*, uint32_t);
+   void *font_data;
 
+   /* Guard the font / font_driver / font_data derefs below; the
+    * earlier code read font->font_driver->get_glyph and font->font_data
+    * before the trailing NULL check fired. */
    if (     !font
          || !font->font_driver
          || !font->font_data )
       return 0;
 
-   glyph_q = get_glyph(font_data, '?');
+   get_glyph = font->font_driver->get_glyph;
+   font_data = font->font_data;
+   glyph_q   = get_glyph(font_data, '?');
 
    while (msg < msg_end)
    {

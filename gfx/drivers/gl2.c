@@ -2049,9 +2049,16 @@ static void gl2_renderchain_init(
    unsigned shader_info_num;
    struct gfx_fbo_scale scale, scale_last;
 
+   /* gl->shader and gl->shader_data are dereferenced below; guard
+    * against NULL gl before reading them, and against zero shaders
+    * after. (Previously the gl deref happened before the gl NULL
+    * check, defeating it.) */
+   if (!gl)
+      return;
+
    shader_info_num = gl->shader->num_shaders(gl->shader_data);
 
-   if (!gl || shader_info_num == 0)
+   if (shader_info_num == 0)
       return;
 
    width        = gl->video_width;

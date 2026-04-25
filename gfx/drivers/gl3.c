@@ -1258,17 +1258,29 @@ static void gl3_raster_font_render_msg(
    bool full_screen                 = false;
    gl3_raster_t           *font     = (gl3_raster_t*)data;
    gl3_t *gl                        = (gl3_t*)userdata;
-   unsigned width                   = gl->video_width;
-   unsigned height                  = gl->video_height;
-   settings_t *settings             = config_get_ptr();
-   float video_msg_pos_x            = settings->floats.video_msg_pos_x;
-   float video_msg_pos_y            = settings->floats.video_msg_pos_y;
-   float video_msg_color_r          = settings->floats.video_msg_color_r;
-   float video_msg_color_g          = settings->floats.video_msg_color_g;
-   float video_msg_color_b          = settings->floats.video_msg_color_b;
+   unsigned width;
+   unsigned height;
+   settings_t *settings;
+   float video_msg_pos_x;
+   float video_msg_pos_y;
+   float video_msg_color_r;
+   float video_msg_color_g;
+   float video_msg_color_b;
 
+   /* Guard pointer derefs before reading width/height/settings; the
+    * existing trailing check at the bottom of this prologue ran AFTER
+    * gl->video_width was already dereferenced. */
    if (!font || !msg || !*msg || !gl)
       return;
+
+   width                            = gl->video_width;
+   height                           = gl->video_height;
+   settings                         = config_get_ptr();
+   video_msg_pos_x                  = settings->floats.video_msg_pos_x;
+   video_msg_pos_y                  = settings->floats.video_msg_pos_y;
+   video_msg_color_r                = settings->floats.video_msg_color_r;
+   video_msg_color_g                = settings->floats.video_msg_color_g;
+   video_msg_color_b                = settings->floats.video_msg_color_b;
 
    if (params)
    {

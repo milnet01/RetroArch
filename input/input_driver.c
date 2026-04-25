@@ -4494,6 +4494,7 @@ size_t input_config_get_bind_string(
       delim = 1;
 
 #ifndef RARCH_CONSOLE
+   if (bind)
    {
       char key[64];
       key[0] = '\0';

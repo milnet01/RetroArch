@@ -518,12 +518,14 @@ static void task_pl_thumbnail_download_handler(retro_task_t *task)
             }
          }
 
-         /* Download current thumbnail */
+         /* Download current thumbnail. The earlier code checked
+          * pl_thumb here but unconditionally dereferenced it on the
+          * next line - fold both into the guarded block. */
          if (pl_thumb)
+         {
             download_pl_thumbnail(pl_thumb);
-
-         /* Increment thumbnail type */
-         pl_thumb->type_idx++;
+            pl_thumb->type_idx++;
+         }
          break;
       case PL_THUMB_END:
       default:
@@ -815,12 +817,14 @@ static void task_pl_entry_thumbnail_download_handler(retro_task_t *task)
             /* Update progress */
             task_set_progress(task, ((pl_thumb->type_idx - 1) * 100) / 3);
 
-            /* Download current thumbnail */
+            /* Download current thumbnail. The earlier code checked
+             * pl_thumb here but unconditionally dereferenced it on
+             * the next line - fold both into the guarded block. */
             if (pl_thumb)
+            {
                download_pl_thumbnail(pl_thumb);
-
-            /* Increment thumbnail type */
-            pl_thumb->type_idx++;
+               pl_thumb->type_idx++;
+            }
          }
          break;
       case PL_THUMB_END:
