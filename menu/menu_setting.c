@@ -2781,7 +2781,10 @@ static int setting_action_left_retropad_bind(
       {
          if ((int)input_config_bind_order[i] == value)
          {
-            *setting->value.target.integer = input_config_bind_order[i - step];
+            /* Guard against [-1] read when value is the first entry;
+             * the wraparound block below handles the wrap case. */
+            if (i - step >= 0)
+               *setting->value.target.integer = input_config_bind_order[i - step];
             break;
          }
       }
@@ -2827,7 +2830,10 @@ static int setting_action_right_retropad_bind(
       {
          if ((int)input_config_bind_order[i] == value)
          {
-            *setting->value.target.integer = input_config_bind_order[i + step];
+            /* Guard against [max+1] read when value is the last entry;
+             * the wraparound block below handles the wrap case. */
+            if (i + step <= (int)setting->max)
+               *setting->value.target.integer = input_config_bind_order[i + step];
             break;
          }
       }

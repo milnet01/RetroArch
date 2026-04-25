@@ -1667,7 +1667,11 @@ static void rgui_fill_rect(
    unsigned x_index, y_index;
    uint16_t scanline_even[RGUI_MAX_FB_WIDTH]; /* Initial values don't matter here */
    uint16_t scanline_odd[RGUI_MAX_FB_WIDTH];
-   unsigned x_start = (x <= fb_width)  ? x : fb_width;
+   /* x_start / x_end must also fit into the fixed-size scanline buffers;
+    * a runtime fb_width larger than RGUI_MAX_FB_WIDTH would otherwise
+    * walk past the stack array in the populate-source loop below. */
+   unsigned width_cap = (fb_width < RGUI_MAX_FB_WIDTH) ? fb_width : RGUI_MAX_FB_WIDTH;
+   unsigned x_start = (x <= width_cap) ? x : width_cap;
    unsigned y_start = (y <= fb_height) ? y : fb_height;
    unsigned x_end_i = x + width;
    unsigned y_end_i = y + height;
@@ -1675,7 +1679,7 @@ static void rgui_fill_rect(
     * this function is frequently used to fill large areas.
     * We therefore gain significant performance benefits
     * from using memcpy() tricks... */
-   unsigned x_end   = (x_end_i <= fb_width)  ? x_end_i : fb_width;
+   unsigned x_end   = (x_end_i <= width_cap) ? x_end_i : width_cap;
    unsigned y_end   = (y_end_i <= fb_height) ? y_end_i : fb_height;
    size_t x_size    = (x_end - x_start) * sizeof(uint16_t);
 

@@ -1426,6 +1426,15 @@ bool audio_driver_mixer_add_stream(audio_mixer_stream_params_t *params)
       case AUDIO_MIXER_SLOT_SELECTION_MANUAL:
          free_slot = params->slot_selection_idx;
 
+         /* slot_selection_idx is caller-supplied (sometimes from a
+          * libretro core via the mixer-add env callback). Bound it
+          * before the field-write below OOBs into adjacent memory.
+          * audio_driver_mixer_{stop,remove}_stream do their own bounds
+          * check and no-op on out-of-range, but the per-field
+          * assignments at the end of this function have no guard. */
+         if (free_slot >= AUDIO_MIXER_MAX_SYSTEM_STREAMS)
+            return false;
+
          /* If we are using a manually specified
           * slot, must free any existing stream
           * before assigning the new one */
