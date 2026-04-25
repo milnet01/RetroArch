@@ -26,8 +26,9 @@ Fixes land on `local/fixes-2026-04`. Each bundle is one logical theme; commits i
 | 6 | `6423760b01` | clang-analyzer security.ArrayBound: bind-order, scanline_even, mixer, options | 4 |
 | 7 | `de0c6000c8` | task_http UAF cleanup at caller layer (core updater + pl thumbnail) | 3 |
 | 8 | `9bf01aabdb` | Config triad cleanup: zombie settings, pool-overflow assert, default-mismatch | 3 |
+| 9 | `088289d088` | Rewind compressor: bound `find_change` / `find_same` walks (incl. SSE2 path) | 1 |
 
-**Cumulative:** 33 distinct fixes across 19 files. ~20 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer).
+**Cumulative:** 34 distinct fixes across 20 files. ~21 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer).
 
 The full per-finding history is in the audit / indie-review / clang-tidy sections below — each item carries either 📋 pending, 🚧 partial, ✅ done with commit, or 🔄 deferred with reason.
 
@@ -161,7 +162,7 @@ These are exploitable now and have concrete reproducers.
 
 ### 🛡 Tier 2 — hardening sweep (correctness, not exploitability)
 
-- 📋 **HIGH — `find_change` / `find_same` unbounded walk in rewind compressor.** `state_manager.c:110-114, 151-155`. `while (*a == *b) { a++; b++; }` with no length parameter. Walks past the savestate buffer when both buffers are identical (paused frame) or differ entirely. OOB read; on consoles with tight memory may segfault. Pass `num16s` and clamp. SSE2 fast path at lines 76-95 has the same issue.
+- ✅ **HIGH — `find_change` / `find_same` unbounded walk in rewind compressor.** _(Fixed `088289d088` — added `max` parameter to both helpers; SSE2 path checks `a128 + 1 <= a_end` per chunk and falls through to a scalar tail; scalar / `NO_UNALIGNED_MEM` paths gain `a < a_end` guards on every walk loop. Caller passes `num16s` (the remaining unconsumed u16 count). Outer-caller's `if (skip >= num16s) break` still works correctly since the bounded helpers return at most `num16s`.)_
 - 📋 **HIGH — `bsv_movie_load_checkpoint` malloc-fail invariant break.** `bsvmovie.c:558-568`. `cur_save_size` is updated **before** the malloc; on OOM, `cur_save` stays NULL but `cur_save_size` records the requested size, so the next call won't retry the alloc. Subsequent NULL-deref. Move the size update after malloc success.
 - ✅ **HIGH — Configuration zombie settings.** `game_ai_override_p1`, `game_ai_override_p2`, `game_ai_show_debug`. _(Fixed `9bf01aabdb` — added three `SETTING_BOOL` lines under the existing `#ifdef HAVE_GAME_AI` block. Toggling in the menu now persists across restart.)_
 - 📋 **HIGH — Configuration save: no lock on settings_t while iterating.** `configuration.c:5793-6471` reads ~830 mutable fields and the keybind tables without `running_lock` or any equivalent. A joypad-autoconfig task running in the background while the user clicks "Save Configuration" can save half-applied state. Snapshot-to-local + write would resolve.
