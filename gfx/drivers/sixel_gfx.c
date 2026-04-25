@@ -92,7 +92,10 @@ static void *sixel_font_init(void *data,
    if (!font_renderer_create_default(
             &font->font_driver,
             &font->font_data, font_path, font_size))
+   {
+      free(font);
       return NULL;
+   }
 
    return font;
 }
