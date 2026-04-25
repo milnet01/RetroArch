@@ -35,8 +35,10 @@ Fixes land on `local/fixes-2026-04`. Each bundle is one logical theme; commits i
 | 15 | `149fdd5c1d` | Audio + gfx font init: free calloc'd struct on sub-init failure (6 sites) | 6 |
 | 16 | `72b2a839f8` | gx_joypad pad bound (Wii) + webdav 404-body local-file write filter | 2 |
 | 17 | `e3d7394951` | S3 SigV4 contract: path encoder + canonical query string sort | 2 |
+| 18 | `349cc5644b` | Deref-before-check follow-up: command.c + video_driver.c + video_shader_parse.c | 3 |
+| 19 | `5c99961ccd` | Realloc-leak class: runahead mylist_resize + bsv uint32s_bucket_expand (incl. adjacent calloc fix) | 3 |
 
-**Cumulative:** 65 distinct fixes across 37 files. ~39 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer). Plus the `s3.c:1633-1640` heap-overflow item from indie-review C2 was verified resolved-stale (current code uses safe `%.*s` and writes the terminator to a freshly-malloc'd buffer, not `data->data`).
+**Cumulative:** 71 distinct fixes across 39 files. ~42 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 11/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer). Plus the `s3.c:1633-1640` heap-overflow item from indie-review C2 was verified resolved-stale (current code uses safe `%.*s` and writes the terminator to a freshly-malloc'd buffer, not `data->data`).
 
 The full per-finding history is in the audit / indie-review / clang-tidy sections below — each item carries either 📋 pending, 🚧 partial, ✅ done with commit, or 🔄 deferred with reason.
 
@@ -252,13 +254,13 @@ Re-run with `compile_commands.json` (generated via `bear -- make -j$(nproc)` aft
 - 📋 **HIGH — `input/common/wayland_common.c:563, 1101` UAF + memory leak.**
 - 📋 **HIGH — `gfx/drivers/vulkan.c:7976` Dereference of NULL pointer.** Vulkan render path.
 - 📋 **HIGH — `gfx/video_driver.c:3633, 3745` NULL passed to nonnull-attributed param + NULL deref.**
-- 📋 **HIGH — `gfx/video_shader_parse.c:3184` `current_video->set_shader` NULL deref.** Confirms the audit S2 cluster (driver-vtable NULL not checked).
-- 📋 **HIGH — `command.c:2548, 2553` `video_st->poke` and `video_st->current_video` deref-before-check.** Path-sensitive analyzer found two sites in the same function. Same class as audit H6 cluster.
-- 📋 **HIGH — `runloop.c:5701` `current_video->focus` NULL deref.** Same pattern.
-- 📋 **HIGH — `input/input_driver.c:4501` `bind->key` NULL deref.**
+- ✅ **HIGH — `gfx/video_shader_parse.c::video_shader_apply_shader` `current_video->set_shader` deref-without-NULL-check.** _(Fixed `349cc5644b` — added `video_st->current_video &&` guard before the `set_shader` field check on the synchronous fallback path. The deferred path eight lines above already used the explicit current_video NULL-check, but the sync path had drifted — same author-aware pattern as Bundle 5.)_
+- ✅ **HIGH — `command.c::command_event_video_apply` `current_video->set_nonblock_state` deref-without-NULL-check.** _(Fixed `349cc5644b` — added `&& video_st->current_video` to the existing `&&`-chain on the menu-alive branch. The neighbouring `video_st->poke && video_st->poke->show_mouse` block was already correct.)_
+- ❌ **HIGH — `runloop.c:5701` `current_video->focus` NULL deref.** _(Verified resolved-stale 2026-04-25 — current code at the corresponding site uses the ternary `video_st->current_video ? video_st->current_video->alive(video_st->data) : true;` which is correctly check-before-deref. clang-tidy's reported line drifted; no equivalent unguarded `current_video->focus` deref found by grep.)_
+- ❌ **HIGH — `input/input_driver.c:4501` `bind->key` NULL deref.** _(Verified resolved-stale 2026-04-25 — current code at `input_config_get_bind_string` derefs `bind->key` only inside `if (bind)` at the outer guard, and the prior `bind->joykey` / `bind->joyaxis` derefs all use `bind && ...` short-circuit. No unguarded `bind->key` site reachable.)_
 - 📋 **HIGH — `slang_process.cpp:967, 970, 974, 977` four sites: NULL C++ object pointer call.** Slang shader processing path.
 - 📋 **HIGH — `ui/drivers/ui_qt_widgets.cpp:3293, 3355, 3433, 3508, 4506` five sites: `video_shader/menu_shader->flags` NULL deref.** Qt UI desktop frontend (HAVE_QT=1 builds).
-- 📋 **HIGH — Realloc-leak class (`bugprone-suspicious-realloc-usage`).** `runahead.c:636` (`list->data`) and `input/bsv/uint32s_index.c:90` (`bucket->contents.vec.idxs`). On realloc failure, the variable is set to NULL and the original buffer is leaked. Use a `tmp = realloc(p, …); if (tmp) p = tmp;` pattern.
+- ✅ **HIGH — Realloc-leak class (`bugprone-suspicious-realloc-usage`).** `runahead.c::mylist_resize` and `input/bsv/uint32s_index.c::uint32s_bucket_expand`. _(Fixed `5c99961ccd` — `tmp = realloc(p, …); if (!tmp) return; p = tmp;` pattern at both sites; both functions are `void` so resize/expand fail silently rather than corrupt heap state. The `uint32s_bucket_expand` realloc fix had a sibling bug: `bucket->contents.vec.cap` was being mutated *before* the realloc attempt, leaving the cap doubled even on OOM — moved the mutation into the success branch. Also closed the adjacent calloc-fail at the `bucket->len == 3` transition (memcpy(NULL, …) crash on OOM).)_
 
 ### 🔥 NEW Medium (divides-by-zero, leaks, uninit, format-mismatch)
 
