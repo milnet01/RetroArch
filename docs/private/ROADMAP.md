@@ -28,8 +28,9 @@ Fixes land on `local/fixes-2026-04`. Each bundle is one logical theme; commits i
 | 8 | `9bf01aabdb` | Config triad cleanup: zombie settings, pool-overflow assert, default-mismatch | 3 |
 | 9 | `088289d088` | Rewind compressor: bound `find_change` / `find_same` walks (incl. SSE2 path) | 1 |
 | 10 | `bcb1ad483c` | Audio init buffer leaks · Menu init NULL-deref · BSV checkpoint malloc-fail | 3 |
+| 11 | `9f7b59bcc1` | task_screenshot OOM NULL-deref · task_overlay calloc-OOM leak | 2 |
 
-**Cumulative:** 37 distinct fixes across 22 files. ~24 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer).
+**Cumulative:** 39 distinct fixes across 24 files. ~26 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer).
 
 The full per-finding history is in the audit / indie-review / clang-tidy sections below — each item carries either 📋 pending, 🚧 partial, ✅ done with commit, or 🔄 deferred with reason.
 
@@ -171,8 +172,8 @@ These are exploitable now and have concrete reproducers.
 - 📋 **HIGH — Menu drivers gate setting registration by current driver and never refresh on driver swap.** `menu/menu_setting.c:18806, 19016, 19308, 19552, 19833, 20330, 20533, 20804, 20857, 20990` all use `string_is_equal(menu_ident, "xmb")` style gating. After the user changes menu driver mid-session, the setting tree stays from the original driver until restart — XMB-only, ozone-only, materialui-only settings vanish from the UI. Either rebuild the tree on swap or move the gating to a display-time predicate.
 - ✅ **HIGH — Menu init NULL-deref on driver_data.** _(Fixed `bcb1ad483c` — wrapped the post-init field writes in an `if (driver_data)` guard. The line 4543 NULL-check now actually does its job.)_
 - ✅ **HIGH — Audio init early-return paths leak buffers.** _(Fixed `bcb1ad483c` — replaced each of the four `return false` paths with `goto error` so the existing `error:` label calls `audio_driver_deinit()` and reclaims the rewind / out_conv / audio_buf allocations.)_
-- 📋 **HIGH — `task_screenshot` task_init NULL-deref.** `tasks/task_screenshot.c:480-484`. The recent OOM-hardening pass missed this site. One-line fix.
-- 📋 **HIGH — `task_overlay_handler` leaks loader allocations on `data` calloc OOM.** `tasks/task_overlay.c:1120-1145`. `data == NULL` + not-cancelled = permanent leak of `overlay_path`/`image_list`/`overlays`. Either set CANCELLED before returning or do the frees in this branch.
+- ✅ **HIGH — `task_screenshot` task_init NULL-deref.** _(Fixed `9f7b59bcc1` — added NULL-guard that frees the state buffer + state struct before returning false on OOM, matching the existing fail-path cleanup pattern.)_
+- ✅ **HIGH — `task_overlay_handler` leaks loader allocations on `data` calloc OOM.** _(Fixed `9f7b59bcc1` — promoted the OOM failure to `RETRO_TASK_FLG_CANCELLED` before returning. `task_overlay_free` then reclaims `overlay_path` / `image_list` / `overlays` via the existing CANCELLED branch.)_
 - 📋 **HIGH — libretro env callbacks deref `data` without NULL guard.** `runloop.c:2014-2026` (`SET_INPUT_DESCRIPTORS`), `:1473` (`SET_VARIABLES`), `:2762` (`SET_CONTROLLER_INFO`), `:2730` (`SET_SUBSYSTEM_INFO`), `:2385` (`SET_FRAME_TIME_CALLBACK`), `:2719` (`SET_MESSAGE`). The libretro spec says "behavior undefined if NULL" — the brief said treat the core as untrusted. A buggy or wrong-ABI core can pass NULL on a probe; current behavior is a crash. One-line `if (!data) return false;` per case.
 - 📋 **HIGH — `RETRO_ENVIRONMENT_GET_LANGUAGE` returns true with `*data` unwritten when `HAVE_LANGEXTRA` is undefined.** `runloop.c:1977-1985`. The whole body is `#ifdef`'d but the case still returns `true`. Cores read uninitialized stack as their "configured language." Add `#else *(unsigned*)data = RETRO_LANGUAGE_ENGLISH;` or return `false`.
 - 📋 **MEDIUM — Cloud sync no Content-Length verification.** `webdav.c:598`, `google_drive.c:1218`, `s3.c:819`. Connection drops mid-download but HTTP returned 200 → partial bytes written to local file → corrupt save. Combined with no atomic write (cross-cutting #1), transient network failures silently corrupt.
