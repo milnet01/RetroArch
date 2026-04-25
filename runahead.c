@@ -629,12 +629,15 @@ static void mylist_resize(my_list *list,
 
    if (new_size > list->capacity)
    {
+      void **tmp;
       if (new_capacity < list->capacity * 2)
          new_capacity = list->capacity * 2;
 
-      /* try to realloc */
-      list->data      = (void**)realloc(
+      tmp = (void**)realloc(
             (void*)list->data, new_capacity * sizeof(void*));
+      if (!tmp)
+         return;
+      list->data = tmp;
 
       for (i = list->capacity; i < new_capacity; i++)
          list->data[i] = NULL;
