@@ -432,7 +432,11 @@ static int16_t WPAD_StickY(WPADData *data, u8 right)
 
 static bool gx_joypad_query_pad(unsigned pad)
 {
-   return pad < MAX_USERS && pad_type[pad] != WPAD_EXP_NOCONTROLLER;
+   /* pad_type is sized DEFAULT_MAX_PADS (4 on this driver) but the
+    * libretro joypad-driver contract surfaces pads up to MAX_USERS
+    * (16). The original `pad < MAX_USERS` guard let callers OOB-read
+    * the pad_type array for any pad >= DEFAULT_MAX_PADS. */
+   return pad < DEFAULT_MAX_PADS && pad_type[pad] != WPAD_EXP_NOCONTROLLER;
 }
 
 static void gx_joypad_poll(void)

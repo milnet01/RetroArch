@@ -672,7 +672,14 @@ static void webdav_read_cb(retro_task_t *task, void *task_data, void *user_data,
       return;
    }
 
-   if (success && data->data && webdav_cb_st)
+   /* `success` on 404 means "remote doesn't have this file, sync
+    * nothing" -- the cb_state cb is still invoked with success=true
+    * but file=NULL.  The original code wrote `data->data` regardless
+    * of status, so a server that returned a 404 with an HTML error
+    * body would write that HTML straight into the user's local save
+    * file (overwriting whatever was there).  Skip the local-file
+    * write for 404 explicitly. */
+   if (success && data->status != 404 && data->data && webdav_cb_st)
    {
       /* TODO/FIXME: it would be better if writing
        * to the file happened during the network reads */
