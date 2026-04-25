@@ -96,11 +96,11 @@ These are the highest-confidence findings — multiple reviewers coming at the c
   - 🔄 `libretro-common/file/config_file.c:1410-1432` (every cfg save) — vendored upstream, can't patch locally
   - 📋 `network/cloud_sync/{google_drive,webdav,s3}.c` (every downloaded synced file) — combine with no-Content-Length-verification fix below
   - **The pattern applied:** open at `<path>.tmp`; on success `filestream_delete(dest); filestream_rename(tmp, dest)`; on failure `filestream_delete(tmp)`. POSIX `rename(2)` is atomic over an existing file on the same filesystem.
-- 📋 **🔥 Buffer-overflow class in malicious save-state / replay parsing.** Multiple reviewers flagged the same trust boundary:
-  - `tasks/task_save.c:884-986` `content_load_rastate1` reads `block_size` as 32-bit LE from attacker bytes, then advances `input += CONTENT_ALIGN_SIZE(block_size)` without checking against `stop`. Each block is then passed to `core_unserialize`, `replay_set_serialized_data`, or `rcheevos_set_serialized_data` with attacker-chosen length.
-  - `input/bsv/bsvmovie.c:822-863` `bsv_movie_read_next_events` — `key_event_count` is `uint8_t` (max 255) writing into `key_events[128]`. `input_event_count` is `uint16_t` (max 65535) writing into `input_events[512]`. No bounds check on either before the read loops.
-  - `input/bsv/bsvmovie.c:1370-1421` `replay_set_serialized_data` reads attacker-controlled `loaded_len` and writes that many bytes into the user's replay file.
-  - **Threat is real** — RetroArch users routinely load save states and replays shared online. Single-byte fix on each plus a unified bounds-check helper.
+- ✅ **🔥 Buffer-overflow class in malicious save-state / replay parsing.** _(Bundle 3 — fixed in `1f59d9d31d` on `local/fixes-2026-04`.)_
+  - ✅ `tasks/task_save.c::content_load_rastate1` — added bounds check on `block_size` against remaining buffer (rejects truncated headers, oversize blocks, and alignment-arithmetic overflow); switched the byte-shift assembly to `((uint32_t)input[N]) << shift` to remove signed-int promotion UB.
+  - ✅ `input/bsv/bsvmovie.c::bsv_movie_read_next_events` — capacity-check `key_event_count` against `ARRAY_SIZE(key_events)` and `input_event_count` against `ARRAY_SIZE(input_events)` before each read loop.
+  - ✅ `input/bsv/bsvmovie.c::replay_set_serialized_data` — reject `loaded_len < REPLAY_HEADER_LEN_BYTES` before any `intfstream_seek` / `intfstream_write` picks it up. Negative values were the worst case (cast to huge `size_t`).
+  - **Threat is real** — RetroArch users routinely load save states and replays shared online. The corresponding clang-tidy CRITICALs (security.ArrayBound on driver-array iteration, runahead heap OOB) remain on the roadmap.
 - 📋 **🔥 `task_http`-class UAF pattern still present at the caller layer.** The recent `t->title` UAF fix (commit `19fb8692be`) addressed one site. Reviewers confirmed the same dangling-task-pointer pattern still exists in:
   - `tasks/task_core_updater.c:326-348` — `list_handle->http_task` retained after the queue may have freed it.
   - `tasks/task_pl_thumbnail_download.c:358` — `pl_thumb->http_task` same pattern.
