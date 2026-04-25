@@ -12,6 +12,26 @@ Severity: **CRITICAL** > **HIGH** > **MEDIUM** > **LOW**.
 
 ---
 
+## 📊 Bundle progress (running summary)
+
+Fixes land on `local/fixes-2026-04`. Each bundle is one logical theme; commits inside a bundle are the per-site changes.
+
+| Bundle | Commit | Theme | Sites |
+|---|---|---|---|
+| 1 | `a9f5dcf7f4` `17cea42c5b` `9953abc994` | Wayland UAF defensive · BPS NULL deref · UPnP recursion | 3 |
+| 2 | `403106af54` | Atomic save (tmp + rename) — task_save (3) + disk_index_file | 4 |
+| 3 | `1f59d9d31d` | Bounds-check malicious save-state / replay file format | 3 |
+| 4 | `8aedb937f1` | Local IPC + cheevos: localhost-bind, RAM bounds, chmod 0600, strcpy→memmove | 5 |
+| 5 | `8eab27096d` `e54e1568ac` | Deref-before-NULL-check sweep (Linux build) + .claude/ gitignore | 8 |
+| 6 | `6423760b01` | clang-analyzer security.ArrayBound: bind-order, scanline_even, mixer, options | 4 |
+| 7 | `de0c6000c8` | task_http UAF cleanup at caller layer (core updater + pl thumbnail) | 3 |
+
+**Cumulative:** 30 distinct fixes across 18 files. ~17 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer).
+
+The full per-finding history is in the audit / indie-review / clang-tidy sections below — each item carries either 📋 pending, 🚧 partial, ✅ done with commit, or 🔄 deferred with reason.
+
+---
+
 ## 🔍 Audit 2026-04-25
 
 Branch: `local/audit-2026-04` off `master @ 6ff3332ea2`.
@@ -113,10 +133,9 @@ These are the highest-confidence findings — multiple reviewers coming at the c
   - ✅ `input/bsv/bsvmovie.c::bsv_movie_read_next_events` — capacity-check `key_event_count` against `ARRAY_SIZE(key_events)` and `input_event_count` against `ARRAY_SIZE(input_events)` before each read loop.
   - ✅ `input/bsv/bsvmovie.c::replay_set_serialized_data` — reject `loaded_len < REPLAY_HEADER_LEN_BYTES` before any `intfstream_seek` / `intfstream_write` picks it up. Negative values were the worst case (cast to huge `size_t`).
   - **Threat is real** — RetroArch users routinely load save states and replays shared online. The corresponding clang-tidy CRITICALs (security.ArrayBound on driver-array iteration, runahead heap OOB) remain on the roadmap.
-- 📋 **🔥 `task_http`-class UAF pattern still present at the caller layer.** The recent `t->title` UAF fix (commit `19fb8692be`) addressed one site. Reviewers confirmed the same dangling-task-pointer pattern still exists in:
-  - `tasks/task_core_updater.c:326-348` — `list_handle->http_task` retained after the queue may have freed it.
-  - `tasks/task_pl_thumbnail_download.c:358` — `pl_thumb->http_task` same pattern.
-  - ASan + a fast 4xx response will hit it. The fix is the same shape as the title fix: hoist the read before push, or weak-reference via task ID instead of pointer.
+- ✅ **🔥 `task_http`-class UAF pattern at the caller layer.** _(Bundle 7 — fixed in `de0c6000c8` on `local/fixes-2026-04`.)_
+  - ✅ `tasks/task_core_updater.c::cb_http_task_core_updater_get_list` and `::cb_http_task_core_updater_download` — these were the real ASan-detectable UAFs: the outer handlers call `task_get_flags` / `task_get_progress` on the inner `http_task` pointer after the queue has freed it. Fix: NULL the pointer in the cb before flipping the COMPLETE flag the outer handler waits on.
+  - ✅ `tasks/task_pl_thumbnail_download.c::cb_http_task_download_pl_thumbnail` — same pattern, no actual deref in shipping code (only NULL-test of stale pointer, strictly UB but practically harmless), plugged for consistency.
 - 📋 **🔥 Path traversal via attacker-supplied cloud-sync manifest.** `tasks/task_cloudsync.c:640` `strchr(key, '/') + 1` flagged by audit, tasks-lane reviewer, and cloud-sync reviewer. Compromised or hostile sync server can write `../../../home/user/.bashrc` into the user's machine. Two fixes needed:
   1. NULL-guard the `strchr` result.
   2. Reject keys containing `..`, `\`, leading `/`, or NUL — server input must not be trusted as path components. (audit H3.)
