@@ -227,6 +227,15 @@ static void cb_http_task_core_updater_get_list(
       {
          task_set_data(task, NULL); /* going to pass ownership to list_handle */
 
+         /* The task struct itself is freed by the queue immediately
+          * after this callback returns (task_queue_internal_gather).
+          * The outer task handler (task_core_updater_get_list_handler)
+          * dereferences list_handle->http_task via task_get_flags /
+          * task_get_progress on the next iterate -- UAF. NULL the
+          * pointer here so the outer handler's NULL check at line 340
+          * catches it and skips the deref. Same shape as the recent
+          * t->title UAF fix (commit 19fb8692be), one stack frame up. */
+         list_handle->http_task          = NULL;
          list_handle->http_data          = data;
          list_handle->http_task_complete = true;
          list_handle->http_task_success  = ret;
@@ -569,7 +578,13 @@ void cb_http_task_core_updater_download(
    if (!(download_handle = (core_updater_download_handle_t*)transf->user_data))
       goto finish;
 
-   /* Update download_handle task status */
+   /* Update download_handle task status. NULL the http_task pointer
+    * BEFORE setting http_task_complete -- the queue frees the task
+    * struct as soon as this callback returns, but the outer handler
+    * (task_core_updater_download_handler) reads task_get_flags /
+    * task_get_progress(download_handle->http_task) on subsequent
+    * iterates. Same UAF class as the recent t->title fix. */
+   download_handle->http_task                = NULL;
    download_handle->http_task_complete       = true;
 
    /* Create output directory, if required */

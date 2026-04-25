@@ -274,6 +274,13 @@ void cb_http_task_download_pl_thumbnail(
    if (!(pl_thumb = (pl_thumb_handle_t*)transf->user_data))
       goto finish;
 
+   /* NULL the http_task pointer before setting the COMPLETE flag --
+    * the queue frees the task struct immediately after this callback
+    * returns. Subsequent reads of pl_thumb->http_task in the outer
+    * handler (even just `if (!pl_thumb->http_task)` value-comparison)
+    * are reads of freed memory in strict C. Same UAF class as the
+    * recent t->title fix (commit 19fb8692be), one frame up. */
+   pl_thumb->http_task = NULL;
    pl_thumb->flags |= PL_THUMB_FLAG_HTTP_TASK_COMPLETE;
 
    /* Remaining sanity checks... */
