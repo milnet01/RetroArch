@@ -32,8 +32,9 @@ Fixes land on `local/fixes-2026-04`. Each bundle is one logical theme; commits i
 | 12 | `18b55ec71a` | Cloud sync manifest UB/traversal · core_option_manager OOM (×2) · webdav uninit-stack + OOM | 4 |
 | 13 | `2386e898d4` | WebDAV digest-challenge: parse hardening (5 sites) + comparison typo + cnonce randomisation | 3 |
 | 14 | `46855caa12` | libretro env callbacks: NULL-guard 8 SET_*/GET_* sites + GET_LANGUAGE HAVE_LANGEXTRA fallback | 9 |
+| 15 | `149fdd5c1d` | Audio + gfx font init: free calloc'd struct on sub-init failure (6 sites) | 6 |
 
-**Cumulative:** 55 distinct fixes across 28 files. ~33 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer).
+**Cumulative:** 61 distinct fixes across 34 files. ~35 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer).
 
 The full per-finding history is in the audit / indie-review / clang-tidy sections below — each item carries either 📋 pending, 🚧 partial, ✅ done with commit, or 🔄 deferred with reason.
 
@@ -76,8 +77,8 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
 #### Medium
 
 - 📋 **MEDIUM — `oi` may be NULL after empty `wl_list_for_each`.** `gfx/common/wayland_common.c:289-296`. Reproducer: hot-unplug last monitor before frame size query. One-line guard fix.
-- 📋 **MEDIUM — calloc'd struct leaks on `memalign` failure.** `audio/drivers/audioworklet.c:255-257` and `audio/drivers/rwebaudio.c:86-90`. Add `free(self); return NULL;` on the failure path.
-- 📋 **MEDIUM — Font-init leaks on renderer-create failure across 4 backends.** `gfx/drivers/caca_gfx.c:92`, `gdi_gfx.c:205`, `sixel_gfx.c:95`, `vga_gfx.c:82`. Identical `free(font); return NULL;` fix at each site.
+- ✅ **MEDIUM — calloc'd struct leaks on `memalign` failure.** _(Fixed `149fdd5c1d` — `audioworklet`: `free(audioworklet)` on memalign(WORKLET_STACK_SIZE) fail; `rwebaudio`: `free(rwebaudio)` on `RWebAudioInit` fail.)_
+- ✅ **MEDIUM — Font-init leaks on renderer-create failure across 4 backends.** _(Fixed `149fdd5c1d` — caca/gdi/sixel/vga `font_renderer_create_default` fail path now `free(font)` before `return NULL`. All four sites, same shape.)_
 - 📋 **MEDIUM — Cluster: 52 OOM null-deref findings in cloud-sync HTTP request builders.** `network/cloud_sync/google_drive.c` (29), `network/cloud_sync/webdav.c` (23). The recent `task_http` hardening series didn't reach these. Cluster-level audit needed.
 - 📋 **MEDIUM — calloc'd `ft_info` not NULL-checked before strdup/snprintf.** `cores/libretro-video-processor/video_processor_v4l2.c:681-690`. Bundled core; opt-in build.
 
