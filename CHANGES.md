@@ -118,6 +118,100 @@
 - XBOX: Fix menu and achievement sounds
 - XBOX: Update UWP Mesa
 - XBOX: Add zstd support
+- ANDROID: Re-enable asynchronous icon loading
+- APPLE: Add WebP image format support (opt-in via --enable-webp)
+- APPLE: Replace XIB-based menu bar with programmatic menu bar on macOS
+- APPLE: Add AVFoundation camera and recording drivers (HAVE_AVF, macOS 10.7+)
+- APPLE: Pre-10.7 macOS / PowerPC compatibility for legacy build targets
+- APPLE: Fix Suspend Screensaver crash on macOS
+- APPLE: Fix too many open file descriptors on macOS
+- APPLE: Hand-rolled borderless fullscreen on non-Metal Cocoa path
+- AUDIO: Fully implemented ASIO driver for Windows (auto-enabled on MSVC2003+)
+- AUDIO: 96 kHz and 192 kHz audio output rate support
+- AUDIO/DIRECTSOUND: Implement floating point audio support
+- AUDIO/CORE: Split CoreAudio implementation by SDK version (pre-10.7 legacy path)
+- CHEEVOS: Fix font width calculations on widget popups and leaderboard
+- CHEEVOS: Compatibility fix in rcheevos rc_client integration
+- CDFS: Fix createdvd CHD hashing for PS2/PSP RetroAchievements
+- CLOUDSYNC: Fix cloud sync options visibility when non-WebDAV/S3 driver selected
+- DISCORD: Fold deps/discord-rpc into network/discord.c as C89 (drops external dependency)
+- HARDENING: Wide OOM NULL-deref pass across menu, tasks, libretro-common, libretro-db, frontend, network, gfx and input drivers
+- HARDENING: Integer overflow / hostile-input hardening for rpng, rjson, rbmp, rtga, archive parsers, base64, config_file, file_path, vfs (smb/cdrom)
+- HARDENING: Fix UAF race on `t->title` and heap-buffer-overflow in task_http GET fast-path (with regression test)
+- HARDENING: Reject archive members with traversal paths in task_decompress
+- INPUT: Performance optimizations across input_driver poll path (analog stick caching, bitmask cache, AXIS_NONE early-exit)
+- IOS: Fix iOS GL2 screen freeze on content load (cocoa_gl_ctx destroy-time release)
+- LIBRETRO: Add `retro_vfs_stat64_t` for >2 GiB file size queries
+- LIBRETRO: NBIO architectural rewrite — set_chunk_size / get_fd / get_progress vtable, eliminate spin-wait, mmap/AIO/posix_fadvise/madvise hints
+- LIBRETRO: RJPEG / RPNG / RTGA / RBMP rewritten to iterative time-budgeted decode with SIMD (NEON/SSE2) fast paths
+- LIBRETRO: Database Manager and filtered queries massively faster via geometric realloc and folded evaluation
+- LIBRETRO: rpng_encode reduces deflate buffer ~7.9 MB on 1080p RGBA encode and eliminates double-copy on BGR24 path
+- LIBRETRO: core_info_list valid-extension list deduplicated — 1 malloc, 0 reallocs, 77% less memory, 60x faster resolve
+- LOCALIZATION: Updated translations from Crowdin
+- MENU: Fix stale visibility state in static build_list tables
+- MENU: Hide dependent settings on the fly when their master toggle changes
+- MENU: Fix Run-Ahead / Preemptive Frames setting UI regression
+- MENU: Fix menu item visibility regressions
+- MENU: Async-only icon thumbnail loading across XMB, Ozone, MaterialUI, widgets, explore, contentless cores
+- MENU/WIN32: Localize menubar entries via msg_hash_to_str
+- MENU/WIN32: Refresh main menu after loading a core from the menubar
+- MENU/WIN32: Open Load Content dialog at system drive root by default
+- MENU/XMB: Render blank-less while icon thumbnails are loading
+- MENU/XMB: Defer dynamic icon population until horizontal tab animation settles
+- MENU/XMB: Fix stacking tweens on categories_x_pos during rapid horizontal input
+- MENU/XMB: Fix Snowflake / Snow / Bokeh / Ribbon shader pipelines on D3D9 Cg, D3D9 HLSL, GL Cg, GLCore, Vulkan and D3D12
+- MENU/XMB: Add Snowflake shader pipeline (VIDEO_SHADER_MENU_6) for GLCore and Vulkan
+- MENU/XMB: Fix RGUI swapped R/B channels on Metal at bgra4444 → bgra8888 conversion
+- MENU/OZONE: Fix longstanding ASAN-reported undefined behavior in icon code
+- MENU/OZONE: Fix dynamic wallpaper, three icon regressions, async image loading regression
+- METAL: Add HDR10 / scRGB output support with tonemapped read_viewport
+- METAL: Add SDR offscreen for menu composite in HDR mode
+- METAL: Add GPU Index menu option
+- METAL: Preserve cached core frame across CMD_EVENT_REINIT
+- NETWORK/DISCORD: Discord-RPC dependency folded inline (no external libdiscord-rpc)
+- QT: Replace Qt5/6 Concurrent + Qt5/6 Network with RetroArch task queue and HTTP system (drops two Qt module dependencies)
+- QT: Use RetroArch image_texture for image loading (JPEG support without Qt plugins)
+- SCAN: Tune Lutro scan to not add hits when another DB was selected
+- SHADER: Initial deferred (per-frame) shader loading on Vulkan, D3D12, D3D11, D3D10, GLCore
+- SHADER: Aggressive shader caching in slang shader backend
+- SHADER: Filter Cg shaders from picker when running glcore
+- TASKS: Use task error message in user-facing notifications when present
+- TASKS: task_save serialize buffer no longer zero-fills the whole buffer (saves zeroing 2-16 MB per save)
+- VIDEO: Display server refactor — unified get_metrics / get_refresh_rate / get_video_output_size / prev/next across X11, Wayland, Win32, Apple, Android, UWP, KMS
+- VIDEO: Fix Win32 display output prev/next to actually switch modes
+- VIDEO: Remove macOS DPI scaling workaround
+- VIDEO/THREAD: Route texture load/unload through video thread for D3D8/9/10/11/12, Vulkan and Metal; harden wrapper API for driver deinit
+- VIDEO/THREAD: Snapshot texture handles in XMB/Ozone/MaterialUI to prevent torn reads under threaded video
+- VIDEO/THREAD: Fix 64-bit pointer truncation in texture handle pipeline
+- VIDEO/THREAD: Fix crash when toggling Threaded Video at runtime
+- VIDEO/D3D9: HDR variant — major debug-layer validation pass (overlay FVF, leaked vertex declaration, ring-buffer DISCARD-vs-NOOVERWRITE, NOSYSLOCK on managed pool, GetRenderTarget HRESULT)
+- VIDEO/D3D9: TDR-style device-lost recovery in HLSL and Cg drivers (10×3s retry loop, GPU recreate path)
+- VIDEO/D3D8/D3D9: Move IDirect3D objects from globals into driver struct
+- VIDEO/D3D8/D3D9: Use win32_set_video_mode for window creation
+- VIDEO/D3D9_HLSL: Default driver for XP builds (replaces legacy d3d9 path)
+- VIDEO/D3D10/D3D11/D3D12: Debug-layer validation pass (CB alignment, sprite VBO ring discard, RTV HRESULT, NULL guards on Map, resource-release ordering, root-signature DLL export fix)
+- VIDEO/D3D11/D3D12: GPU tonemap path for HDR screenshots; D3D12 read_viewport implemented
+- VIDEO/D3D12: Robust TDR / device-lost recovery (early-bail on GetDeviceRemovedReason, software-framebuffer size-mismatch fix)
+- VIDEO/D3D12: Fix HDR thumbnails and menu elements rendering as white squares
+- VIDEO/D3D12: Fix crash when changing XMB Scale Factor
+- VIDEO/VULKAN: Fix black GPU screenshots when HDR is enabled
+- VIDEO/VULKAN: Decline SW framebuffer when linear image has padded rowPitch
+- VIDEO/VULKAN: Validation-layer pass — VkResult checks on 15+ calls, IBO bounds checks, readback / scissor clamping, framebuffer dimension fix, font atlas dirty-rect flush
+- VIDEO/VULKAN: SDR display pipeline set for HDR offscreen compositing
+- VIDEO/VULKAN: Fix shader module lifetime bugs and SDR font pipeline topology
+- VIDEO/VULKAN: Fix out-of-bounds read in display driver VBO packing
+- VIDEO/VULKAN: AMD GPU / Linux regression fix in font atlas upload
+- VIDEO/GL: Fix ribbon shaders to match D3D11 visual output (GL, GLCore yflip, Vulkan)
+- VIDEO/GL: Fix screenshot corruption in video_frame_convert_rgba_to_bgr (gl1/gl2/gl3)
+- VIDEO/GL: Reuse menu texture and POT buffers across set_texture_frame calls (gl1/gl3/gdi/vga/sixel/network/caca/fpga)
+- VIDEO/HDR: Fix HDR rendering on overlays
+- VFS: Add Samba-share / vfs_cdrom robustness fixes plus regression tests
+- WIN32: Add d3dkmt + Scanline Sync support
+- WIN32: Threaded file dialog picker — file open no longer blocks main window (HAVE_THREADS)
+- WIN32: Programmatic creation of menu bar, accelerator table, Pick Core dialog, icon and DPI awareness (replaces .rc resource loading)
+- WIN32: Apply DPI awareness before any window is created; tighten Vista/Win7 fallback for shcore parity
+- WIN32/UI: Refactor — move UI logic from win32_common.c to ui_win32.c
+- XBOX/UWP: Fix empty logs on UWP
 
 # 1.22.1
 - ANDROID: OnNewIntent handler to allow launchers start new content without closing first
