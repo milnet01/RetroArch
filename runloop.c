@@ -411,10 +411,20 @@ static bool runloop_environ_cb_get_system_info(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
       {
          size_t i, j, size;
-         const struct retro_subsystem_info *info =
-            (const struct retro_subsystem_info*)data;
-         unsigned log_level      = config_get_ptr()->uints.libretro_log_level;
-         bool do_debug_log       = (log_level == RETRO_LOG_DEBUG);
+         const struct retro_subsystem_info *info;
+         unsigned log_level;
+         bool do_debug_log;
+
+         /* Per the libretro spec, behavior is undefined if data is NULL.
+          * The brief is to treat the core as untrusted: a buggy or
+          * wrong-ABI core can probe with NULL; the original code would
+          * crash on the `info[i].ident` deref below. */
+         if (!data)
+            return false;
+
+         info         = (const struct retro_subsystem_info*)data;
+         log_level    = config_get_ptr()->uints.libretro_log_level;
+         do_debug_log = (log_level == RETRO_LOG_DEBUG);
 
          runloop_st->subsystem_current_count = 0;
 
@@ -1473,6 +1483,9 @@ bool runloop_environment_cb(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_SET_VARIABLES:
          RARCH_LOG("[Environ] SET_VARIABLES.\n");
 
+         if (!data)
+            return false;
+
          {
             core_option_manager_t *new_vars = NULL;
 
@@ -1718,7 +1731,10 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
       case RETRO_ENVIRONMENT_SET_MESSAGE:
       {
-         const struct retro_message *msg = (const struct retro_message*)data;
+         const struct retro_message *msg;
+         if (!data)
+            return false;
+         msg = (const struct retro_message*)data;
 #if defined(HAVE_GFX_WIDGETS)
          dispgfx_widget_t *p_dispwidget  = dispwidget_get_ptr();
 
@@ -1737,8 +1753,10 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
       case RETRO_ENVIRONMENT_SET_MESSAGE_EXT:
       {
-         const struct retro_message_ext *msg =
-            (const struct retro_message_ext*)data;
+         const struct retro_message_ext *msg;
+         if (!data)
+            return false;
+         msg = (const struct retro_message_ext*)data;
 
          /* Log message, if required */
          if (msg->target != RETRO_MESSAGE_TARGET_OSD)
@@ -1975,12 +1993,20 @@ bool runloop_environment_cb(unsigned cmd, void *data)
          break;
 
       case RETRO_ENVIRONMENT_GET_LANGUAGE:
+         if (!data)
+            return false;
 #ifdef HAVE_LANGEXTRA
          {
             unsigned user_lang = *msg_hash_get_uint(MSG_HASH_USER_LANGUAGE);
             *(unsigned *)data  = user_lang;
             RARCH_LOG("[Environ] GET_LANGUAGE: \"%u\".\n", user_lang);
          }
+#else
+         /* Without HAVE_LANGEXTRA the case used to leave *data
+          * unwritten and still `break` to the success path; cores
+          * read uninitialised stack as their "configured language".
+          * Default to English so the contract holds. */
+         *(unsigned *)data = RETRO_LANGUAGE_ENGLISH;
 #endif
          break;
 
@@ -2013,6 +2039,8 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
       case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
       {
+         if (!data)
+            return false;
          if (sys_info)
          {
             unsigned retro_id;
@@ -2372,8 +2400,10 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
       case RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK:
       {
-         const struct retro_frame_time_callback *info =
-            (const struct retro_frame_time_callback*)data;
+         const struct retro_frame_time_callback *info;
+         if (!data)
+            return false;
+         info = (const struct retro_frame_time_callback*)data;
 
          RARCH_LOG("[Environ] SET_FRAME_TIME_CALLBACK.\n");
 #ifdef HAVE_NETWORKING
@@ -2730,8 +2760,10 @@ bool runloop_environment_cb(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
       {
          size_t i;
-         const struct retro_subsystem_info *info =
-               (const struct retro_subsystem_info*)data;
+         const struct retro_subsystem_info *info;
+         if (!data)
+            return false;
+         info = (const struct retro_subsystem_info*)data;
 
          for (i = 0; info[i].ident; i++) {}
 
@@ -2762,9 +2794,11 @@ bool runloop_environment_cb(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
       {
          size_t i, j;
-         const struct retro_controller_info *info
-                                 = (const struct retro_controller_info*)data;
+         const struct retro_controller_info *info;
          unsigned log_level      = settings->uints.libretro_log_level;
+         if (!data)
+            return false;
+         info = (const struct retro_controller_info*)data;
 
          RARCH_LOG("[Environ] SET_CONTROLLER_INFO.\n");
 
