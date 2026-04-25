@@ -187,4 +187,77 @@ These are things the agents flagged where they couldn't tell from the code alone
 - **15 Tier-3 structural**
 - **7 Open questions** — candidates for upstream issues
 
+---
+
+## 🔬 clang-tidy 2026-04-25
+
+Re-run with `compile_commands.json` (generated via `bear -- make -j$(nproc)` after `./configure`). Checks: `bugprone-*`, `clang-analyzer-core.*`, `clang-analyzer-security.*`, `clang-analyzer-unix.*`. 200 files in audit scope. **125 clang-analyzer findings + ~30 high-signal bugprone**, vs cppcheck's 549 (after filtering). The path-sensitive analyzer caught classes cppcheck missed — particularly array-bound violations and UAF traces.
+
+### 🔥 NEW Critical (not in prior audit/indie-review)
+
+- 📋 **CRITICAL — `tasks/task_patch.c:207, 216, 238, 247` four sites: array access on NULL `target_data`.** IPS/UPS/BPS patch parser. Trust boundary: `.ips`/`.ups`/`.bps` patch files (downloaded from ROM-hack sites). Crafted patch → NULL deref. Multiple sites suggest the malloc check is missing at ONE upstream point that all four downstream code paths trust. Find and fix the upstream check.
+- 📋 **CRITICAL — `audio/audio_driver.c:1507` Out-of-bound write past `audio_driver_st.mixer_streams`.** `clang-analyzer-security.ArrayBound`. Reachable via the audio mixer task surface; review whether the index source is bounded (likely from a libretro core mixer-stream API).
+- 📋 **CRITICAL — `core_option_manager.c:1164` Out-of-bound heap access.** Distinct from audit H5 (lines 721/1006 — value_hash NULL). This is a separate site at line 1164. Review.
+- 📋 **CRITICAL — `runahead.c:640, 662` Out-of-bound access preceding heap area.** Two sites in the runahead input-state-list walk. `clang-analyzer-security.ArrayBound`. Reachable on every runahead frame; this could be the cause of intermittent runahead crashes users report.
+- 📋 **CRITICAL — `retroarch.c:435, 1186, 2270` three sites Out-of-bound past `location_drivers[]`.** Driver-array iteration not respecting the NULL-terminator. Likely an off-by-one in `find_driver_nonempty` (audit M3 cluster). Same fix probably resolves all three.
+- 📋 **CRITICAL — `tasks/task_translation.c:177` Out-of-bound past `translation_drivers[]`.** Same pattern as the location-drivers issue.
+- 📋 **CRITICAL — `menu/menu_setting.c:2784` Out-of-bound access preceding `input_config_bind_order[]`.** Index goes negative. Reachable from input-bind-order menu entry.
+- 📋 **CRITICAL — `menu/drivers/rgui.c:1695, 1784` Out-of-bound access preceding `scanline_even`.** RGUI menu draw path; reachable when scanline interlace is enabled.
+
+### 🔥 NEW High (UAFs, leaks, NULL-derefs not in prior reports)
+
+- 📋 **HIGH — `gfx/common/wayland_common.c:380, 385` UAF / double-free.** `clang-analyzer-unix.Malloc`. Two adjacent sites: free-then-free, then use-after-free. Reachable on Wayland output reconfiguration.
+- 📋 **HIGH — `input/bsv/uint32s_index.c:53, 285` Use-after-free in BSV uint32s index.** Combined with audit/indie-review's BSV bounds-check issues, the BSV replay file format has multiple memory-safety vulnerabilities. Untrusted-file-format trust boundary.
+- 📋 **HIGH — `input/common/wayland_common.c:563, 1101` UAF + memory leak.**
+- 📋 **HIGH — `gfx/drivers/vulkan.c:7976` Dereference of NULL pointer.** Vulkan render path.
+- 📋 **HIGH — `gfx/video_driver.c:3633, 3745` NULL passed to nonnull-attributed param + NULL deref.**
+- 📋 **HIGH — `gfx/video_shader_parse.c:3184` `current_video->set_shader` NULL deref.** Confirms the audit S2 cluster (driver-vtable NULL not checked).
+- 📋 **HIGH — `command.c:2548, 2553` `video_st->poke` and `video_st->current_video` deref-before-check.** Path-sensitive analyzer found two sites in the same function. Same class as audit H6 cluster.
+- 📋 **HIGH — `runloop.c:5701` `current_video->focus` NULL deref.** Same pattern.
+- 📋 **HIGH — `input/input_driver.c:4501` `bind->key` NULL deref.**
+- 📋 **HIGH — `slang_process.cpp:967, 970, 974, 977` four sites: NULL C++ object pointer call.** Slang shader processing path.
+- 📋 **HIGH — `ui/drivers/ui_qt_widgets.cpp:3293, 3355, 3433, 3508, 4506` five sites: `video_shader/menu_shader->flags` NULL deref.** Qt UI desktop frontend (HAVE_QT=1 builds).
+- 📋 **HIGH — Realloc-leak class (`bugprone-suspicious-realloc-usage`).** `runahead.c:636` (`list->data`) and `input/bsv/uint32s_index.c:90` (`bucket->contents.vec.idxs`). On realloc failure, the variable is set to NULL and the original buffer is leaked. Use a `tmp = realloc(p, …); if (tmp) p = tmp;` pattern.
+
+### 🔥 NEW Medium (divides-by-zero, leaks, uninit, format-mismatch)
+
+- 📋 **MEDIUM — Division-by-zero in 5 sites.** `menu/drivers/materialui.c:4727, 5566`, `menu/drivers/rgui.c:2473`, `menu/menu_setting.c:5773`. Likely guard-needed-before-divide on user-supplied or computed denominators (window size 0, frame rate 0, etc.).
+- 📋 **MEDIUM — Memory-leak class (8 sites).** `core_backup.c:383` (`backup_filename`), `core_info.c:860` (`core_info_cache_list`), `core_updater_list.c:928` (`entry.local_info_path`), `gfx/gfx_animation.c:784` (`timer_entry.userdata`), `network/discord.c:859`, `menu/drivers/ozone.c:5170` (`node`), `menu/menu_setting.c:2257, 2436`. Each is a missing-`free` on an early-return path.
+- 📋 **MEDIUM — Branch-on-uninitialized-value (3 sites).** `tasks/task_screenshot.c:444`, `verbosity.c:608`, `menu/menu_displaylist.c:6848`. `clang-analyzer-core.uninitialized.Branch`. Path-sensitive analysis reached an `if (x)` where `x` was never written on at least one incoming branch.
+- 📋 **MEDIUM — Float used as loop counter, 12 sites in `menu/menu_displaylist.c:16160-16679` and `ui/drivers/ui_qt_widgets.cpp:713`.** `clang-analyzer-security.FloatLoopCounter`. Float arithmetic isn't associative; loops can iterate one too few or too many times depending on initial value. Switch to integer loop counter with float-cast on use.
+- 📋 **MEDIUM — `bugprone-not-null-terminated-result` (5 sites).** `tasks/task_save.c:435`, `network/netplay/netplay_frontend.c:5097, 7773`, `gfx/drivers_shader/slang_cache.cpp:152, 154`. `memcpy` of a string-shaped buffer where the destination is later treated as a C string. Switch to `strlcpy` or explicit NUL termination.
+- 📋 **MEDIUM — `bugprone-suspicious-string-compare` (~14 sites).** `memcmp`/`strcmp`/`strcasecmp` used as a boolean (`if (memcmp(...))`) where the standard says non-zero is "differ" but the code reads as "if equal." Notable: `network/netplay/netplay_frontend.c:3157, 3198, 6852` (netplay protocol parsing — silent message-routing bugs?), `core_info.c:1539`, `retroarch.c:799`, `menu/menu_displaylist.c:2587, 2695, 2697`, `menu/menu_explore.c:534, 564`. Each needs eyes-on; some are correct-but-confusing, others may be inverted-logic bugs.
+- 📋 **MEDIUM — `gfx/drivers/vulkan.c:5899` `bugprone-suspicious-memory-comparison` on `math_matrix_4x4`.** `memcmp` on a struct without a unique object representation (padding bytes vary). Compare members manually.
+- 📋 **MEDIUM — Sizeof-pointer-not-array, 3 sites in `gfx/gfx_widgets.c:380, 980, 1934`.** `bugprone-sizeof-expression`. Likely `sizeof(ptr)` returning 8 instead of intended buffer size.
+- 📋 **MEDIUM — `bugprone-incorrect-roundings` (4 sites).** `(double + 0.5)` cast to int, breaks for negatives. `gfx/gfx_widgets.c:882`, `menu/drivers/materialui.c:8872`, `menu/drivers/ozone.c:9566, 9742, 9743`. Use `lround`.
+- 📋 **MEDIUM — `bugprone-signed-char-misuse` (5 sites).** `menu/cbs/menu_cbs_ok.c:4151`, `libretro-db/rmsgpack.c:371`, `menu/drivers/xmb.c:1921`, `menu/menu_explore.c:303-305`. Cast `signed char → int` may sign-extend high-bit chars (UTF-8/binary) unexpectedly.
+
+### ✅ Confirmations of prior items
+
+clang-analyzer's path-sensitive trace confirmed these prior findings — not new, but elevated confidence (3rd independent signal in some cases):
+
+- `gfx/common/wayland_common.c:296` `oi->width` NULL deref → matches **audit M8** (already roadmapped).
+- `network/natt.c:314` `child->next` NULL deref → matches **audit C1** + **indie-review C-3** (cross-confirmed third time).
+- `tasks/task_cloudsync.c:847, 849, 881, 1286` NULL derefs → matches **audit H3** + **indie-review C-3** path-traversal cluster.
+- `tasks/task_overlay.c:647` `desc->next_index` NULL deref → matches **indie-review H3** (loader allocations leak class).
+- `tasks/task_core_updater.c:633, 639` `download_handle` NULL deref → matches **indie-review H-2** (same UAF cluster as task_http).
+- `menu/cbs/menu_cbs_right.c:223`, `menu_cbs_sublabel.c:1946`, `menu_driver.c:7349, 1330`, ozone.c (5 sites), xmb.c (6 sites), materialui.c (1 site) → all match the **indie-review C1 / audit S2** `MENU_LIST_GET_SELECTION(...)->size` cluster. clang-analyzer traced path-sensitive proof of NULL.
+- `menu/menu_setting.c:9273, 9858, 10163, 10229, 3261` NULL derefs in setting handlers → adjacent to the audit H1 zombie-settings class.
+- `menu/menu_displaylist.c:5176, 6789, 6870, 15317` NULL derefs → consistent with the menu coupling-and-NULL-handling pattern flagged in indie-review.
+
+### 🛠 Tool gaps now closed / remaining
+
+- ✅ **`compile_commands.json` generated** (via `bear -- make`). clang-tidy + clazy now runnable.
+- ⏳ **clazy not yet run.** RetroArch's Qt UI is small (`ui_qt_widgets.cpp` only); clazy yield expected to be modest. Defer until needed.
+- ⏳ **cppcheck `materialui.c` macro-config exhaustion** still not finished — clang-analyzer caught the materialui.c findings the cppcheck pass would have hit.
+- ⏳ **Platform-conditional builds** (`HAVE_EGL=0`, console targets) still not verified — would resolve audit S3/S4/S7/S8.
+
+### 🧮 Updated tally (cumulative across audit + indie-review + clang-tidy)
+
+- **15+ Critical** (TLS off, network-cmd RCE, write_ram OOB, natt, webdav uninit, no-atomic-save cluster, malicious-savestate-overflow cluster, IPS/UPS patch NULL, audio mixer OOB, runahead OOB, location_drivers OOB ×3, translation_drivers OOB, input_config_bind_order OOB, scanline_even OOB ×2, core_option_manager OOB, plus the cross-cutting cluster items)
+- **40+ High** (NULL derefs, UAFs, OOM null-checks, plaintext credentials, netplay weak-RNG and timing leaks, WebDAV digest parser issues, deref-before-check sweep ~30 sites, env-callback NULL hardening, 5+ Qt UI shader NULL derefs)
+- **30+ Medium** (divides-by-zero, leaks, uninit branches, float-loop-counters, string-compare misuse, etc.)
+- **15+ Tier-3 structural** (driver-pattern dedup, materialui split, dead vtable slots, configuration table-drive, etc.)
+
+
 
