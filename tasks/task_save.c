@@ -435,6 +435,31 @@ static void task_save_handler_finished(retro_task_t *task,
    if (!task_get_error(task) && ((flg & RETRO_TASK_FLG_CANCELLED) > 0))
       task_set_error(task, strdup("Task canceled"));
 
+   /* Atomic finalize: the file was written to "<path>.tmp" so a crash,
+    * cancel, or short-write leaves the existing destination intact. On
+    * success: replace the destination via rename(2). On failure: delete
+    * the partial .tmp. */
+   {
+      char tmp_path[PATH_MAX_LENGTH];
+      size_t _len = strlcpy(tmp_path, state->path, sizeof(tmp_path));
+      strlcpy(tmp_path + _len, ".tmp", sizeof(tmp_path) - _len);
+
+      if (!task_get_error(task))
+      {
+         if (filestream_exists(state->path))
+            filestream_delete(state->path);
+         if (filestream_rename(tmp_path, state->path) != 0)
+         {
+            filestream_delete(tmp_path);
+            if (!task_get_error(task))
+               task_set_error(task,
+                     strdup("Failed to atomically replace save state"));
+         }
+      }
+      else
+         filestream_delete(tmp_path);
+   }
+
    task_data = (save_task_state_t*)calloc(1, sizeof(*task_data));
    /* NULL-check: the memcpy below NULL-derefs on OOM.  The
     * completion callbacks save_state_cb / undo_save_state_cb
@@ -842,12 +867,19 @@ static void task_save_handler(retro_task_t *task)
 
    if (!state->file)
    {
+      char tmp_path[PATH_MAX_LENGTH];
+      size_t _tmp_len = strlcpy(tmp_path, state->path, sizeof(tmp_path));
+      strlcpy(tmp_path + _tmp_len, ".tmp", sizeof(tmp_path) - _tmp_len);
+
+      /* Atomic write: stream to "<path>.tmp"; task_save_handler_finished
+       * renames into place on success or deletes the partial .tmp on
+       * failure / cancel. */
       if (state->flags & SAVE_TASK_FLAG_COMPRESS_FILES)
          state->file   = intfstream_open_rzip_file(
-               state->path, RETRO_VFS_FILE_ACCESS_WRITE);
+               tmp_path, RETRO_VFS_FILE_ACCESS_WRITE);
       else
          state->file   = intfstream_open_file(
-               state->path, RETRO_VFS_FILE_ACCESS_WRITE,
+               tmp_path, RETRO_VFS_FILE_ACCESS_WRITE,
                RETRO_VFS_FILE_ACCESS_HINT_NONE);
 
       if (!state->file)
@@ -1893,9 +1925,11 @@ static void task_push_load_and_save_state(const char *path, void *data,
 bool content_auto_save_state(const char *path)
 {
    size_t _len;
+   size_t _path_len;
    settings_t *settings = config_get_ptr();
    void *serial_data    = NULL;
    intfstream_t *file   = NULL;
+   char tmp_path[PATH_MAX_LENGTH];
 
    if (!core_info_current_supports_savestate())
    {
@@ -1912,12 +1946,17 @@ bool content_auto_save_state(const char *path)
    if (!serial_data)
       return false;
 
+   /* Atomic write: stage to "<path>.tmp", rename on success. A power loss
+    * or process kill mid-save leaves the previous savestate intact. */
+   _path_len = strlcpy(tmp_path, path, sizeof(tmp_path));
+   strlcpy(tmp_path + _path_len, ".tmp", sizeof(tmp_path) - _path_len);
+
 #if defined(HAVE_COMPRESSION)
    if (settings->bools.savestate_file_compression)
-      file = intfstream_open_rzip_file(path, RETRO_VFS_FILE_ACCESS_WRITE);
+      file = intfstream_open_rzip_file(tmp_path, RETRO_VFS_FILE_ACCESS_WRITE);
    else
 #endif
-      file = intfstream_open_file(path, RETRO_VFS_FILE_ACCESS_WRITE,
+      file = intfstream_open_file(tmp_path, RETRO_VFS_FILE_ACCESS_WRITE,
                                   RETRO_VFS_FILE_ACCESS_HINT_NONE);
 
    if (!file)
@@ -1931,12 +1970,22 @@ bool content_auto_save_state(const char *path)
       intfstream_close(file);
       free(serial_data);
       free(file);
+      filestream_delete(tmp_path);
       return false;
    }
 
    intfstream_close(file);
    free(serial_data);
    free(file);
+
+   /* Replace the destination atomically. */
+   if (filestream_exists(path))
+      filestream_delete(path);
+   if (filestream_rename(tmp_path, path) != 0)
+   {
+      filestream_delete(tmp_path);
+      return false;
+   }
 
 #ifdef HAVE_SCREENSHOTS
    if (settings->bools.savestate_thumbnail_enable)
@@ -2398,21 +2447,34 @@ bool content_ram_state_to_file(const char *path)
          && ram_buf.state_buf.data
          && ram_buf.to_write_file)
    {
+      /* Atomic write: a power loss or process kill mid-save leaves the
+       * previous RAM state intact instead of a truncated file. */
+      bool written = false;
 #if defined(HAVE_COMPRESSION)
       settings_t *settings = config_get_ptr();
       if (settings->bools.save_file_compression)
       {
-         if (rzipstream_write_file(
-               path, ram_buf.state_buf.data, ram_buf.state_buf.size))
-            goto success;
+         /* rzip has no atomic writer: stage to "<path>.tmp", then rename. */
+         char tmp_path[PATH_MAX_LENGTH];
+         size_t _len = strlcpy(tmp_path, path, sizeof(tmp_path));
+         strlcpy(tmp_path + _len, ".tmp", sizeof(tmp_path) - _len);
+         if (rzipstream_write_file(tmp_path,
+                  ram_buf.state_buf.data, ram_buf.state_buf.size))
+         {
+            if (filestream_exists(path))
+               filestream_delete(path);
+            written = (filestream_rename(tmp_path, path) == 0);
+         }
+         if (!written)
+            filestream_delete(tmp_path);
       }
       else
 #endif
-      {
-         if (filestream_write_file(
-               path, ram_buf.state_buf.data, ram_buf.state_buf.size))
-            goto success;
-      }
+         written = filestream_write_file_atomic(path,
+               ram_buf.state_buf.data, ram_buf.state_buf.size);
+
+      if (written)
+         goto success;
    }
 
    return false;
