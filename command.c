@@ -2586,6 +2586,7 @@ void command_event_reinit(const int flags)
          video_st->poke->show_mouse(video_st->data, false);
    }
    if (     (menu_st->flags & MENU_ST_FLAG_ALIVE)
+         && video_st->current_video
          && video_st->current_video->set_nonblock_state)
       video_st->current_video->set_nonblock_state(
             video_st->data, false,

@@ -3610,6 +3610,8 @@ enum gfx_ctx_api video_context_driver_get_api(void)
    if (ctx_api == GFX_CTX_NONE)
    {
       const char *video_ident  = (vid) ? vid->ident : NULL;
+      if (!video_ident)
+         return GFX_CTX_NONE;
       if (string_starts_with_size(video_ident, "d3d", STRLEN_CONST("d3d")))
       {
          if (!strcmp(video_ident, "d3d9_hlsl"))

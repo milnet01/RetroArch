@@ -3181,7 +3181,7 @@ bool video_shader_apply_shader(
    /* TODO/FIXME - This loads the shader into the video driver
     * But then we load the shader from disk twice more to put it in the menu
     * We need to reconfigure this at some point to only load it once */
-   if (video_st->current_video->set_shader)
+   if (video_st->current_video && video_st->current_video->set_shader)
    {
       if ((video_st->current_video->set_shader(
                   video_st->data, type, preset_path)))
