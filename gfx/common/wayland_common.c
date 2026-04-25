@@ -383,9 +383,16 @@ void gfx_ctx_wl_destroy_resources_common(gfx_ctx_wayland_data_t *wl)
    {
       display_output_t *od = wl_container_of(wl->all_outputs.next, od, link);
       output_info_t    *oi = od->output;
-      wl_output_destroy(oi->output);
+      /* Unlink first so the list is in a consistent state before any
+       * downstream wl_output_destroy callback can re-enter and observe
+       * a half-freed entry. */
       wl_list_remove(&od->link);
-      free(oi);
+      if (oi)
+      {
+         if (oi->output)
+            wl_output_destroy(oi->output);
+         free(oi);
+      }
       free(od);
    }
    if (wl->shm)
