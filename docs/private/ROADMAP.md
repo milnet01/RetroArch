@@ -31,7 +31,19 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
 - 📋 **HIGH — `strchr(key, '/') + 1` on attacker-supplied cloud-sync manifest.** `tasks/task_cloudsync.c:640`. `NULL+1` is UB if server-supplied `key` lacks `/`. Same trust-boundary class as the recent `task_http` UAF fix.
 - ✅ **HIGH — `strcpy` with overlapping buffers (UB).** `cheevos/cheevos_client.c:169`. _(Fixed `8aedb937f1` — `strcpy` → `memmove(start, next+1, strlen(next+1)+1)`.)_
 - 📋 **HIGH — OOM null-deref on per-value-hash malloc.** `core_option_manager.c:721-727, 1006-1007`. `uint32_t *value_hash = malloc(...); *value_hash = ...` — no NULL check, two sites, identical pattern.
-- 📋 **HIGH — Cluster sweep: ~30+ deref-before-NULL-check sites.** Audio: `audio/drivers/wasapi.c:1471-1473`, `audio/drivers/oss.c:99`. GFX: `gfx/drivers/d3d10.c:984-985`, `gfx/drivers/d3d11.c:1055-1056`, plus `d3d9hlsl,vita2d,gx2,ctr,vulkan,gl2,gl3,dispmanx,ps2,gdi`_gfx.c. Frontend/tasks: `frontend/drivers/platform_orbis.c:159`, `tasks/task_pl_thumbnail_download.c`, `gfx/gfx_thumbnail.c`. Each derefs `p` before its `if (!p)` guard. Sweep: move init below the NULL check, or remove the redundant check if NULL is impossible.
+- 🚧 **HIGH — Cluster sweep: ~30+ deref-before-NULL-check sites.** _(Bundle 5 — 8 Linux-build sites fixed in `8eab27096d` on `local/fixes-2026-04`.)_
+  - ✅ `audio/drivers/oss.c::oss_init` error label
+  - ✅ `gfx/drivers/gl3.c::gl3_raster_font_render_msg` (`gl->video_width`)
+  - ✅ `gfx/drivers/gl2.c::gl2_renderchain_recompute_pass_sizes` (`gl->shader`)
+  - ✅ `gfx/drivers/vulkan.c::vulkan_get_message_width` (`font->font_driver->get_glyph`)
+  - ✅ `input/input_driver.c::input_config_get_bind_string` (`bind->key`)
+  - ✅ `input/common/wayland_common.c::data_device_handle_drop` (`offer_data->dropped`)
+  - ✅ `runahead.c::mylist_add_element` (`list->size`)
+  - ✅ `tasks/task_pl_thumbnail_download.c` 2 sites (`pl_thumb->type_idx`)
+  - 📋 Win32-only sites (`wasapi.c`, `d3d10/d3d11/d3d9hlsl_gfx.c`) — not in Linux build, deferred.
+  - 📋 Console-only sites (`vita2d`, `gx2`, `ctr`, `ps2`, `gdi`, `dispmanx_gfx.c`, `platform_orbis.c`) — out of personal-fork scope.
+  - 📋 Larger files (`ozone.c`, `materialui.c`, `xmb.c`, `netplay_frontend.c`, `menu_cbs_ok.c`) need per-site review (mix of real bugs and cppcheck FPs on stack-array / locally-checked allocs); deferred to a follow-up sweep.
+  - ❌ `gfx/gfx_thumbnail.c` — cppcheck FPs (`thumbnail_path` is a stack array). Won't fix.
 - 📋 **HIGH — Wii `pad_type[8]` indexed up to pad 15.** `input/drivers_joypad/gx_joypad.c:435`. `return pad < MAX_USERS && pad_type[pad] != …` — `MAX_USERS` is 16 but `pad_type` is `[DEFAULT_MAX_PADS=8]` on Wii. OOB read when pad ≥ 8. Fix: `pad < DEFAULT_MAX_PADS && …` or extend `pad_type` to MAX_USERS.
 
 #### Medium
