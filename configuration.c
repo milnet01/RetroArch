@@ -18,6 +18,7 @@
  */
 
 #include <ctype.h>
+#include <assert.h>
 
 /* For chmod() / S_IRUSR / S_IWUSR after config_file_write -- gated to
  * the same POSIX-mode platform set as the chmod call below. */
@@ -1665,6 +1666,12 @@ static struct config_array_setting *populate_settings_array(
    SETTING_ARRAY("cpu_menu_gov",                 settings->arrays.cpu_menu_gov, false, NULL, true);
 #endif
 
+   /* Compile-time-pool guard: GENERAL_SETTING writes tmp[count] without
+    * a bounds check. Any future SETTING_ARRAY that pushes count past
+    * SETTINGS_ARRAY_COUNT_MAX would heap-corrupt silently. The acknowledged
+    * "Compile-time check (via negative array) can be added here if
+    * needed" is now done as a runtime assert. */
+   assert(count <= SETTINGS_ARRAY_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -1772,6 +1779,7 @@ static struct config_path_setting *populate_settings_path(
    SETTING_ARRAY("log_dir",                      settings->paths.log_dir, true, NULL, true);
    SETTING_ARRAY("app_icon",                     settings->paths.app_icon, true, NULL, true);
 
+   assert(count <= SETTINGS_PATH_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -2156,7 +2164,7 @@ static struct config_bool_setting *populate_settings_bool(
    SETTING_BOOL("materialui_thumbnail_background_enable",     &settings->bools.menu_materialui_thumbnail_background_enable, true, DEFAULT_MATERIALUI_THUMBNAIL_BACKGROUND_ENABLE, false);
 #endif
 #ifdef HAVE_RGUI
-   SETTING_BOOL("rgui_show_start_screen",                  &settings->bools.menu_show_start_screen, false, false /* TODO */, false);
+   SETTING_BOOL("rgui_show_start_screen",                  &settings->bools.menu_show_start_screen, true, DEFAULT_MENU_SHOW_START_SCREEN, false);
    SETTING_BOOL("rgui_background_filler_thickness_enable", &settings->bools.menu_rgui_background_filler_thickness_enable, true, true, false);
    SETTING_BOOL("rgui_border_filler_thickness_enable",     &settings->bools.menu_rgui_border_filler_thickness_enable, true, true, false);
    SETTING_BOOL("rgui_border_filler_enable",               &settings->bools.menu_rgui_border_filler_enable, true, true, false);
@@ -2345,8 +2353,19 @@ static struct config_bool_setting *populate_settings_bool(
 
 #ifdef HAVE_GAME_AI
    SETTING_BOOL("quick_menu_show_game_ai",  &settings->bools.quick_menu_show_game_ai, true, 1, false);
+   /* These three settings are exposed in the menu (CONFIG_BOOL entries
+    * in menu_setting.c around line 24470-24513) and the fields exist
+    * on settings_t (configuration.h:1188-1190), but the saver/loader
+    * never persisted them -- toggling in the menu, restarting RetroArch,
+    * and the values silently reverted. Direct violation of the documented
+    * triad contract (config.def.h default + populate_settings + menu
+    * entry must all line up). */
+   SETTING_BOOL("game_ai_override_p1",      &settings->bools.game_ai_override_p1, false, false, false);
+   SETTING_BOOL("game_ai_override_p2",      &settings->bools.game_ai_override_p2, false, false, false);
+   SETTING_BOOL("game_ai_show_debug",       &settings->bools.game_ai_show_debug,  false, false, false);
 #endif
 
+   assert(count <= SETTINGS_BOOL_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -2451,6 +2470,7 @@ static struct config_float_setting *populate_settings_float(
    SETTING_FLOAT("bottom_font_scale",            &settings->floats.bottom_font_scale, true, DEFAULT_BOTTOM_FONT_SCALE, false);
 #endif
 
+   assert(count <= SETTINGS_FLOAT_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -2754,6 +2774,7 @@ static struct config_uint_setting *populate_settings_uint(
    SETTING_UINT("smb_client_timeout",             &settings->uints.smb_client_timeout, true, DEFAULT_SMB_CLIENT_TIMEOUT, false);
 #endif
 
+   assert(count <= SETTINGS_UINT_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -2770,6 +2791,7 @@ static struct config_size_setting *populate_settings_size(
 
    SETTING_SIZE("rewind_buffer_size",            &settings->sizes.rewind_buffer_size, true, DEFAULT_REWIND_BUFFER_SIZE, false);
 
+   assert(count <= SETTINGS_SIZE_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -2835,6 +2857,7 @@ static struct config_int_setting *populate_settings_int(
 #endif
    SETTING_INT("input_turbo_bind",               &settings->ints.input_turbo_bind, true, DEFAULT_TURBO_BIND, false);
 
+   assert(count <= SETTINGS_INT_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -6310,18 +6333,10 @@ bool config_save_file(const char *path)
    }
 #endif
 
-#ifdef HAVE_MENU
-   /* menu_show_start_screen is force-written in minimal mode because the SETTING_BOOL
-    * default (false) doesn't match DEFAULT_MENU_SHOW_START_SCREEN (true) - see TODO
-    * comment at line 2095. This workaround ensures the config file is written correctly
-    * even though the default mismatch would normally cause it to be omitted.
-    * TODO: Remove this force-write when the default at line 2095 is fixed. */
-   if (minimal)
-   {
-      config_set_string(conf, "rgui_show_start_screen",
-            settings->bools.menu_show_start_screen ? "true" : "false");
-   }
-#endif
+   /* The previous force-write workaround for "rgui_show_start_screen"
+    * was here. The underlying triad mismatch is fixed at the
+    * SETTING_BOOL line: default_enable=true, default=DEFAULT_MENU_SHOW_START_SCREEN.
+    * Both load and save now agree without the bespoke override. */
 
    /* Verbosity isn't in bool_settings since it needs to be loaded differently */
    if (!retroarch_override_setting_is_set(RARCH_OVERRIDE_SETTING_VERBOSITY, NULL))
