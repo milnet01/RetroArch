@@ -928,11 +928,40 @@ static bool content_load_rastate1(unsigned char* input, size_t len)
 
    while (input < stop)
    {
-      size_t     block_size = ( input[7] << 24
-            | input[6] << 16 |  input[5] << 8 | input[4]);
-      unsigned char *marker = input;
+      size_t         block_size;
+      size_t         block_aligned;
+      unsigned char *marker;
+
+      /* Need 8 bytes for the marker + size header. */
+      if ((size_t)(stop - input) < 8)
+      {
+         RARCH_ERR("[State] Truncated rastate block header.\n");
+         return false;
+      }
+
+      /* Cast each byte to uint32_t before shifting -- input[7] << 24
+       * on a signed int target is undefined when the top bit is set. */
+      block_size = ( ((uint32_t)input[7]) << 24
+                   | ((uint32_t)input[6]) << 16
+                   | ((uint32_t)input[5]) << 8
+                   | ((uint32_t)input[4]));
+      marker     = input;
 
       input += 8;
+
+      /* A malicious / corrupt rastate could declare a block_size that
+       * extends past the provided buffer; the inner block dispatchers
+       * (core_unserialize, replay_set_serialized_data,
+       * rcheevos_set_serialized_data) all read block_size bytes from
+       * input without their own bounds check. Reject up front. */
+      block_aligned = CONTENT_ALIGN_SIZE(block_size);
+      if (   block_aligned < block_size /* alignment arithmetic overflow */
+          || block_aligned > (size_t)(stop - input))
+      {
+         RARCH_ERR("[State] rastate block_size %u exceeds remaining buffer.\n",
+               (unsigned)block_size);
+         return false;
+      }
 
       if (memcmp(marker, RASTATE_MEM_BLOCK, 4) == 0)
       {
@@ -990,7 +1019,7 @@ static bool content_load_rastate1(unsigned char* input, size_t len)
       else if (memcmp(marker, RASTATE_END_BLOCK, 4) == 0)
          break;
 
-      input += CONTENT_ALIGN_SIZE(block_size);
+      input += block_aligned;
    }
 
    if (!seen_core)
