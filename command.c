@@ -254,10 +254,19 @@ command_t* command_network_new(uint16_t port)
    if (!(netcmd = (command_network_t*)calloc(1, sizeof(command_network_t))))
       goto error;
 
-   fd = socket_init((void**)&res, port, NULL,
+   /* Bind to loopback only by default. The previous server=NULL bound
+    * via AI_PASSIVE to 0.0.0.0 -- with network_cmd_enable=true that
+    * exposed LOAD_CORE / WRITE_CORE_RAM / READ_CORE_MEMORY (RCE-class
+    * primitives) to anyone on the LAN. If you genuinely need to drive
+    * RetroArch from another host, prefer an SSH local-forward
+    * (`ssh -L 55355:localhost:55355 host`) over re-opening the LAN
+    * socket. A user-facing setting is roadmapped but intentionally not
+    * wired up here -- the safe default is the only fix that ships
+    * universally. */
+   fd = socket_init((void**)&res, port, "127.0.0.1",
          SOCKET_TYPE_DATAGRAM, AF_INET);
 
-   RARCH_LOG("[NetCMD] %s %hu.\n",
+   RARCH_LOG("[NetCMD] %s %hu (loopback only).\n",
          msg_hash_to_str(MSG_BRINGING_UP_COMMAND_INTERFACE_ON_PORT),
          (unsigned short)port);
 
@@ -926,6 +935,17 @@ bool command_load_savefiles(command_t *cmd, const char* arg)
 }
 
 #if defined(HAVE_CHEEVOS)
+/* Cap nbytes for READ_CORE_RAM / READ_CORE_MEMORY before we use it
+ * in `40 + nbytes * 3`. The multiplication is `unsigned int` and
+ * wraps at ~1.4G; an attacker-controlled nbytes near 0x55555558
+ * would wrap to a tiny alloc with the for-loop below still writing
+ * 3 bytes per iteration up to nbytes -- a remote heap-write
+ * primitive when the network command socket is reachable. 16 KiB is
+ * more than any legitimate read needs (RetroAchievements and
+ * netplay-debug use small windows), and well below the integer-
+ * overflow threshold. */
+#define COMMAND_READ_NBYTES_MAX 16384u
+
 bool command_read_ram(command_t *cmd, const char *arg)
 {
    unsigned int nbytes        = 0;
@@ -936,7 +956,7 @@ bool command_read_ram(command_t *cmd, const char *arg)
    if (end && *end == ' ')
       nbytes          = (unsigned int)strtoul(end + 1, NULL, 10);
 
-   if (end && *end == ' ' && nbytes > 0)
+   if (end && *end == ' ' && nbytes > 0 && nbytes <= COMMAND_READ_NBYTES_MAX)
    {
       size_t _len             = 0;
       char *reply_at          = NULL;
@@ -944,6 +964,8 @@ bool command_read_ram(command_t *cmd, const char *arg)
       /* We allocate more than needed, saving 20 bytes is not really relevant */
       unsigned int alloc_size = 40 + nbytes * 3;
       char *reply             = (char*)malloc(alloc_size);
+      if (!reply)
+         return false;
       reply[0]                = '\0';
       reply_at                = reply + snprintf(
             reply, alloc_size - 1, "READ_CORE_RAM" " %x", addr);
@@ -967,10 +989,18 @@ bool command_read_ram(command_t *cmd, const char *arg)
    return true;
 }
 
+/* Cap the byte count for WRITE_CORE_RAM. rcheevos_patch_address
+ * returns a pointer with no length, so we cannot bound against the
+ * actual region size from here. The legitimate use is short cheat
+ * pokes (a few bytes per command). 4096 is generous and prevents
+ * unbounded heap-write past the descriptor. */
+#define COMMAND_WRITE_RAM_MAX_BYTES 4096u
+
 bool command_write_ram(command_t *cmd, const char *arg)
 {
    unsigned int addr    = (unsigned int)strtoul(arg, (char**)&arg, 16);
    uint8_t *data        = (uint8_t *)rcheevos_patch_address(addr);
+   unsigned int written = 0;
 
    if (!data)
       return false;
@@ -981,11 +1011,15 @@ bool command_write_ram(command_t *cmd, const char *arg)
       rcheevos_pause_hardcore();
    }
 
-   while (*arg)
+   while (*arg && written < COMMAND_WRITE_RAM_MAX_BYTES)
    {
       *data = strtoul(arg, (char**)&arg, 16);
       data++;
+      written++;
    }
+   if (written == COMMAND_WRITE_RAM_MAX_BYTES && *arg)
+      RARCH_WARN("[Command] WRITE_CORE_RAM truncated at %u bytes; "
+            "remainder of payload ignored.\n", written);
    return true;
 }
 #endif
@@ -1178,13 +1212,15 @@ bool command_read_memory(command_t *cmd, const char *arg)
       if (!(end && *end == ' '))
          return false;
       nbytes          = (unsigned int)strtoul(end + 1, NULL, 10);
-      if (nbytes == 0)
+      if (nbytes == 0 || nbytes > COMMAND_READ_NBYTES_MAX)
          return false;
    }
 
    /* Ensure large enough to return all requested bytes or an error message */
    alloc_size = 64 + nbytes * 3;
    reply      = (char*)malloc(alloc_size);
+   if (!reply)
+      return false;
    reply_at   = reply + snprintf(reply, alloc_size - 1, "READ_CORE_MEMORY %x", address);
 
    if ((data = command_memory_get_pointer(
