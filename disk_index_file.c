@@ -320,6 +320,8 @@ bool disk_index_file_save(disk_index_file_t *disk_index_file)
    rjsonwriter_t* writer;
    RFILE *file             = NULL;
    bool success            = false;
+   char tmp_path[PATH_MAX_LENGTH];
+   size_t _len;
 
    /* Sanity check */
    if (!disk_index_file)
@@ -341,15 +343,21 @@ bool disk_index_file_save(disk_index_file_t *disk_index_file)
          "[Disk index file] Saving disk index file: \"%s\".\n",
          file_path);
 
+   /* Atomic write: stage to "<file_path>.tmp", rename on success. Power
+    * loss / process kill mid-save would otherwise leave a zero-length
+    * disk index, which makes multi-disc games revert to disc 1. */
+   _len = strlcpy(tmp_path, file_path, sizeof(tmp_path));
+   strlcpy(tmp_path + _len, ".tmp", sizeof(tmp_path) - _len);
+
    /* Attempt to open disk index file */
    if (!(file = filestream_open(
-         file_path,
+         tmp_path,
          RETRO_VFS_FILE_ACCESS_WRITE,
          RETRO_VFS_FILE_ACCESS_HINT_NONE)))
    {
       RARCH_ERR(
             "[Disk index file] Failed to open disk index file: \"%s\".\n",
-            file_path);
+            tmp_path);
       return false;
    }
 
@@ -409,6 +417,23 @@ bool disk_index_file_save(disk_index_file_t *disk_index_file)
 end:
    /* Close disk index file */
    filestream_close(file);
+
+   if (success)
+   {
+      /* Replace destination atomically. */
+      if (filestream_exists(file_path))
+         filestream_delete(file_path);
+      if (filestream_rename(tmp_path, file_path) != 0)
+      {
+         RARCH_ERR(
+               "[Disk index file] Failed to atomically replace \"%s\".\n",
+               file_path);
+         filestream_delete(tmp_path);
+         success = false;
+      }
+   }
+   else
+      filestream_delete(tmp_path);
 
    return success;
 }
