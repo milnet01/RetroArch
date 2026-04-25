@@ -66,48 +66,77 @@
 #endif
 
 /* There's no equivalent in libc, you'd think so ...
- * std::mismatch exists, but it's not optimized at all. */
-static size_t find_change(const uint16_t *a, const uint16_t *b)
+ * std::mismatch exists, but it's not optimized at all.
+ *
+ * 'max' is the number of u16 elements in each buffer; the walk will
+ * never read past a[max-1] / b[max-1]. The previous unbounded form
+ * walked off the end whenever the two buffers were identical for the
+ * full remainder (e.g. a paused frame, or a core that doesn't write
+ * the entire state buffer leaving stale tail bytes equal). */
+static size_t find_change(const uint16_t *a, const uint16_t *b, size_t max)
 {
+   const uint16_t *a_org = a;
+   const uint16_t *a_end = a + max;
+
+   if (max == 0)
+      return 0;
+
 #if __SSE2__
-   const __m128i *a128 = (const __m128i*)a;
-   const __m128i *b128 = (const __m128i*)b;
-
-   for (;;)
    {
-      __m128i v0    = _mm_loadu_si128(a128);
-      __m128i v1    = _mm_loadu_si128(b128);
-      __m128i c     = _mm_cmpeq_epi8(v0, v1);
-      uint32_t mask = _mm_movemask_epi8(c);
+      const __m128i *a128 = (const __m128i*)a;
+      const __m128i *b128 = (const __m128i*)b;
 
-      if (mask != 0xffff) /* Something has changed, figure out where. */
+      /* Process whole 16-byte chunks while one full load stays inside
+       * a_end. (a128 + 1) is the byte-end of the chunk a128 points at. */
+      while ((const __m128i*)((const uint8_t*)a128 + sizeof(__m128i))
+            <= (const __m128i*)a_end)
       {
-         /* calculate the real offset to the differing byte */
-         size_t ret = (((uint8_t*)a128 - (uint8_t*)a) |
-               (compat_ctz(~mask)));
+         __m128i v0    = _mm_loadu_si128(a128);
+         __m128i v1    = _mm_loadu_si128(b128);
+         __m128i c     = _mm_cmpeq_epi8(v0, v1);
+         uint32_t mask = _mm_movemask_epi8(c);
 
-         /* and convert that to the uint16_t offset */
-         return (ret >> 1);
+         if (mask != 0xffff) /* Something has changed, figure out where. */
+         {
+            /* calculate the real offset to the differing byte */
+            size_t ret = (((uint8_t*)a128 - (uint8_t*)a_org) |
+                  (compat_ctz(~mask)));
+
+            /* and convert that to the uint16_t offset */
+            return (ret >> 1);
+         }
+
+         a128++;
+         b128++;
       }
 
-      a128++;
-      b128++;
+      /* Scalar tail: less than 8 u16 elements left within max. */
+      a = (const uint16_t*)a128;
+      b = (const uint16_t*)b128;
+      while (a < a_end && *a == *b)
+      {
+         a++;
+         b++;
+      }
+      return a - a_org;
    }
 #else
-   const uint16_t *a_org = a;
 #ifdef NO_UNALIGNED_MEM
-   while (((uintptr_t)a & (sizeof(size_t) - 1)) && *a == *b)
+   while (a < a_end
+       && ((uintptr_t)a & (sizeof(size_t) - 1))
+       && *a == *b)
    {
       a++;
       b++;
    }
-   if (*a == *b)
+   if (a < a_end && *a == *b)
 #endif
    {
-      const size_t *a_big = (const size_t*)a;
-      const size_t *b_big = (const size_t*)b;
+      const size_t *a_big     = (const size_t*)a;
+      const size_t *b_big     = (const size_t*)b;
+      const size_t *a_big_end = (const size_t*)a_end;
 
-      while (*a_big == *b_big)
+      while (a_big < a_big_end && *a_big == *b_big)
       {
          a_big++;
          b_big++;
@@ -115,7 +144,7 @@ static size_t find_change(const uint16_t *a, const uint16_t *b)
       a = (const uint16_t*)a_big;
       b = (const uint16_t*)b_big;
 
-      while (*a == *b)
+      while (a < a_end && *a == *b)
       {
          a++;
          b++;
@@ -125,16 +154,25 @@ static size_t find_change(const uint16_t *a, const uint16_t *b)
 #endif
 }
 
-static size_t find_same(const uint16_t *a, const uint16_t *b)
+/* 'max' bounds this walk identically to find_change. Without it, two
+ * buffers that differ for their entire remainder walked off the end. */
+static size_t find_same(const uint16_t *a, const uint16_t *b, size_t max)
 {
    const uint16_t *a_org = a;
+   const uint16_t *a_end = a + max;
+
+   if (max == 0)
+      return 0;
+
 #ifdef NO_UNALIGNED_MEM
-   if (((uintptr_t)a & (sizeof(uint32_t) - 1)) && *a != *b)
+   if (((uintptr_t)a & (sizeof(uint32_t) - 1))
+       && a < a_end
+       && *a != *b)
    {
       a++;
       b++;
    }
-   if (*a != *b)
+   if (a < a_end && *a != *b)
 #endif
    {
       /* With this, it's random whether two consecutive identical
@@ -145,10 +183,11 @@ static size_t find_same(const uint16_t *a, const uint16_t *b)
        *
        * (We prefer to miss two-word blocks, anyways; fewer iterations
        * of the outer loop, as well as in the decompressor.) */
-      const uint32_t *a_big = (const uint32_t*)a;
-      const uint32_t *b_big = (const uint32_t*)b;
+      const uint32_t *a_big     = (const uint32_t*)a;
+      const uint32_t *b_big     = (const uint32_t*)b;
+      const uint32_t *a_big_end = (const uint32_t*)a_end;
 
-      while (*a_big != *b_big)
+      while (a_big < a_big_end && *a_big != *b_big)
       {
          a_big++;
          b_big++;
@@ -197,7 +236,7 @@ static size_t state_manager_raw_compress(const void *src,
    while (num16s)
    {
       size_t i, changed;
-      size_t skip = find_change(old16, new16);
+      size_t skip = find_change(old16, new16, num16s);
 
       if (skip >= num16s)
          break;
@@ -220,7 +259,7 @@ static size_t state_manager_raw_compress(const void *src,
          continue;
       }
 
-      changed = find_same(old16, new16);
+      changed = find_same(old16, new16, num16s);
       if (changed > UINT16_MAX)
          changed = UINT16_MAX;
 
