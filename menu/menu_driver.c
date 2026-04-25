@@ -4535,8 +4535,16 @@ static bool menu_driver_init_internal(
          menu_st->driver_data               = (menu_handle_t*)
             menu_st->driver_ctx->init(&menu_st->userdata,
                   video_is_threaded);
-         menu_st->driver_data->userdata     = menu_st->userdata;
-         menu_st->driver_data->driver_ctx   = menu_st->driver_ctx;
+         /* The init vtable function is documented to be allowed to
+          * return NULL on alloc failure (xmb / ozone / rgui /
+          * materialui all do). The two field writes below previously
+          * NULL-derefed before the line 4543 check fired -- audio /
+          * video / input all NULL-check correctly; only menu didn't. */
+         if (menu_st->driver_data)
+         {
+            menu_st->driver_data->userdata     = menu_st->userdata;
+            menu_st->driver_data->driver_ctx   = menu_st->driver_ctx;
+         }
       }
    }
 

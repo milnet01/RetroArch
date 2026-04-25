@@ -867,10 +867,15 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
    audio_driver_st.chunk_nonblock_size            = AUDIO_CHUNK_SIZE_NONBLOCKING;
    audio_driver_st.chunk_size                     = AUDIO_CHUNK_SIZE_BLOCKING;
 
+   /* Each of the four early-fail paths below previously did
+    * `return false`, leaving rewind_buf / out_conv_buf / audio_buf
+    * leaked (they're already stored on audio_driver_st by line 849-865
+    * but never deinit'd). Route through the existing error: label so
+    * audio_driver_deinit() reclaims them. */
    if (!audio_enable)
    {
       audio_driver_st.flags     &= ~AUDIO_FLAG_ACTIVE;
-      return false;
+      goto error;
    }
 
    audio_driver_st.flags     |= AUDIO_FLAG_ACTIVE;
@@ -879,14 +884,14 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
          "audio driver", verbosity_enabled)))
    {
       RARCH_ERR("Failed to initialize audio driver.\n");
-      return false;
+      goto error;
    }
 
    if (!audio_driver_st.current_audio || !audio_driver_st.current_audio->init)
    {
       RARCH_ERR("Failed to initialize audio driver. Will continue without audio.\n");
       audio_driver_st.flags &= ~AUDIO_FLAG_ACTIVE;
-      return false;
+      goto error;
    }
 
 #ifdef HAVE_THREADS
@@ -904,7 +909,7 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
                audio_driver_st.current_audio))
       {
          RARCH_ERR("[Audio] Cannot open threaded audio driver. Exiting...\n");
-         return false;
+         goto error;
       }
    }
    else

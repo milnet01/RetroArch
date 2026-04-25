@@ -558,12 +558,27 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
    if (handle->cur_save_size < size)
    {
       free(handle->cur_save);
-      handle->cur_save = NULL;
+      handle->cur_save      = NULL;
+      handle->cur_save_size = 0;
    }
    if (!handle->cur_save)
    {
-      handle->cur_save_size  = size;
+      /* Allocate first, only commit cur_save_size on success.
+       * The previous order (size = size; malloc) left cur_save NULL
+       * on OOM but recorded cur_save_size as the requested value, so
+       * the next iteration's `cur_save_size < size` check would not
+       * retry the alloc -- and downstream `compressed_data =
+       * handle->cur_save` would deref NULL. */
       handle->cur_save       = (uint8_t*)malloc(size);
+      if (!handle->cur_save)
+      {
+         RARCH_ERR("[Replay] Failed to allocate %u bytes for checkpoint, terminating movie\n",
+               (unsigned)size);
+         input_st->bsv_movie_state.flags |= BSV_FLAG_MOVIE_END;
+         ret = false;
+         goto exit;
+      }
+      handle->cur_save_size  = size;
       handle->cur_save_valid = false;
    }
 
