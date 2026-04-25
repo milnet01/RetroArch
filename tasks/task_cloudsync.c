@@ -636,10 +636,26 @@ static void task_cloud_sync_fetch_server_file(task_cloud_sync_state_t *sync_stat
    struct string_list            *dirlist     = task_cloud_sync_directory_map();
    struct item_file              *server_file = &sync_state->server_manifest->list[sync_state->server_idx];
    const char                    *key         = CS_FILE_KEY(server_file);
-   /* the key from the server file is in "portable" format, use '/' */
-   const char                    *path        = strchr(key, '/') + 1;
+   /* the key from the server file is in "portable" format, use '/'.
+    * Server-supplied; treat as untrusted. A key without '/' makes
+    * `strchr(...) + 1` UB (NULL+1).  Path components containing '..'
+    * or starting with '/' would let a hostile manifest write outside
+    * the cloud-sync base directory via fill_pathname_join_special. */
+   const char                    *slash       = strchr(key, '/');
+   const char                    *path        = slash ? slash + 1 : NULL;
    settings_t                    *settings    = config_get_ptr();
    task_cloud_sync_fetch_state_t *fetch_state;
+
+   if (   !path
+       || !*path
+       || *path == '/'
+       || strstr(path, "..") != NULL)
+   {
+      RARCH_WARN(CSPFX "Refusing malformed/traversal key from server: %s\n", key);
+      task_cloud_sync_add_to_updated_manifest(sync_state, key, CS_FILE_HASH(server_file), true);
+      sync_state->failures = true;
+      return;
+   }
 
    /* there is a weird thing that can happen, where the server file changes but
     * the manifest does not have the updated hash. in that case when the file is

@@ -701,6 +701,12 @@ static void webdav_ensure_dir(const char *dir, webdav_mkdir_cb_t cb,
    webdav_state_t       *webdav_st       = webdav_state_get_ptr();
    webdav_mkdir_state_t *webdav_mkdir_st = (webdav_mkdir_state_t *)malloc(sizeof(webdav_mkdir_state_t));
 
+   if (!webdav_mkdir_st)
+   {
+      cb(false, webdav_cb_st);
+      return;
+   }
+
    fill_pathname_join_special(url, webdav_st->url, dir, sizeof(url));
    net_http_urlencode_full(webdav_mkdir_st->url, url, sizeof(webdav_mkdir_st->url));
    webdav_mkdir_st->last_slash = strchr(webdav_mkdir_st->url + strlen(webdav_st->url) - 1, '/');
@@ -708,7 +714,10 @@ static void webdav_ensure_dir(const char *dir, webdav_mkdir_cb_t cb,
    webdav_mkdir_st->cb         = cb;
    webdav_mkdir_st->cb_st      = webdav_cb_st;
 
-   /* this is a recursive callback, set it up so it looks like it's still proceeding */
+   /* this is a recursive callback, set it up so it looks like it's still proceeding.
+    * Zero the whole http_transfer_data_t so the callee never reads uninitialised
+    * data/headers/len fields (it is currently saved by short-circuit luck only). */
+   memset(&data, 0, sizeof(data));
    data.status = 200;
    webdav_mkdir_cb(NULL, &data, webdav_mkdir_st, NULL);
 }
