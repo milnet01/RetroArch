@@ -963,17 +963,24 @@ bool slang_process(
       if (ps_compiler)
          ps_resources   = ps_compiler->get_shader_resources();
 
-      if (!vs_resources.uniform_buffers.empty())
+      /* If dst_type was HLSL/CG and HAVE_HLSL is undefined, the switch
+       * above leaves vs/ps_compiler NULL.  vs/ps_resources are then
+       * default-constructed (empty), so the !empty() checks happen to
+       * skip the set_decoration calls today -- but that's a brittle
+       * coincidence.  Make the NULL-guard explicit so a future change
+       * to ShaderResources's defaults can't reintroduce a NULL-call
+       * crash here. */
+      if (vs_compiler && !vs_resources.uniform_buffers.empty())
          vs_compiler->set_decoration(
                vs_resources.uniform_buffers[0].id, spv::DecorationBinding, 0);
-      if (!ps_resources.uniform_buffers.empty())
+      if (ps_compiler && !ps_resources.uniform_buffers.empty())
          ps_compiler->set_decoration(
                ps_resources.uniform_buffers[0].id, spv::DecorationBinding, 0);
 
-      if (!vs_resources.push_constant_buffers.empty())
+      if (vs_compiler && !vs_resources.push_constant_buffers.empty())
          vs_compiler->set_decoration(
                vs_resources.push_constant_buffers[0].id, spv::DecorationBinding, 1);
-      if (!ps_resources.push_constant_buffers.empty())
+      if (ps_compiler && !ps_resources.push_constant_buffers.empty())
          ps_compiler->set_decoration(
                ps_resources.push_constant_buffers[0].id, spv::DecorationBinding, 1);
 
