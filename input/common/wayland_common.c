@@ -560,6 +560,12 @@ static bool wl_update_scale(gfx_ctx_wayland_data_t *wl)
 
    wl_list_for_each(os, &wl->current_outputs, link)
    {
+      /* output_info_t lifetime is the wl_registry global lifetime,
+       * but a hot-unplug callback can NULL os->output asymmetrically
+       * with respect to the wl_registry; clang-tidy flags the deref
+       * as UAF.  Skip dangling entries rather than crash. */
+      if (!os->output)
+         continue;
       if (os->output->scale > largest_scale)
       {
          largest_scale = os->output->scale;
@@ -1084,6 +1090,7 @@ static void wl_data_device_handle_drop(void *data,
    if (!(stream = fmemopen(buffer, __len, "r")))
    {
       RARCH_WARN("[Wayland] Failed to open DnD buffer.\n");
+      free(buffer);
       return;
    }
 
@@ -1101,6 +1108,9 @@ static void wl_data_device_handle_drop(void *data,
 #endif
    }
 
+   /* getline malloc's line on first call; reused across iterations
+    * via _len, must be freed once the loop exits regardless of why. */
+   free(line);
    fclose(stream);
    free(buffer);
 }

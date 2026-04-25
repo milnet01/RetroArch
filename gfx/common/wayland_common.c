@@ -293,6 +293,12 @@ void gfx_ctx_wl_get_video_size_common(void *data,
             break;
          };
 
+      /* all_outputs may legitimately be empty (last monitor was hot-
+       * unplugged before frame size was queried); leave caller's
+       * width/height unchanged rather than NULL-deref oi. */
+      if (!oi)
+         return;
+
       *width  = oi->width;
       *height = oi->height;
    }
