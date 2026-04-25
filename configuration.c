@@ -18,6 +18,7 @@
  */
 
 #include <ctype.h>
+#include <assert.h>
 
 /* For chmod() / S_IRUSR / S_IWUSR after config_file_write -- gated to
  * the same POSIX-mode platform set as the chmod call below. */
@@ -1826,6 +1827,12 @@ static struct config_array_setting *populate_settings_array(
    SETTING_ARRAY("cpu_menu_gov",                 settings->arrays.cpu_menu_gov, false, NULL, true);
 #endif
 
+   /* Compile-time-pool guard: GENERAL_SETTING writes tmp[count] without
+    * a bounds check. Any future SETTING_ARRAY that pushes count past
+    * SETTINGS_ARRAY_COUNT_MAX would heap-corrupt silently. The acknowledged
+    * "Compile-time check (via negative array) can be added here if
+    * needed" is now done as a runtime assert. */
+   assert(count <= SETTINGS_ARRAY_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -1939,6 +1946,7 @@ static struct config_path_setting *populate_settings_path(
    SETTING_ARRAY("log_dir",                      settings->paths.log_dir, true, NULL, true);
    SETTING_ARRAY("app_icon",                     settings->paths.app_icon, true, NULL, true);
 
+   assert(count <= SETTINGS_PATH_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -2761,7 +2769,19 @@ static struct config_bool_setting *populate_settings_bool(
    SETTING_BOOL("gcdwebserver_alert",            &settings->bools.gcdwebserver_alert, true, true, false);
 #endif
 
+#ifdef HAVE_GAME_AI
+   /* settings/settings_def_game_ai.h excludes these three rows from
+    * the configuration pass and says persistence lives in custom
+    * configuration code, but nothing registered them: toggling them
+    * in the menu and restarting silently reverted the values.
+    * Registered by hand here, the same idiom as the rows with no
+    * default near the top of this function. */
+   SETTING_BOOL("game_ai_override_p1",      &settings->bools.game_ai_override_p1, false, false, false);
+   SETTING_BOOL("game_ai_override_p2",      &settings->bools.game_ai_override_p2, false, false, false);
+   SETTING_BOOL("game_ai_show_debug",       &settings->bools.game_ai_show_debug,  false, false, false);
+#endif
 
+   assert(count <= SETTINGS_BOOL_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -3395,6 +3415,7 @@ static struct config_float_setting *populate_settings_float(
 #endif
 
 
+   assert(count <= SETTINGS_FLOAT_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -4130,6 +4151,7 @@ static struct config_uint_setting *populate_settings_uint(
 
 
 
+   assert(count <= SETTINGS_UINT_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -4146,6 +4168,7 @@ static struct config_size_setting *populate_settings_size(
 
    SETTING_SIZE("rewind_buffer_size",            &settings->sizes.rewind_buffer_size, true, DEFAULT_REWIND_BUFFER_SIZE, false);
 
+   assert(count <= SETTINGS_SIZE_COUNT_MAX);
    *size = count;
 
    return tmp;
@@ -5402,6 +5425,7 @@ static struct config_int_setting *populate_settings_int(
 
 
 
+   assert(count <= SETTINGS_INT_COUNT_MAX);
    *size = count;
 
    return tmp;
