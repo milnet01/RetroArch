@@ -33,8 +33,9 @@ Fixes land on `local/fixes-2026-04`. Each bundle is one logical theme; commits i
 | 13 | `2386e898d4` | WebDAV digest-challenge: parse hardening (5 sites) + comparison typo + cnonce randomisation | 3 |
 | 14 | `46855caa12` | libretro env callbacks: NULL-guard 8 SET_*/GET_* sites + GET_LANGUAGE HAVE_LANGEXTRA fallback | 9 |
 | 15 | `149fdd5c1d` | Audio + gfx font init: free calloc'd struct on sub-init failure (6 sites) | 6 |
+| 16 | `72b2a839f8` | gx_joypad pad bound (Wii) + webdav 404-body local-file write filter | 2 |
 
-**Cumulative:** 61 distinct fixes across 34 files. ~35 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer).
+**Cumulative:** 63 distinct fixes across 36 files. ~37 ✅ closed, 3 🚧 in-progress (atomic-save 4/7 sites, deref-before-check 8/30, plaintext-credentials chmod-only), 4 🔄 deferred (libretro-common vendored items + clang-analyzer FPs needing reproducer). Plus the `s3.c:1633-1640` heap-overflow item from indie-review C2 was verified resolved-stale (current code uses safe `%.*s` and writes the terminator to a freshly-malloc'd buffer, not `data->data`).
 
 The full per-finding history is in the audit / indie-review / clang-tidy sections below — each item carries either 📋 pending, 🚧 partial, ✅ done with commit, or 🔄 deferred with reason.
 
@@ -72,7 +73,7 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   - 📋 Console-only sites (`vita2d`, `gx2`, `ctr`, `ps2`, `gdi`, `dispmanx_gfx.c`, `platform_orbis.c`) — out of personal-fork scope.
   - 📋 Larger files (`ozone.c`, `materialui.c`, `xmb.c`, `netplay_frontend.c`, `menu_cbs_ok.c`) need per-site review (mix of real bugs and cppcheck FPs on stack-array / locally-checked allocs); deferred to a follow-up sweep.
   - ❌ `gfx/gfx_thumbnail.c` — cppcheck FPs (`thumbnail_path` is a stack array). Won't fix.
-- 📋 **HIGH — Wii `pad_type[8]` indexed up to pad 15.** `input/drivers_joypad/gx_joypad.c:435`. `return pad < MAX_USERS && pad_type[pad] != …` — `MAX_USERS` is 16 but `pad_type` is `[DEFAULT_MAX_PADS=8]` on Wii. OOB read when pad ≥ 8. Fix: `pad < DEFAULT_MAX_PADS && …` or extend `pad_type` to MAX_USERS.
+- ✅ **HIGH — Wii `pad_type[8]` indexed up to pad 15.** `input/drivers_joypad/gx_joypad.c:435`. _(Fixed `72b2a839f8` — `pad < MAX_USERS` -> `pad < DEFAULT_MAX_PADS` so the check fails before the pad_type read can OOB. Wii / GameCube only; not built in the Linux desktop build.)_
 
 #### Medium
 
@@ -164,7 +165,7 @@ These are exploitable now and have concrete reproducers.
   2. Move secrets to a separate `retroarch.secrets` file in `~/.local/share/retroarch/secrets/` (longer)
   3. OS-keyring integration via libsecret/Win32 DPAPI/Keychain (longest)
 - ✅ **HIGH — `command_read_ram` / `command_read_memory` integer-overflow + missing NULL-check on malloc.** `command.c:929-968` and `:1187-1195`. _(Fixed `8aedb937f1` — capped `nbytes <= COMMAND_READ_NBYTES_MAX` (16 KiB) before the multiplication can wrap, plus NULL-check on each malloc.)_
-- 📋 **HIGH — Heap-buffer-overflow class in HTTP failure loggers.** `s3.c:1633-1640` re-introduces the `data->data[data->len] = 0` antipattern that the codebase has already fixed elsewhere. Add a `net_http_data_to_cstring` helper and rewrite all callers — the rule is too easy to forget.
+- ❌ **HIGH — Heap-buffer-overflow class in HTTP failure loggers.** _(Verified resolved-stale 2026-04-25 while triaging Bundle 16. Current `s3_log_http_failure` (s3.c:788-799) uses the safe `%.*s` length-bounded printf form, with an explicit comment documenting why `data->data[data->len]=0` is a one-byte heap overflow. The reviewer's reference to s3.c:1633-1640 is also safe in current code: the multipart-initiate path malloc's `data->len + 1`, memcpy's `data->len` bytes, and writes the terminator on the **newly-allocated** buffer (`response_xml[data->len] = '\0'`), not on `data->data`. A `net_http_data_to_cstring` helper would still be valuable defence-in-depth (the antipattern is easy to re-introduce) but no concrete site to fix today.)_
 
 ### 🛡 Tier 2 — hardening sweep (correctness, not exploitability)
 
@@ -181,7 +182,7 @@ These are exploitable now and have concrete reproducers.
 - ✅ **HIGH — libretro env callbacks deref `data` without NULL guard.** `runloop.c`. _(Fixed `46855caa12` — added `if (!data) return false;` to all eight cases that dereferenced data: `SET_SUBSYSTEM_INFO` in both dispatchers (system-info probe + main runloop), `SET_VARIABLES`, `SET_MESSAGE`, `SET_MESSAGE_EXT` (caught while in the file — same class), `SET_INPUT_DESCRIPTORS`, `SET_FRAME_TIME_CALLBACK`, `SET_CONTROLLER_INFO`, `GET_LANGUAGE`. Pure NULL guard; no behavioural change on the well-formed-data path.)_
 - ✅ **HIGH — `RETRO_ENVIRONMENT_GET_LANGUAGE` returns true with `*data` unwritten when `HAVE_LANGEXTRA` is undefined.** `runloop.c:1977-1985`. _(Fixed `46855caa12` — `#else *(unsigned*)data = RETRO_LANGUAGE_ENGLISH;` so cores get a defined value rather than reading uninitialised stack. Bundled with the NULL-guard sweep above since same case body.)_
 - 📋 **MEDIUM — Cloud sync no Content-Length verification.** `webdav.c:598`, `google_drive.c:1218`, `s3.c:819`. Connection drops mid-download but HTTP returned 200 → partial bytes written to local file → corrupt save. Combined with no atomic write (cross-cutting #1), transient network failures silently corrupt.
-- 📋 **MEDIUM — WebDAV 404 response body written to local file.** `webdav.c:576, 598`. 404 is treated as success-with-NULL-file per contract, but if the server returns a 404 with HTML error body, that HTML is then `filestream_write`'d into the user's save file. Explicitly check 404 case.
+- ✅ **MEDIUM — WebDAV 404 response body written to local file.** `webdav.c::webdav_read_cb`. _(Fixed `72b2a839f8` — added `data->status != 404` guard around the `filestream_write` block. 404 still completes the cb with `success=true` per the cloud-sync contract (remote-doesn't-have-this-file means "nothing to sync"), but no longer overwrites the local save with the server's HTML error body.)_
 - 📋 **MEDIUM — `s3_url_encode` doesn't encode `?` `&` `=` for path components.** `s3.c:419-441`. Object key with literal `?` collapses query+path → wrong canonical URI → SigV4 signature fails. Separate path-component encode from query-component encode.
 - 📋 **MEDIUM — `s3_canonicalize_query_string` returns input verbatim.** `s3.c:445-459`. TODO. Currently works because all chosen query strings are already canonical by accident; future addition of `versionId` etc. silently misorders.
 - 📋 **MEDIUM — `s3_update` reads entire file into RAM.** `s3.c:1838`. 5GB save state on a console with 256MB → OOM. Even on desktop: GB-scale uploads block the loop. Stream or cap.
