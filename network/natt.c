@@ -268,51 +268,51 @@ static bool natt_build_control_url(
 static bool natt_parse_desc_node(rxml_node_t *node,
       struct natt_device *device)
 {
-   rxml_node_t *child = node ? node->children : NULL;
+   rxml_node_t *child;
 
-   if (child)
+   if (!node)
+      return false;
+
+   /* If this node is a <service>, look for serviceType + controlURL
+    * among its children and try to bind them. */
+   if (string_is_equal_case_insensitive(node->name, "service"))
    {
-      /* We only care for services. */
-      if (string_is_equal_case_insensitive(node->name, "service"))
+      rxml_node_t *service_type = NULL;
+      rxml_node_t *control_url  = NULL;
+
+      for (child = node->children; child; child = child->next)
       {
-         rxml_node_t *service_type = NULL;
-         rxml_node_t *control_url  = NULL;
-
-         do
-         {
-            if (string_is_equal_case_insensitive(child->name, "serviceType"))
-               service_type = child;
-            else if (string_is_equal_case_insensitive(child->name, "controlURL"))
-               control_url  = child;
-            if (service_type && control_url)
-               break;
-         } while ((child = child->next));
-
+         if (string_is_equal_case_insensitive(child->name, "serviceType"))
+            service_type = child;
+         else if (string_is_equal_case_insensitive(child->name, "controlURL"))
+            control_url  = child;
          if (service_type && control_url)
+            break;
+      }
+
+      if (   service_type && service_type->data
+         && control_url  && control_url->data)
+      {
+         /* These two are the only IGD service types we can work with. */
+         if (  strstr(service_type->data, ":WANIPConnection:")
+            || strstr(service_type->data, ":WANPPPConnection:"))
          {
-            /* These two are the only IGD service types we can work with. */
-            if (  strstr(service_type->data, ":WANIPConnection:")
-               || strstr(service_type->data, ":WANPPPConnection:"))
+            if (natt_build_control_url(control_url, device))
             {
-               if (natt_build_control_url(control_url, device))
-               {
-                  strlcpy(device->service_type, service_type->data,
-                     sizeof(device->service_type));
-                  return true;
-               }
+               strlcpy(device->service_type, service_type->data,
+                  sizeof(device->service_type));
+               return true;
             }
-          }
+         }
       }
    }
-   else
-   {
-      /* XML recursion */
-      do
-      {
-         if (natt_parse_desc_node(child, device))
-            return true;
-      } while ((child = child->next));
-   }
+
+   /* Always recurse into children; UPnP descriptions nest <service>
+    * inside <serviceList> inside <device> inside <root>, so the parent
+    * node we were called on is rarely the <service> itself. */
+   for (child = node->children; child; child = child->next)
+      if (natt_parse_desc_node(child, device))
+         return true;
 
    return false;
 }
