@@ -18,6 +18,7 @@
         "--suppress=missingIncludeSystem",
         "--suppress=unusedFunction",
         "--suppress=unknownMacro",
+        "--suppressions-list=.cppcheck-suppress.txt",
         "--inline-suppr",
         "--xml",
         "--xml-version=2",

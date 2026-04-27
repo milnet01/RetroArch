@@ -72,9 +72,9 @@ When a suppression entry says "verified resolved-stale," the underlying issue do
 
 **Pattern:** success-then-return / fail-label-cleanup style — the rule fires because both branches reach `free(p)` if the analyzer doesn't track that the success branch returns before the cleanup label can be entered. Project-wide pattern; not a per-site bug.
 
-**Action:** Either (a) add a project-local `.semgrepignore` rule, or (b) refactor incrementally to single-cleanup-block style. Spec decision pending in `docs/private/specs/2026-04-27-audit-spec-needed-cluster.md` S9.
+**Action:** Project-policy permanent suppression. `aggregate.py` (KNOWN_FP_RULES, the semgrep entry) drops these before triage. Canonical pattern documented in `docs/private/AUDIT-POLICY.md`.
 
-**Status:** 📋 Spec-drafted, awaiting implementation.
+**Status:** ✅ Implemented — Bundle 34 close. Permanent suppression class.
 
 ---
 
@@ -84,25 +84,25 @@ When a suppression entry says "verified resolved-stale," the underlying issue do
 
 **Sites:** `play_feature_delivery/play_feature_delivery.c:117, 187`.
 
-**Why FP:** JNI callback bodies declared as returning a value but the JNI runtime ignores the return on some code paths. cppcheck doesn't model the JNI calling convention.
+**Why FP:** Both functions are declared `JNIEXPORT void JNICALL Java_...` — genuinely void return. cppcheck 2.20 mis-classifies the JNICALL macro and emits `missingReturn` at the function-end brace. There is no return statement to add.
 
-**Action:** Anchor for a project-level cppcheck suppression file (`.cppcheck-suppress.txt`) — see S12 in the spec doc.
+**Action:** Anchored at `.cppcheck-suppress.txt` in repo root with the two missingReturn entries; wired into the audit-config cppcheck flags as `--suppressions-list=.cppcheck-suppress.txt`. Future cppcheck FPs that need a project-wide policy decision land in the same file.
 
-**Status:** 📋 Spec-drafted, awaiting implementation.
+**Status:** ✅ Implemented — Bundle 34 close (commit `b27a516cf5`).
 
 ---
 
-### S11 — identicalInnerCondition (cppcheck) — pending policy decision
+### S11 — identicalInnerCondition (cppcheck) — closed via strip
 
 **Rule:** `cppcheck` `identicalInnerCondition`.
 
-**Sites:** `audio/audio_driver.c:447`, `audio/drivers/dsound.c:452`, `audio/drivers/openal.c:129`, `cheat_manager.c:1823`, `tasks/task_content.c:609`, `menu/menu_driver.c:4639`, `camera/camera_driver.c:155`.
+**Sites (resolved):** `audio/audio_driver.c:447`, `audio/drivers/dsound.c:452`, `audio/drivers/openal.c:129`, `cheat_manager.c:1820+1873`, `menu/menu_driver.c:4647`, `camera/camera_driver.c:155` — all stripped (option B: copy-paste residue) in Bundle 34. `tasks/task_content.c:609` is a confirmed FP (the trailing-slash strip can null `*dir` if `dir == "/"`); marked with inline `cppcheck-suppress identicalInnerCondition`.
 
-**Why pending:** Each is a defensive double-check (inner `if` repeats outer `for` predicate). Spec decision recommends strip — driver tables are `const` — but the policy hasn't been applied. Until applied, the cluster is noise.
+**Why originally pending:** Each was a defensive double-check. Driver tables are `const`-qualified static arrays so the inner predicate could never have changed value mid-iteration; comprehension cost (every reader re-checking the same predicate twice) was paying for nothing.
 
-**Action:** Strip per S11 spec. Pre-triage rule: drop until the cluster size drops to zero.
+**Action:** Done. The pre-triage drop rule for this class can be removed from `aggregate.py` — a regression re-introducing the pattern should now be flagged, not auto-dropped.
 
-**Status:** 📋 Spec-drafted, awaiting implementation.
+**Status:** ✅ Implemented — Bundle 34 close (commit `9ddc80cb84`).
 
 ---
 
@@ -165,13 +165,14 @@ These are mechanical pre-triage rules applied **before** the audit-triage subage
 |---|---|---|---|
 | any | path starts with `libretro-common/` or `deps/` | vendored, out-of-scope | drop |
 | any | path starts with `ctr/`, `vita/`, `wii/`, `wiiu/`, `dingux/`, `uwp/`, `webos/`, `emscripten/` | console-only, out-of-Linux-scope | drop |
-| cppcheck | `missingReturn` in `play_feature_delivery/` | JNI calling convention (S12) | drop |
-| cppcheck | `identicalInnerCondition` in audio_*/cheat_*/task_content/menu_driver/camera_driver | S11 strip pending | drop until S11 lands |
+| cppcheck | `missingReturn` in `play_feature_delivery/` | JNI calling convention (S12) — also in `.cppcheck-suppress.txt` | drop |
 | cppcheck | `nullPointerArithmeticRedundantCheck` in `gfx/gfx_thumbnail.c` | stack-array FP | drop |
 | clang-analyzer | `core.uninitialized.ArraySubscript` in `retroarch.c` (lines 435, 1186, 2270), `tasks/task_translation.c:177` | NULL-terminated driver-table FP | drop |
 | clang-analyzer | NewDeleteLeaks at `core_updater_list.c:928` | ownership-move analyzer-blind FP | drop |
-| semgrep | `c.lang.security.double-free.double-free` matching success-then-return / fail-label-cleanup pattern | S9 cluster | drop until S9 lands |
+| semgrep | `c.lang.security.double-free.double-free` matching success-then-return / fail-label-cleanup pattern | S9 canonical free-on-fail-label class — see AUDIT-POLICY.md | drop (permanent) |
 | any | finding's path matches the scope.txt prune list | out-of-scope | drop |
+
+(S11 `identicalInnerCondition` row retired — pattern stripped in Bundle 34. A regression re-introducing it should now surface in triage.)
 
 After applying these rules, residual findings go to the triage subagent. Expected reduction: 660 raw → ~30-50 candidates → ~5-15 actionable post-triage.
 

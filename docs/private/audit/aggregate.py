@@ -87,14 +87,14 @@ KNOWN_FP_RULES = [
     # console-only
     lambda f: f.file.startswith(("ctr/", "vita/", "wii/", "wiiu/", "dingux/",
                                   "uwp/", "webos/", "emscripten/", "steam/")),
-    # cppcheck S12 — JNI missingReturn
+    # cppcheck S12 — JNI missingReturn (also covered by .cppcheck-suppress.txt;
+    # this rule is defence-in-depth in case cppcheck is invoked without the
+    # --suppressions-list flag).
     lambda f: (f.tool == "cppcheck" and f.rule_id == "missingReturn"
                and f.file.startswith("play_feature_delivery/")),
-    # cppcheck S11 — identicalInnerCondition (until policy strips)
-    lambda f: (f.tool == "cppcheck" and f.rule_id == "identicalInnerCondition"
-               and any(f.file.startswith(p) for p in (
-                   "audio/", "cheat_manager", "tasks/task_content",
-                   "menu/menu_driver", "camera/"))),
+    # cppcheck S11 strip closed in Bundle 34 — pre-triage drop rule retired.
+    # A regression re-introducing the inner-NULL-check pattern should now
+    # surface in triage rather than be silently dropped.
     # cppcheck — gfx_thumbnail stack-array FP
     lambda f: (f.tool == "cppcheck"
                and f.file.endswith("gfx/gfx_thumbnail.c")),
