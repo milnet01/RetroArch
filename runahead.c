@@ -28,6 +28,26 @@
 #endif
 #endif
 
+/* Platform headers for atomic temp-DLL create + CSPRNG suffix
+ * (write_file_with_random_name -- secondary-core hardening). */
+#if defined(_WIN32) && !defined(_XBOX)
+#include <windows.h>
+#include <bcrypt.h>
+#include <io.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#elif defined(__linux__) && defined(__GLIBC__) \
+   && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 25))
+#include <sys/random.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#endif
+
 #include <encodings/utf.h>
 #include <string/stdstring.h>
 #include <streams/file_stream.h>
@@ -257,16 +277,97 @@ static char *get_tmpdir_alloc(const char *override_dir)
    return path;
 }
 
+/* Fill buf with len bytes from a platform CSPRNG.  Used for the
+ * temp-DLL filename suffix below; a time(NULL)-seeded LCG let a
+ * local attacker predict the next temp-DLL path and pre-plant a
+ * malicious file there between the create and dylib_load. */
+static bool runahead_secure_random_bytes(void *buf, size_t len)
+{
+#if defined(_WIN32) && !defined(_XBOX)
+   return BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)len,
+         BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) \
+   || defined(__NetBSD__) || defined(__DragonFly__)
+   arc4random_buf(buf, len);
+   return true;
+#elif defined(__linux__) && defined(__GLIBC__) \
+   && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 25))
+   uint8_t *p   = (uint8_t*)buf;
+   size_t   got = 0;
+   while (got < len)
+   {
+      ssize_t r = getrandom(p + got, len - got, 0);
+      if (r < 0)
+      {
+         if (errno == EINTR)
+            continue;
+         break;
+      }
+      got += (size_t)r;
+   }
+   return got == len;
+#else
+   FILE *fp = fopen("/dev/urandom", "rb");
+   if (fp)
+   {
+      size_t n = fread(buf, 1, len, fp);
+      fclose(fp);
+      return n == len;
+   }
+   return false;
+#endif
+}
+
+/* Atomically create a brand-new file at *path* with the secondary-
+ * core DLL bytes.  Returns true on success.  Uses O_EXCL so the
+ * create fails if anything exists at the target -- an attacker who
+ * pre-plants a symlink or a stale file cannot have us write through
+ * to a different inode.  POSIX path also passes O_NOFOLLOW so even
+ * a symlink created in the gap between path-decision and open is
+ * rejected.  Windows path is _O_EXCL + _O_BINARY (binary because
+ * default-text-mode would mangle DLL bytes on \r\n boundaries). */
+static bool runahead_atomic_write_excl(const char *path,
+      const void *data, ssize_t dataSize)
+{
+#if defined(_WIN32) && !defined(_XBOX)
+   int fd = _open(path,
+         _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY,
+         _S_IREAD | _S_IWRITE);
+   if (fd < 0)
+      return false;
+   {
+      ssize_t written = (ssize_t)_write(fd, data, (unsigned)dataSize);
+      _close(fd);
+      return written == dataSize;
+   }
+#else
+   int   flags = O_WRONLY | O_CREAT | O_EXCL;
+#  ifdef O_NOFOLLOW
+   flags |= O_NOFOLLOW;
+#  endif
+#  ifdef O_CLOEXEC
+   flags |= O_CLOEXEC;
+#  endif
+   {
+      int     fd      = open(path, flags, 0600);
+      ssize_t written;
+      if (fd < 0)
+         return false;
+      written = write(fd, data, (size_t)dataSize);
+      close(fd);
+      return written == dataSize;
+   }
+#endif
+}
+
 static bool write_file_with_random_name(char **temp_dll_path,
       const char *tmp_path, const void* data, ssize_t dataSize)
 {
    int i;
-   char number_buf[32];
+   char hex_buf[17];
    bool okay                = false;
    const char *prefix       = "tmp";
    char *ext                = NULL;
-   time_t time_value        = time(NULL);
-   unsigned _number_value   = (unsigned)time_value;
    const char *src          = path_get_extension(*temp_dll_path);
 
    if (src)
@@ -290,13 +391,24 @@ static bool write_file_with_random_name(char **temp_dll_path,
       }
    }
 
-   /* Try up to 30 'random' filenames before giving up */
+   /* Try up to 30 CSPRNG-derived filenames before giving up.  Each
+    * iteration draws fresh entropy, so a transient EEXIST collision
+    * (or a hostile pre-plant) doesn't poison subsequent attempts. */
    for (i = 0; i < 30; i++)
    {
-      int number_value = _number_value * 214013 + 2531011;
-      int number       = (number_value >> 14) % 100000;
+      uint8_t rand_bytes[8];
+      static const char hex[] = "0123456789abcdef";
+      int j;
 
-      snprintf(number_buf, sizeof(number_buf), "%05d", number);
+      if (!runahead_secure_random_bytes(rand_bytes, sizeof(rand_bytes)))
+         break; /* CSPRNG unavailable -- abort rather than fall back to predictable naming */
+
+      for (j = 0; j < 8; j++)
+      {
+         hex_buf[j * 2]     = hex[(rand_bytes[j] >> 4) & 0xf];
+         hex_buf[j * 2 + 1] = hex[rand_bytes[j]        & 0xf];
+      }
+      hex_buf[16] = '\0';
 
       if (*temp_dll_path)
          free(*temp_dll_path);
@@ -305,10 +417,10 @@ static bool write_file_with_random_name(char **temp_dll_path,
       strcat_alloc(temp_dll_path, tmp_path);
       strcat_alloc(temp_dll_path, PATH_DEFAULT_SLASH());
       strcat_alloc(temp_dll_path, prefix);
-      strcat_alloc(temp_dll_path, number_buf);
+      strcat_alloc(temp_dll_path, hex_buf);
       strcat_alloc(temp_dll_path, ext);
 
-      if (filestream_write_file(*temp_dll_path, data, dataSize))
+      if (runahead_atomic_write_excl(*temp_dll_path, data, dataSize))
       {
          okay = true;
          break;
@@ -360,9 +472,13 @@ static char *copy_core_to_temp_file(
    strcat_alloc(&tmp_dll_path, PATH_DEFAULT_SLASH());
    strcat_alloc(&tmp_dll_path, core_base_name);
 
-   if (!filestream_write_file(tmp_dll_path, dll_file_data, dll_file_size))
+   /* core_base_name is attacker-knowable (it's just the core .so on
+    * disk).  Use the O_EXCL/O_NOFOLLOW atomic helper so a pre-planted
+    * file or symlink at <tmp>/<core_name> rejects rather than gets
+    * silently followed; on rejection fall through to the CSPRNG random-
+    * name path which retries 30 times. */
+   if (!runahead_atomic_write_excl(tmp_dll_path, dll_file_data, dll_file_size))
    {
-      /* try other file names */
       if (!write_file_with_random_name(&tmp_dll_path,
                tmp_path, dll_file_data, dll_file_size))
          failed = true;
