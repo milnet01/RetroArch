@@ -4725,7 +4725,7 @@ static void ozone_list_cache(void *data,
    entries_end                = selection_buf ? selection_buf->size : 0;
    bottom_boundary            = video_info_height - ozone->dimensions.header_height - ozone->dimensions.footer_height;
 
-   if (!selection_buf->size)
+   if (!entries_end)
       return;
 
    for (i = 0; i < entries_end; i++)
@@ -5700,7 +5700,7 @@ static void ozone_compute_entries_position(ozone_handle_t *ozone,
 
    selection_buf                 = MENU_LIST_GET_SELECTION(menu_list, 0);
 
-   if (!selection_buf->size)
+   if (!selection_buf || !selection_buf->size)
       return;
 
    video_driver_get_size(&video_info_width, &video_info_height);

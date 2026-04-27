@@ -1515,7 +1515,7 @@ static void xmb_unload_icon_thumbnail_textures(void *xmb_handle_ptr)
    struct menu_state *menu_st = menu_state_get_ptr();
    menu_list_t *menu_list     = menu_st->entries.list;
    file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
-   size_t list_size           = (unsigned)selection_buf->size;
+   size_t list_size           = selection_buf ? (unsigned)selection_buf->size : 0;
    size_t i;
 
    if (!xmb)
@@ -6962,7 +6962,7 @@ static void xmb_render(void *data,
    menu_input_t *menu_input       = &menu_st->input_state;
    menu_list_t *menu_list         = menu_st->entries.list;
    file_list_t *selection_buf     = MENU_LIST_GET_SELECTION(menu_list, 0);
-   size_t end                     = selection_buf->size;
+   size_t end                     = selection_buf ? selection_buf->size : 0;
    gfx_display_t *p_disp          = disp_get_ptr();
    gfx_animation_t *p_anim        = anim_get_ptr();
    size_t selection               = menu_st->selection_ptr;
@@ -9707,7 +9707,7 @@ static void xmb_list_cache(void *data, enum menu_list_type type,
       video_driver_get_size(NULL, &height);
 
       /* FIXME: this shouldn't be happening at all */
-      if (selection >= selection_buf->size)
+      if (selection_buf && selection >= selection_buf->size)
          selection = selection_buf->size ? selection_buf->size - 1 : 0;
 
       xmb->selection_ptr_old = selection;
