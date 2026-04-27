@@ -2095,8 +2095,8 @@ static void xmb_set_thumbnail_content(void *data, const char *s)
       if (!s || !*s)
       {
          menu_list_t *menu_list = menu_st->entries.list;
-         size_t list_size       = (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size;
          file_list_t *list      = MENU_LIST_GET_SELECTION(menu_list, 0);
+         size_t list_size       = list ? list->size : 0;
          bool playlist_valid    = false;
          size_t playlist_index  = selection;
 
@@ -2340,8 +2340,8 @@ static void xmb_set_dynamic_icon_content(
    {
       struct menu_state *menu_st = menu_state_get_ptr();
       menu_list_t *menu_list     = menu_st->entries.list;
-      size_t list_size           = (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size;
       file_list_t *list          = MENU_LIST_GET_SELECTION(menu_list, 0);
+      size_t list_size           = list ? list->size : 0;
       bool playlist_valid        = false;
       size_t playlist_index      = selection;
 
@@ -2400,7 +2400,7 @@ static void xmb_selection_pointer_changed(
    if (!xmb)
       return;
 
-   end                        = (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   end                        = menu_list ? (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
    threshold                  = xmb->icon_size * 10;
    menu_st->entries.begin     = num;
 
@@ -2456,7 +2456,7 @@ static void xmb_selection_pointer_changed(
             && (xmb->is_playlist || xmb->is_explore_list))
       {
          size_t entry_idx_selection = selection + 1;
-         size_t list_size           = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+         size_t list_size           = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
          unsigned entry_idx_offset  = xmb->entry_index_offset;
          bool show_entry_idx        = true;
 
@@ -4116,7 +4116,7 @@ static void xmb_populate_entries(void *data,
          && (xmb->is_playlist || xmb->is_explore_list))
    {
       size_t entry_idx_selection = menu_st->selection_ptr + 1;
-      size_t list_size           = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+      size_t list_size           = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
       unsigned entry_idx_offset  = 0;
       bool show_entry_idx        = true;
 
@@ -7363,7 +7363,7 @@ static void xmb_layout(xmb_handle_t *xmb)
    file_list_t *selection_buf   = MENU_LIST_GET_SELECTION(menu_list, 0);
    size_t selection             = menu_st->selection_ptr;
    unsigned current             = (unsigned)selection;
-   unsigned end                 = (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   unsigned end                 = selection_buf ? (unsigned)selection_buf->size : 0;
 
    xmb_init_scale_mod(xmb->scale_mod, settings->floats.menu_scale_factor * 100.0f);
    xmb->scale_cap = (settings->floats.menu_scale_factor > 1.0f)
@@ -8182,7 +8182,7 @@ static void xmb_render(void *data,
          {
             /* Apply vertical drag to list selection */
             menu_list_t *menu_list     = menu_st->entries.list;
-            size_t list_size           = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+            size_t list_size           = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
 
             /* Calculate how many items to move based on drag distance */
             float dy          = (float)xmb->pointer.y - xmb->drag_start_y;
@@ -11048,7 +11048,7 @@ static int xmb_pointer_up(void *userdata,
    struct menu_state *menu_st = menu_state_get_ptr();
    size_t selection           = menu_st->selection_ptr;
    menu_list_t *menu_list     = menu_st->entries.list;
-   unsigned end               = (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   unsigned end               = menu_list ? (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
 
    if (!xmb)
       return -1;

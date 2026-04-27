@@ -4495,8 +4495,8 @@ static void ozone_update_content_metadata(ozone_handle_t *ozone,
       const char *core_label             = NULL;
       const struct playlist_entry *entry = NULL;
       ssize_t playlist_index             = selection;
-      size_t list_size                   = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
       file_list_t *list                  = MENU_LIST_GET_SELECTION(menu_list, 0);
+      size_t list_size                   = list ? list->size : 0;
 
       if (ozone->flags2 & OZONE_FLAG2_IS_QUICK_MENU)
       {
@@ -4873,8 +4873,8 @@ static void ozone_list_cache(void *data,
    /* Deep copy visible elements */
    video_info_height          = VIDEO_SCALE_H(ozone->last_dims);
    y                          = ozone->dimensions.header_height + ozone->dimensions.entry_padding_vertical;
-   entries_end                = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
    selection_buf              = MENU_LIST_GET_SELECTION(menu_list, 0);
+   entries_end                = selection_buf ? selection_buf->size : 0;
    bottom_boundary            = video_info_height - ozone->dimensions.header_height - ozone->dimensions.footer_height;
 
    if (!selection_buf->size)
@@ -8429,8 +8429,8 @@ static void ozone_set_thumbnail_content(void *data, const char *s)
       if (!s || !*s)
       {
          size_t selection      = menu_st->selection_ptr;
-         size_t list_size      = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
          file_list_t *list     = MENU_LIST_GET_SELECTION(menu_list, 0);
+         size_t list_size      = list ? list->size : 0;
          playlist_t *pl        = NULL;
 
          /* Get playlist index corresponding
@@ -8960,7 +8960,7 @@ static enum menu_action ozone_parse_menu_entry_action(
    selection_buf              = MENU_LIST_GET_SELECTION(menu_list, 0);
    tag                        = (uintptr_t)selection_buf;
    selection                  = menu_st->selection_ptr;
-   selection_total            = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   selection_total            = selection_buf ? selection_buf->size : 0;
 
    /* Don't wiggle left or right if the current entry is a setting. This is
       partially wrong because some settings don't use left and right to change their value, such as
@@ -10819,7 +10819,7 @@ static void ozone_render(void *data,
    struct menu_state *menu_st         = menu_state_get_ptr();
    menu_input_t *menu_input           = &menu_st->input_state;
    menu_list_t *menu_list             = menu_st->entries.list;
-   unsigned entries_end               = (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   unsigned entries_end               = menu_list ? (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
    bool pointer_enabled               = false;
    unsigned language                  = *msg_hash_get_uint(MSG_HASH_USER_LANGUAGE);
    ozone_handle_t *ozone              = (ozone_handle_t*)data;
@@ -13988,7 +13988,7 @@ static int ozone_pointer_up(void *userdata,
    file_list_t *selection_buf        = MENU_LIST_GET_SELECTION(menu_list, 0);
    uintptr_t sidebar_tag             = (uintptr_t)selection_buf;
    size_t selection                  = menu_st->selection_ptr;
-   size_t entries_end                = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   size_t entries_end                = selection_buf ? selection_buf->size : 0;
    settings_t *settings              = config_get_ptr();
    bool ozone_collapse_sidebar       = settings->bools.ozone_collapse_sidebar;
 
