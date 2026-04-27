@@ -1,0 +1,159 @@
+{
+  "_comment": "Project-side audit config for milnet01/RetroArch. See docs/private/audit/README.md for usage. Edit this file when a tool's invocation changes; do NOT pin tool flags in the global /audit skill.",
+  "project": "RetroArch (milnet01 fork)",
+  "scope_file": "docs/private/audit/scope.txt",
+  "suppressions_doc": "docs/private/audit/suppressions.md",
+  "indie_review_partition": "docs/private/audit/indie-review-partition.md",
+  "incremental_anchor": "master",
+  "current_audit_branch": "local/audit-2026-04",
+  "current_fixes_branch": "local/fixes-2026-04",
+
+  "tools": {
+    "cppcheck": {
+      "command": "cppcheck",
+      "flags": [
+        "--enable=warning,style,performance,portability,information,missingInclude",
+        "--std=c11",
+        "--language=c",
+        "--suppress=missingIncludeSystem",
+        "--suppress=unusedFunction",
+        "--suppress=unknownMacro",
+        "--inline-suppr",
+        "--xml",
+        "--xml-version=2",
+        "-j", "4"
+      ],
+      "scope_apply": true,
+      "scope_format": "-i <subtree>",
+      "max_findings_before_aggregate": 200,
+      "known_issues": [
+        "menu/drivers/materialui.c (12231 LoC) historically times out at default --max-configs. Pass --max-configs=1 if a partial run is observed (the 2026-04-25 run ended at 449/450 files).",
+        "Output is XML by default — pipe to docs/private/audit/aggregate.py --from-cppcheck before triage.",
+        "JNI cb sites in play_feature_delivery emit missingReturn FPs; see suppressions.md S12."
+      ]
+    },
+
+    "clang-tidy": {
+      "command": "clang-tidy",
+      "requires": ["compile_commands.json"],
+      "regenerate_compile_db": "bear -- make -j$(nproc)",
+      "checks": "bugprone-*,clang-analyzer-core.*,clang-analyzer-security.*,clang-analyzer-unix.*,-clang-analyzer-deadcode.*",
+      "flags": [
+        "-format-style=none",
+        "--quiet"
+      ],
+      "scope_apply": true,
+      "scope_format": "post-filter compile_commands.json",
+      "known_issues": [
+        "location_drivers[] / translation_drivers[] OOB are NULL-terminator FPs — see suppressions.md.",
+        "runahead.c:640/662 needs a reproducer before fixing — see suppressions.md."
+      ]
+    },
+
+    "clazy": {
+      "command": "clazy-standalone",
+      "requires": ["compile_commands.json"],
+      "low_yield_note": "Qt UI is small (ui_qt_widgets.cpp only). Defer unless a change touches ui/qt; expected yield <5 findings."
+    },
+
+    "semgrep": {
+      "command": "semgrep",
+      "flags": [
+        "scan",
+        "--json",
+        "--timeout=60",
+        "--metrics=off",
+        "--skip-unknown-extensions"
+      ],
+      "configs": [
+        "p/c",
+        "p/security-audit"
+      ],
+      "scope_apply": true,
+      "scope_format": "--exclude <subtree>",
+      "max_findings_before_aggregate": 200,
+      "known_issues": [
+        "The 2026-04-25 run reported 332 parse errors across the C dialect; rerun with a pinned semgrep version (>=1.50) and re-evaluate. Until then, the double-free cluster (29 sites) is a documented FP class — see suppressions.md S9."
+      ]
+    },
+
+    "gitleaks": {
+      "command": "gitleaks",
+      "flags": [
+        "detect",
+        "--no-banner",
+        "--no-git",
+        "--redact",
+        "--report-format=json",
+        "--exit-code=0"
+      ],
+      "expected_clean": true,
+      "demote_priority": "0 actionable findings on the 2026-04-25 baseline — promote to /audit --all only; no project secrets in source.",
+      "iteration_pattern": "Iterate over the in-scope source dirs (input/ menu/ network/ tasks/ gfx/ audio/ cheevos/ command.c configuration.c retroarch.c runloop.c) one at a time and merge the per-dir reports — gitleaks has no --skip-dirs flag and a top-level scan eats CPU on libretro-common assets."
+    },
+
+    "trivy": {
+      "command": "trivy",
+      "flags": [
+        "fs",
+        "--scanners=vuln,secret",
+        "--severity=HIGH,CRITICAL",
+        "--format=json",
+        "--quiet"
+      ],
+      "expected_clean": true,
+      "demote_priority": "no lockfiles in scope — vendored deps are pinned by tarball. The vuln scan is empty by construction; secret scan is redundant with gitleaks. Promote to /audit --all only."
+    },
+
+    "ruff": {
+      "command": "ruff",
+      "flags": [
+        "check",
+        "--output-format=json",
+        "--select=E,F,B,S"
+      ],
+      "scope": ["tools/", "docs/private/audit/", "*.py"],
+      "low_yield_note": "no Python in core scope; only audit/build helpers. Expected yield: 0-2 findings."
+    },
+
+    "bandit": {
+      "command": "bandit",
+      "flags": [
+        "-r",
+        "tools/",
+        "docs/private/audit/",
+        "-f", "json",
+        "-ll"
+      ],
+      "low_yield_note": "no Python in core scope. Expected yield: 0 findings."
+    }
+  },
+
+  "presets": {
+    "_comment": "Map /audit invocations to tool sets. Default = the 2026-04 run, minus expected-clean tools.",
+    "default": ["clang-tidy", "cppcheck", "semgrep"],
+    "quick":   ["clang-tidy"],
+    "all":     ["clang-tidy", "cppcheck", "semgrep", "clazy", "gitleaks", "trivy", "ruff", "bandit"],
+    "secrets": ["gitleaks", "trivy"]
+  },
+
+  "incremental": {
+    "_comment": "When invoked as /audit --since <ref>, restrict each tool to files changed since <ref>. anchor defaults to master.",
+    "anchor": "master",
+    "diff_command": "git diff --name-only $ANCHOR..HEAD -- '*.c' '*.cpp' '*.h' '*.hpp'",
+    "min_file_count_for_full_scan": 50,
+    "fall_back_to_full_scan_when": "diff > min_file_count_for_full_scan files"
+  },
+
+  "calibration_anchor": {
+    "last_full_run": "2026-04-25",
+    "raw_findings": 660,
+    "actionable": 24,
+    "spec_needed": 12,
+    "noise_rate_pct": 96.4,
+    "tools_run": ["cppcheck", "semgrep", "gitleaks", "trivy", "ruff", "bandit"],
+    "tools_clean": ["gitleaks", "trivy"],
+    "tools_partial": ["cppcheck (449/450 files; materialui.c timed out)"],
+    "tool_gaps": ["clang-tidy not run (no compile_commands.json — now generated via bear)", "clazy not run (deferred until ui/qt change)"]
+  }
+}

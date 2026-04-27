@@ -1,0 +1,61 @@
+# Linux desktop audit scope (canonical prune list)
+#
+# One subtree per non-comment line. Lines beginning with # are comments;
+# blank lines are ignored. Pruning is "directory-prefix match against the
+# repo-relative path"; trailing slashes are tolerated.
+#
+# Used by:
+#  - docs/private/audit/aggregate.py (--scope flag)
+#  - cppcheck (-i <each>)
+#  - semgrep (--exclude <each>)
+#  - clang-tidy filter (compile_commands.json post-filter)
+#  - any human running grep/find on the source tree
+#
+# Why this exists: the previous /audit run scanned all 1.56M LoC and
+# spent ~24% of its budget on subtrees that cannot be reached by the
+# Linux desktop build (console ports, vendored deps, build artifacts).
+# Codifying the prune list once here removes that overhead from every
+# subsequent run and gives every tool one source of truth.
+
+# ---------- vendored / third-party (out of scope; upstream-only) ----------
+deps/
+libretro-common/
+
+# ---------- build artifacts ----------
+obj-unix/
+.git/
+.cache/
+
+# ---------- console-only ports (out of personal-fork Linux scope) ----------
+ctr/
+vita/
+wii/
+wiiu/
+dingux/
+uwp/
+webos/
+emscripten/
+steam/
+
+# ---------- platform packaging / install assets (no source review value) ----------
+pkg/
+fastlane/
+bootstrap/
+dist-scripts/
+intl/
+
+# ---------- non-relevant shader trees (Linux build uses GLSL/SLANG) ----------
+shaders-hlsl/
+shaders-hlsl-no-opt/
+shaders-msl/
+
+# ---------- build helpers (configure/make scaffolding, not source code) ----------
+qb/
+
+# ---------- documentation, art, samples (no executable code) ----------
+media/
+reference/
+samples/
+
+# ---------- vendored test harness ----------
+tests-other/
