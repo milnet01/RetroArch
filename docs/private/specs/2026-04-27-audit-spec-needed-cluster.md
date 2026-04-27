@@ -1,7 +1,7 @@
 # Audit 2026-04 — Spec-Needed Cluster (S1–S12)
 
 **Date:** 2026-04-27
-**Status:** draft, awaiting user review
+**Status:** closed 2026-04-27 — full cluster (S1–S12) implemented across Bundles 31 (S6+S8), 33 (S7), 34 (S1+S2+S3+S5+S10+S11+S12 + S9 policy), 35 (S4). See `docs/private/ROADMAP.md` for the per-item commit hashes.
 **Source:** `docs/private/ROADMAP.md` — "Cheap-to-spec (audit-2026-04, audit-2026-04-25)" section, 12 items filtered by `audit-triage` subagent.
 **Scope:** twelve invariant / contract decisions surfaced by cppcheck + semgrep that the static analyser cannot resolve without project-side intent. Each maps to one or more code sites that are correct *iff* the invariant holds. Once the decision is made, the enforcement is almost always one of: `static_assert`, runtime bounds harden, or a project-policy suppression file.
 
@@ -322,8 +322,8 @@ The success path nulls out `p` before returning; the failure path frees the stil
 ```
 # JNI callbacks return via switch-on-enum where every branch returns;
 # cppcheck flow analysis loses exhaustiveness.
-missingReturn:cores/play_feature_delivery/play_feature_delivery.c:117
-missingReturn:cores/play_feature_delivery/play_feature_delivery.c:187
+missingReturn:play_feature_delivery/play_feature_delivery.c:117
+missingReturn:play_feature_delivery/play_feature_delivery.c:187
 ```
 
 Wire it into the audit-driver Makefile target (or whatever invokes cppcheck in `docs/private/`) via `--suppressions-list=.cppcheck-suppress.txt`.
