@@ -10727,13 +10727,16 @@ static void vulkan_overlay_free(vk_t *vk)
       return;
 
    free(vk->overlay.vertex);
-   if (!vk->overlay.borrowed)
-      for (i = 0; i < (int) vk->overlay.count; i++)
-         if (vk->overlay.images[i].memory != VK_NULL_HANDLE)
-            vulkan_texture_defer_copy(vk, &vk->overlay.images[i]);
-
+   /* Gate the loop on images as well as the free: a partially
+    * initialised overlay can carry a count with no images array. */
    if (vk->overlay.images)
+   {
+      if (!vk->overlay.borrowed)
+         for (i = 0; i < (int) vk->overlay.count; i++)
+            if (vk->overlay.images[i].memory != VK_NULL_HANDLE)
+               vulkan_texture_defer_copy(vk, &vk->overlay.images[i]);
       free(vk->overlay.images);
+   }
 
    memset(&vk->overlay, 0, sizeof(vk->overlay));
 }
