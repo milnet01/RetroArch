@@ -55,7 +55,11 @@ struct input_bind_map
 /* Turbo support. */
 struct turbo_buttons
 {
-   int32_t turbo_pressed[MAX_USERS];
+   /* Bit 31 is the "turbo active for this port" sentinel; bits 0..30 mark
+    * which RETRO_DEVICE_ID_JOYPAD_* button ids have turbo applied.  Was
+    * int32_t prior to audit S1 — using the sign bit as a sentinel is UB
+    * once `(1 << 31)` is computed on a signed operand. */
+   uint32_t turbo_pressed[MAX_USERS];
    unsigned count;
    uint16_t enable[MAX_USERS];
    bool frame_enable[MAX_USERS];
@@ -65,7 +69,7 @@ struct turbo_buttons
 /* Hold button support. */
 struct hold_buttons
 {
-   int32_t hold_pressed[MAX_USERS];  /* Edge detection for toggle */
+   uint32_t hold_pressed[MAX_USERS]; /* Edge detection for toggle */
    uint16_t enable[MAX_USERS];       /* Bitmask of held buttons */
    bool frame_enable[MAX_USERS];     /* Hold modifier pressed this frame */
 };
