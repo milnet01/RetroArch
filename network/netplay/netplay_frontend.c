@@ -148,6 +148,13 @@
 #define DISCOVERY_QUERY_MAGIC    0x52414E51 /* RANQ */
 #define DISCOVERY_RESPONSE_MAGIC 0x52414E53 /* RANS */
 
+/* Hard cap on the LAN host-discovery list. A hostile peer on shared WiFi can
+ * forge an unbounded number of well-formed RANS responses to drive
+ * discovered_hosts.allocated up by 4 per accepted ad. 256 is far above any
+ * realistic LAN-game roster and below the realloc-failure cliff on
+ * memory-constrained targets. */
+#define DISCOVERY_HOSTS_MAX      256
+
 /* MITM magics */
 #define MITM_SESSION_MAGIC 0x52415453 /* RATS */
 #define MITM_LINK_MAGIC    0x5241544C /* RATL */
@@ -384,6 +391,13 @@ static bool netplay_lan_ad_client_response(void)
       /* Allocate space for it */
       if (net_st->discovered_hosts.size >= net_st->discovered_hosts.allocated)
       {
+         /* Drop responses past the cap. A hostile shared-WiFi peer can spam
+          * forged RANS packets; without this guard each one drives
+          * .allocated up by 4. The user's "find LAN games" UI then
+          * eventually realloc-fails and the queued list is wiped. */
+         if (net_st->discovered_hosts.allocated >= DISCOVERY_HOSTS_MAX)
+            continue;
+
          if (!net_st->discovered_hosts.size)
          {
             net_st->discovered_hosts.hosts = (struct netplay_host*)

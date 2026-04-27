@@ -1494,6 +1494,13 @@ int intfstream_get_serial(intfstream_t *fd, char *s, size_t len,
 bool intfstream_file_get_serial(const char *name,
       uint64_t offset, int64_t size, char *s, size_t len, uint64_t *fsize)
 {
+   /* Hard ceiling on the in-memory track buffer. intfstream_get_serial only
+    * inspects fixed disc-header offsets (volume descriptor at 32 KiB, magic
+    * bytes in the first MB at most), so anything beyond a few MiB is dead
+    * weight. 64 MiB is well above legitimate need and well below the
+    * OOM-killer threshold on 256 MB-class consoles -- defends against a
+    * malicious CUE declaring a multi-GB track size. */
+   const int64_t serial_buf_max = (int64_t)64 * 1024 * 1024;
    int rv;
    uint8_t *data     = NULL;
    int64_t file_size = -1;
@@ -1517,10 +1524,21 @@ bool intfstream_file_get_serial(const char *name,
 
    if (offset != 0 || size < file_size)
    {
+      int64_t avail;
+
+      if (size <= 0 || (int64_t)offset > file_size)
+         goto error;
+
+      avail = file_size - (int64_t)offset;
+      if (size > avail)
+         size = avail;
+      if (size > serial_buf_max)
+         size = serial_buf_max;
+
       if (intfstream_seek(fd, (int64_t)offset, SEEK_SET) == -1)
          goto error;
 
-      data = (uint8_t*)malloc(size);
+      data = (uint8_t*)malloc((size_t)size);
       /* NULL-check: intfstream_read below would NULL-deref on
        * OOM via filestream_read's fread. */
       if (!data)
