@@ -6836,6 +6836,12 @@ static unsigned menu_displaylist_populate_subsystem(
                   unsigned j   = 0;
                   char rom_buff[PATH_MAX_LENGTH];
 
+                  /* If content_get_subsystem_rom_id() is zero the loop
+                   * body never runs and rom_buff is left uninitialised.
+                   * The downstream `if (*rom_buff)` would then branch
+                   * on a stack-garbage byte. */
+                  rom_buff[0] = '\0';
+
                   for (j = 0; j < content_get_subsystem_rom_id(); j++)
                   {
                      _len2    += strlcpy(rom_buff + _len2,

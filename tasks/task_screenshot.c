@@ -382,7 +382,12 @@ static bool screenshot_dump(
       }
       else
       {
+         /* The screenshot_dir-empty branch leaves new_screenshot_dir
+          * unwritten until the screenshots_in_content_dir fallback
+          * below; the original code then read its first byte at the
+          * `!*new_screenshot_dir` check, branching on garbage stack. */
          char new_screenshot_dir[DIR_MAX_LENGTH];
+         new_screenshot_dir[0] = '\0';
 
          if (screenshot_dir && *screenshot_dir)
          {

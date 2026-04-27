@@ -516,8 +516,15 @@ void rarch_log_file_init(
       const char *log_dir
       )
 {
+   /* Both buffers must be empty-string-initialised: the
+    * override-active-with-no-slash path writes log_file_path but never
+    * touches log_directory, and the original code read log_directory[0]
+    * unconditionally below the if/else cascade. log_file_path[0]
+    * follows the same pattern in the override-active branch. */
    char log_directory[DIR_MAX_LENGTH];
    char log_file_path[PATH_MAX_LENGTH];
+   log_directory[0] = '\0';
+   log_file_path[0] = '\0';
    static bool log_file_created              = false;
    static char timestamped_log_file_name[64] = {0};
    bool logging_to_file                      = main_verbosity_st.initialized;
