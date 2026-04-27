@@ -1219,6 +1219,17 @@ static bool runahead_save_state(runloop_state_t *runloop_st)
    {
       retro_ctx_serialize_info_t *serialize_info =
          (retro_ctx_serialize_info_t*)runloop_st->runahead_save_state_list->data[0];
+      /* Cores may grow their savestate size mid-run (memory-map
+       * changes, dynamic cheats, RAM expansion, etc.).  The
+       * runahead buffer was sized once at runahead_create time,
+       * so a grown size means retro_serialize() would write past
+       * our heap allocation.  Re-query and tear runahead down
+       * cleanly rather than risk heap corruption. */
+      if (core_serialize_size_special() > runloop_st->runahead_save_state_size)
+      {
+         runahead_err(runloop_st);
+         return false;
+      }
       if (core_serialize_special(serialize_info))
          return true;
       runahead_err(runloop_st);
@@ -1786,6 +1797,17 @@ void preempt_run(preempt_t *preempt, void *data)
    preempt_input_poll(preempt, runloop_st, input_max_users);
 
    runloop_st->flags                |= RUNLOOP_FLAG_REQUEST_SPECIAL_SAVESTATE;
+
+   /* Cores may grow their savestate size mid-run.  preempt->buffer[]
+    * was sized once at preempt_allocate time, so a grown size means
+    * retro_serialize() would write past each per-frame allocation.
+    * Tear preempt down cleanly via the existing error path rather
+    * than risk heap corruption. */
+   if (current_core->retro_serialize_size() > preempt->state_size)
+   {
+      _msg = msg_hash_to_str(MSG_PREEMPT_FAILED_TO_SAVE_STATE);
+      goto error;
+   }
 
    if ((runloop_st->flags & RUNLOOP_FLAG_INPUT_IS_DIRTY)
          && preempt->frame_count >= preempt->frames)
