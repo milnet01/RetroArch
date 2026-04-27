@@ -879,11 +879,11 @@ static void gfx_widgets_layout(
    }
 
    /* Calculate dimensions */
-   p_dispwidget->simple_widget_padding            = p_dispwidget->gfx_widget_fonts.regular.line_height * (2.0f / 3.0f) + 0.5f;
+   p_dispwidget->simple_widget_padding            = (unsigned)lroundf(p_dispwidget->gfx_widget_fonts.regular.line_height * (2.0f / 3.0f));
    p_dispwidget->simple_widget_height             = p_dispwidget->gfx_widget_fonts.regular.line_height + p_dispwidget->simple_widget_padding;
 
    p_dispwidget->msg_queue_height                 = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE);
-   p_dispwidget->msg_queue_padding                = (unsigned)(((float)p_dispwidget->gfx_widget_fonts.msg_queue.line_height * (2.0f / 3.0f)) + 0.5f);
+   p_dispwidget->msg_queue_padding                = (unsigned)lroundf((float)p_dispwidget->gfx_widget_fonts.msg_queue.line_height * (2.0f / 3.0f));
    p_dispwidget->msg_queue_spacing                = p_dispwidget->msg_queue_height / 4.0f;
    p_dispwidget->msg_queue_rect_start_x           = ceil(p_dispwidget->msg_queue_padding - (p_dispwidget->simple_widget_padding * 0.10f));
 
@@ -891,7 +891,7 @@ static void gfx_widgets_layout(
 
    p_dispwidget->divider_width_1px                = 1;
    if (p_dispwidget->last_scale_factor > 1.0f)
-      p_dispwidget->divider_width_1px             = (unsigned)(p_dispwidget->last_scale_factor + 0.5f);
+      p_dispwidget->divider_width_1px             = (unsigned)lroundf(p_dispwidget->last_scale_factor);
 
    for (i = 0; i < ARRAY_SIZE(widgets); i++)
    {

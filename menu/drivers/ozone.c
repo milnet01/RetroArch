@@ -9572,8 +9572,8 @@ static bool ozone_init_font(
       font_size = 9;
 
    /* Cache approximate dimensions */
-   font_data->line_height        = (int)(font_size + 0.5f);
-   font_data->glyph_width        = (int)((font_size * (3.0f / 4.0f)) + 0.5f);
+   font_data->line_height        = (int)lroundf(font_size);
+   font_data->glyph_width        = (int)lroundf(font_size * (3.0f / 4.0f));
 
    /* Create font */
    if (!(font_data->font = gfx_display_font_file(p_disp, font_path, font_size, is_threaded)))
@@ -9747,10 +9747,10 @@ static void ozone_set_layout(
    ozone->dimensions.fullscreen_thumbnail_padding   = FULLSCREEN_THUMBNAIL_PADDING * scale_factor;
 
    /* Common spacers */
-   ozone->dimensions.spacer_1px = (scale_factor > 1.0f) ? (unsigned)(scale_factor + 0.5f) : 1;
+   ozone->dimensions.spacer_1px = (scale_factor > 1.0f) ? (unsigned)lroundf(scale_factor) : 1;
    ozone->dimensions.spacer_2px = ozone->dimensions.spacer_1px * 2;
-   ozone->dimensions.spacer_3px = (unsigned)((scale_factor * 3.0f) + 0.5f);
-   ozone->dimensions.spacer_5px = (unsigned)((scale_factor * 5.0f) + 0.5f);
+   ozone->dimensions.spacer_3px = (unsigned)lroundf(scale_factor * 3.0f);
+   ozone->dimensions.spacer_5px = (unsigned)lroundf(scale_factor * 5.0f);
 
    /* Determine movement delta size for activating
     * pointer input (note: not a dimension as such,
