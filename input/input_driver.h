@@ -1094,6 +1094,17 @@ size_t input_config_get_bind_string_joykey(
       char *s, const char *prefix,
       const struct retro_keybind *bind, size_t len);
 
+/**
+ * input_key_pressed:
+ * @key:               RARCH_BIND_*-bounded bind id (must be < RARCH_BIND_LIST_END).
+ * @keyboard_pressed:  current keyboard-state hint.
+ *
+ * Public API — third-party libretro front-ends and test harnesses may
+ * link against this symbol.  Out-of-range @key returns false rather
+ * than OOB-reading input_config_binds[0].
+ *
+ * @return true if the named bind is currently active on user 0.
+ **/
 bool input_key_pressed(int key, bool keyboard_pressed);
 
 bool input_set_rumble_state(unsigned port,
