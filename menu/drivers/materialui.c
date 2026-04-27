@@ -9408,7 +9408,7 @@ static void materialui_init_font(gfx_display_t *p_disp,
       return;
 
    /* We assume the average glyph aspect ratio is close to 3:4 */
-   font_data->glyph_width    = (int)((font_size * (3.0f / 4.0f)) + 0.5f);
+   font_data->glyph_width    = (int)VIDEO_PX(font_size * (3.0f / 4.0f));
 
    /* Built before the old one is released, and the old one retired
     * rather than freed: materialui_layout() reaches here from

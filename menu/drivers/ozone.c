@@ -10143,8 +10143,8 @@ static bool ozone_init_font(
    old_font                      = font_data->font;
 
    /* Cache approximate dimensions */
-   font_data->line_height        = (int)(font_size + 0.5f);
-   font_data->glyph_width        = (int)((font_size * (3.0f / 4.0f)) + 0.5f);
+   font_data->line_height        = (int)VIDEO_PX(font_size);
+   font_data->glyph_width        = (int)VIDEO_PX(font_size * (3.0f / 4.0f));
 
    /* Create font.
     *
