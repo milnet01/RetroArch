@@ -1877,7 +1877,7 @@ static int action_bind_sublabel_netplay_kick_client(file_list_t *list,
 
          for (device = 0; device < (sizeof(client->devices) << 3); device++)
          {
-            if (client->devices & (1 << device))
+            if (client->devices & (1u << device))
             {
                int dev_len = snprintf(buf_written,
                      sizeof(buf) - _len,

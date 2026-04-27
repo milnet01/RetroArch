@@ -1925,17 +1925,17 @@ static int16_t input_state_device(
                {
                   /* Hold modifier is pressed - handle toggle on rising edge */
                   if (!res)
-                     input_st->hold_btns.hold_pressed[port] &= ~(1 << id);
-                  else if (!(input_st->hold_btns.hold_pressed[port] & (1 << id)))
+                     input_st->hold_btns.hold_pressed[port] &= ~(1u << id);
+                  else if (!(input_st->hold_btns.hold_pressed[port] & (1u << id)))
                   {
                      /* Rising edge - toggle hold for this button */
-                     input_st->hold_btns.hold_pressed[port] |= (1 << id);
-                     input_st->hold_btns.enable[port] ^= (1 << id);
+                     input_st->hold_btns.hold_pressed[port] |= (1u << id);
+                     input_st->hold_btns.enable[port] ^= (1u << id);
                   }
                }
 
                /* Apply hold effect: if button is held and not physically pressed */
-               if (!res && (input_st->hold_btns.enable[port] & (1 << id)))
+               if (!res && (input_st->hold_btns.enable[port] & (1u << id)))
                   res = 1;
 
                /* Apply turbo button if activated. */
@@ -1975,29 +1975,31 @@ static int16_t input_state_device(
                    * periodic pulse defined by the configured duty cycle.
                    */
 
-                  /* Avoid detecting the turbo button being held as multiple toggles */
+                  /* Avoid detecting the turbo button being held as multiple toggles.
+                   * Bit 31 is the "turbo active for this port" sentinel — see
+                   * struct turbo_buttons. */
                   if (!input_st->turbo_btns.frame_enable[port])
-                     input_st->turbo_btns.turbo_pressed[port] &= ~(1 << 31);
-                  else if (input_st->turbo_btns.turbo_pressed[port] >= 0)
+                     input_st->turbo_btns.turbo_pressed[port] &= ~(1u << 31);
+                  else if (!(input_st->turbo_btns.turbo_pressed[port] & (1u << 31)))
                   {
-                     input_st->turbo_btns.turbo_pressed[port] |= (1 << 31);
+                     input_st->turbo_btns.turbo_pressed[port] |= (1u << 31);
                      /* Toggle turbo for selected button. */
-                     if (input_st->turbo_btns.enable[port] != (1 << id))
-                        input_st->turbo_btns.enable[port] = (1 << id);
+                     if (input_st->turbo_btns.enable[port] != (1u << id))
+                        input_st->turbo_btns.enable[port] = (1u << id);
                      input_st->turbo_btns.mode1_enable[port] ^= 1;
                   }
 
-                  if (input_st->turbo_btns.turbo_pressed[port] & (1 << 31))
+                  if (input_st->turbo_btns.turbo_pressed[port] & (1u << 31))
                   {
                      /* Avoid detecting buttons being held as multiple toggles */
                      if (!res)
-                        input_st->turbo_btns.turbo_pressed[port] &= ~(1 << id);
-                     else if (!(input_st->turbo_btns.turbo_pressed[port] & (1 << id))
+                        input_st->turbo_btns.turbo_pressed[port] &= ~(1u << id);
+                     else if (!(input_st->turbo_btns.turbo_pressed[port] & (1u << id))
                            && turbo_mode == INPUT_TURBO_MODE_SINGLEBUTTON)
                      {
                         uint16_t enable_new;
-                        input_st->turbo_btns.turbo_pressed[port] |= 1 << id;
-                        enable_new = input_st->turbo_btns.enable[port] ^ (1 << id);
+                        input_st->turbo_btns.turbo_pressed[port] |= 1u << id;
+                        enable_new = input_st->turbo_btns.enable[port] ^ (1u << id);
                         if (enable_new)
                            input_st->turbo_btns.enable[port] = enable_new;
                      }
@@ -2010,7 +2012,7 @@ static int16_t input_state_device(
 
                   if (     (!res)
                         && (input_st->turbo_btns.mode1_enable[port])
-                        && (input_st->turbo_btns.enable[port] & (1 << id)))
+                        && (input_st->turbo_btns.enable[port] & (1u << id)))
                      res = ((input_st->turbo_btns.count % turbo_period) < turbo_duty_cycle);
                }
                else if (turbo_mode == INPUT_TURBO_MODE_CLASSIC)
@@ -2023,14 +2025,14 @@ static int16_t input_state_device(
                   if (res)
                   {
                      if (input_st->turbo_btns.frame_enable[port])
-                        input_st->turbo_btns.enable[port] |= (1 << id);
+                        input_st->turbo_btns.enable[port] |= (1u << id);
 
-                     if (input_st->turbo_btns.enable[port] & (1 << id))
+                     if (input_st->turbo_btns.enable[port] & (1u << id))
                         /* if turbo button is enabled for this key ID */
                         res = ((input_st->turbo_btns.count % turbo_period) < turbo_duty_cycle);
                   }
                   else
-                     input_st->turbo_btns.enable[port] &= ~(1 << id);
+                     input_st->turbo_btns.enable[port] &= ~(1u << id);
                }
                else /* Classic toggle mode */
                {
@@ -2044,20 +2046,20 @@ static int16_t input_state_device(
                   if (   (res)
                       && (input_st->turbo_btns.frame_enable[port]))
                   {
-                     if (!(input_st->turbo_btns.turbo_pressed[port] & (1 << id)))
+                     if (!(input_st->turbo_btns.turbo_pressed[port] & (1u << id)))
                      {
-                        input_st->turbo_btns.enable[port] ^= (1 << id);
+                        input_st->turbo_btns.enable[port] ^= (1u << id);
                         /* Remember for the toggle check */
-                        input_st->turbo_btns.turbo_pressed[port] |= (1 << id);
+                        input_st->turbo_btns.turbo_pressed[port] |= (1u << id);
                      }
                   }
                   else
-                     input_st->turbo_btns.turbo_pressed[port] &= ~(1 << id);
+                     input_st->turbo_btns.turbo_pressed[port] &= ~(1u << id);
 
                   if (res)
                   {
                      /* If turbo button is enabled for this key ID */
-                     if (input_st->turbo_btns.enable[port] & (1 << id))
+                     if (input_st->turbo_btns.enable[port] & (1u << id))
                         res = ((input_st->turbo_btns.count % turbo_period) < turbo_duty_cycle);
                   }
                }
