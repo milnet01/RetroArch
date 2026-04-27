@@ -1041,19 +1041,22 @@ bool gfx_ctx_wl_set_video_mode_common_fullscreen(gfx_ctx_wayland_data_t *wl,
       struct wl_output *output = NULL;
       int output_i             = 0;
 
-#ifdef HAVE_LIBDECOR_H
+      /* Auto-monitor branch (index<=0) vs explicit-monitor branch (index>0).
+       * Hoisted out of the HAVE_LIBDECOR_H #ifdef so the else binding is
+       * unambiguous regardless of the preprocessor result.  See audit S3. */
       if (video_monitor_index <= 0)
       {
+#ifdef HAVE_LIBDECOR_H
          RARCH_LOG("[Wayland] Auto fullscreen monitor index, letting compositor decide.\n");
-      }
 #else
-      if (video_monitor_index <= 0 && wl->current_output != NULL)
-      {
-         oi     = wl->current_output;
-         output = oi->output;
-         RARCH_LOG("[Wayland] Auto fullscreen on display \"%s\" \"%s\".\n", oi->make, oi->model);
-      }
+         if (wl->current_output != NULL)
+         {
+            oi     = wl->current_output;
+            output = oi->output;
+            RARCH_LOG("[Wayland] Auto fullscreen on display \"%s\" \"%s\".\n", oi->make, oi->model);
+         }
 #endif
+      }
       else
       {
          wl_list_for_each(od, &wl->all_outputs, link)
