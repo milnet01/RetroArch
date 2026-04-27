@@ -1820,11 +1820,9 @@ void cheat_manager_match_action(enum cheat_match_action_type match_action, unsig
                   case CHEAT_MATCH_ACTION_TYPE_DELETE:
                      {
                         const char *_msg;
-                        if (bits < 8)
-                           *(cheat_st->matches + idx) = *(cheat_st->matches + idx) &
+                        /* outer branch: bits < 8 — clear just this slot's bits */
+                        *(cheat_st->matches + idx) = *(cheat_st->matches + idx) &
                               ((~(mask << (byte_part * bits))) & 0xFF);
-                        else
-                           memset(cheat_st->matches + idx, 0, bytes_per_item);
                         if (cheat_st->num_matches > 0)
                            cheat_st->num_matches--;
                         _msg = msg_hash_to_str(MSG_CHEAT_SEARCH_DELETE_MATCH_SUCCESS);
@@ -1873,11 +1871,8 @@ void cheat_manager_match_action(enum cheat_match_action_type match_action, unsig
                   case CHEAT_MATCH_ACTION_TYPE_DELETE:
                      {
                         const char *_msg;
-                        if (bits < 8)
-                           *(cheat_st->matches + idx) = *(cheat_st->matches + idx) &
-                              ((~(mask << (byte_part * bits))) & 0xFF);
-                        else
-                           memset(cheat_st->matches + idx, 0, bytes_per_item);
+                        /* outer branch: bits >= 8 — clear the whole item */
+                        memset(cheat_st->matches + idx, 0, bytes_per_item);
                         if (cheat_st->num_matches > 0)
                            cheat_st->num_matches--;
                         _msg = msg_hash_to_str(MSG_CHEAT_SEARCH_DELETE_MATCH_SUCCESS);

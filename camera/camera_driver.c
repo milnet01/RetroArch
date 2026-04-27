@@ -151,12 +151,7 @@ bool camera_driver_find_driver(const char *prefix,
                settings->arrays.camera_driver);
          RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
          for (d = 0; camera_drivers[d]; d++)
-         {
-            if (camera_drivers[d])
-            {
-               RARCH_LOG_OUTPUT("\t%s\n", camera_drivers[d]->ident);
-            }
-         }
+            RARCH_LOG_OUTPUT("\t%s\n", camera_drivers[d]->ident);
 
          RARCH_WARN("Going to default to first %s...\n", prefix);
       }

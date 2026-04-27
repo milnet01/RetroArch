@@ -126,34 +126,31 @@ static void *al_init(const char *device, unsigned rate, unsigned latency,
       if (list && list->elems)
       {
          int32_t idx_found = -1;
-         if (list->elems)
+         size_t i;
+         for (i = 0; i < list->size; i++)
          {
-            size_t i;
-            for (i = 0; i < list->size; i++)
+            if (string_is_equal(device, list->elems[i].data))
             {
-               if (string_is_equal(device, list->elems[i].data))
-               {
-                  RARCH_DBG("[OpenAL] Found device #%d: \"%s\".\n", i, list->elems[i].data);
-                  idx_found = i;
-                  dev_id    = strdup(list->elems[i].data);
-                  break;
-               }
+               RARCH_DBG("[OpenAL] Found device #%d: \"%s\".\n", i, list->elems[i].data);
+               idx_found = i;
+               dev_id    = strdup(list->elems[i].data);
+               break;
             }
-            /* Index was not found yet based on name string,
-             * just assume id is a one-character number index. */
+         }
+         /* Index was not found yet based on name string,
+          * just assume id is a one-character number index. */
 
-            if (idx_found == -1 && isdigit(device[0]))
+         if (idx_found == -1 && isdigit(device[0]))
+         {
+            idx_found = strtoul(device, NULL, 0);
+            RARCH_LOG("[OpenAL] Fallback, device index is a single number index instead: %d.\n", idx_found);
+
+            if (idx_found != -1)
             {
-               idx_found = strtoul(device, NULL, 0);
-               RARCH_LOG("[OpenAL] Fallback, device index is a single number index instead: %d.\n", idx_found);
-
-               if (idx_found != -1)
+               if (idx_found < (int32_t)list->size)
                {
-                  if (idx_found < (int32_t)list->size)
-                  {
-                     RARCH_LOG("[OpenAL] Corresponding name: %s.\n", list->elems[idx_found].data);
-                     dev_id    = strdup(list->elems[idx_found].data);
-                  }
+                  RARCH_LOG("[OpenAL] Corresponding name: %s.\n", list->elems[idx_found].data);
+                  dev_id    = strdup(list->elems[idx_found].data);
                }
             }
          }

@@ -443,10 +443,7 @@ bool audio_driver_find_driver(const char *audio_drv,
          RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix, audio_drv);
          RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
          for (d = 0; audio_drivers[d]; d++)
-         {
-            if (audio_drivers[d])
-               RARCH_LOG_OUTPUT("\t%s\n", audio_drivers[d]->ident);
-         }
+            RARCH_LOG_OUTPUT("\t%s\n", audio_drivers[d]->ident);
          RARCH_WARN("Going to default to first %s...\n", prefix);
       }
 

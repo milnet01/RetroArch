@@ -449,34 +449,31 @@ static void *dsound_init(const char *dev, unsigned rate, unsigned latency,
       if (list && list->elems)
       {
          int32_t idx_found = -1;
-         if (list->elems)
+         size_t i;
+         for (i = 0; i < list->size; i++)
          {
-            size_t i;
-            for (i = 0; i < list->size; i++)
+            if (string_is_equal(dev, list->elems[i].data))
             {
-               if (string_is_equal(dev, list->elems[i].data))
-               {
-                  RARCH_DBG("[DirectSound] Found device #%d: \"%s\".\n", i, list->elems[i].data);
-                  idx_found       = i;
-                  selected_device = (LPGUID)list->elems[idx_found].userdata;
-                  break;
-               }
+               RARCH_DBG("[DirectSound] Found device #%d: \"%s\".\n", i, list->elems[i].data);
+               idx_found       = i;
+               selected_device = (LPGUID)list->elems[idx_found].userdata;
+               break;
             }
-            /* Index was not found yet based on name string,
-             * just assume id is a one-character number index. */
+         }
+         /* Index was not found yet based on name string,
+          * just assume id is a one-character number index. */
 
-            if (idx_found == -1 && isdigit(dev[0]))
+         if (idx_found == -1 && isdigit(dev[0]))
+         {
+            idx_found = strtoul(dev, NULL, 0);
+            RARCH_LOG("[DirectSound] Fallback, device index is a single number index instead: %d.\n", idx_found);
+
+            if (idx_found != -1)
             {
-               idx_found = strtoul(dev, NULL, 0);
-               RARCH_LOG("[DirectSound] Fallback, device index is a single number index instead: %d.\n", idx_found);
-
-               if (idx_found != -1)
+               if (idx_found < (int32_t)list->size)
                {
-                  if (idx_found < (int32_t)list->size)
-                  {
-                     RARCH_LOG("[DirectSound] Corresponding name: %s.\n", list->elems[idx_found].data);
-                     selected_device = (LPGUID)list->elems[idx_found].userdata;
-                  }
+                  RARCH_LOG("[DirectSound] Corresponding name: %s.\n", list->elems[idx_found].data);
+                  selected_device = (LPGUID)list->elems[idx_found].userdata;
                }
             }
          }

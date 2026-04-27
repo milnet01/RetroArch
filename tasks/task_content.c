@@ -606,6 +606,8 @@ static bool content_file_list_set_info(
          if (last_slash && (last_slash[1] == '\0'))
             *last_slash       = '\0';
 
+         /* The trailing-slash strip above can null *dir if dir was "/". */
+         /* cppcheck-suppress identicalInnerCondition */
          if (*dir)
             file_info->dir    = strdup(dir);
       }
