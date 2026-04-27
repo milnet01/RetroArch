@@ -1,0 +1,19 @@
+# Project-level cppcheck suppressions.
+#
+# Each entry is a confirmed false-positive that the analyser cannot resolve
+# without project-side intent.  Wire this file in via
+# `cppcheck --suppressions-list=.cppcheck-suppress.txt ...`.
+#
+# Format: <id>:<file>[:<line>]
+# Multiple entries per ID are allowed.  Anchor each suppression to a specific
+# line so the entry stops working if the underlying code is rewritten — that
+# forces re-triage, which is the desired behaviour.
+
+# --- S12: JNI callbacks misclassified as non-void return ----------------------
+# play_feature_delivery hosts two JNI callbacks declared `JNIEXPORT void
+# JNICALL Java_...`.  cppcheck 2.20 mis-classifies the JNICALL macro and emits
+# `missingReturn` for the function-end brace.  The functions are genuinely
+# void; there is no return-statement to add.  See
+# docs/private/specs/2026-04-27-audit-spec-needed-cluster.md (S12).
+missingReturn:play_feature_delivery/play_feature_delivery.c:117
+missingReturn:play_feature_delivery/play_feature_delivery.c:187
