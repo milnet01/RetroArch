@@ -1,6 +1,6 @@
 {
-  "_comment": "Project-side audit config for milnet01/RetroArch. See docs/private/audit/README.md for usage. Edit this file when a tool's invocation changes; do NOT pin tool flags in the global /audit skill.",
-  "project": "RetroArch (milnet01 fork)",
+  "_comment": "Project-side audit config for this RetroArch fork. See docs/private/audit/README.md for usage. Edit this file when a tool's invocation changes; do NOT pin tool flags in the global /audit skill.",
+  "project": "RetroArch (downstream fork)",
   "scope_file": "docs/private/audit/scope.txt",
   "suppressions_doc": "docs/private/audit/suppressions.md",
   "indie_review_partition": "docs/private/audit/indie-review-partition.md",

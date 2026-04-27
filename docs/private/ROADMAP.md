@@ -1,6 +1,6 @@
-# RetroArch Private Fork — Roadmap
+# RetroArch Fork — Roadmap
 
-Tracking file for `milnet01/RetroArch` (private fork of `libretro/RetroArch`). Items here are not for upstream — they're for our internal audit/review/spec workflow. PRs back to libretro happen on a separate one-off public fork branch when something is ready to upstream.
+Tracking file for this downstream fork of `libretro/RetroArch`. Items here are fork-local — they drive the audit / review / spec workflow on this side. Anything ready to send upstream is rebased and PR'd separately against `libretro/RetroArch`.
 
 Status markers:
 - 📋 pending
@@ -127,7 +127,7 @@ These look intentional but lack a documented contract. Each is a candidate for a
 
 ### Pending audit re-runs
 
-- 🚧 Install `bear` (`zypper in bear` on openSUSE), regenerate `compile_commands.json` via `bear -- make -j$(nproc)`, then run clang-tidy + clazy. Will likely corroborate items #2-#7 with concrete reachability and surface signed-integer-overflow (S1) findings.
+- 🚧 Install `bear` (via your distro package manager), regenerate `compile_commands.json` via `bear -- make -j$(nproc)`, then run clang-tidy + clazy. Will likely corroborate items #2-#7 with concrete reachability and surface signed-integer-overflow (S1) findings.
 - 🚧 Re-run cppcheck letting `menu/drivers/materialui.c` finish (expect +10-15 items in the S2 pattern).
 - 🚧 Re-run semgrep with pinned parser (332 parse errors → expect FP-rate reduction on the double-free cluster).
 
