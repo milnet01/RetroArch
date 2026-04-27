@@ -869,6 +869,37 @@ static char* s3_build_auth_header(const char *method, const char *canonical_uri,
    return auth_header;
 }
 
+/* Verify the HTTP body length matches the advertised Content-Length, or
+ * accept Transfer-Encoding: chunked.  See the matching helper in webdav.c
+ * for the threat model: a T_FULL response (no CL header) is silently
+ * truncated by net_http.c on connection close, so a mid-download drop
+ * looks like a "successful" 200 to this layer.  S3 GET responses always
+ * carry Content-Length per the AWS contract; reject anything else. */
+static bool s3_verify_content_length(const http_transfer_data_t *data)
+{
+   size_t i;
+   if (!data || !data->headers)
+      return false;
+   for (i = 0; i < data->headers->size; i++)
+   {
+      const char *h = data->headers->elems[i].data;
+      if (!h)
+         continue;
+      if (strncasecmp(h, "Content-Length:", sizeof("Content-Length:") - 1) == 0)
+      {
+         size_t cl;
+         const char *p = h + (sizeof("Content-Length:") - 1);
+         while (*p == ' ' || *p == '\t')
+            p++;
+         cl = (size_t)strtoull(p, NULL, 10);
+         return data->len == cl;
+      }
+      if (strcasecmp(h, "Transfer-Encoding: chunked") == 0)
+         return true;
+   }
+   return false;
+}
+
 static void s3_log_http_failure(const char *path, http_transfer_data_t *data)
 {
    size_t i;
@@ -899,6 +930,21 @@ static void s3_read_cb(retro_task_t *task, void *task_data, void *user_data, con
       RARCH_WARN(S3_PFX "Did not get HTTP data for read '%s'\n", s3_cb_st->path);
    else if (!success)
       s3_log_http_failure(s3_cb_st->path, data);
+
+   /* Defense-in-depth on top of the status check above: require that
+    * the body length match the advertised Content-Length (or chunked).
+    * See s3_verify_content_length above for the threat model.  Skip
+    * for 4xx (404/400) since those are valid no-file/error responses
+    * with no local-file write -- the existing status-range guard below
+    * already excludes them. */
+   if (success && data && data->status >= 200 && data->status < 300
+         && !s3_verify_content_length(data))
+   {
+      RARCH_WARN(S3_PFX "%s: short or unbounded response body "
+            "(status %d, %zu bytes); treating as failure\n",
+            s3_cb_st->path, data->status, data->len);
+      success = false;
+   }
 
    if (success && data && data->status >= 200 && data->status < 300)
    {

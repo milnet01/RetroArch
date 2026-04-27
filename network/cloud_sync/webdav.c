@@ -538,6 +538,41 @@ static void webdav_log_http_failure(const char *path, http_transfer_data_t *data
         RARCH_WARN("%.*s\n", (int)data->len, (const char*)data->data);
 }
 
+/* Verify the HTTP body length matches the advertised Content-Length, or
+ * accept Transfer-Encoding: chunked.  The cloud-sync GET contract requires
+ * one of these -- a response without either is necessarily T_FULL in
+ * net_http.c, which terminates the body on connection close: a mid-stream
+ * drop becomes a "successful" 200 with truncated bytes.  Combined with the
+ * disk write below (no atomic rename), that silently corrupts the user's
+ * local file.  Reject such responses up front. */
+static bool webdav_verify_content_length(const http_transfer_data_t *data)
+{
+   size_t i;
+   if (!data || !data->headers)
+      return false;
+   for (i = 0; i < data->headers->size; i++)
+   {
+      const char *h = data->headers->elems[i].data;
+      if (!h)
+         continue;
+      if (strncasecmp(h, "Content-Length:", sizeof("Content-Length:") - 1) == 0)
+      {
+         size_t cl;
+         const char *p = h + (sizeof("Content-Length:") - 1);
+         while (*p == ' ' || *p == '\t')
+            p++;
+         cl = (size_t)strtoull(p, NULL, 10);
+         return data->len == cl;
+      }
+      /* Chunked: net_http.c only transitions out of P_BODY_CHUNKLEN
+       * when a complete zero-length chunk arrives, so a mid-chunk
+       * drop leaves status = -1.  Safe to accept here. */
+      if (strcasecmp(h, "Transfer-Encoding: chunked") == 0)
+         return true;
+   }
+   return false;
+}
+
 static bool webdav_needs_reauth(http_transfer_data_t *data)
 {
    size_t i;
@@ -670,6 +705,24 @@ static void webdav_read_cb(retro_task_t *task, void *task_data, void *user_data,
       task_push_http_transfer_with_headers(url_encoded, true, NULL, auth_header, webdav_read_cb, webdav_cb_st);
       free(auth_header);
       return;
+   }
+
+   /* On a 2xx, require the body length match the advertised
+    * Content-Length (or that the response was Transfer-Encoding:
+    * chunked).  Without this, a mid-download connection drop on a
+    * T_FULL response (no CL header) leaves status = 200 with a
+    * truncated body -- net_http.c terminates T_FULL on connection
+    * close.  Combined with the no-atomic-rename below, that
+    * silently corrupts the user's local save.  Fail the response
+    * cleanly so the caller leaves the existing local file intact. */
+   if (success && data && data->status != 404
+         && !webdav_verify_content_length(data))
+   {
+      RARCH_WARN("[webdav] %s: short or unbounded response body "
+            "(status %d, %zu bytes); treating as failure\n",
+            webdav_cb_st ? webdav_cb_st->path : "<unknown>",
+            data->status, data->len);
+      success = false;
    }
 
    /* `success` on 404 means "remote doesn't have this file, sync

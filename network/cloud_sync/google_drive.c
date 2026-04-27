@@ -178,6 +178,37 @@ static void gdrive_log_http_failure(const char *context,
       RARCH_WARN("%.*s\n", (int)data->len, (const char*)data->data);
 }
 
+/* Verify the HTTP body length matches the advertised Content-Length, or
+ * accept Transfer-Encoding: chunked.  See the matching helper in webdav.c
+ * for the threat model: a T_FULL response (no CL header) is silently
+ * truncated by net_http.c on connection close, so a mid-download drop
+ * looks like a "successful" 200 to this layer.  Drive API responses
+ * always carry Content-Length in practice; reject anything else. */
+static bool gdrive_verify_content_length(const http_transfer_data_t *data)
+{
+   size_t i;
+   if (!data || !data->headers)
+      return false;
+   for (i = 0; i < data->headers->size; i++)
+   {
+      const char *h = data->headers->elems[i].data;
+      if (!h)
+         continue;
+      if (strncasecmp(h, "Content-Length:", sizeof("Content-Length:") - 1) == 0)
+      {
+         size_t cl;
+         const char *p = h + (sizeof("Content-Length:") - 1);
+         while (*p == ' ' || *p == '\t')
+            p++;
+         cl = (size_t)strtoull(p, NULL, 10);
+         return data->len == cl;
+      }
+      if (strcasecmp(h, "Transfer-Encoding: chunked") == 0)
+         return true;
+   }
+   return false;
+}
+
 /* ========== Encoding Helpers ========== */
 
 /*
@@ -1214,6 +1245,17 @@ static void gdrive_read_download_cb(retro_task_t *task, void *task_data,
 
    if (!success && data)
       gdrive_log_http_failure(cb_st->path, data);
+
+   /* Defense-in-depth on top of the status check above: require that
+    * the body length match the advertised Content-Length (or chunked).
+    * See gdrive_verify_content_length above for the threat model. */
+   if (success && !gdrive_verify_content_length(data))
+   {
+      RARCH_WARN(GDPFX "%s: short or unbounded response body "
+            "(status %d, %zu bytes); treating as failure\n",
+            cb_st->path, data->status, data->len);
+      success = false;
+   }
 
    if (success && data->data)
    {
