@@ -854,7 +854,15 @@ static void discord_json_next_strdup(rjson_t *r, char **out)
    {
       const char *s = rjson_get_string(r, NULL);
       if (s)
+      {
+         /* A hostile or just well-formed-but-redundant Discord IPC
+          * payload that repeats a key (e.g. two "id" entries in the
+          * same user object) would otherwise leak the previous strdup
+          * silently. free() of NULL is a no-op so the typical
+          * single-key-per-object path costs nothing. */
+         free(*out);
          *out = strdup(s);
+      }
    }
 }
 

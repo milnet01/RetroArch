@@ -2254,8 +2254,13 @@ static void config_uint_alt(
       const char *parent_group,
       change_handler_t change_handler, change_handler_t read_handler)
 {
+   /* setting_uint_setting strdups name/short_description internally
+    * when dont_use_enum_idx==true (last arg). The previous caller-side
+    * strdup was unconditionally double-allocating both strings; the
+    * outer copy was retained in the setting struct and the inner
+    * (caller's) strdup was leaked. */
    (*list)[list_info->index++] = setting_uint_setting(
-         strdup(name), strdup(SHORT),
+         name, SHORT,
          target, default_value,
          group_info->name, subgroup_info->name, parent_group,
          change_handler, read_handler,
@@ -2433,8 +2438,9 @@ static void config_string_alt(
       const char *parent_group,
       change_handler_t change_handler, change_handler_t read_handler)
 {
+   /* Same caller-side double-strdup leak as config_uint_alt above. */
    (*list)[list_info->index++] = setting_string_setting(ST_STRING,
-         strdup(label), strdup(shortname),
+         label, shortname,
          s, (unsigned)len,
          default_value, "",
          group_info->name, subgroup_info->name, parent_group,

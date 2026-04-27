@@ -768,7 +768,19 @@ void gfx_animation_push_delayed(
       unsigned delay, gfx_animation_ctx_entry_t *entry)
 {
    gfx_timer_ctx_entry_t timer_entry;
-   gfx_delayed_animation_t *delayed_animation  = (gfx_delayed_animation_t*)
+   gfx_delayed_animation_t *delayed_animation;
+
+   /* delay == 0 means "fire now" -- the timer-driven path would push a
+    * zero-duration tween that gfx_animation_push silently rejects as
+    * born-dead, leaking delayed_animation. Forward to gfx_animation_push
+    * directly. */
+   if (delay == 0)
+   {
+      gfx_animation_push(entry);
+      return;
+   }
+
+   delayed_animation = (gfx_delayed_animation_t*)
       malloc(sizeof(gfx_delayed_animation_t));
 
    if (!delayed_animation)

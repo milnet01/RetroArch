@@ -821,8 +821,15 @@ static core_info_cache_list_t *core_info_cache_read(const char *info_dir)
              ? rjson_get_error(parser)
              : "format error"));
 
-      /* Info cache is corrupt - discard it */
+      /* Info cache is corrupt - discard it. core_info_cache_list_free
+       * only releases the inner items[]/version allocations and clears
+       * the inner pointers; the caller is responsible for free()ing the
+       * outer struct itself (see core_info_cache_list_new's failure
+       * path at line 740, which uses the same _free()-then-free()
+       * pairing). */
       core_info_cache_list_free(context.core_info_cache_list);
+      free(context.core_info_cache_list);
+      context.core_info_cache_list = NULL;
       core_info_cache_list = core_info_cache_list_new();
    }
    else
@@ -852,7 +859,11 @@ static core_info_cache_list_t *core_info_cache_read(const char *info_dir)
             CORE_INFO_CACHE_VERSION,
             core_info_cache_list->version);
 
+      /* Same outer-struct ownership invariant as the parse-error
+       * branch above. */
       core_info_cache_list_free(context.core_info_cache_list);
+      free(context.core_info_cache_list);
+      context.core_info_cache_list = NULL;
       core_info_cache_list = core_info_cache_list_new();
    }
 
