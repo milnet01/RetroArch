@@ -128,13 +128,25 @@ static bool g_xinput_guide_button_supported = false;
 static unsigned g_xinput_num_buttons        = 0;
 static XInputSetState_t g_XInputSetState;
 static XInputGetStateEx_t g_XInputGetStateEx;
+/* Audit S8: XInput's XUSER_MAX_COUNT is fixed at 4 across XInput 1.3,
+ * 1.4, 9.1.0 and UWP -- XInputGetState's dwUserIndex is documented as
+ * "in the range 0-3."  The successor Microsoft.GameInput API removes
+ * the cap, but reaches RetroArch through a different driver.  Use a
+ * named constant for the slot count and assert it fits inside the
+ * project pad-id range so any future DEFAULT_MAX_PADS shrink (currently
+ * 4 on _XBOX and HAVE_XINPUT&&!HAVE_DINPUT, larger on desktop) breaks
+ * the build instead of silently OOB'ing the connected/active arrays. */
+#define MAX_XINPUT_USERS 4
+_Static_assert(MAX_XINPUT_USERS <= DEFAULT_MAX_PADS,
+   "MAX_XINPUT_USERS must fit inside the project pad-id range");
+
 #ifdef _XBOX1
-static XINPUT_FEEDBACK     g_xinput_rumble_states[4];
+static XINPUT_FEEDBACK     g_xinput_rumble_states[MAX_XINPUT_USERS];
 #else
-static XINPUT_VIBRATION    g_xinput_rumble_states[4];
+static XINPUT_VIBRATION    g_xinput_rumble_states[MAX_XINPUT_USERS];
 #endif
-static xinput_joypad_state g_xinput_states[4];
-static bool xinput_active_port[4] = {0};
+static xinput_joypad_state g_xinput_states[MAX_XINPUT_USERS];
+static bool xinput_active_port[MAX_XINPUT_USERS] = {0};
 
 static unsigned xinput_hotplug_index = 0;
 static unsigned xinput_poll_counter  = 0;
@@ -285,8 +297,8 @@ static int16_t xinput_joypad_axis_state(
 
 static INLINE int pad_index_to_xuser_index(unsigned pad)
 {
-   return pad < DEFAULT_MAX_PADS
-      && g_xinput_states[pad].connected ? pad : -1;
+   return pad < MAX_XINPUT_USERS
+      && g_xinput_states[pad].connected ? (int)pad : -1;
 }
 
 static const char *xinput_joypad_name(unsigned pad)
@@ -368,7 +380,7 @@ static void *xinput_joypad_init(void *data)
    }
 
    /* Zero out the states. */
-   for (i = 0; i < 4; ++i)
+   for (i = 0; i < MAX_XINPUT_USERS; ++i)
    {
       g_xinput_states[i].xstate.dwPacketNumber        = 0;
       g_xinput_states[i].xstate.Gamepad.wButtons      = 0;
@@ -392,7 +404,7 @@ static void *xinput_joypad_init(void *data)
       goto error;
 #endif
 
-   for (i = 0; i < 4; ++i)
+   for (i = 0; i < MAX_XINPUT_USERS; ++i)
       xinput_active_port[i] = false;
 
    for (j = 0; j < MAX_USERS; j++)
@@ -417,7 +429,7 @@ static void *xinput_joypad_init(void *data)
    for (i = 0; i < MAX_USERS; ++i)
    {
       int xuser = pad_index_to_xuser_index(i);
-      if (xuser >= 0 && xuser < 4)
+      if (xuser >= 0 && xuser < MAX_XINPUT_USERS)
          xinput_active_port[xuser] = true;
    }
 
@@ -448,7 +460,7 @@ static void xinput_joypad_destroy(void)
 {
    int i;
 
-   for (i = 0; i < 4; ++i)
+   for (i = 0; i < MAX_XINPUT_USERS; ++i)
    {
       g_xinput_states[i].xstate.dwPacketNumber = 0;
       g_xinput_states[i].xstate.Gamepad.wButtons = 0;

@@ -32,6 +32,22 @@
 #include "../../configuration.h"
 #include "../../tasks/tasks_internal.h"
 
+/* Audit S6: assert the bind-index decomposition invariant used by
+ * action_scan_input_desc below.  The function divides
+ * (type - MENU_SETTINGS_INPUT_DESC_BEGIN) by RARCH_ANALOG_BIND_LIST_END
+ * to recover (user_idx, key) and writes
+ * settings->uints.input_remap_ids[user_idx][key].  Both decomposed
+ * indices must land inside their respective array dims; both relations
+ * are true by construction today but adding a new bind keyword could
+ * silently break them, so make the build fail instead. */
+_Static_assert(
+   (MENU_SETTINGS_INPUT_DESC_END - MENU_SETTINGS_INPUT_DESC_BEGIN)
+   == (RARCH_ANALOG_BIND_LIST_END * MAX_USERS),
+   "MENU_SETTINGS_INPUT_DESC range must equal RARCH_ANALOG_BIND_LIST_END * MAX_USERS");
+_Static_assert(
+   RARCH_ANALOG_BIND_LIST_END <= RARCH_CUSTOM_BIND_LIST_END,
+   "RARCH_ANALOG_BIND_LIST_END must fit inside input_remap_ids' inner dim");
+
 #ifndef BIND_ACTION_SCAN
 #define BIND_ACTION_SCAN(cbs, name) (cbs)->action_scan = (name)
 #endif
