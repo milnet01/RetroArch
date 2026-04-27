@@ -297,7 +297,9 @@ static void xdk_joypad_poll(void)
 
 static bool xdk_joypad_query_pad(unsigned pad)
 {
-   return pad < MAX_USERS && g_xinput_states[pad].connected;
+   /* Audit S8: g_xinput_states is sized [DEFAULT_MAX_PADS] (4 on _XBOX);
+    * the previous bound (MAX_USERS = 16) read past the end on pad 4..15. */
+   return pad < DEFAULT_MAX_PADS && g_xinput_states[pad].connected;
 }
 
 static void xdk_joypad_destroy(void)
