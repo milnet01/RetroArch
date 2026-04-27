@@ -17,3 +17,22 @@
 # docs/private/specs/2026-04-27-audit-spec-needed-cluster.md (S12).
 missingReturn:play_feature_delivery/play_feature_delivery.c:117
 missingReturn:play_feature_delivery/play_feature_delivery.c:187
+
+# --- S4: EGL-by-design context drivers ---------------------------------------
+# xegl_ctx (X11 + EGL), qnx_ctx, and vivante_fbdev_ctx are EGL-only context
+# drivers — Makefile.common only links them when HAVE_EGL=1 (xegl gated
+# explicitly; the others' GLES rendering would be a no-op without EGL).
+# cppcheck flags `vid` / `new_width` / `new_height` as uninitialised because
+# it analyses the file with HAVE_EGL undefined, a configuration the build
+# system never compiles.  See
+# docs/private/specs/2026-04-27-audit-spec-needed-cluster.md (S4).
+unassignedVariable:gfx/drivers_context/xegl_ctx.c:271
+uninitvar:gfx/drivers_context/xegl_ctx.c:299
+unassignedVariable:gfx/drivers_context/qnx_ctx.c:267
+uninitvar:gfx/drivers_context/qnx_ctx.c:274
+legacyUninitvar:gfx/drivers_context/qnx_ctx.c:276
+legacyUninitvar:gfx/drivers_context/qnx_ctx.c:277
+unassignedVariable:gfx/drivers_context/vivante_fbdev_ctx.c:116
+uninitvar:gfx/drivers_context/vivante_fbdev_ctx.c:123
+legacyUninitvar:gfx/drivers_context/vivante_fbdev_ctx.c:125
+legacyUninitvar:gfx/drivers_context/vivante_fbdev_ctx.c:126
