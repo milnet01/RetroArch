@@ -114,7 +114,11 @@ static void input_wl_poll(void *data)
 static int16_t input_wl_touch_state(input_ctx_wayland_data_t *wl,
       unsigned idx, unsigned id, bool screen)
 {
-   if (idx <= MAX_TOUCHES)
+   /* idx is a slot index into wl->touches[MAX_TOUCHES], not the wl_touch
+    * protocol id; the id->slot mapping is owned by wl_touch_handle_down
+    * (input/common/wayland_common.c) which already bounds the slot below
+    * MAX_TOUCHES. The < (not <=) here is the matching bound. */
+   if (idx < MAX_TOUCHES)
    {
       struct video_viewport vp    = {0};
       int16_t res_x               = 0;
