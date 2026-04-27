@@ -12,7 +12,10 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <streams/file_stream.h>
+
 #include "cloud_sync_driver.h"
+#include "../configuration.h"
 #include "../list_special.h"
 #include "../retroarch.h"
 #include "../verbosity.h"
@@ -127,6 +130,36 @@ bool cloud_sync_update(const char *path, RFILE *file,
       cloud_sync_complete_handler_t cb, void *user_data)
 {
    const cloud_sync_driver_t *driver = cloud_sync_state_get_ptr()->driver;
+
+   /* Reject files larger than the configured cap before any back-end
+    * runs.  s3 / webdav / google_drive each malloc the full body for
+    * SigV4 / Content-Length / OAuth multipart respectively; an
+    * unbounded path is an instant OOM-kill on memory-constrained
+    * targets and a runloop stall on desktop.  See
+    * docs/private/specs/2026-04-27-cloud-sync-streaming-upload-design.md */
+   if (file)
+   {
+      settings_t  *settings  = config_get_ptr();
+      unsigned     cap_mb    = settings ? settings->uints.cloud_sync_max_upload_mb : 0;
+
+      if (cap_mb)
+      {
+         int64_t file_size;
+         filestream_seek(file, 0, SEEK_END);
+         file_size = filestream_tell(file);
+         filestream_seek(file, 0, SEEK_SET);
+
+         if (file_size > 0 && (uint64_t)file_size > (uint64_t)cap_mb * 1024 * 1024)
+         {
+            RARCH_ERR("[Cloud Sync] Refusing upload of '%s' (%lld bytes > %u MiB cap).\n",
+                  path, (long long)file_size, cap_mb);
+            if (cb)
+               cb(user_data, path, false, NULL);
+            return false;
+         }
+      }
+   }
+
    if (driver && driver->cloud_sync_update)
       return driver->cloud_sync_update(path, file, cb, user_data);
    return false;

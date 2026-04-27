@@ -249,6 +249,7 @@ typedef struct settings
       unsigned network_remote_base_port;
       unsigned keymapper_port;
       unsigned cloud_sync_sync_mode;
+      unsigned cloud_sync_max_upload_mb;
       unsigned video_window_opacity;
       unsigned crt_switch_resolution;
       unsigned crt_switch_resolution_super;

@@ -1111,6 +1111,14 @@ MSG_HASH(
    "When disabled, files are moved to a backup folder before being overwritten or deleted."
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CLOUD_SYNC_MAX_UPLOAD_MB,
+   "Max Upload Size (MB)"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_CLOUD_SYNC_MAX_UPLOAD_MB,
+   "Refuse cloud-sync uploads larger than this many megabytes. Protects against OOM on memory-constrained devices and runaway transfers on desktop. Set to 0 to disable the cap."
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CLOUD_SYNC_SYNC_MODE,
    "Sync Mode"
    )

@@ -12233,6 +12233,20 @@ static bool setting_append_list(
                general_read_handler,
                SD_FLAG_NONE);
 
+         CONFIG_UINT(
+               list, list_info,
+               &settings->uints.cloud_sync_max_upload_mb,
+               MENU_ENUM_LABEL_CLOUD_SYNC_MAX_UPLOAD_MB,
+               MENU_ENUM_LABEL_VALUE_CLOUD_SYNC_MAX_UPLOAD_MB,
+               DEFAULT_CLOUD_SYNC_MAX_UPLOAD_MB,
+               &group_info,
+               &subgroup_info,
+               parent_group,
+               general_write_handler,
+               general_read_handler);
+         menu_settings_list_current_add_range(list, list_info, 0, 8192, 64, true, true);
+         SETTINGS_DATA_LIST_CURRENT_ADD_FLAGS(list, list_info, SD_FLAG_ADVANCED);
+
          CONFIG_BOOL(
                list, list_info,
                &settings->bools.cloud_sync_sync_saves,

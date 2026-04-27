@@ -1486,6 +1486,14 @@
 #define DEFAULT_NETWORK_BUILDBOT_AUTO_EXTRACT_ARCHIVE true
 #define DEFAULT_NETWORK_BUILDBOT_SHOW_EXPERIMENTAL_CORES false
 
+/* Cloud sync upload cap.  s3_update / webdav_update / gdrive_update can
+ * pull the entire file into RAM before signing/sending; on a memory-
+ * constrained target a multi-GB save state is an instant OOM-kill.
+ * Default 2048 MiB matches AWS S3's single-PUT object size ceiling
+ * (multipart handles up to 5 TB above this).  Set to 0 to disable the
+ * cap.  See docs/private/specs/2026-04-27-cloud-sync-streaming-upload-design.md */
+#define DEFAULT_CLOUD_SYNC_MAX_UPLOAD_MB 2048
+
 /* Automatically create a backup whenever a core is
  * updated via the online updater
  * > Enable by default on all modern platforms with

@@ -2712,6 +2712,7 @@ static struct config_uint_setting *populate_settings_uint(
 #endif
 #ifdef HAVE_CLOUDSYNC
    SETTING_UINT("cloud_sync_sync_mode",          &settings->uints.cloud_sync_sync_mode, true, CLOUD_SYNC_MODE_AUTOMATIC, false);
+   SETTING_UINT("cloud_sync_max_upload_mb",      &settings->uints.cloud_sync_max_upload_mb, true, DEFAULT_CLOUD_SYNC_MAX_UPLOAD_MB, false);
 #endif
 
 #ifdef HAVE_LANGEXTRA
