@@ -3371,7 +3371,7 @@ static void materialui_compute_entries_box_default(
          (int)(mui->margin * 2) -
          (int)(mui->landscape_optimization.entry_margin * 2);
    float sum                  = 0;
-   size_t entries_end         = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
+   size_t entries_end         = list ? list->size : 0;
 
    if (!list)
       return;
@@ -11035,7 +11035,8 @@ static enum menu_action materialui_parse_menu_entry_action(
 
             if (mui->flags & MUI_FLAG_IS_PLAYLISTS_TAB)
             {
-               size_t selection_total     = menu_st->entries.list ? MENU_LIST_GET_SELECTION(menu_st->entries.list, 0)->size : 0;
+               file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_st->entries.list, 0);
+               size_t selection_total     = selection_buf ? selection_buf->size : 0;
                size_t selection           = menu_st->selection_ptr;
                size_t new_selection       = random_range(0, (unsigned)(selection_total - 1));
                menu_entry_t entry_new;
@@ -11629,7 +11630,8 @@ static int materialui_pointer_up(void *userdata,
    menu_input_t *menu_input   = &menu_st->input_state;
    size_t selection           = menu_st->selection_ptr;
    menu_list_t *menu_list     = menu_st->entries.list;
-   size_t entries_end         = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
+   file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
+   size_t entries_end         = selection_buf ? selection_buf->size : 0;
    materialui_handle_t *mui   = (materialui_handle_t*)userdata;
    float scroll_y_max;
    float scroll_y_target;
