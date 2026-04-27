@@ -7976,14 +7976,15 @@ static void vulkan_overlay_free(vk_t *vk)
       return;
 
    free(vk->overlay.vertex);
-   for (i = 0; i < (int) vk->overlay.count; i++)
-      if (vk->overlay.images[i].memory != VK_NULL_HANDLE)
-         vulkan_destroy_texture(
-               vk->context->device,
-               &vk->overlay.images[i]);
-
    if (vk->overlay.images)
+   {
+      for (i = 0; i < (int) vk->overlay.count; i++)
+         if (vk->overlay.images[i].memory != VK_NULL_HANDLE)
+            vulkan_destroy_texture(
+                  vk->context->device,
+                  &vk->overlay.images[i]);
       free(vk->overlay.images);
+   }
 
    memset(&vk->overlay, 0, sizeof(vk->overlay));
 }
