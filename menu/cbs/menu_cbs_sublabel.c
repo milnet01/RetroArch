@@ -1943,7 +1943,7 @@ static int action_bind_sublabel_playlist_entry(
    size_t _len;
    struct menu_state    *menu_st             = menu_state_get_ptr();
    menu_list_t *menu_list                    = menu_st->entries.list;
-   size_t list_size                          = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   size_t list_size                          = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
    playlist_t *playlist                      = NULL;
    const struct playlist_entry *entry        = NULL;
    size_t playlist_index                     = i;

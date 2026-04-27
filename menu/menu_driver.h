@@ -71,6 +71,11 @@ RETRO_BEGIN_DECLS
 
 #define MENU_LIST_GET(list, idx) ((list) ? ((list)->menu_stack[(idx)]) : NULL)
 
+/* Returns NULL if `list` is NULL.  Callers MUST guard the result before
+ * dereferencing (the menu-draw lifecycle includes states — driver swap,
+ * menu init failure, post-deinit cleanup — where menu_list is genuinely
+ * NULL).  See audit S2 / indie-review C1 (2026-04-25) for the path-
+ * sensitive proof from clang-analyzer. */
 #define MENU_LIST_GET_SELECTION(list, idx) ((list) ? ((list)->selection_buf[(idx)]) : NULL)
 
 #define MENU_LIST_GET_STACK_SIZE(list, idx) ((list)->menu_stack[(idx)]->size)

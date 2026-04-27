@@ -220,7 +220,7 @@ static int action_right_scroll(unsigned type, const char *label,
    size_t selection           = menu_st->selection_ptr;
    unsigned scroll_speed      = (unsigned)((MAX(scroll_accel, 2) - 2) / 4 + 1);
    unsigned fast_scroll_speed = 10 * scroll_speed;
-   size_t entries_end         = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   size_t entries_end         = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
 
    if (selection + fast_scroll_speed < entries_end)
    {
