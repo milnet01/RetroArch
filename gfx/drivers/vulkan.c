@@ -5898,10 +5898,15 @@ static void vulkan_draw_quad(vk_t *vk, const struct vk_draw_quad *quad)
    {
       /* Only allocate and update descriptors when state actually changed.
        * Previously, a UBO was allocated unconditionally before this check,
-       * wasting buffer chain space every frame (fix #1). */
+       * wasting buffer chain space every frame (fix #1).
+       *
+       * Compare on `.data` (the bare float[16]) rather than the enclosing
+       * struct — the struct has no padding today but memcmp on a struct is
+       * fragile if the layout ever grows.  Bit-exact comparison is the
+       * intended semantics here: same bits ⇒ no descriptor refresh. */
       if (
-               memcmp(quad->mvp,
-                  &vk->tracker.mvp, sizeof(*quad->mvp)) != 0
+               memcmp(quad->mvp->data,
+                  vk->tracker.mvp.data, sizeof(quad->mvp->data)) != 0
             || quad->texture->view != vk->tracker.view
             || quad->sampler != vk->tracker.sampler)
       {
