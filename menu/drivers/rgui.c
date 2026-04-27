@@ -5214,7 +5214,10 @@ static void rgui_render(void *data, unsigned width, unsigned height,
 
    rgui->flags              &= ~RGUI_FLAG_FORCE_REDRAW;
 
-   entries_end               = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
+   {
+      file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
+      entries_end                = selection_buf ? selection_buf->size : 0;
+   }
 
    /* Get offset of bottommost entry */
    bottom                    = (int)(entries_end - rgui->term_layout.height);
@@ -7391,7 +7394,8 @@ static void rgui_navigation_set(void *data, bool scroll)
    bool menu_show_sublabels       = false;
    struct menu_state *menu_st     = menu_state_get_ptr();
    menu_list_t *menu_list         = menu_st->entries.list;
-   size_t end                     = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
+   file_list_t *selection_buf     = MENU_LIST_GET_SELECTION(menu_list, 0);
+   size_t end                     = selection_buf ? selection_buf->size : 0;
    size_t selection               = menu_st->selection_ptr;
    rgui_t *rgui                   = (rgui_t*)data;
 
@@ -7667,8 +7671,9 @@ static int rgui_pointer_up(
    rgui_t *rgui               = (rgui_t*)data;
    struct menu_state *menu_st = menu_state_get_ptr();
    menu_list_t *menu_list     = menu_st->entries.list;
+   file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
    size_t selection           = menu_st->selection_ptr;
-   size_t end                 = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
+   size_t end                 = selection_buf ? selection_buf->size : 0;
 
    if (!rgui)
       return -1;
@@ -8260,7 +8265,8 @@ static enum menu_action rgui_parse_menu_entry_action(
       case MENU_ACTION_SCAN:
          if (rgui->flags & RGUI_FLAG_IS_PLAYLISTS_TAB)
          {
-            size_t selection_total     = menu_st->entries.list ? MENU_LIST_GET_SELECTION(menu_st->entries.list, 0)->size : 0;
+            file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_st->entries.list, 0);
+            size_t selection_total     = selection_buf ? selection_buf->size : 0;
             size_t selection           = menu_st->selection_ptr;
             size_t new_selection       = random_range(0, (unsigned)(selection_total - 1));
             menu_entry_t entry_new;
