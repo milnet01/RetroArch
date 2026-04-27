@@ -7550,10 +7550,12 @@ static void vulkan_draw_quad(vk_t *vk, const struct vk_draw_quad *quad)
    {
       /* Descriptors are allocated and updated only when the state
        * they describe moved, so an unchanged frame costs the buffer
-       * chain nothing. */
+       * chain nothing.  The matrix is compared on .data (the bare
+       * float[16]) rather than the enclosing struct; bit-exact is the
+       * intended semantics: same bits, no descriptor refresh. */
       if (
-               memcmp(quad->mvp,
-                  &vk->tracker.mvp, sizeof(*quad->mvp)) != 0
+               memcmp(quad->mvp->data,
+                  vk->tracker.mvp.data, sizeof(quad->mvp->data)) != 0
             || quad->texture->view != vk->tracker.view
             || quad->sampler != vk->tracker.sampler)
       {
