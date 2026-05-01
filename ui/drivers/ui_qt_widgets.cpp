@@ -507,26 +507,27 @@ UIntComboBox::UIntComboBox(rarch_setting_t *setting, double min, double max, QWi
 
 void UIntComboBox::populate(double min, double max)
 {
-   float i;
    unsigned orig_value = *m_setting->value.target.unsigned_integer;
    float          step = m_setting->step;
+   int         n_steps = (step > 0.0f) ? (int)((max - min) / step) : 0;
+   int               j;
    bool  checked_found = false;
    unsigned      count = 0;
 
    if (m_setting->get_string_representation)
    {
-      for (i = min; i <= max; i += step)
+      for (j = 0; j <= n_steps; j++)
       {
          char val_s[NAME_MAX_LENGTH];
-         unsigned val = (unsigned)i;
+         unsigned val = (unsigned)(min + (double)j * step);
 
          *m_setting->value.target.unsigned_integer = val;
 
          m_setting->get_string_representation(m_setting, val_s, sizeof(val_s));
 
-         m_hash[i] = QString(val_s);
+         m_hash[val] = QString(val_s);
 
-         addItem(m_hash[i], i);
+         addItem(m_hash[val], val);
 
          if (!checked_found && val == orig_value)
          {
@@ -701,18 +702,20 @@ UIntRadioButtons::UIntRadioButtons(rarch_setting_t *setting, QWidget *parent) :
 {
    QVBoxLayout *layout = new QVBoxLayout(this);
    /* from menu_displaylist */
-   float i;
    unsigned orig_value = *setting->value.target.unsigned_integer;
    float          step = setting->step;
    float           min = (setting->flags & SD_FLAG_ENFORCE_MINRANGE) ? setting->min : 0.00f;
    float           max = (setting->flags & SD_FLAG_ENFORCE_MAXRANGE) ? setting->max : UINT_MAX;
+   int         n_steps = (step > 0.0f) ? (int)((max - min) / step) : 0;
+   int               j;
    bool  checked_found = false;
 
    if (setting->get_string_representation)
    {
-      for (i = min; i <= max; i += step)
+      for (j = 0; j <= n_steps; j++)
       {
          char val_s[NAME_MAX_LENGTH];
+         unsigned i = (unsigned)(min + (float)j * step);
 
          *setting->value.target.unsigned_integer = i;
 
