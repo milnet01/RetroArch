@@ -1199,6 +1199,11 @@ static void gdrive_begin_with_token(cloud_sync_complete_handler_t cb,
 {
    gdrive_begin_ctx_t *ctx =
       (gdrive_begin_ctx_t *)calloc(1, sizeof(*ctx));
+   if (!ctx)
+   {
+      cb(user_data, NULL, false, NULL);
+      return;
+   }
    ctx->cb        = cb;
    ctx->user_data = user_data;
    gdrive_find_folder(ctx);
