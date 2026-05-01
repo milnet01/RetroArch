@@ -514,6 +514,12 @@ static void gdrive_refresh_then_retry(gdrive_op_fn_t retry_fn,
    settings_t *settings = config_get_ptr();
 
    ctx = (gdrive_refresh_ctx_t *)calloc(1, sizeof(*ctx));
+   if (!ctx)
+   {
+      cb_st->cb(cb_st->user_data, cb_st->path, false, cb_st->rfile);
+      free(cb_st);
+      return;
+   }
    ctx->retry_fn = retry_fn;
    ctx->cb_st    = cb_st;
 
@@ -871,6 +877,12 @@ static void gdrive_resolve_parent(const char *path,
 
    /* Need to walk and create folders */
    walk = (gdrive_folder_walk_t *)calloc(1, sizeof(*walk));
+   if (!walk)
+   {
+      cb_st->cb(cb_st->user_data, cb_st->path, false, cb_st->rfile);
+      free(cb_st);
+      return;
+   }
    strlcpy(walk->dir_path, dir_path, sizeof(walk->dir_path));
    walk->remaining = walk->dir_path;
    strlcpy(walk->current_parent, gdrive_st.folder_id,
@@ -1132,6 +1144,11 @@ static void gdrive_begin_with_token(cloud_sync_complete_handler_t cb,
 {
    gdrive_begin_ctx_t *ctx =
       (gdrive_begin_ctx_t *)calloc(1, sizeof(*ctx));
+   if (!ctx)
+   {
+      cb(user_data, NULL, false, NULL);
+      return;
+   }
    ctx->cb        = cb;
    ctx->user_data = user_data;
    gdrive_find_folder(ctx);
@@ -1173,6 +1190,8 @@ static bool gdrive_sync_begin(cloud_sync_complete_handler_t cb,
       char post_data[4096];
       gdrive_begin_ctx_t *ctx =
          (gdrive_begin_ctx_t *)calloc(1, sizeof(*ctx));
+      if (!ctx)
+         return false;
       ctx->cb        = cb;
       ctx->user_data = user_data;
 
@@ -1192,6 +1211,8 @@ static bool gdrive_sync_begin(cloud_sync_complete_handler_t cb,
       char post_data[1024];
       gdrive_oauth_ctx_t *ctx =
          (gdrive_oauth_ctx_t *)calloc(1, sizeof(*ctx));
+      if (!ctx)
+         return false;
       ctx->cb        = cb;
       ctx->user_data = user_data;
 
@@ -1333,6 +1354,8 @@ static bool gdrive_read(const char *path, const char *file,
 {
    gdrive_cb_state_t *cb_st =
       (gdrive_cb_state_t *)calloc(1, sizeof(*cb_st));
+   if (!cb_st)
+      return false;
    cb_st->cb        = cb;
    cb_st->user_data = user_data;
    strlcpy(cb_st->path, path, sizeof(cb_st->path));
@@ -1514,6 +1537,8 @@ static bool gdrive_update(const char *path, RFILE *rfile,
 {
    gdrive_cb_state_t *cb_st =
       (gdrive_cb_state_t *)calloc(1, sizeof(*cb_st));
+   if (!cb_st)
+      return false;
    cb_st->cb        = cb;
    cb_st->user_data = user_data;
    cb_st->rfile     = rfile;
@@ -1651,6 +1676,8 @@ static bool gdrive_delete(const char *path,
 {
    gdrive_cb_state_t *cb_st =
       (gdrive_cb_state_t *)calloc(1, sizeof(*cb_st));
+   if (!cb_st)
+      return false;
    cb_st->cb        = cb;
    cb_st->user_data = user_data;
    strlcpy(cb_st->path, path, sizeof(cb_st->path));

@@ -193,6 +193,9 @@ static char *webdav_create_ha1_hash(char *user, char *realm, char *pass)
    unsigned char digest[16];
    char *hash = (char*)malloc(33);
 
+   if (!hash)
+      return NULL;
+
    MD5_Init(&md5);
    MD5_Update(&md5, user, (unsigned long)strlen(user));
    MD5_Update(&md5, ":", 1);
@@ -359,6 +362,9 @@ static char *webdav_create_ha1(void)
 
    hash = (char*)malloc(33);
 
+   if (!hash)
+      return NULL;
+
    MD5_Init(&md5);
    MD5_Update(&md5, webdav_st->ha1hash, 32);
    MD5_Update(&md5, ":", 1);
@@ -382,6 +388,9 @@ static char *webdav_create_ha2(const char *method, const char *path)
    /* no attempt at supporting auth-int, everything else uses this */
    char           *hash      = (char*)malloc(33);
 
+   if (!hash)
+      return NULL;
+
    MD5_Init(&md5);
    MD5_Update(&md5, method, (unsigned long)strlen(method));
    MD5_Update(&md5, ":", 1);
@@ -404,6 +413,14 @@ static char *webdav_create_digest_response(const char *method, const char *path)
    char           *ha1       = webdav_create_ha1();
    char           *ha2       = webdav_create_ha2(method, path);
    char           *hash      = (char*)malloc(33);
+
+   if (!ha1 || !ha2 || !hash)
+   {
+      free(ha1);
+      free(ha2);
+      free(hash);
+      return NULL;
+   }
 
    MD5_Init(&md5);
    MD5_Update(&md5, ha1, 32);
@@ -454,6 +471,8 @@ static char *webdav_create_digest_auth_header(const char *method, const char *ur
    } while (count < 3 && *path != '\0');
 
    response = webdav_create_digest_response(method, path);
+   if (!response)
+      return NULL;
    __len    = snprintf(nonceCount, sizeof(nonceCount),
          "%08x", webdav_st->nc++);
 
@@ -474,6 +493,11 @@ static char *webdav_create_digest_auth_header(const char *method, const char *ur
    total  = _len;
    _len   = 0;
    header = (char*)malloc(total);
+   if (!header)
+   {
+      free(response);
+      return NULL;
+   }
    _len   = strlcpy(header, "Authorization: Digest username=\"", total - _len);
    _len  += strlcpy(header + _len, webdav_st->username, total - _len);
    _len  += strlcpy(header + _len, "\", realm=\"", total - _len);
@@ -650,6 +674,11 @@ static bool webdav_sync_begin(cloud_sync_complete_handler_t cb, void *user_data)
    if (auth_header)
    {
       webdav_cb_state_t *webdav_cb_st = (webdav_cb_state_t*)calloc(1, sizeof(webdav_cb_state_t));
+      if (!webdav_cb_st)
+      {
+         free(auth_header);
+         return false;
+      }
       webdav_cb_st->cb        = cb;
       webdav_cb_st->user_data = user_data;
       task_push_webdav_stat(webdav_st->url, true, auth_header, webdav_stat_cb, webdav_cb_st);
@@ -763,6 +792,9 @@ static bool webdav_read(const char *path, const char *file,
    char               url_encoded[PATH_MAX_LENGTH];
    webdav_state_t    *webdav_st    = webdav_state_get_ptr();
    webdav_cb_state_t *webdav_cb_st = (webdav_cb_state_t*)calloc(1, sizeof(webdav_cb_state_t));
+
+   if (!webdav_cb_st)
+      return false;
 
    fill_pathname_join_special(url, webdav_st->url, path, sizeof(url));
    net_http_urlencode_full(url_encoded, url, sizeof(url_encoded));
@@ -930,6 +962,9 @@ static bool webdav_update(const char *path, RFILE *rfile,
    char               dir[DIR_MAX_LENGTH];
    webdav_cb_state_t *webdav_cb_st = (webdav_cb_state_t*)calloc(1, sizeof(webdav_cb_state_t));
 
+   if (!webdav_cb_st)
+      return false;
+
    /* TODO/FIXME: if !settings->bools.cloud_sync_destructive, should move to deleted/ first */
 
    webdav_cb_st->cb = cb;
@@ -1057,6 +1092,9 @@ static bool webdav_delete(const char *path, cloud_sync_complete_handler_t cb, vo
 {
    webdav_cb_state_t *webdav_cb_st = (webdav_cb_state_t*)calloc(1, sizeof(webdav_cb_state_t));
    settings_t        *settings     = config_get_ptr();
+
+   if (!webdav_cb_st)
+      return false;
 
    webdav_cb_st->cb        = cb;
    webdav_cb_st->user_data = user_data;
