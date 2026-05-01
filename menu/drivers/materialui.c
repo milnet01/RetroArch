@@ -8870,6 +8870,12 @@ static void materialui_init_font(gfx_display_t *p_disp,
 
    /* We assume the average glyph aspect ratio is close to 3:4 */
    font_data->glyph_width    = (int)lroundf(font_size * (3.0f / 4.0f));
+   /* Clamp to >= 1 so the many `width / glyph_width` ticker
+    * computations downstream can't divide by zero if font_size
+    * rounds to 0 and the font load below also fails to set a
+    * positive char_width. */
+   if (font_data->glyph_width < 1)
+      font_data->glyph_width = 1;
 
    if (font_data->font)
    {

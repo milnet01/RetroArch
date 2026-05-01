@@ -2418,10 +2418,21 @@ static bool rgui_downscale_thumbnail(
 {
    video_driver_state_t *video_st = video_state_get_ptr();
    bool thumbnail_core_aspect     = *rgui->savestate_thumbnail_file_path;
+   float display_aspect_ratio;
+   float aspect_ratio;
+   float core_aspect;
+
+   /* Caller already guarantees image_src dims >= 1; guard the
+    * thumbnail size box too so the ratio computation below and
+    * the per-axis divides at the SCALE_POINT branch can't hit
+    * a zero denominator. */
+   if (max_width < 1 || max_height < 1)
+      return false;
+
    /* Determine output dimensions */
-   float display_aspect_ratio    = (float)max_width / (float)max_height;
-   float         aspect_ratio    = (float)image_src->width / (float)image_src->height;
-   float core_aspect             = (thumbnail_core_aspect
+   display_aspect_ratio          = (float)max_width / (float)max_height;
+   aspect_ratio                  = (float)image_src->width / (float)image_src->height;
+   core_aspect                   = (thumbnail_core_aspect
          && video_st && video_st->av_info.geometry.aspect_ratio > 0)
                ? video_st->av_info.geometry.aspect_ratio
                : aspect_ratio;
