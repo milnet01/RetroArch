@@ -531,7 +531,7 @@ explore_state_t *menu_explore_build_list(const char *directory_playlist,
       if (fname)
          fext                           = strrchr(fname, '.');
 
-      if (!fext || strcasecmp(fext, ".lpl"))
+      if (!fext || strcasecmp(fext, ".lpl") != 0)
          continue;
 
       fill_pathname_join_special(playlist_config.path,
@@ -561,7 +561,7 @@ explore_state_t *menu_explore_build_list(const char *directory_playlist,
          /* For auto scanned playlists the entry db_name matches the
           * lpl file name and we can just use that */
          if (entry->db_name && *entry->db_name
-               && strcasecmp(entry->db_name, fname))
+               && strcasecmp(entry->db_name, fname) != 0)
          {
             db_name = entry->db_name;
             db_ext  = strrchr(db_name, '.');

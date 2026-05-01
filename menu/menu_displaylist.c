@@ -2584,7 +2584,7 @@ static int menu_displaylist_parse_playlist(
       return 0;
 
    /* Check whether core name should be added to playlist entries */
-   if (    strcmp(menu_driver, "ozone")
+   if (    strcmp(menu_driver, "ozone") != 0
        && !pl_show_sublabels
        && ((pl_show_inline_core_name == PLAYLIST_INLINE_CORE_DISPLAY_ALWAYS)
        ||  (!is_collection
@@ -2692,9 +2692,9 @@ static int menu_displaylist_parse_playlist(
          {
             /* Both core name and core path must be valid */
             if (     entry->core_name
-                  && strcmp(entry->core_name, FILE_PATH_DETECT)
+                  && strcmp(entry->core_name, FILE_PATH_DETECT) != 0
                   && entry->core_path
-                  && strcmp(entry->core_path, FILE_PATH_DETECT))
+                  && strcmp(entry->core_path, FILE_PATH_DETECT) != 0)
             {
                _len += strlcpy(
                      menu_entry_lbl           + _len,

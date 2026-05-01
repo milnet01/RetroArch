@@ -1547,7 +1547,7 @@ static size_t core_info_get_file_id(const char *core_filename,
    /* > Remove suffix */
    last_underscore = (char*)strrchr(s, '_');
    if (   last_underscore
-       && memcmp(last_underscore, "_libretro", STRLEN_CONST("_libretro") + 1))
+       && memcmp(last_underscore, "_libretro", STRLEN_CONST("_libretro") + 1) != 0)
    {
       *last_underscore = '\0';
       _len = last_underscore - s;

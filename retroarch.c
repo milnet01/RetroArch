@@ -796,7 +796,7 @@ static bool midi_driver_init(void *data)
       midi_drv      = midi_driver_find_driver(
             settings->arrays.midi_driver);
 
-      if (strcmp(midi_drv->ident, settings->arrays.midi_driver))
+      if (strcmp(midi_drv->ident, settings->arrays.midi_driver) != 0)
       {
          configuration_set_string(settings,
                settings->arrays.midi_driver, midi_drv->ident);

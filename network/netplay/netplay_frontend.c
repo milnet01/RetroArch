@@ -3256,7 +3256,7 @@ static bool netplay_resolve_input(netplay_t *netplay,
       {
          /* Trivial in the common 1-client case */
          if (memcmp(resstate->data, client_state->data,
-                  dsize * sizeof(uint32_t)))
+                  dsize * sizeof(uint32_t)) != 0)
             ret = true;
          memcpy(resstate->data, client_state->data,
                dsize * sizeof(uint32_t));
@@ -3297,7 +3297,7 @@ static bool netplay_resolve_input(netplay_t *netplay,
                device, clients, dtype);
 
          if (memcmp(resstate->data, oldresstate->data,
-                  dsize * sizeof(uint32_t)))
+                  dsize * sizeof(uint32_t)) != 0)
             ret = true;
 
       }
@@ -6951,7 +6951,7 @@ static int init_tcp_connection(netplay_t *netplay, const struct addrinfo *addr,
          {
             if (ntohl(netplay->mitm_session_id.magic) == MITM_SESSION_MAGIC &&
                   memcmp(netplay->mitm_session_id.unique, new_session.unique,
-                     sizeof(netplay->mitm_session_id.unique)))
+                     sizeof(netplay->mitm_session_id.unique)) != 0)
             {
                /* Initialize data for handling tunneled client connections. */
                netplay->mitm_handler = (struct netplay_mitm_handler*)
