@@ -188,6 +188,7 @@ Plus the `*_null` driver triplet (`audio_null`, `input_null`/`video_null`/`menu_
 - `cheevos_client.c:169` overlapping strcpy (Bundle 4).
 - WebDAV 404-body local-file write filter (Bundle 16).
 - WebDAV `webdav_ensure_dir` uninitialized stack (Bundle 12).
+- OOM-NULL-deref hardening on the per-driver state allocations (Bundle 45) — 17 calloc/malloc sites in google_drive.c + webdav.c (sync_begin / read / update / delete entry points + internal context-builders + the WebDAV digest-auth chain). `task_http`-layer OOM is separate.
 
 **Token budget:** 80-120k input, 15-25k output. Heavy.
 
