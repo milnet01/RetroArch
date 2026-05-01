@@ -377,7 +377,7 @@ void gfx_widgets_msg_queue_push(
          }
 
          fifo_write(&p_dispwidget->msg_queue,
-               &msg_widget, sizeof(msg_widget));
+               &msg_widget, sizeof(disp_widget_msg_t*));
       }
       /* Update task info */
       else
@@ -977,7 +977,7 @@ void gfx_widgets_iterate(
       {
          if (FIFO_READ_AVAIL_NONPTR(p_dispwidget->msg_queue) > 0)
             fifo_read(&p_dispwidget->msg_queue,
-                  &msg_widget, sizeof(msg_widget));
+                  &msg_widget, sizeof(disp_widget_msg_t*));
 
          if (msg_widget)
          {
@@ -1931,7 +1931,7 @@ static void gfx_widgets_free(dispgfx_widget_t *p_dispwidget)
       disp_widget_msg_t *msg_widget;
 
       fifo_read(&p_dispwidget->msg_queue,
-            &msg_widget, sizeof(msg_widget));
+            &msg_widget, sizeof(disp_widget_msg_t*));
 
       /* Note: gfx_widgets_free() is only called when
        * main_exit() is invoked. At this stage, we cannot
