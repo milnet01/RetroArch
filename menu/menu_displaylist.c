@@ -17640,7 +17640,8 @@ static bool menu_displaylist_ctl_internal(
                            break;
                         case ST_FLOAT:
                            {
-                              float i;
+                              int j;
+                              int n_steps;
                               char val_d[16];
                               float orig_value       = *setting->value.target.fraction;
                               unsigned setting_type  = MENU_SETTING_DROPDOWN_SETTING_FLOAT_ITEM;
@@ -17654,11 +17655,16 @@ static bool menu_displaylist_ctl_internal(
 
                               snprintf(val_d, sizeof(val_d), "%d", setting->enum_idx);
 
+                              /* Integer counter: a float counter accumulates drift and can stop
+                               * one entry early or late, and a zero step never terminates. */
+                              n_steps = (step > 0.0f) ? (int)((max + half_step - min) / step) : 0;
+
                               if (setting->actions->repr)
                               {
-                                 for (i = min; i <= max + half_step; i += step)
+                                 for (j = 0; j <= n_steps; j++)
                                  {
                                     char val_s[NAME_MAX_LENGTH];
+                                    float i = min + (float)j * step;
                                     *setting->value.target.fraction = i;
                                     setting->actions->repr(setting,
                                           val_s, sizeof(val_s));
@@ -17682,9 +17688,10 @@ static bool menu_displaylist_ctl_internal(
                               }
                               else
                               {
-                                 for (i = min; i <= max + half_step; i += step)
+                                 for (j = 0; j <= n_steps; j++)
                                  {
                                     char val_s[16];
+                                    float i = min + (float)j * step;
                                     snprintf(val_s, sizeof(val_s), "%.2f", i);
 
                                     if (menu_entries_append(info->list,
@@ -18008,7 +18015,8 @@ static bool menu_displaylist_ctl_internal(
                         break;
                      case ST_FLOAT:
                         {
-                           float i;
+                           int j;
+                           int n_steps;
                            char val_d[16];
                            float orig_value       = *setting->value.target.fraction;
                            unsigned setting_type  = MENU_SETTING_DROPDOWN_SETTING_FLOAT_ITEM_SPECIAL;
@@ -18022,11 +18030,16 @@ static bool menu_displaylist_ctl_internal(
 
                            snprintf(val_d, sizeof(val_d), "%d", setting->enum_idx);
 
+                           /* Integer counter: a float counter accumulates drift and can stop
+                            * one entry early or late, and a zero step never terminates. */
+                           n_steps = (step > 0.0f) ? (int)((max + half_step - min) / step) : 0;
+
                            if (setting->actions->repr)
                            {
-                              for (i = min; i <= max + half_step; i += step)
+                              for (j = 0; j <= n_steps; j++)
                               {
                                  char val_s[NAME_MAX_LENGTH];
+                                 float i = min + (float)j * step;
                                  *setting->value.target.fraction = i;
                                  setting->actions->repr(setting,
                                        val_s, sizeof(val_s));
@@ -18050,9 +18063,10 @@ static bool menu_displaylist_ctl_internal(
                            }
                            else
                            {
-                              for (i = min; i <= max + half_step; i += step)
+                              for (j = 0; j <= n_steps; j++)
                               {
                                  char val_s[16];
+                                 float i = min + (float)j * step;
                                  snprintf(val_s, sizeof(val_s), "%.2f", i);
                                  if (menu_entries_append(info->list,
                                           val_s,

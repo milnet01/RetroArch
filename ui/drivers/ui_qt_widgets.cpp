@@ -569,26 +569,31 @@ UIntComboBox::UIntComboBox(rarch_setting_t *setting, double min, double max, QWi
 
 void UIntComboBox::populate(double min, double max)
 {
-   float i;
+   int j;
    unsigned orig_value = setting_uint_get(m_setting);
    float          step = m_setting->step;
+   /* Integer counter: a float counter drifts, and a zero step never
+    * terminates. The span is clamped so an unbounded maximum cannot
+    * overflow the int conversion. */
+   double         span = (step > 0.0f) ? (max - min) / step : 0.0;
+   int         n_steps = (span > (double)INT_MAX) ? INT_MAX : (int)span;
    bool  checked_found = false;
    unsigned      count = 0;
 
    if (m_setting->actions->repr)
    {
-      for (i = min; i <= max; i += step)
+      for (j = 0; j <= n_steps; j++)
       {
          char val_s[NAME_MAX_LENGTH];
-         unsigned val = (unsigned)i;
+         unsigned val = (unsigned)(min + (double)j * step);
 
          setting_uint_set(m_setting, val);
 
          m_setting->actions->repr(m_setting, val_s, sizeof(val_s));
 
-         m_hash[i] = QString(val_s);
+         m_hash[val] = QString(val_s);
 
-         addItem(m_hash[i], i);
+         addItem(m_hash[val], val);
 
          if (!checked_found && val == orig_value)
          {
