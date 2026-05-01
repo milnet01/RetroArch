@@ -513,7 +513,7 @@ typedef struct xmb_handle
    char title_name_alt[NAME_MAX_LENGTH];
 
    char entry_index_str[32];
-   char entry_index_offset;
+   unsigned char entry_index_offset;
 
    /* The menu font path the fonts are built from. xmb_render()
     * watches it alongside the scale factor and schedules the same
