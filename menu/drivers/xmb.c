@@ -453,7 +453,7 @@ typedef struct xmb_handle
 
    /* Cached texts showing current entry index / current list size */
    char entry_index_str[32];
-   char entry_index_offset;
+   unsigned char entry_index_offset;
 
    char savestate_thumbnail_file_path[PATH_MAX_LENGTH];
    char fullscreen_thumbnail_label[NAME_MAX_LENGTH];

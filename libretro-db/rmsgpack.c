@@ -368,7 +368,9 @@ static int rmsgpack_read_int(intfstream_t *fd, int64_t *s, size_t len)
    switch (len)
    {
       case 1:
-         *s = (int8_t)tmp.u8;
+         /* Explicit double cast: msgpack signed-int format mandates
+          * sign-extension of the 8-bit value into int64_t. */
+         *s = (int64_t)(int8_t)tmp.u8;
          break;
       case 2:
          *s = (int16_t)swap_if_little16(tmp.u16);

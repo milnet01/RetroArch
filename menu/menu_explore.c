@@ -300,9 +300,9 @@ static int explore_check_company_suffix(const char* p, bool search_reverse)
    }
    if (p[0] == '\0' || p[1] == '\0' || p[2] == '\0')
       return 0;
-   p0     = p[0];
-   p1     = p[1];
-   p2     = p[2];
+   p0     = (unsigned char)p[0];
+   p1     = (unsigned char)p[1];
+   p2     = (unsigned char)p[2];
    p0_lc  = TOLOWER(p0);
    p1_lc  = TOLOWER(p1);
    p2_lc  = TOLOWER(p2);
