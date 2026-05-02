@@ -10320,17 +10320,12 @@ menu_ctx_driver_t menu_ctx_xmb = {
    xmb_populate_entries,
    xmb_toggle,
    xmb_navigation_clear,
-   NULL, /*xmb_navigation_pointer_changed,*/ /* Note:
-                                                navigation_set() is called each time
-                                                navigation_increment/decrement() */
-   NULL, /*xmb_navigation_pointer_changed,*/ /* is called, so linking these just duplicates work... */
    xmb_navigation_set,
    xmb_navigation_pointer_changed,
    xmb_navigation_alphabet,
    xmb_navigation_alphabet,
    xmb_menu_init_list,
    xmb_list_insert,
-   NULL,
    xmb_list_free,
    xmb_list_clear,
    xmb_list_cache,
@@ -10343,10 +10338,8 @@ menu_ctx_driver_t menu_ctx_xmb = {
    xmb_load_image,
    "xmb",
    xmb_environ,
-   NULL,
    xmb_update_thumbnail_image,
    xmb_refresh_thumbnail_image,
-   xmb_set_thumbnail_content,
    gfx_display_osk_ptr_at_pos,
    xmb_update_savestate_thumbnail_path,
    xmb_update_savestate_thumbnail_image,

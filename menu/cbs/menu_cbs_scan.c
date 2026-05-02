@@ -159,18 +159,8 @@ int action_switch_thumbnail(const char *path,
       else
          action_cycle_thumbnail(MENU_ACTION_CYCLE_THUMBNAIL_SECONDARY);
 
-      if (menu_st->driver_ctx)
-      {
-         if (menu_st->driver_ctx->update_thumbnail_path)
-         {
-            menu_st->driver_ctx->update_thumbnail_path(
-                  menu_st->userdata, (unsigned)selection, 'L');
-            menu_st->driver_ctx->update_thumbnail_path(
-                  menu_st->userdata, (unsigned)selection, 'R');
-         }
-         if (menu_st->driver_ctx->update_thumbnail_image)
-            menu_st->driver_ctx->update_thumbnail_image(menu_st->userdata);
-      }
+      if (menu_st->driver_ctx && menu_st->driver_ctx->update_thumbnail_image)
+         menu_st->driver_ctx->update_thumbnail_image(menu_st->userdata);
    }
 
    return 0;

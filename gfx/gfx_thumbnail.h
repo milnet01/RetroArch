@@ -36,13 +36,9 @@
 RETRO_BEGIN_DECLS
 
 /* Note: This implementation reflects the current
- * setup of:
- * - gfx_thumbnail_set_system()
- * - menu_driver_set_thumbnail_content()
- * - menu_driver_update_thumbnail_path()
- * This is absolutely not the best way to handle things,
- * but I have no interest in rewriting the existing
- * menu code... */
+ * setup of gfx_thumbnail_set_system(). This is absolutely
+ * not the best way to handle things, but I have no
+ * interest in rewriting the existing menu code... */
 
 enum gfx_thumbnail_id
 {

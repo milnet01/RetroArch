@@ -374,10 +374,6 @@ typedef struct menu_ctx_driver
    void  (*toggle)(void *userdata, bool);
    /* This will clear the navigation position. */
    void  (*navigation_clear)(void *, bool);
-   /* This will decrement the navigation position by one. */
-   void  (*navigation_decrement)(void *data);
-   /* This will increment the navigation position by one. */
-   void  (*navigation_increment)(void *data);
    void  (*navigation_set)(void *data, bool);
    void  (*navigation_set_last)(void *data);
    /* This will descend the navigation position by one alphabet letter. */
@@ -389,8 +385,6 @@ typedef struct menu_ctx_driver
    void  (*list_insert)(void *userdata,
          file_list_t *list, const char *, const char *, const char *, size_t,
          unsigned);
-   int   (*list_prepend)(void *userdata,
-         file_list_t *list, const char *, const char *, size_t);
    void  (*list_free)(file_list_t *list, size_t, size_t);
    void  (*list_clear)(file_list_t *list);
    void  (*list_cache)(void *data, enum menu_list_type, unsigned);
@@ -405,10 +399,8 @@ typedef struct menu_ctx_driver
    bool  (*load_image)(void *userdata, void *data, enum menu_image_type type);
    const char *ident;
    int (*environ_cb)(enum menu_environ_cb type, void *data, void *userdata);
-   void (*update_thumbnail_path)(void *data, unsigned i, char pos);
    void (*update_thumbnail_image)(void *data);
    void (*refresh_thumbnail_image)(void *data, size_t i);
-   void (*set_thumbnail_content)(void *data, const char *s);
    int  (*osk_ptr_at_pos)(void *data, int x, int y, unsigned width, unsigned height);
    void (*update_savestate_thumbnail_path)(void *data, unsigned i);
    void (*update_savestate_thumbnail_image)(void *data);

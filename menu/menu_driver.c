@@ -294,15 +294,12 @@ static menu_ctx_driver_t menu_ctx_null = {
   NULL,  /* populate_entries */
   NULL,  /* toggle */
   NULL,  /* navigation_clear */
-  NULL,  /* navigation_decrement */
-  NULL,  /* navigation_increment */
   NULL,  /* navigation_set */
   NULL,  /* navigation_set_last */
   NULL,  /* navigation_descend_alphabet */
   NULL,  /* navigation_ascend_alphabet */
   NULL,  /* lists_init */
   NULL,  /* list_insert */
-  NULL,  /* list_prepend */
   NULL,  /* list_delete */
   NULL,  /* list_clear */
   NULL,  /* list_cache */
@@ -315,10 +312,8 @@ static menu_ctx_driver_t menu_ctx_null = {
   NULL,  /* load_image */
   "null",
   NULL,  /* environ */
-  NULL,  /* update_thumbnail_path */
   NULL,  /* update_thumbnail_image */
   NULL,  /* refresh_thumbnail_image */
-  NULL,  /* set_thumbnail_content */
   NULL,  /* osk_ptr_at_pos */
   NULL,  /* update_savestate_thumbnail_path */
   NULL,  /* update_savestate_thumbnail_image */
@@ -7593,8 +7588,6 @@ int generic_menu_entry_action(
                if (menu_st->driver_ctx->navigation_set)
                   menu_st->driver_ctx->navigation_set(menu_st->userdata, true);
 
-               if (menu_driver_ctx->navigation_decrement)
-                  menu_driver_ctx->navigation_decrement(menu_userdata);
 #ifdef HAVE_AUDIOMIXER
                if (entries_size != 1)
                   audio_driver_mixer_play_scroll_sound(true);
@@ -7635,8 +7628,6 @@ int generic_menu_entry_action(
                   }
                }
 
-               if (menu_driver_ctx->navigation_increment)
-                  menu_driver_ctx->navigation_increment(menu_userdata);
 #ifdef HAVE_AUDIOMIXER
                if (entries_size != 1)
                   audio_driver_mixer_play_scroll_sound(false);
@@ -7663,9 +7654,6 @@ int generic_menu_entry_action(
                   menu_st->selection_ptr = idx;
                   if (menu_st->driver_ctx->navigation_set)
                      menu_st->driver_ctx->navigation_set(menu_st->userdata, true);
-
-                  if (menu_driver_ctx->navigation_decrement)
-                     menu_driver_ctx->navigation_decrement(menu_userdata);
                }
             }
          }
@@ -7729,9 +7717,6 @@ int generic_menu_entry_action(
                      if (menu_st->driver_ctx->navigation_set_last)
                         menu_st->driver_ctx->navigation_set_last(menu_st->userdata);
                   }
-
-                  if (menu_driver_ctx->navigation_increment)
-                     menu_driver_ctx->navigation_increment(menu_userdata);
                }
             }
          }
