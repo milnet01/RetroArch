@@ -668,6 +668,8 @@ void v4l2_frame_times(struct v4l2_buffer buf)
 
    if (ft_info == NULL)
        ft_info = (char*)calloc(5000, sizeof(char));
+   if (!ft_info)
+       return;
 
    if ( (buf.timestamp.tv_sec - ft_prevtime.tv_sec >= 1) && \
         (buf.timestamp.tv_usec + 1000000 - ft_prevtime2.tv_usec) >= 1000000)
@@ -682,9 +684,13 @@ void v4l2_frame_times(struct v4l2_buffer buf)
        ft_fcount   = 0;
        ft_favg     = 0;
        ft_prevtime = buf.timestamp;
+       if (!ft_info)
+           return;
    }
    ft_fcount++;
    ft_info2 = strdup(ft_info);
+   if (!ft_info2)
+       return;
    ft_ftime = (double) (buf.timestamp.tv_usec + ((buf.timestamp.tv_sec - ft_prevtime2.tv_sec >= 1) ? 1000000 : 0)  - ft_prevtime2.tv_usec);
    ft_favg += ft_ftime;
    snprintf(ft_info, 5000 * sizeof(char), "%s %6.d %d %d %.2fms%s",
