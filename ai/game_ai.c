@@ -150,7 +150,7 @@ void game_ai_shutdown(void)
 
 void game_ai_load(const char * name, void * ram_ptr, int ram_size, retro_log_printf_t log)
 {
-   strcpy((char *) &g_game_name[0], name);
+   strlcpy((char *) &g_game_name[0], name, sizeof(g_game_name));
 
    g_ram_ptr  = ram_ptr;
    g_ram_size = ram_size;
@@ -179,9 +179,9 @@ void game_ai_think(bool override_p1, bool override_p2, bool show_debug,
       if (ga)
       {
          char data_path[1024] = {0};
-         strcpy(&data_path[0], (char *)game_ai_lib_path);
-         strcat(&data_path[0], "/data/");
-         strcat(&data_path[0], (char *)g_game_name);
+         strlcpy(&data_path[0], (char *)game_ai_lib_path, sizeof(data_path));
+         strlcat(&data_path[0], "/data/",                 sizeof(data_path));
+         strlcat(&data_path[0], (char *)g_game_name,      sizeof(data_path));
 
          game_ai_lib_init(ga, (void *) g_ram_ptr, g_ram_size);
          game_ai_lib_set_debug_log(ga, game_ai_debug_log);
