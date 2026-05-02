@@ -4764,7 +4764,12 @@ static void ozone_change_tab(ozone_handle_t *ozone,
    menu_list_t *menu_list     = menu_st->entries.list;
    file_list_t *menu_stack    = MENU_LIST_GET(menu_list, 0);
    file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
-   size_t stack_size          = menu_stack->size;
+   size_t stack_size;
+
+   if (!menu_stack)
+      return;
+
+   stack_size                 = menu_stack->size;
 
    if (menu_stack->list[stack_size - 1].label)
       free(menu_stack->list[stack_size - 1].label);
@@ -8006,7 +8011,9 @@ static void ozone_set_thumbnail_content(void *data, const char *s)
       /* Filebrowser image updates */
       size_t selection           = menu_st->selection_ptr;
       file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
-      ozone_node_t *node         = (ozone_node_t*)selection_buf->list[selection].userdata;
+      ozone_node_t *node         = selection_buf
+            ? (ozone_node_t*)selection_buf->list[selection].userdata
+            : NULL;
 
       if (node)
       {
@@ -11767,7 +11774,12 @@ static void ozone_selection_changed(ozone_handle_t *ozone, bool allow_animation)
    menu_list_t *menu_list     = menu_st->entries.list;
    file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
    size_t new_selection       = menu_st->selection_ptr;
-   ozone_node_t *node         = (ozone_node_t*)selection_buf->list[new_selection].userdata;
+   ozone_node_t *node;
+
+   if (!selection_buf)
+      return;
+
+   node                       = (ozone_node_t*)selection_buf->list[new_selection].userdata;
 
    if (!node)
       return;

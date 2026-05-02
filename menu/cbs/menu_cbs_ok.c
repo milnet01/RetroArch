@@ -7632,9 +7632,9 @@ static int action_ok_push_dropdown_item_disk_index(const char *path,
    rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
    settings_t *settings          = config_get_ptr();
    bool menu_insert_disk_resume;
-   bool disk_ejected             = false;
+   bool disk_ejected;
 
-   if (!settings || !sys_info)
+   if (!settings)
       return -1;
 
    menu_insert_disk_resume       = settings->bools.menu_insert_disk_resume;
@@ -7645,8 +7645,7 @@ static int action_ok_push_dropdown_item_disk_index(const char *path,
 #endif
 
    /* Get disk eject state *before* toggling drive status */
-   if (sys_info)
-      disk_ejected = disk_control_get_eject_state(&sys_info->disk_control);
+   disk_ejected = disk_control_get_eject_state(&sys_info->disk_control);
 
    command_event(CMD_EVENT_DISK_INDEX, &disk_index);
 
@@ -8346,12 +8345,11 @@ static int action_ok_input_description_kbd_dropdown_box_list(
 static int action_ok_disk_cycle_tray_status(const char *path,
       const char *label, unsigned type, size_t idx, size_t entry_idx)
 {
-   rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
    settings_t *settings          = config_get_ptr();
    bool menu_insert_disk_resume;
    bool verbosity                = false;
 
-   if (!settings || !sys_info)
+   if (!settings)
       return -1;
 
    menu_insert_disk_resume       = settings->bools.menu_insert_disk_resume;
@@ -8387,7 +8385,7 @@ static int action_ok_disk_image_append(const char *path,
    bool menu_insert_disk_resume;
    const char *menu_path         = NULL;
 
-   if (!menu || !settings || !sys_info)
+   if (!menu || !settings)
       return -1;
 
    menu_insert_disk_resume       = settings->bools.menu_insert_disk_resume;
