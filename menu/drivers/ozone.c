@@ -3642,9 +3642,7 @@ static void ozone_draw_sidebar(
       {
          enum msg_hash_enums value_idx  = ozone_system_tabs_value[ozone->tabs[i]];
          const char *title              = msg_hash_to_str(value_idx);
-         uint32_t text_color            = 0;
-         if (ozone->theme)
-            text_color                  = selected
+         uint32_t text_color            = selected
                ? COLOR_TEXT_ALPHA(ozone->theme->text_selected_rgba, text_alpha)
                : COLOR_TEXT_ALPHA(ozone->theme->text_sidebar_rgba, text_alpha);
 
@@ -3733,7 +3731,9 @@ static void ozone_draw_sidebar(
          ozone_node_t *node   = (ozone_node_t*)ozone->horizontal_list.list[i].userdata;
          float *col           = NULL;
          bool selected        = (ozone->categories_selection_ptr == ozone->system_tab_end + 1 + i);
-         uint32_t text_color  = 0;
+         uint32_t text_color  = COLOR_TEXT_ALPHA((selected
+               ? ozone->theme->text_selected_rgba
+               : ozone->theme->text_sidebar_rgba), text_alpha);
 
          /* Cull off-screen sidebar entries */
          tab_y_screen = y + ozone->animations.scroll_y_sidebar;
@@ -3745,11 +3745,6 @@ static void ozone_draw_sidebar(
             y += (horizontal_list_size - i) * (ozone->dimensions.sidebar_entry_height + ozone->dimensions.sidebar_entry_padding_vertical);
             break;
          }
-
-         if (ozone->theme)
-            text_color        = COLOR_TEXT_ALPHA((selected
-               ? ozone->theme->text_selected_rgba
-               : ozone->theme->text_sidebar_rgba), text_alpha);
 
          if (!node)
             goto console_iterate;
@@ -5900,8 +5895,7 @@ static void ozone_draw_entries(
       else if (y + scroll_y - node->height - 20 * scale_factor > bottom_boundary)
       {
          /* All remaining entries are also below the boundary - stop iterating */
-         if (node)
-            y += node->height;
+         y += node->height;
          break;
       }
 
@@ -8007,7 +8001,7 @@ static void ozone_set_thumbnail_content(void *data, const char *s)
       }
    }
 #endif
-   else if (!strcmp(s, "imageviewer"))
+   else if (s && !strcmp(s, "imageviewer"))
    {
       /* Filebrowser image updates */
       size_t selection           = menu_st->selection_ptr;
@@ -11898,7 +11892,7 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
    settings_t  *settings                  = config_get_ptr();
    unsigned color_theme                   = settings->uints.menu_ozone_color_theme;
    bool use_preferred_system_color_theme  = settings->bools.menu_use_preferred_system_color_theme;
-   uintptr_t messagebox_tag               = (uintptr_t)ozone->pending_message;
+   uintptr_t messagebox_tag;
    bool draw_osk                          = menu_input_dialog_get_display_kb();
    static bool draw_osk_old               = false;
    float *background_color                = NULL;
@@ -11922,6 +11916,8 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
 
    if (!ozone)
       return;
+
+   messagebox_tag                         = (uintptr_t)ozone->pending_message;
 
    /* Snapshot context generation — if ozone_context_destroy()
     * runs on the main thread while we are mid-render on the

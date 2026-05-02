@@ -8653,7 +8653,7 @@ static void netplay_announce_cb(retro_task_t *task, void *task_data,
          key    = buf_data;
          value  = delim + 1;
 
-         if ((key && *key) && (value && *value))
+         if (*key && *value)
          {
             if (string_is_equal(key, "id"))
                host_room->id = (int)strtol(value, NULL, 10);
@@ -8928,7 +8928,7 @@ static void netplay_mitm_query_cb(retro_task_t *task, void *task_data,
          key    = buf_data;
          value  = delim + 1;
 
-         if ((key && *key) && (value && *value))
+         if (*key && *value)
          {
             if (string_is_equal(key, "tunnel_addr"))
                strlcpy(host_room->mitm_address, value,

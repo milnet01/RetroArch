@@ -1617,7 +1617,7 @@ static void xmb_set_thumbnail_content(void *data, const char *s)
       }
    }
 #endif
-   else if (memcmp(s, "imageviewer", sizeof("imageviewer")) == 0)
+   else if (s && memcmp(s, "imageviewer", sizeof("imageviewer")) == 0)
    {
       /* Filebrowser image updates */
       menu_entry_t entry;
@@ -9686,18 +9686,20 @@ static void xmb_list_cache(void *data, enum menu_list_type type,
       unsigned action)
 {
    size_t stack_size, list_size;
+   unsigned horizontal_list_size;
    xmb_handle_t *xmb          = (xmb_handle_t*)data;
    struct menu_state *menu_st = menu_state_get_ptr();
    menu_list_t *menu_list     = menu_st->entries.list;
    file_list_t *menu_stack    = MENU_LIST_GET(menu_list, 0);
    file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
    size_t selection           = menu_st->selection_ptr;
-   unsigned horizontal_list_size = (xmb->show_playlist_tabs)
-         ? (unsigned)xmb_list_get_size(xmb, MENU_LIST_HORIZONTAL)
-         : 0;
 
    if (!xmb)
       return;
+
+   horizontal_list_size       = (xmb->show_playlist_tabs)
+         ? (unsigned)xmb_list_get_size(xmb, MENU_LIST_HORIZONTAL)
+         : 0;
 
    /* Check whether to enable the horizontal animation. */
    if (xmb->allow_horizontal_animation)
@@ -9712,12 +9714,15 @@ static void xmb_list_cache(void *data, enum menu_list_type type,
 
       xmb->selection_ptr_old = selection;
 
-      xmb_calculate_visible_range(xmb, height, selection_buf->size,
-            (unsigned)xmb->selection_ptr_old, &first, &last);
+      if (selection_buf)
+      {
+         xmb_calculate_visible_range(xmb, height, selection_buf->size,
+               (unsigned)xmb->selection_ptr_old, &first, &last);
 
-      xmb->selection_ptr_old -= first;
-      last                   -= first;
-      first                   = 0;
+         xmb->selection_ptr_old -= first;
+         last                   -= first;
+         first                   = 0;
+      }
    }
    else
       xmb->selection_ptr_old = selection;
