@@ -8512,8 +8512,9 @@ static void ozone_set_thumbnail_content(void *data, const char *s)
       file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
       /* selection_ptr can exceed the list size when the list is
        * rebuilt before the navigation pointer is re-clamped; guard
-       * the index like the other accesses in this file (cf. #18797). */
-      ozone_node_t *node         = (selection < selection_buf->size)
+       * the index like the other accesses in this file (cf. #18797).
+       * The list itself can be NULL during a driver swap. */
+      ozone_node_t *node         = (selection_buf && selection < selection_buf->size)
          ? (ozone_node_t*)selection_buf->list[selection].userdata
          : NULL;
 
@@ -12466,9 +12467,14 @@ static void ozone_selection_changed(ozone_handle_t *ozone, bool allow_animation)
    menu_list_t *menu_list     = menu_st->entries.list;
    file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_list, 0);
    size_t new_selection       = menu_st->selection_ptr;
-   ozone_node_t *node         = (ozone_node_t*)selection_buf->list[new_selection].userdata;
+   ozone_node_t *node;
    bool menu_show_sublabels   = settings->bools.menu_show_sublabels;
    bool menu_current_sel_only = settings->bools.menu_show_sublabels_current_selection_only;
+
+   if (!selection_buf)
+      return;
+
+   node                       = (ozone_node_t*)selection_buf->list[new_selection].userdata;
 
    if (!node)
       return;

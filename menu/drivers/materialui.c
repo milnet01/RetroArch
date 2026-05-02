@@ -10711,6 +10711,10 @@ static bool materialui_preswitch_tabs(materialui_handle_t *mui,
     * (stack size should be zero here, but account
     * for unknown errors)  */
    menu_stack = MENU_LIST_GET(menu_list, 0);
+
+   if (!menu_stack)
+      return false;
+
    stack_size = menu_stack->size;
 
    /* Sanity check
