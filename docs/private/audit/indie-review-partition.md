@@ -207,10 +207,10 @@ Plus the `*_null` driver triplet (`audio_null`, `input_null`/`video_null`/`menu_
 **External specs:** none external; UI conventions are internal. (For a11y dim, GNOME HIG / WCAG 2.2 — but RetroArch has no claim of WCAG compliance; report INFO not finding.)
 
 **Known traps:**
-- ~30 unguarded `MENU_LIST_GET_SELECTION(...)->size` derefs (S2 — promoted to full sweep).
-- Dead vtable slots: `set_thumbnail_content`, `update_thumbnail_path`, `list_prepend`, `navigation_increment`/`decrement` — single-PR cleanup deletes ~30 NULL stubs.
+- ~30 unguarded `MENU_LIST_GET_SELECTION(...)->size` derefs (S2 — promoted to full sweep). **✅ Closed Bundles 34 + 36** (cbs + ozone + xmb + materialui + rgui sweep). Macro contract comment + path-sensitive proof reference live at `menu/menu_driver.h:72-78`. A regression re-introducing an unguarded site should now surface in clang-analyzer's `clang-analyzer-core.NullDereference`.
+- Dead vtable slots: `set_thumbnail_content`, `update_thumbnail_path`, `list_prepend`, `navigation_increment`/`decrement`. **✅ Closed Bundle 46** — 5 slots stripped from `menu_ctx_driver_t`, 25 entries from the 5 driver vtable initialisers, 5 dispatch sites removed; net -59 lines. Static `ozone_set_thumbnail_content` / `xmb_set_thumbnail_content` retained as direct call-sites in their own files.
 - Per-driver gating (`string_is_equal(menu_ident, "xmb")` style) — coupling smell across `menu_displaylist/menu_setting/menu_cbs_*`. The capability-flag refactor is Tier 3.
-- `materialui` ident is `"glui"` but file/struct is `materialui_*` — three-way naming inconsistency.
+- `materialui` ident is `"glui"` but file/struct is `materialui_*` — three-way naming inconsistency. **✅ Closed Bundle 49** — invariant comment block at `menu/drivers/materialui.c:12196` locks the ident as `"glui"` for backward-compat; verified-no-live-mismatch (all 11 callsites already use `"glui"`). Any future `string_is_equal(menu_ident, "materialui")` check is a bug; the `"glui"` ident is the only valid string.
 - Menu driver swap mid-session — settings registration gates on driver ident and never refreshes (spec drafted in `docs/private/specs/2026-04-27-menu-driver-swap-design.md`).
 - Materialui specifically — 12231 lines with author-marked module boundaries; review by section, not whole-file.
 

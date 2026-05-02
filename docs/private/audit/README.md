@@ -100,7 +100,7 @@ When a file crosses 5k LoC:
 
 ## Calibration anchors
 
-The 2026-04-25 baseline:
+The 2026-04-25 baseline (fixed historical anchor; do not move):
 - **111 fixes across 55 files** in Bundles 1-33 on `local/fixes-2026-04`.
 - **24 actionable / 12 spec-needed / 660 raw** from cppcheck + semgrep + ruff + bandit.
 - **8 indie-review lanes**, ~1.5M tokens combined.
@@ -109,6 +109,17 @@ The 2026-04-25 baseline:
 - **Tools not yet run**: clang-tidy (now runnable post-bear), clazy (deferred — Qt UI is small).
 
 Use these as the target the next run should beat or meet.
+
+### Current cumulative state
+
+Updated when each bundle folds in; canonical count lives at the top of [`../ROADMAP.md`](../ROADMAP.md).
+
+- **Through Bundle 49 (2026-05-02): 187 distinct fixes across 69 files.**
+- **clang-tidy** has since run (cumulative 12 bundles between 36–44 plus follow-ups); generated `compile_commands.json` is in tree.
+- **cppcheck** `materialui.c` macro-config exhaustion is still the lone partial — every other tool finishes.
+- **clazy** still deferred; Qt UI surface remains small.
+
+The 2026-04-25 baseline numbers are anchors for the *next full audit* run to compare against — when re-running cppcheck/semgrep/ruff/bandit from scratch, expect raw counts to drop substantially relative to the 660-raw baseline as a result of the fix-stream above.
 
 ## What this is NOT
 
