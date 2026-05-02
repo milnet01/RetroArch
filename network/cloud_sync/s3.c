@@ -993,19 +993,20 @@ static void s3_read_cb(retro_task_t *task, void *task_data, void *user_data, con
 
    if (success && data && data->status >= 200 && data->status < 300)
    {
-      file = filestream_open(s3_cb_st->file,
-            RETRO_VFS_FILE_ACCESS_READ_WRITE,
-            RETRO_VFS_FILE_ACCESS_HINT_NONE);
+      /* Staged through <file>.tmp and renamed into place, so a download
+       * cut short by power loss or a kill leaves the previous copy intact
+       * instead of a truncated one. Reopened read-only for the caller's
+       * hash-then-close. */
+      if (filestream_write_file_atomic(s3_cb_st->file,
+               data->data ? (const void*)data->data : (const void*)"",
+               (int64_t)data->len))
+         file = filestream_open(s3_cb_st->file,
+               RETRO_VFS_FILE_ACCESS_READ,
+               RETRO_VFS_FILE_ACCESS_HINT_NONE);
       if (!file)
       {
-         RARCH_WARN(S3_PFX "Failed to open local file for read '%s'\n", s3_cb_st->file);
+         RARCH_WARN(S3_PFX "Failed to write local file '%s'\n", s3_cb_st->file);
          success = false;
-      }
-      else
-      {
-         if (data->data && data->len > 0)
-            filestream_write(file, data->data, data->len);
-         filestream_seek(file, 0, SEEK_SET);
       }
    }
 
