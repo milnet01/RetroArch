@@ -9307,8 +9307,6 @@ menu_ctx_driver_t menu_ctx_rgui = {
    rgui_populate_entries,
    rgui_toggle,
    rgui_navigation_clear,
-   NULL,
-   NULL,
    rgui_navigation_set,
    rgui_navigation_set_last,
    rgui_navigation_descend_alphabet,
@@ -9324,14 +9322,11 @@ menu_ctx_driver_t menu_ctx_rgui = {
    NULL,
    NULL,
    NULL,
-   NULL,
    rgui_load_image,
    "rgui",
    rgui_environ,
-   NULL,                               /* update_thumbnail_path */
    rgui_update_thumbnail_image,
    rgui_refresh_thumbnail_image,
-   NULL,                               /* set_thumbnail_content */
    rgui_osk_ptr_at_pos,
    rgui_osk_pointer_over_textbox,
    rgui_update_savestate_thumbnail_path,
