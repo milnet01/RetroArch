@@ -8505,7 +8505,7 @@ static void ozone_set_thumbnail_content(void *data, const char *s)
       }
    }
 #endif
-   else if (!strcmp(s, "imageviewer"))
+   else if (s && !strcmp(s, "imageviewer"))
    {
       /* Filebrowser image updates */
       size_t selection           = menu_st->selection_ptr;
@@ -12602,7 +12602,7 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
    ozone_handle_t* ozone                  = (ozone_handle_t*)data;
    const char *color_theme                = video_info->menu.ozone_color_theme;
    bool use_preferred_system_color_theme  = ((video_info->menu.flags & VIDEO_MENU_FLAG_USE_PREFERRED_SYSTEM_COLOR_THEME) ? true : false);
-   uintptr_t messagebox_tag               = (uintptr_t)ozone->pending_message;
+   uintptr_t messagebox_tag;
    bool draw_osk                          = menu_input_dialog_get_display_kb();
    static bool draw_osk_old               = false;
    float *background_color                = NULL;
@@ -12626,6 +12626,8 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
 
    if (!ozone)
       return;
+
+   messagebox_tag                         = (uintptr_t)ozone->pending_message;
 
    /* Snapshot context generation — if ozone_context_destroy()
     * runs on the main thread while we are mid-render on the
