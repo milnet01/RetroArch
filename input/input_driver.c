@@ -5058,18 +5058,9 @@ bool input_driver_find_driver(settings_t *settings,
    }
    else
    {
-      input_driver_t *tmp = NULL;
-      if (verbosity_enabled)
-      {
-         unsigned d;
-         RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix,
-               settings->arrays.input_driver);
-         RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-         for (d = 0; input_drivers[d]; d++)
-            RARCH_LOG_OUTPUT("\t%s\n", input_drivers[d]->ident);
-         RARCH_WARN("Going to default to first %s...\n", prefix);
-      }
-
+      input_driver_t *tmp;
+      driver_log_unknown("input_driver", prefix,
+            settings->arrays.input_driver, verbosity_enabled);
       tmp = (input_driver_t*)input_drivers[0];
       if (!tmp)
          return false;

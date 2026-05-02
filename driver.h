@@ -133,6 +133,25 @@ bool driver_ctl(enum driver_ctl_state state, void *data);
  **/
 int driver_find_index(const char *label, const char *drv);
 
+/**
+ * Logs the canonical "Couldn't find any X named Y / available drivers
+ * are: ... / default to first" warning sequence used by every
+ * *_driver_find_driver() failure path. Driven by the same per-label
+ * registry as @c driver_find_index, so adding a new driver subsystem
+ * to that dispatcher is enough to make this work for it too.
+ *
+ * @param label              identifier-key for the driver registry
+ *                           (e.g. "audio_driver", "video_driver").
+ * @param prefix             human-readable singular form for the
+ *                           message (e.g. "audio driver").
+ * @param drv                user-supplied driver name that was not
+ *                           found.
+ * @param verbosity_enabled  if false, the call is a no-op.
+ */
+void driver_log_unknown(const char *label,
+      const char *prefix, const char *drv,
+      bool verbosity_enabled);
+
 /* Sets audio and video drivers to nonblock state.
  *
  * If nonblock state is false, sets blocking state for both

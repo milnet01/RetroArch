@@ -3017,17 +3017,8 @@ bool video_driver_find_driver(
       video_st->current_video = (video_driver_t*)video_drivers[i];
    else
    {
-      if (verbosity_enabled)
-      {
-         unsigned d;
-         RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix,
-               settings->arrays.video_driver);
-         RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-         for (d = 0; video_drivers[d]; d++)
-            RARCH_LOG_OUTPUT("\t%s\n", video_drivers[d]->ident);
-         RARCH_WARN("Going to default to first %s...\n", prefix);
-      }
-
+      driver_log_unknown("video_driver", prefix,
+            settings->arrays.video_driver, verbosity_enabled);
       if (!(video_st->current_video = (video_driver_t*)video_drivers[0]))
          return false;
    }

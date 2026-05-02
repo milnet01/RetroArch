@@ -148,20 +148,10 @@ bool bluetooth_driver_ctl(enum rarch_bluetooth_ctl_state state, void *data)
                bt_st->drv        = (const bluetooth_driver_t*)bluetooth_drivers[i];
             else
             {
-               if (verbosity_is_enabled())
-               {
-                  unsigned d;
-                  RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix,
-                        settings->arrays.bluetooth_driver);
-                  RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-                  for (d = 0; bluetooth_drivers[d]; d++)
-                     RARCH_LOG_OUTPUT("\t%s\n", bluetooth_drivers[d]->ident);
-
-                  RARCH_WARN("Going to default to first %s...\n", prefix);
-               }
-
+               driver_log_unknown("bluetooth_driver", prefix,
+                     settings->arrays.bluetooth_driver,
+                     verbosity_is_enabled());
                bt_st->drv = (const bluetooth_driver_t*)bluetooth_drivers[0];
-
                if (!bt_st->drv)
                   retroarch_fail(1, "find_bluetooth_driver()");
             }

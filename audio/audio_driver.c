@@ -436,19 +436,10 @@ bool audio_driver_find_driver(const char *audio_drv,
          audio_drivers[i];
    else
    {
-      const audio_driver_t *tmp = NULL;
-      if (verbosity_enabled)
-      {
-         unsigned d;
-         RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix, audio_drv);
-         RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-         for (d = 0; audio_drivers[d]; d++)
-            RARCH_LOG_OUTPUT("\t%s\n", audio_drivers[d]->ident);
-         RARCH_WARN("Going to default to first %s...\n", prefix);
-      }
-
+      const audio_driver_t *tmp;
+      driver_log_unknown("audio_driver", prefix, audio_drv,
+            verbosity_enabled);
       tmp = (const audio_driver_t*)audio_drivers[0];
-
       if (!tmp)
          return false;
       audio_driver_st.current_audio = tmp;
@@ -2282,24 +2273,10 @@ bool microphone_driver_find_driver(void *settings_data, const char *prefix,
             microphone_drivers[i];
    else
    {
-      const microphone_driver_t *tmp = NULL;
-      if (verbosity_enabled)
-      {
-         unsigned d;
-         RARCH_ERR("Couldn't find any %s named \"%s\".\n", prefix,
-                   settings->arrays.microphone_driver);
-
-         RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-         for (d = 0; microphone_drivers[d]; d++)
-         {
-            if (microphone_drivers[d])
-               RARCH_LOG_OUTPUT("\t%s\n", microphone_drivers[d]->ident);
-         }
-         RARCH_WARN("Going to default to first %s...\n", prefix);
-      }
-
+      const microphone_driver_t *tmp;
+      driver_log_unknown("microphone_driver", prefix,
+            settings->arrays.microphone_driver, verbosity_enabled);
       tmp = (const microphone_driver_t *)microphone_drivers[0];
-
       if (!tmp)
          return false;
       mic_driver_st.driver = tmp;

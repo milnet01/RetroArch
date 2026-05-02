@@ -427,17 +427,8 @@ static void location_driver_find_driver(
          location_drivers[i];
    else
    {
-      if (verbosity_enabled)
-      {
-         unsigned d;
-         RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix, loc_drv);
-         RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-         for (d = 0; location_drivers[d]; d++)
-            RARCH_LOG_OUTPUT("\t%s\n", location_drivers[d]->ident);
-
-         RARCH_WARN("Going to default to first %s...\n", prefix);
-      }
-
+      driver_log_unknown("location_driver", prefix, loc_drv,
+            verbosity_enabled);
       location_st->driver = (const location_driver_t*)location_drivers[0];
    }
 }
@@ -1276,6 +1267,32 @@ int driver_find_index(const char *label, const char *drv)
    }
 
    return -1;
+}
+
+void driver_log_unknown(const char *label,
+      const char *prefix, const char *drv,
+      bool verbosity_enabled)
+{
+   size_t i;
+   char ident[NAME_MAX_LENGTH];
+
+   if (!verbosity_enabled)
+      return;
+
+   ident[0] = '\0';
+
+   RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix, drv);
+   RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
+
+   for (i = 0;
+         find_driver_nonempty(label, i, ident, sizeof(ident)) > 0; i++)
+   {
+      if (!*ident)
+         break;
+      RARCH_LOG_OUTPUT("\t%s\n", ident);
+   }
+
+   RARCH_WARN("Going to default to first %s...\n", prefix);
 }
 
 /**

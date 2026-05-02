@@ -4631,16 +4631,8 @@ const menu_ctx_driver_t *menu_driver_find_driver(
    if (i >= 0)
       return (const menu_ctx_driver_t*)menu_ctx_drivers[i];
 
-   if (verbosity_enabled)
-   {
-      unsigned d;
-      RARCH_WARN("Couldn't find any %s named \"%s\".\n", prefix,
-            settings->arrays.menu_driver);
-      RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-      for (d = 0; menu_ctx_drivers[d]; d++)
-         RARCH_LOG_OUTPUT("\t%s\n", menu_ctx_drivers[d]->ident);
-      RARCH_WARN("Going to default to first %s...\n", prefix);
-   }
+   driver_log_unknown("menu_driver", prefix,
+         settings->arrays.menu_driver, verbosity_enabled);
 
    return (const menu_ctx_driver_t*)menu_ctx_drivers[0];
 }

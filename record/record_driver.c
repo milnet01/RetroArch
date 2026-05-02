@@ -86,20 +86,9 @@ static void find_record_driver(void)
       recording_state.driver = (const record_driver_t*)record_drivers[i];
    else
    {
-      if (verbosity_is_enabled())
-      {
-         unsigned d;
-
-         RARCH_ERR("Couldn't find any record driver named \"%s\".\n",
-               settings->arrays.record_driver);
-         RARCH_LOG_OUTPUT("Available record drivers are:\n");
-         for (d = 0; record_drivers[d]; d++)
-            RARCH_LOG_OUTPUT("\t%s\n", record_drivers[d]->ident);
-         RARCH_WARN("Going to default to first record driver...\n");
-      }
-
+      driver_log_unknown("record_driver", "record driver",
+            settings->arrays.record_driver, verbosity_is_enabled());
       recording_state.driver = (const record_driver_t*)record_drivers[0];
-
       if (!recording_state.driver)
          retroarch_fail(1, "find_record_driver()");
    }
