@@ -12193,6 +12193,12 @@ static void materialui_toggle(void *userdata, bool menu_on)
       gfx_thumbnail_reset(&mui->thumbnails.savestate);
 }
 
+/* The .ident below is intentionally "glui", not "materialui".
+ * The driver is named "materialui" everywhere else (file, struct,
+ * UI label), but the user-facing ident has always been "glui" — saved
+ * retroarch.cfg files reference it by that name, so renaming breaks
+ * existing user setups. Any string_is_equal(menu_ident, ...) check
+ * targeting this driver MUST use "glui". */
 menu_ctx_driver_t menu_ctx_mui = {
    NULL,
    materialui_get_message,
