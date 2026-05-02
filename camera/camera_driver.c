@@ -144,18 +144,8 @@ bool camera_driver_find_driver(const char *prefix,
       camera_st->driver = (const camera_driver_t*)camera_drivers[i];
    else
    {
-      if (verbosity_enabled)
-      {
-         unsigned d;
-         RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix,
-               settings->arrays.camera_driver);
-         RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-         for (d = 0; camera_drivers[d]; d++)
-            RARCH_LOG_OUTPUT("\t%s\n", camera_drivers[d]->ident);
-
-         RARCH_WARN("Going to default to first %s...\n", prefix);
-      }
-
+      driver_log_unknown("camera_driver", prefix,
+            settings->arrays.camera_driver, verbosity_enabled);
       if (!(camera_st->driver = (const camera_driver_t*)camera_drivers[0]))
          return false;
    }

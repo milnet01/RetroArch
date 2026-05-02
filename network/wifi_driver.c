@@ -164,20 +164,10 @@ bool wifi_driver_ctl(enum rarch_wifi_ctl_state state, void *data)
                wifi_st->drv = (const wifi_driver_t*)wifi_drivers[i];
             else
             {
-               if (verbosity_is_enabled())
-               {
-                  unsigned d;
-                  RARCH_ERR("Couldn't find any %s named \"%s\"\n", prefix,
-                        settings->arrays.wifi_driver);
-                  RARCH_LOG_OUTPUT("Available %ss are:\n", prefix);
-                  for (d = 0; wifi_drivers[d]; d++)
-                     RARCH_LOG_OUTPUT("\t%s\n", wifi_drivers[d]->ident);
-
-                  RARCH_WARN("Going to default to first %s...\n", prefix);
-               }
-
+               driver_log_unknown("wifi_driver", prefix,
+                     settings->arrays.wifi_driver,
+                     verbosity_is_enabled());
                wifi_st->drv = (const wifi_driver_t*)wifi_drivers[0];
-
                if (!wifi_st->drv)
                   retroarch_fail(1, "find_wifi_driver()");
             }
