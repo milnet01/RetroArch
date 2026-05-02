@@ -948,19 +948,64 @@ static void s3_read_cb(retro_task_t *task, void *task_data, void *user_data, con
 
    if (success && data && data->status >= 200 && data->status < 300)
    {
-      file = filestream_open(s3_cb_st->file,
-            RETRO_VFS_FILE_ACCESS_READ_WRITE,
+      /* Atomic write: stage to "<file>.tmp", rename on success. Power
+       * loss / process kill mid-download would otherwise leave the
+       * destination zero-length or half-written, with the previous
+       * valid file already gone. Pattern matches Bundle 2's tmp+rename
+       * idiom on tasks/task_save.c and disk_index_file.c. */
+      char  tmp_path[PATH_MAX_LENGTH];
+      RFILE *tmp_file;
+      size_t _len;
+      bool   wrote_ok = false;
+
+      _len = strlcpy(tmp_path, s3_cb_st->file, sizeof(tmp_path));
+      strlcpy(tmp_path + _len, ".tmp", sizeof(tmp_path) - _len);
+
+      tmp_file = filestream_open(tmp_path,
+            RETRO_VFS_FILE_ACCESS_WRITE,
             RETRO_VFS_FILE_ACCESS_HINT_NONE);
-      if (!file)
+      if (!tmp_file)
       {
-         RARCH_WARN(S3_PFX "Failed to open local file for read '%s'\n", s3_cb_st->file);
+         RARCH_WARN(S3_PFX "Failed to open local tmp file for read '%s'\n",
+               s3_cb_st->file);
          success = false;
       }
       else
       {
          if (data->data && data->len > 0)
-            filestream_write(file, data->data, data->len);
-         filestream_seek(file, 0, SEEK_SET);
+            wrote_ok = (filestream_write(tmp_file, data->data, data->len)
+                  == (int64_t)data->len);
+         else
+            wrote_ok = true; /* empty 200 is valid -- empty tmp will be renamed */
+         filestream_close(tmp_file);
+
+         if (wrote_ok)
+         {
+            if (filestream_exists(s3_cb_st->file))
+               filestream_delete(s3_cb_st->file);
+            if (filestream_rename(tmp_path, s3_cb_st->file) == 0)
+            {
+               file = filestream_open(s3_cb_st->file,
+                     RETRO_VFS_FILE_ACCESS_READ,
+                     RETRO_VFS_FILE_ACCESS_HINT_NONE);
+               if (!file)
+               {
+                  RARCH_WARN(S3_PFX "Failed to reopen local file after atomic rename '%s'\n",
+                        s3_cb_st->file);
+                  success = false;
+               }
+            }
+            else
+            {
+               filestream_delete(tmp_path);
+               success = false;
+            }
+         }
+         else
+         {
+            filestream_delete(tmp_path);
+            success = false;
+         }
       }
    }
 

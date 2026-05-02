@@ -765,13 +765,51 @@ static void webdav_read_cb(retro_task_t *task, void *task_data, void *user_data,
    {
       /* TODO/FIXME: it would be better if writing
        * to the file happened during the network reads */
-      file = filestream_open(webdav_cb_st->file,
-                             RETRO_VFS_FILE_ACCESS_READ_WRITE,
-                             RETRO_VFS_FILE_ACCESS_HINT_NONE);
-      if (file)
+      /* Atomic write: stage to "<file>.tmp", rename on success. Power
+       * loss / process kill mid-download would otherwise leave the
+       * destination zero-length or half-written, with the previous
+       * valid file already gone. Pattern matches Bundle 2's tmp+rename
+       * idiom on tasks/task_save.c and disk_index_file.c. */
+      char  tmp_path[PATH_MAX_LENGTH];
+      RFILE *tmp_file;
+      size_t _len;
+      bool   wrote_ok = false;
+
+      _len = strlcpy(tmp_path, webdav_cb_st->file, sizeof(tmp_path));
+      strlcpy(tmp_path + _len, ".tmp", sizeof(tmp_path) - _len);
+
+      tmp_file = filestream_open(tmp_path,
+            RETRO_VFS_FILE_ACCESS_WRITE,
+            RETRO_VFS_FILE_ACCESS_HINT_NONE);
+      if (tmp_file)
       {
-         filestream_write(file, data->data, data->len);
-         filestream_seek(file, 0, SEEK_SET);
+         wrote_ok = (filestream_write(tmp_file, data->data, data->len)
+               == (int64_t)data->len);
+         filestream_close(tmp_file);
+      }
+
+      if (wrote_ok)
+      {
+         if (filestream_exists(webdav_cb_st->file))
+            filestream_delete(webdav_cb_st->file);
+         if (filestream_rename(tmp_path, webdav_cb_st->file) == 0)
+         {
+            file = filestream_open(webdav_cb_st->file,
+                  RETRO_VFS_FILE_ACCESS_READ,
+                  RETRO_VFS_FILE_ACCESS_HINT_NONE);
+            if (!file)
+               success = false;
+         }
+         else
+         {
+            filestream_delete(tmp_path);
+            success = false;
+         }
+      }
+      else
+      {
+         filestream_delete(tmp_path);
+         success = false;
       }
    }
 
