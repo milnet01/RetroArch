@@ -84,3 +84,23 @@ preprocessorErrorDirective:network/net_logger.c:37
 # the head field is passed by the caller and cppcheck does not infer that
 # the head was zero-initialised on delta allocation.
 uninitvar:network/netplay/netplay_frontend.c:2305
+
+# --- S18: JavaScript optional chaining inside EM_ASM_INT macro ---------------
+# Sibling of S15 (audioworklet.c).  platform_emscripten.c at line 1058 embeds
+# JS inside Emscripten's EM_ASM_INT({...}, ...) macro and uses optional
+# chaining (`Atomics?.waitAsync?.toString().includes(...)`).  cppcheck parses
+# the JS body as C and reports `syntax error: ? . waitAsync`.  The entire
+# block is fed to the JS engine at runtime, never compiled as C.  Module is
+# HAVE_EMSCRIPTEN-only (out of Linux desktop build) but cppcheck still scans
+# the file.
+syntaxError:frontend/drivers/platform_emscripten.c:1058
+
+# --- S19: FFmpeg AV_VERSION_INT macro inside #if -----------------------------
+# record_ffmpeg.c defines HAVE_CH_LAYOUT, FFMPEG3, etc. via
+# `(LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100))` at lines 73-85.
+# cppcheck cannot evaluate AV_VERSION_INT() because the FFmpeg headers
+# aren't in its analyser sandbox; the function-like macro therefore can't
+# be resolved when it tries to evaluate `#if HAVE_CH_LAYOUT` at line 317.
+# Code compiles cleanly under gcc/clang with the real ffmpeg headers
+# installed - this is purely an analyser limitation.
+syntaxError:record/drivers/record_ffmpeg.c:317

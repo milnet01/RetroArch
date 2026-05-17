@@ -828,6 +828,13 @@ static void mylist_create(my_list **list_p, int initial_capacity,
 
    list               = (my_list*)malloc(sizeof(my_list));
    *list_p            = list;
+   /* NULL-check the outer malloc: the field writes below would
+    * NULL-deref on OOM.  *list_p is already cleared to NULL above;
+    * callers (runahead_input_state_set_last, runahead_create) must
+    * recheck *list_p after this call before any consumer-side
+    * deref. */
+   if (!list)
+      return;
    list->size         = 0;
    list->constructor  = constructor;
    list->destructor   = destructor;
@@ -925,6 +932,13 @@ static void runahead_input_state_set_last(
       mylist_create(&runloop_st->input_state_list, 16,
             input_list_element_constructor,
             input_list_element_destructor);
+
+   /* mylist_create can fail with OOM and leave *list_p NULL; the
+    * loop below would NULL-deref ->size.  Skip this input-state
+    * update on alloc failure - the next dirty-input check will
+    * retry. */
+   if (!runloop_st->input_state_list)
+      return;
 
    /* Find list item */
    for (i = 0; i < (unsigned)runloop_st->input_state_list->size; i++)
@@ -1200,8 +1214,13 @@ static bool runahead_create(runloop_state_t *runloop_st)
       video_st->flags &= ~VIDEO_FLAG_RUNAHEAD_IS_ACTIVE;
 
    if (      (runloop_st->runahead_save_state_size == 0)
-         || !(runloop_st->flags & RUNLOOP_FLAG_RUNAHEAD_SAVE_STATE_SIZE_KNOWN))
+         || !(runloop_st->flags & RUNLOOP_FLAG_RUNAHEAD_SAVE_STATE_SIZE_KNOWN)
+         || !runloop_st->runahead_save_state_list)
    {
+      /* runahead_save_state_list_init may have OOM'd inside
+       * mylist_create; runahead_load_state at line ~1244 derefs
+       * the list unconditionally so we must bail before runahead
+       * loops start. */
       runahead_err(runloop_st);
       return false;
    }
