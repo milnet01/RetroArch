@@ -214,6 +214,7 @@ HAVE_TEST_DRIVERS=yes      # Test input driver
 HAVE_GAME_AI=no
 HAVE_SMBCLIENT=auto        # SMB client support
 HAVE_BUILTINSMBCLIENT=no   # Use builtin libsmb2
+HAVE_S3=no                 # S3 cloud sync backend (experimental, requires networking)
 HAVE_COCOA=auto            # Cocoa support (Darwin/Apple)
 HAVE_RETROARCH_PLAYLIST_MANAGER=auto # iOS/tvOS + macOS 10.11+ playlist helper (see qb/config.libs.sh)
 HAVE_MFI=auto              # GameController.framework joypad support (Apple)

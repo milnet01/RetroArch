@@ -826,7 +826,11 @@ static char* s3_build_auth_header(const char *method, const char *canonical_uri,
    char *signature = NULL;
    char date[16];
    char datetime[32];
-   char credential[256];
+   /* Worst case: access_key_id (127) + '/' + date (8) + '/' + region
+    * (NAME_MAX_LENGTH-1 = 255 on desktop) + '/' + S3_SERVICE ("s3", 2) +
+    * "/aws4_request" (13) + NUL = 409 bytes.  256 was insufficient and
+    * triggered -Wformat-truncation once HAVE_S3 was wired in (Bundle 63). */
+   char credential[512];
    time_t now;
    struct tm *tm_info;
 

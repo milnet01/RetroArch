@@ -2395,6 +2395,10 @@ ifeq ($(HAVE_NETWORKING), 1)
       ifeq ($(HAVE_SSL), 1)
          OBJ += network/cloud_sync/google_drive.o
       endif
+      ifeq ($(HAVE_S3), 1)
+         DEFINES += -DHAVE_S3
+         OBJ += network/cloud_sync/s3.o
+      endif
       ifneq (,$(filter 1,$(HAVE_SMBCLIENT) $(HAVE_BUILTINSMBCLIENT)))
          OBJ += network/cloud_sync/smb.o
       endif
