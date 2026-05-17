@@ -2773,10 +2773,7 @@ static void materialui_get_message(void *data, const char *msg)
    if (!mui || !msg || !*msg)
       return;
 
-   mui->msgbox[0] = '\0';
-
-   if (msg && *msg)
-      strlcpy(mui->msgbox, msg, sizeof(mui->msgbox));
+   strlcpy(mui->msgbox, msg, sizeof(mui->msgbox));
 }
 
 static void materialui_render_messagebox(
@@ -10406,18 +10403,15 @@ static enum menu_action materialui_parse_menu_entry_action(
                   menu_entry_get(&entry_new, 0, new_selection, NULL, false);
                }
 
-               if (new_selection != selection)
-               {
-                  menu_st->selection_ptr = new_selection;
-                  if (menu_st->driver_ctx->navigation_set)
-                     menu_st->driver_ctx->navigation_set(menu_st->userdata, false);
-               }
+               /* While-loop above only exits with new_selection != selection. */
+               menu_st->selection_ptr = new_selection;
+               if (menu_st->driver_ctx->navigation_set)
+                  menu_st->driver_ctx->navigation_set(menu_st->userdata, false);
 
                new_action = MENU_ACTION_NOOP;
 
 #ifdef HAVE_AUDIOMIXER
-               if (new_selection != selection)
-                  audio_driver_mixer_play_scroll_sound(true);
+               audio_driver_mixer_play_scroll_sound(true);
 #endif
                break;
             }
@@ -12044,7 +12038,7 @@ static void materialui_list_insert(void *userdata,
                {
                   char val[NAME_MAX_LENGTH];
                   unsigned user_value = i + 1;
-                  size_t _len = snprintf(val, sizeof(val), "%d", user_value);
+                  size_t _len = snprintf(val, sizeof(val), "%u", user_value);
                   strlcpy(val       + _len,
                         "_input_binds_list",
                         sizeof(val) - _len);
