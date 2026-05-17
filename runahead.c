@@ -1264,6 +1264,13 @@ static void runahead_input_state_set_last(
             input_list_element_constructor,
             input_list_element_destructor);
 
+   /* mylist_create can fail with OOM and leave *list_p NULL; the
+    * loop below would NULL-deref ->size.  Skip this input-state
+    * update on alloc failure - the next dirty-input check will
+    * retry. */
+   if (!runloop_st->input_state_list)
+      return;
+
    /* Find list item */
    for (i = 0; i < (unsigned)runloop_st->input_state_list->size; i++)
    {
