@@ -3741,8 +3741,9 @@ static void ozone_draw_sidebar(
             goto console_iterate;
          if (tab_y_screen > (int)video_height - (int)ozone->dimensions.footer_height)
          {
-            /* All remaining entries are also below visible area */
-            y += (horizontal_list_size - i) * (ozone->dimensions.sidebar_entry_height + ozone->dimensions.sidebar_entry_padding_vertical);
+            /* All remaining entries are also below visible area. `y` is
+             * not read after this for loop, so the accumulate-and-bail
+             * here was dead. */
             break;
          }
 
@@ -5899,8 +5900,9 @@ static void ozone_draw_entries(
          goto border_iterate;
       else if (y + scroll_y - node->height - 20 * scale_factor > bottom_boundary)
       {
-         /* All remaining entries are also below the boundary - stop iterating */
-         y += node->height;
+         /* All remaining entries are also below the boundary - stop iterating.
+          * `y` is unconditionally reassigned at the "Icons + text" block
+          * below before any further read, so we don't accumulate here. */
          break;
       }
 
@@ -6425,7 +6427,13 @@ static void ozone_draw_thumbnail_bar(
    unsigned sidebar_width            = ozone->dimensions.thumbnail_bar_width;
    unsigned thumbnail_width          = sidebar_width - (ozone->dimensions.sidebar_entry_icon_padding * 3);
    int right_thumbnail_y_position    = 0;
-   int left_thumbnail_y_position     = 0;
+   /* left_thumbnail_y_position is unconditionally assigned by either
+    * branch of the if (show_right_thumbnail) inside the
+    * if (show_left_thumbnail) block before its first read, so the
+    * default-init was dead. right_thumbnail_y_position keeps its 0 init
+    * because the !show_right_thumbnail / show_left_thumbnail path copies
+    * it into left_thumbnail_y_position. */
+   int left_thumbnail_y_position;
    int bottom_row_y_position         = 0;
    bool show_right_thumbnail         = false;
    bool show_left_thumbnail          = false;
@@ -12261,10 +12269,12 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
       else if   (((ozone->flags & OZONE_FLAG_MSGBOX_STATE_OLD) > 0) != ((ozone->flags & OZONE_FLAG_MSGBOX_STATE) > 0)
             &&  (!(ozone->flags & OZONE_FLAG_MSGBOX_STATE)))
       {
-         if (ozone->flags & OZONE_FLAG_MSGBOX_STATE)
-            ozone->flags                   &= ~OZONE_FLAG_MSGBOX_STATE_OLD;
-         else
-            ozone->flags                   &= ~OZONE_FLAG_MSGBOX_STATE_OLD;
+         /* Outer condition pins MSGBOX_STATE off, so the inline
+          * if (ozone->flags & OZONE_FLAG_MSGBOX_STATE) ... else ... that
+          * formerly bracketed this clear-of-STATE_OLD was unreachable on
+          * the if-side and identical on the else-side. Collapsed to the
+          * unconditional clear. */
+         ozone->flags                      &= ~OZONE_FLAG_MSGBOX_STATE_OLD;
          ozone->flags                      &= ~OZONE_FLAG_MSGBOX_STATE;
 
          gfx_animation_kill_by_tag(&messagebox_tag);

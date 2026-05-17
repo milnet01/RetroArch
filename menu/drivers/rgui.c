@@ -2135,7 +2135,9 @@ static void rgui_render_particle_effect(
                8, 8, 8,
                9, 9,
                10};
-            bool on_screen     = false;
+            /* on_screen is unconditionally assigned by rgui_draw_particle
+             * before the if (!on_screen) check on every loop iteration. */
+            bool on_screen;
             unsigned num_drops = (unsigned)(0.85f * ((float)fb_width / (float)RGUI_MAX_FB_WIDTH) * (float)RGUI_NUM_PARTICLES);
             if (num_drops >= RGUI_NUM_PARTICLES)
                num_drops       = RGUI_NUM_PARTICLES;
