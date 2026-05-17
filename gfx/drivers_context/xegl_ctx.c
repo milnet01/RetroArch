@@ -312,7 +312,8 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
    unsigned height = VIDEO_SCALE_H(dims);
    XEvent event;
    EGLint egl_attribs[16];
-   EGLint vid, num_visuals;
+   EGLint vid                        = 0;
+   EGLint num_visuals;
    EGLint *attr                      = NULL;
 #ifdef HAVE_XF86VM
    bool true_full                    = false;

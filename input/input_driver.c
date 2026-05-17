@@ -4897,7 +4897,7 @@ size_t input_config_get_bind_string(
    }
 #endif
 
-   if (bind->mbutton != NO_BTN)
+   if (bind && bind->mbutton != NO_BTN)
    {
       int tag = 0;
       switch (bind->mbutton)
