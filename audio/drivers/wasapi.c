@@ -2712,8 +2712,15 @@ static void wasapi_set_nonblock_state(void *wh, bool nonblock)
 
 static void wasapi_free(void *wh)
 {
+   HANDLE write_event;
    wasapi_t *w        = (wasapi_t*)wh;
-   HANDLE write_event = w->write_event;
+
+   /* Checked before anything is read from w, including the event
+    * handle captured for the close at the end. */
+   if (!w)
+      return;
+
+   write_event        = w->write_event;
 
    /* How the pump did, said once, here - the device is going away and
     * nothing is disturbed. Never logged from the pump itself: a line
