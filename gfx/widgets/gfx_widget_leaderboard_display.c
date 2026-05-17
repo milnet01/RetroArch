@@ -549,7 +549,7 @@ static void gfx_widget_leaderboard_display_frame(void* data, void* userdata)
             }
 
             x += image_size + spacing;
-            y = (float)y + image_size / 2 + p_dispwidget->gfx_widget_fonts.regular.line_height / 2 - p_dispwidget->gfx_widget_fonts.regular.line_descender;
+            y = (float)y + image_size / 2.0f + p_dispwidget->gfx_widget_fonts.regular.line_height / 2.0f - p_dispwidget->gfx_widget_fonts.regular.line_descender;
             gfx_widgets_draw_text(&p_dispwidget->gfx_widget_fonts.regular,
                   state->progress_tracker.display, x, y,
                   VIDEO_SCALE_PACK(video_width, video_height),
