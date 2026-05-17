@@ -363,6 +363,14 @@ void task_push_cdrom_dump(const char *drive)
    retro_task_t *task             = task_init();
    task_cdrom_dump_state_t *state = (task_cdrom_dump_state_t*)calloc(1, sizeof(*state));
 
+   if (!task || !state)
+   {
+      RARCH_WARN("[CDROM] Failed to allocate disc-dump task state.\n");
+      free(task);
+      free(state);
+      return;
+   }
+
    state->drive_letter[0]         = drive[0];
    state->next                    = true;
    state->cur_track               = 0;
