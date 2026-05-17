@@ -101,12 +101,12 @@ static int resolution_list_qsort_func(
 
    str_a[0] = str_b[0] = '\0';
 
-   snprintf(str_a, sizeof(str_a), "%04dx%04d (%d Hz)",
+   snprintf(str_a, sizeof(str_a), "%04ux%04u (%u Hz)",
          a->width,
          a->height,
          a->refreshrate);
 
-   snprintf(str_b, sizeof(str_b), "%04dx%04d (%d Hz)",
+   snprintf(str_b, sizeof(str_b), "%04ux%04u (%u Hz)",
          b->width,
          b->height,
          b->refreshrate);

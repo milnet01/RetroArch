@@ -1019,6 +1019,15 @@ void gfx_thumbnail_draw(
          1.0f, 1.0f, 1.0f, 1.0f,
          1.0f, 1.0f, 1.0f, 1.0f
       };
+      /* Hoisted to outer scope so `coords.color` never aliases an
+       * out-of-scope local in the gap between leaving the shadow
+       * block and reassigning to thumbnail_color below. */
+      float shadow_color[16]    = {
+         0.0f, 0.0f, 0.0f, 1.0f,
+         0.0f, 0.0f, 0.0f, 1.0f,
+         0.0f, 0.0f, 0.0f, 1.0f,
+         0.0f, 0.0f, 0.0f, 1.0f
+      };
 
       /* Set thumbnail opacity */
       if (thumbnail_alpha <= 0.0f)
@@ -1126,12 +1135,6 @@ void gfx_thumbnail_draw(
             float shadow_height;
             float shadow_x;
             float shadow_y;
-            float shadow_color[16] = {
-               0.0f, 0.0f, 0.0f, 1.0f,
-               0.0f, 0.0f, 0.0f, 1.0f,
-               0.0f, 0.0f, 0.0f, 1.0f,
-               0.0f, 0.0f, 0.0f, 1.0f
-            };
             float shadow_alpha     = thumbnail_alpha;
 
             /* Set shadow opacity */

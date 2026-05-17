@@ -252,7 +252,7 @@ static void video_shader_replace_wildcards_impl(
                _len += snprintf(
                      replace_text         + _len,
                      sizeof(replace_text) - _len,
-                     "%d",
+                     "%u",
                      settings->uints.video_rotation * 90);
                break;
             case RARCH_WILDCARD_VIDEO_FINAL_ROTATION:
@@ -260,7 +260,7 @@ static void video_shader_replace_wildcards_impl(
                _len += snprintf(
                      replace_text         + _len,
                      sizeof(replace_text) - _len,
-                     "%d",
+                     "%u",
                      retroarch_get_rotation() * 90);
                break;
             case RARCH_WILDCARD_SCREEN_ORIENTATION:
@@ -268,7 +268,7 @@ static void video_shader_replace_wildcards_impl(
                _len += snprintf(
                      replace_text         + _len,
                      sizeof(replace_text) - _len,
-                     "%d",
+                     "%u",
                      settings->uints.screen_orientation * 90);
                break;
             case RARCH_WILDCARD_CORE_ASPECT_ORIENTATION:

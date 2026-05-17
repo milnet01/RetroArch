@@ -215,7 +215,7 @@ static bool crt_sr2_init(videocrt_switch_t *p_switch,
       {
          char sw[16];
          sr_set_user_mode(super_width, 0, 0);
-         snprintf(sw, sizeof(sw), "%d", super_width);
+         snprintf(sw, sizeof(sw), "%u", super_width);
          sr_set_option(SR_OPT_SUPER_WIDTH, sw);
       }
 

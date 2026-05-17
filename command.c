@@ -1838,7 +1838,7 @@ static void command_scan_states(
       strlcpy(s, savefile_root, savefile_root_length + 1);
       /* ".state0" is just ".state" instead, so don't print that. */
       if (del_idx > 0)
-         snprintf(s + savefile_root_length, 5, "%d", del_idx);
+         snprintf(s + savefile_root_length, 5, "%d", (int)del_idx);
    }
 
    dir_list_free(dir_list);
