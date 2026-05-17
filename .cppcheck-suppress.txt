@@ -62,3 +62,25 @@ uninitvar:gfx/common/wayland_common.c:1066
 # whole block is fed to the JS engine at runtime, never compiled as C.
 literalWithCharPtrCompare:audio/drivers/audioworklet.c:182
 literalWithCharPtrCompare:audio/drivers/audioworklet.c:184
+
+# --- S16: net_logger #error is the gate, not a bug ---------------------------
+# net_logger.c requires PC_DEVELOPMENT_IP_ADDRESS and PC_DEVELOPMENT_UDP_PORT
+# to be defined in CFLAGS at build time (e.g. -DPC_DEVELOPMENT_IP_ADDRESS=...).
+# Without those, the netlogger backend cannot dial the developer's logging
+# host, so the file is intentionally a hard compile-error to prevent a silent
+# no-op build.  The .c file is only ever compiled when the developer asks for
+# remote logging via the qb option, so the #error is a precondition, not a
+# defect.  Equivalent gate at line 37 for the UDP port define.
+preprocessorErrorDirective:network/net_logger.c:33
+preprocessorErrorDirective:network/net_logger.c:37
+
+# --- S17: list-of-list parameter cppcheck can't trace ------------------------
+# netplay_input_state_for() takes `netplay_input_state_t *list`, where
+# netplay_input_state_t is itself a pointer type — so `*list` is a pointer
+# the function walks as a singly-linked list head.  All call sites pass the
+# address of an existing head field on a delta struct, so `*list` is always
+# a defined pointer (NULL or non-NULL); the `while (*list)` loop drains the
+# list.  cppcheck reports `*list` as uninitialised because the address-of
+# the head field is passed by the caller and cppcheck does not infer that
+# the head was zero-initialised on delta allocation.
+uninitvar:network/netplay/netplay_frontend.c:2305

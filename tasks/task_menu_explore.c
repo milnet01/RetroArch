@@ -63,7 +63,6 @@ static void free_menu_explore_init_handle(
    }
 
    free(menu_explore);
-   menu_explore = NULL;
 }
 
 static void cb_task_menu_explore_init(

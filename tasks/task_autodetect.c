@@ -90,7 +90,6 @@ static void free_autoconfig_handle(autoconfig_handle_t *autoconfig_handle)
    }
 
    free(autoconfig_handle);
-   autoconfig_handle = NULL;
 }
 
 static void input_autoconfigure_free(retro_task_t *task)

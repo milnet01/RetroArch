@@ -570,7 +570,7 @@ static bool content_file_list_set_info(
 
          /* Extract name of file in archive */
          archive_delim++;
-         if (archive_delim && *archive_delim)
+         if (*archive_delim)
             file_info->archive_file = strdup(archive_delim);
 
          /* Extract parent directory - may be used

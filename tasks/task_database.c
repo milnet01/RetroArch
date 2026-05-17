@@ -1759,7 +1759,6 @@ static void free_manual_content_scan_handle(manual_scan_handle_t *manual_scan)
 #endif
 
    free(manual_scan);
-   manual_scan = NULL;
 }
 
 static void cb_task_manual_content_scan(

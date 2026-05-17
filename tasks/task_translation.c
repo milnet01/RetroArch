@@ -545,7 +545,7 @@ static void handle_translation_response(
          scaler->out_height    = height;
          scaler->scaler_type   = SCALER_TYPE_POINT;
          scaler_ctx_gen_filter(scaler);
-         scaler->in_stride     = -1 * width * 3;
+         scaler->in_stride     = -1 * (int)width * 3;
 
          scaler_ctx_scale_direct(scaler, raw_output_data,
                (uint8_t*)raw_image_data + (image_height - 1) * width * 3);

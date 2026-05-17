@@ -141,7 +141,6 @@ static void free_core_backup_handle(core_backup_handle_t *backup_handle)
    }
 
    free(backup_handle);
-   backup_handle = NULL;
 }
 
 /* Forward declarations, required for task_core_backup_finder() */

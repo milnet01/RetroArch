@@ -402,7 +402,6 @@ static void free_pl_thumb_handle(pl_thumb_handle_t *pl_thumb)
    }
 
    free(pl_thumb);
-   pl_thumb = NULL;
 }
 
 /*******************************/
@@ -824,14 +823,9 @@ static void task_pl_entry_thumbnail_download_handler(retro_task_t *task)
             /* Update progress */
             task_set_progress(task, ((pl_thumb->type_idx - 1) * 100) / 3);
 
-            /* Download current thumbnail. The earlier code checked
-             * pl_thumb here but unconditionally dereferenced it on
-             * the next line - fold both into the guarded block. */
-            if (pl_thumb)
-            {
-               download_pl_thumbnail(pl_thumb);
-               pl_thumb->type_idx++;
-            }
+            /* Download current thumbnail */
+            download_pl_thumbnail(pl_thumb);
+            pl_thumb->type_idx++;
          }
          break;
       case PL_THUMB_END:

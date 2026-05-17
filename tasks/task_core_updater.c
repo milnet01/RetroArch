@@ -265,7 +265,6 @@ static void free_core_updater_list_handle(
    }
 
    free(list_handle);
-   list_handle = NULL;
 }
 
 static void task_core_updater_get_list_handler(retro_task_t *task)
@@ -679,7 +678,6 @@ static void free_core_updater_download_handle(core_updater_download_handle_t *do
       free(download_handle->display_name);
 
    free(download_handle);
-   download_handle = NULL;
 }
 
 static void task_core_updater_download_handler(retro_task_t *task)
@@ -1177,7 +1175,6 @@ static void free_update_installed_cores_handle(
    core_updater_list_free(update_installed_handle->core_list);
 
    free(update_installed_handle);
-   update_installed_handle = NULL;
 }
 
 static void task_update_installed_cores_handler(retro_task_t *task)
@@ -1604,7 +1601,6 @@ static void free_play_feature_delivery_install_handle(
       free(pfd_install_handle->display_name);
 
    free(pfd_install_handle);
-   pfd_install_handle = NULL;
 }
 
 static void task_play_feature_delivery_core_install_handler(
@@ -1938,7 +1934,6 @@ static void free_play_feature_delivery_switch_cores_handle(
    core_updater_list_free(pfd_switch_cores_handle->core_list);
 
    free(pfd_switch_cores_handle);
-   pfd_switch_cores_handle = NULL;
 }
 
 static void task_play_feature_delivery_switch_cores_handler(

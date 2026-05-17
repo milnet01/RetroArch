@@ -86,7 +86,6 @@ static void free_pl_manager_handle(pl_manager_handle_t *pl_manager)
    }
 
    free(pl_manager);
-   pl_manager = NULL;
 }
 
 static void cb_task_pl_manager(
