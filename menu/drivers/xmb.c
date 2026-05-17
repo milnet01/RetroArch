@@ -1193,7 +1193,7 @@ static void xmb_render_messagebox_internal(
          userdata,
          video_width,
          video_height,
-         x - (longest_width / 2) - xmb->margins_dialog,
+         x - (longest_width / 2.0f) - xmb->margins_dialog,
          y + xmb->margins_slice - xmb->margins_dialog,
          256, 256,
          longest_width + (xmb->margins_dialog * 2),
@@ -6337,7 +6337,7 @@ static void xmb_layout_common(xmb_handle_t *xmb, float scale_factor, unsigned ne
                                  + (4 * scale_factor)
                                  + (margins_title_h_offset * scale_factor);
    xmb->margins_title_top        = (margins_title * scale_factor)
-                                 + (new_font_size - (new_font_size / 6) * scale_factor);
+                                 + (new_font_size - (new_font_size / 6.0f) * scale_factor);
    xmb->margins_title_bottom     = (margins_title * scale_factor) + (4 * scale_factor);
 
    xmb->cursor_size              = 64.0f          * scale_factor;
@@ -7702,8 +7702,8 @@ static void xmb_draw_no_thumbnail_available(
                icon_size,
                icon_size,
                xmb->textures.list[XMB_TEXTURE_IMAGE],
-               x_position + ((view_width - icon_size) / 2),
-               y_position + ((view_height - icon_size) / 2) + icon_size,
+               x_position + ((view_width - icon_size) / 2.0f),
+               y_position + ((view_height - icon_size) / 2.0f) + icon_size,
                video_width,
                video_height,
                xmb->alpha,
@@ -7721,8 +7721,8 @@ static void xmb_draw_no_thumbnail_available(
 
    xmb_draw_text(shadows_enable, xmb, config_get_ptr(),
          msg_hash_to_str(MSG_NO_THUMBNAIL_AVAILABLE),
-         x_position + (view_width / 2),
-         video_height - y_position - ((view_height - icon_size) / 2),
+         x_position + (view_width / 2.0f),
+         video_height - y_position - ((view_height - icon_size) / 2.0f),
          1, 1, TEXT_ALIGN_CENTER,
          video_width, video_height,
          xmb->font2);
@@ -8777,7 +8777,7 @@ static void xmb_frame(void *data, video_frame_info_t *video_info)
                                          + (xmb->icon_size / 4.0f);
                float thumb_y_offset      = (thumb_height - scaled_thumb_height) / 2.0f;
                float right_thumb_y       = thumb_y_base + thumb_y_offset;
-               float left_thumb_y        = thumb_y_base + thumb_height + (xmb->icon_size / 8) + thumb_y_offset;
+               float left_thumb_y        = thumb_y_base + thumb_height + (xmb->icon_size / 8.0f) + thumb_y_offset;
 
                /* Darken background */
                if (thumbnail_background)
@@ -9044,7 +9044,7 @@ static void xmb_frame(void *data, video_frame_info_t *video_info)
 
          if (!xmb->assets_missing)
          {
-            float margin_offset = -(xmb->icon_size / 2) - (7 * xmb->last_scale_factor);
+            float margin_offset = -(xmb->icon_size / 2.0f) - (7 * xmb->last_scale_factor);
 
             if (dispctx && dispctx->blend_begin)
                dispctx->blend_begin(userdata);
@@ -9104,7 +9104,7 @@ static void xmb_frame(void *data, video_frame_info_t *video_info)
 
       if (!xmb->assets_missing)
       {
-         float margin_offset = -(xmb->icon_size / 2) - (7 * xmb->last_scale_factor);
+         float margin_offset = -(xmb->icon_size / 2.0f) - (7 * xmb->last_scale_factor);
 
          if (dispctx && dispctx->blend_begin)
             dispctx->blend_begin(userdata);
@@ -9140,7 +9140,7 @@ static void xmb_frame(void *data, video_frame_info_t *video_info)
             xmb->font, timedate, _len, 1.0f);
 
       xmb_draw_text(shadows_enable, xmb, settings, timedate,
-            video_width - xmb->margins_title_left - xmb->icon_size / 4 - x_pos,
+            video_width - xmb->margins_title_left - xmb->icon_size / 4.0f - x_pos,
             xmb->margins_title_top, 1, 1, TEXT_ALIGN_RIGHT,
             video_width, video_height, xmb->font);
    }

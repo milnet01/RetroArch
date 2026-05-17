@@ -91,7 +91,7 @@ static void gfx_widget_screenshot_fadeout(void *userdata)
    switch (settings->uints.notification_show_screenshot_flash)
    {
       case NOTIFICATION_SHOW_SCREENSHOT_FLASH_FAST:
-         entry.duration = SCREENSHOT_DURATION_OUT/2;
+         entry.duration = SCREENSHOT_DURATION_OUT/2.0f;
          break;
       case NOTIFICATION_SHOW_SCREENSHOT_FLASH_NORMAL:
       default:
@@ -128,7 +128,7 @@ static void gfx_widgets_play_screenshot_flash(void *data)
    switch (settings->uints.notification_show_screenshot_flash)
    {
       case NOTIFICATION_SHOW_SCREENSHOT_FLASH_FAST:
-         entry.duration = SCREENSHOT_DURATION_IN/2;
+         entry.duration = SCREENSHOT_DURATION_IN/2.0f;
          break;
       case NOTIFICATION_SHOW_SCREENSHOT_FLASH_NORMAL:
       default:

@@ -221,7 +221,7 @@ static void gfx_widget_volume_frame(void* data, void *user_data)
             const char *text  = msg_hash_to_str(MSG_AUDIO_MUTED);
             gfx_widgets_draw_text(font_regular,
                   text,
-                  state->widget_width / 2,
+                  state->widget_width / 2.0f,
                   state->widget_height / 2.0f
                   + font_regular->line_centre_offset,
                   video_width, video_height,

@@ -5921,7 +5921,7 @@ static void materialui_render_selected_entry_aux_savestate_list(
    int background_height   = (int)video_height - (int)header_height -
          (int)mui->nav_bar_layout_height - (int)mui->status_bar.height;
    float thumbnail_x;
-   float thumbnail_y       = background_y + (background_height - mui->thumbnail_height_max) / 2;
+   float thumbnail_y       = background_y + (background_height - mui->thumbnail_height_max) / 2.0f;
    gfx_display_t *p_disp   = disp_get_ptr();
    settings_t *settings    = config_get_ptr();
 
@@ -5940,7 +5940,7 @@ static void materialui_render_selected_entry_aux_savestate_list(
             (int)mui->nav_bar_layout_height - (int)mui->status_bar.height;
       background_width  = video_width;
       background_height = mui->thumbnail_height_max + (mui->margin * 2);
-      thumbnail_x       = background_x + (background_width - mui->thumbnail_width_max) / 2;
+      thumbnail_x       = background_x + (background_width - mui->thumbnail_width_max) / 2.0f;
       thumbnail_y       = background_y + (float)mui->margin;
    }
 
@@ -7336,8 +7336,8 @@ static void materialui_draw_no_thumbnail_available(
                video_height,
                (unsigned)icon_size,
                mui->textures.list[MUI_TEXTURE_IMAGE],
-               x_position + ((view_width - icon_size) / 2),
-               video_height - y_position - icon_size - ((view_height - icon_size) / 2),
+               x_position + ((view_width - icon_size) / 2.0f),
+               video_height - y_position - icon_size - ((view_height - icon_size) / 2.0f),
                0.0f,
                1.0f,
                mui->colors.missing_thumbnail_icon,
@@ -7348,7 +7348,7 @@ static void materialui_draw_no_thumbnail_available(
       gfx_display_draw_text(
          mui->font_data.list.font,
          msg_hash_to_str(MSG_NO_THUMBNAIL_AVAILABLE),
-         x_position + (view_width / 2),
+         x_position + (view_width / 2.0f),
          video_height - y_position - ((view_height - icon_size * 1.50f) / 2),
          video_width,
          video_height,

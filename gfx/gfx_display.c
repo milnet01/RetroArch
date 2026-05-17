@@ -1038,9 +1038,9 @@ void gfx_display_draw_keyboard(
       }
 
       gfx_display_draw_text(font, grid[i],
-            (float)(video_width / 2 - (11 * ptr_width) / 2
-               + (i % 11) * ptr_width + ptr_width / 2),
-            (float)(video_height / 2 + ptr_height + line_y)
+            (float)(video_width / 2.0f - (11 * ptr_width) / 2.0f
+               + (i % 11) * ptr_width + ptr_width / 2.0f),
+            (float)(video_height / 2.0f + ptr_height + line_y)
                + font->size / 3.0f,
             video_width,
             video_height,

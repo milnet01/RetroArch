@@ -607,7 +607,7 @@ static void gfx_widgets_msg_queue_kill(
    entry.userdata               = NULL;
    entry.subject                = &msg->offset_y;
    entry.target_value           = msg->offset_y -
-      p_dispwidget->msg_queue_height / 4;
+      p_dispwidget->msg_queue_height / 4.0f;
 
    gfx_animation_push(&entry);
 
@@ -1475,7 +1475,7 @@ static void gfx_widgets_draw_regular_msg(
    /* Icon */
    if (p_dispwidget->flags & DISPGFX_WIDGET_FLAG_MSG_QUEUE_HAS_ICONS)
    {
-      float icon_size = p_dispwidget->msg_queue_icon_size_x / ((msg->flags & DISPWIDG_FLAG_SMALL) ? 2 : 1);
+      float icon_size = p_dispwidget->msg_queue_icon_size_x / ((msg->flags & DISPWIDG_FLAG_SMALL) ? 2.0f : 1.0f);
       /* For warnings and errors, flip the 'i' upside down so it becomes '!' */
       bool invert_y = (msg->flags & (  DISPWIDG_FLAG_CATEGORY_WARNING
                                      | DISPWIDG_FLAG_CATEGORY_ERROR)) != 0;

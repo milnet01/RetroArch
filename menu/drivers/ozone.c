@@ -3627,8 +3627,8 @@ static void ozone_draw_sidebar(
                   + ozone->dimensions.sidebar_padding_horizontal
                   + ozone->dimensions.sidebar_entry_icon_padding,
             y
-                  + ozone->dimensions.sidebar_entry_height / 2
-                  - ozone->dimensions.sidebar_entry_icon_size / 2
+                  + ozone->dimensions.sidebar_entry_height / 2.0f
+                  - ozone->dimensions.sidebar_entry_icon_size / 2.0f
                   + ozone->animations.scroll_y_sidebar,
             video_width,
             video_height,
@@ -3684,7 +3684,7 @@ static void ozone_draw_sidebar(
                      + ozone->dimensions.sidebar_entry_icon_padding * 2
                      + ozone->dimensions.sidebar_entry_icon_size,
                y
-                     + ozone->dimensions.sidebar_entry_height / 2
+                     + ozone->dimensions.sidebar_entry_height / 2.0f
                      + ozone->fonts.sidebar.line_centre_offset
                      + ozone->animations.scroll_y_sidebar,
                video_width,
@@ -3776,8 +3776,8 @@ static void ozone_draw_sidebar(
                      + ozone->dimensions.sidebar_padding_horizontal
                      + ozone->dimensions.sidebar_entry_icon_padding,
                y
-                     + ozone->dimensions.sidebar_entry_height / 2
-                     - ozone->dimensions.sidebar_entry_icon_size / 2
+                     + ozone->dimensions.sidebar_entry_height / 2.0f
+                     - ozone->dimensions.sidebar_entry_icon_size / 2.0f
                      + ozone->animations.scroll_y_sidebar,
                video_width,
                video_height,
@@ -3829,7 +3829,7 @@ static void ozone_draw_sidebar(
                      + ozone->dimensions.sidebar_entry_icon_padding * 2
                      + ozone->dimensions.sidebar_entry_icon_size,
                y
-                     + ozone->dimensions.sidebar_entry_height / 2
+                     + ozone->dimensions.sidebar_entry_height / 2.0f
                      + ozone->fonts.sidebar.line_centre_offset
                      + ozone->animations.scroll_y_sidebar,
                video_width,
@@ -5507,8 +5507,8 @@ static void ozone_draw_no_thumbnail_available(
                icon_size,
                icon_size,
                ozone->icons_textures[OZONE_ENTRIES_ICONS_TEXTURE_IMAGE],
-               x_position + ((view_width - icon_size) / 2),
-               video_height - y_position - icon_size - ((view_height - icon_size) / 2),
+               x_position + ((view_width - icon_size) / 2.0f),
+               video_height - y_position - icon_size - ((view_height - icon_size) / 2.0f),
                video_width,
                video_height,
                0.0f,
@@ -5525,8 +5525,8 @@ static void ozone_draw_no_thumbnail_available(
    gfx_display_draw_text(
          ozone->fonts.footer.font,
          msg_hash_to_str(MSG_NO_THUMBNAIL_AVAILABLE),
-         x_position + (view_width / 2),
-         video_height - y_position - ((view_height - icon_size) / 2),
+         x_position + (view_width / 2.0f),
+         video_height - y_position - ((view_height - icon_size) / 2.0f),
          video_width,
          video_height,
          ozone->theme->text_rgba,
@@ -5598,13 +5598,13 @@ static void ozone_update_scroll(ozone_handle_t *ozone,
          + ozone->dimensions.entry_padding_vertical
          + ozone->animations.scroll_y
          + node->position_y
-         + node->height / 2;
+         + node->height / 2.0f;
 
    bottom_boundary                      = video_info_height
          - ozone->dimensions.header_height
          - ozone->dimensions.spacer_1px
          - ozone->dimensions.footer_height;
-   entries_middle                       = video_info_height / 2;
+   entries_middle                       = video_info_height / 2.0f;
 
    new_scroll = ozone->animations.scroll_y - (current_selection_middle_onscreen - entries_middle);
 
@@ -6082,8 +6082,8 @@ border_iterate:
          /* Note: This entry can never be selected, so ticker_x_offset
           * is irrelevant here (i.e. this text will never scroll) */
          unsigned text_width = font_driver_get_message_width(ozone->fonts.entries_label.font, rich_label, strlen(rich_label), 1.0f);
-         x_offset            = (video_info_width - (unsigned)ozone->dimensions_sidebar_width - entry_padding * 2) / 2 - (text_width / 2) - (60 * scale_factor);
-         y                   = (video_info_height / 2) - (60 * scale_factor);
+         x_offset            = (video_info_width - (unsigned)ozone->dimensions_sidebar_width - entry_padding * 2) / 2.0f - (text_width / 2.0f) - (60 * scale_factor);
+         y                   = (video_info_height / 2.0f) - (60 * scale_factor);
       }
 
       sublabel_str = entry.sublabel;
@@ -6277,8 +6277,8 @@ border_iterate:
                            + ozone->dimensions.entry_icon_padding,
                      y
                            + scroll_y
-                           + ozone->dimensions.entry_height / 2
-                           - ozone->dimensions.entry_icon_size / 2,
+                           + ozone->dimensions.entry_height / 2.0f
+                           - ozone->dimensions.entry_icon_size / 2.0f,
                      video_width,
                      video_height,
                      0.0f,
@@ -6390,7 +6390,7 @@ border_iterate:
                   + entry_width
                   - ozone->dimensions.entry_icon_padding,
             y
-                  + ozone->dimensions.entry_height / 2
+                  + ozone->dimensions.entry_height / 2.0f
                   + ozone->fonts.entries_label.line_centre_offset
                   + scroll_y,
             alpha_uint32,
@@ -7420,10 +7420,10 @@ static void ozone_draw_messagebox(
        *   size, draw size and scale factor... */
       unsigned slice_margin = 50 * scale_factor;
       unsigned slice_new_w  = longest_width + (slice_margin * 2);
-      unsigned slice_new_h  = line_height * (line_count + 2) + (slice_margin / 2);
+      unsigned slice_new_h  = line_height * (line_count + 2) + (slice_margin / 2.0f);
       unsigned slice_w      = 256;
       int slice_x           = x - (longest_width / 2) - slice_margin;
-      int slice_y           = y - line_height - (slice_margin / 4)
+      int slice_y           = y - line_height - (slice_margin / 4.0f)
             + ((slice_new_h >= slice_w)
                   ? (16.0f * scale_factor)
                   : (16.0f * ((float)slice_new_h / (float)slice_w)));
@@ -7457,7 +7457,7 @@ static void ozone_draw_messagebox(
          gfx_display_draw_text(
                font_data.font,
                msg,
-               x - (longest_width / 2),
+               x - (longest_width / 2.0f),
                y + (i * line_height) + font_data.line_ascender,
                width,
                height,
@@ -10814,8 +10814,8 @@ static void ozone_draw_header(
                logo_icon_size,
                logo_icon_size,
                ozone->header_icon,
-               header_margin - (logo_icon_size / 12),
-               (ozone->dimensions.header_height - logo_icon_size) / 2,
+               header_margin - (logo_icon_size / 12.0f),
+               (ozone->dimensions.header_height - logo_icon_size) / 2.0f,
                video_width,
                video_height,
                0.0f,
@@ -10847,7 +10847,7 @@ static void ozone_draw_header(
                ozone->fonts.time.font,
                msg,
                video_width - (header_margin + icon_width - text_offset),
-               ozone->dimensions.header_height / 2 + ozone->fonts.time.line_centre_offset,
+               ozone->dimensions.header_height / 2.0f + ozone->fonts.time.line_centre_offset,
                video_width,
                video_height,
                ozone->theme->text_rgba,
@@ -10910,7 +10910,7 @@ static void ozone_draw_header(
             ozone->fonts.time.font,
             timedate,
             video_width - (timedate_offset + status_icon_size - icon_width - text_offset),
-            ozone->dimensions.header_height / 2 + ozone->fonts.time.line_centre_offset,
+            ozone->dimensions.header_height / 2.0f + ozone->fonts.time.line_centre_offset,
             video_width,
             video_height,
             ozone->theme->text_rgba,
@@ -10978,7 +10978,7 @@ static void ozone_draw_header(
          ozone->fonts.title.font,
          title,
          ticker_x_offset + header_margin + (logo_icon_size ? logo_icon_size + ozone->dimensions.entry_icon_padding : 0),
-         ozone->dimensions.header_height / 2 + ozone->fonts.title.line_centre_offset,
+         ozone->dimensions.header_height / 2.0f + ozone->fonts.title.line_centre_offset,
          video_width,
          video_height,
          ozone->theme->text_rgba,
