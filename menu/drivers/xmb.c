@@ -1125,6 +1125,16 @@ static void xmb_draw_icon(
    math_matrix_4x4 mymat_tmp;
    unsigned width  = VIDEO_SCALE_W(video_dims);
    unsigned height = VIDEO_SCALE_H(video_dims);
+   /* Hoisted to function scope so coords.color set inside the
+    * if (shadows_enable) block does not briefly point into out-of-scope
+    * memory after the block closes — same fix shape as Bundle 57's
+    * gfx_thumbnail.c invalidLifetime hoist. */
+   float shadow_color[16] = {
+      0.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 0.0f,
+   };
 
    /* Skip drawing when the texture hasn't loaded yet
     * (async loads start at 0 and are written on completion) */
@@ -1192,12 +1202,6 @@ static void xmb_draw_icon(
 
    if (shadows_enable)
    {
-      float shadow_color[16] = {
-         0.0f, 0.0f, 0.0f, 0.0f,
-         0.0f, 0.0f, 0.0f, 0.0f,
-         0.0f, 0.0f, 0.0f, 0.0f,
-         0.0f, 0.0f, 0.0f, 0.0f,
-      };
       gfx_display_set_alpha(shadow_color, color[3] * GFX_SHADOW_ALPHA * 0.75f);
 
       coords.color      = shadow_color;
@@ -1217,6 +1221,9 @@ static void xmb_draw_icon(
                video_dims);
    }
 
+   /* cppcheck-suppress redundantAssignment ; shadow_color set above is
+    * read by the dispctx->draw via draw.coords; cppcheck doesn't trace
+    * draw.coords->color back to coords.color. */
    coords.color         = (const float*)color;
    draw.pos             = VIDEO_POS_PACK(VIDEO_PX(x), VIDEO_PX(height - y));
 
@@ -11134,9 +11141,13 @@ static int xmb_pointer_up(void *userdata,
                if (tab_delta)
                {
                   int i          = 0;
-                  menu_entry_t entry;
-                  MENU_ENTRY_INITIALIZE(entry);
-                  menu_entry_get(&entry, 0, menu_st->selection_ptr, NULL, true);
+                  /* Local tab_entry is renamed from `entry` so it does not
+                   * shadow the function-parameter `entry` used by the
+                   * outer gesture handlers (TAP / SELECT / CANCEL /
+                   * SCROLL paths below pass the parameter). */
+                  menu_entry_t tab_entry;
+                  MENU_ENTRY_INITIALIZE(tab_entry);
+                  menu_entry_get(&tab_entry, 0, menu_st->selection_ptr, NULL, true);
 
                   /* Icon animations get stuck if they happen too fast,
                    * therefore allow it only on the last action */
@@ -11148,13 +11159,13 @@ static int xmb_pointer_up(void *userdata,
                   {
                      for (i = tab_delta; i < 0; i++)
                         xmb_menu_entry_action(xmb,
-                              &entry, menu_st->selection_ptr, MENU_ACTION_LEFT);
+                              &tab_entry, menu_st->selection_ptr, MENU_ACTION_LEFT);
                   }
                   else
                   {
                      for (i = 0; i < tab_delta; i++)
                         xmb_menu_entry_action(xmb,
-                              &entry, menu_st->selection_ptr, MENU_ACTION_RIGHT);
+                              &tab_entry, menu_st->selection_ptr, MENU_ACTION_RIGHT);
                   }
 
                   xmb->allow_horizontal_animation = true;
