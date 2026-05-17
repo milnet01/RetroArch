@@ -36,3 +36,29 @@ unassignedVariable:gfx/drivers_context/vivante_fbdev_ctx.c:116
 uninitvar:gfx/drivers_context/vivante_fbdev_ctx.c:123
 legacyUninitvar:gfx/drivers_context/vivante_fbdev_ctx.c:125
 legacyUninitvar:gfx/drivers_context/vivante_fbdev_ctx.c:126
+
+# --- S13: SHA1Digest output parameter misclassified as input -----------------
+# libretro-common's SHA1Digest signature is
+#   void SHA1Digest(const uint8_t *data, size_t len, uint8_t digest[20]);
+# The third arg is an output buffer (the function writes the 20-byte digest).
+# cppcheck has no annotation for output-only params and reports the buffer as
+# uninitialised at the call site.  RVZ encryption fills a per-block hash array
+# block-by-block; each cell is written before any reader runs.
+legacyUninitvar:cheevos/cheevos_rvz.c:1753
+
+# --- S14: wl_list_for_each loop variable initialised by macro ----------------
+# `wl_list_for_each(pos, head, link)` expands to a for-loop that assigns `pos`
+# from the list head before the first iteration; the declared `od` is never
+# read uninitialised.  cppcheck 2.20 doesn't trace through the macro and emits
+# uninitvar for `od->output` inside the loop body.  Both Wayland output
+# enumeration sites pattern-match the same FP.
+uninitvar:gfx/common/wayland_common.c:292
+uninitvar:gfx/common/wayland_common.c:1066
+
+# --- S15: JavaScript inside EM_ASM_INT macro -------------------------------
+# audioworklet.c embeds JavaScript inside Emscripten's EM_ASM_INT({...}, ...)
+# macro.  cppcheck parses the JS body as C and flags `ac.state == "running"`
+# as a `char *` literal comparison.  The literal IS a JS string literal; the
+# whole block is fed to the JS engine at runtime, never compiled as C.
+literalWithCharPtrCompare:audio/drivers/audioworklet.c:182
+literalWithCharPtrCompare:audio/drivers/audioworklet.c:184

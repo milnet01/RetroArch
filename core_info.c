@@ -2799,7 +2799,6 @@ void core_info_free_core_updater_info(core_updater_info_t *info)
       free(info->licenses);
 
    free(info);
-   info = NULL;
 }
 
 static int core_info_qsort_func_path(const core_info_t *a,

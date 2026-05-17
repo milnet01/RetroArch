@@ -1467,11 +1467,15 @@ static void wasapi_set_nonblock_state(void *wh, bool nonblock)
 static void wasapi_free(void *wh)
 {
    DWORD ir;
+   HANDLE write_event;
    wasapi_t *w        = (wasapi_t*)wh;
-   HANDLE write_event = w->write_event;
 
-   if (w)
-      wasapi_imm_stop_thread(w);
+   if (!w)
+      return;
+
+   write_event        = w->write_event;
+
+   wasapi_imm_stop_thread(w);
 
    if (w->client)
       _IAudioClient_Stop(w->client);

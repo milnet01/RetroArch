@@ -1312,11 +1312,13 @@ bool playlist_push(playlist_t *playlist,
    char real_core_path[PATH_MAX_LENGTH];
    char base_path[NAME_MAX_LENGTH];
    playlist_path_id_t *path_id = NULL;
-   const char *core_name       = entry->core_name;
+   const char *core_name       = NULL;
    bool entry_updated          = false;
 
    if (!playlist || !entry)
       goto error;
+
+   core_name                   = entry->core_name;
 
    if (!entry->core_path || !*entry->core_path)
    {
