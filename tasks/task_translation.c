@@ -549,7 +549,7 @@ static void handle_translation_response(
          scaler->out_height    = VIDEO_SCALE_H(dims);
          scaler->scaler_type   = SCALER_TYPE_POINT;
          scaler_ctx_gen_filter(scaler);
-         scaler->in_stride     = -1 * VIDEO_SCALE_W(dims) * 3;
+         scaler->in_stride     = -1 * (int)VIDEO_SCALE_W(dims) * 3;
 
          scaler_ctx_scale_direct(scaler, raw_output_data,
                (uint8_t*)raw_image_data + (image_height - 1) * VIDEO_SCALE_W(dims) * 3);
