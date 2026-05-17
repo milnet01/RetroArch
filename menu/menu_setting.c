@@ -3492,7 +3492,10 @@ static size_t setting_get_string_representation_password(
          return strlcpy_lit(s, "********", len);
       if (config_get_ptr()->arrays.cheevos_token[0])
          return strlcpy_lit(s, "********", len);
-      *setting->value.target.string = '\0';
+      /* The fall-through can arrive with no string allocated yet (an
+       * early menu-build path); there is nothing to clear then. */
+      if (setting->value.target.string)
+         *setting->value.target.string = '\0';
    }
    return 0;
 }
@@ -6142,8 +6145,16 @@ static int setting_action_left_libretro_device_type(
       break;
    }
 
-   current_device = devices
-      [(current_idx + types - 1) % types];
+   /* `types` is libretro_device_get_size's return value; that helper
+    * unconditionally seeds devices[0]=NONE and devices[1]=JOYPAD
+    * before any conditional logic, so types >= 2 on return.  The
+    * analyzer can't trace into the helper to learn the invariant,
+    * so it reports a potential DivZero on the modulus — verified FP
+    * per audit Bundle 43.  Collapse onto one line so NOLINTNEXTLINE
+    * applies to the % token (otherwise it sits on the previous line
+    * of the spanned statement and the directive misses). */
+   /* NOLINTNEXTLINE(clang-analyzer-core.DivideZero) */
+   current_device = devices[(current_idx + types - 1) % types];
 
    input_config_set_device(port, current_device);
 
@@ -9196,6 +9207,15 @@ static void general_write_handler(rarch_setting_t *setting)
 
    if (!setting)
       return;
+   /* config_get_ptr() returns the static `config_st` pointer which is
+    * NULL until config_load_state() runs.  Menu setting writes shouldn't
+    * be reachable before config is loaded — but clang-analyzer flags
+    * downstream `settings->...` reads (line ~9300 core_info_cache
+    * arm) as potentially-NULL and any unguarded path here would crash
+    * if the contract were violated.  Treat it as a no-op like the
+    * !setting branch above. */
+   if (!settings)
+      return;
 
    rarch_cmd                    = write_handler_get_cmd(setting);
 
@@ -11162,6 +11182,16 @@ static bool setting_append_list_input_player_options(
    const char *binds_group_label              = msg_hash_to_str
          ((enum msg_hash_enums)(MENU_ENUM_LABEL_INPUT_USER_1_BINDS + user));
 
+   /* Defensive: SETTINGS_LIST_APPEND short-circuits on `!*list`, then
+    * the post-macro `(*list)[list_info->index - 1].xxx = ...` writes
+    * deref `*list` unconditionally — NULL deref if *list was NULL on
+    * entry.  In practice the caller (menu_setting_initialize) populates
+    * *list before invoking us, but the analyzer flags the per-user loop
+    * write at line ~9894 as NULL-derefable.  Bail to keep the contract
+    * symmetric with the macro. */
+   if (!list || !*list || !list_info)
+      return false;
+
    group_info.name                            = NULL;
    subgroup_info.name                         = NULL;
 
@@ -11490,6 +11520,12 @@ static bool setting_append_list_input_libretro_device_options(
    char label_device_type[64];
    unsigned user;
 
+   /* Defensive: same shape as setting_append_list_input_player_options
+    * above — the per-user `(*list)[index-1].xxx` writes deref *list
+    * unconditionally after the SETTINGS_LIST_APPEND macro. */
+   if (!list || !*list || !list_info)
+      return false;
+
    group_info.name    = NULL;
    subgroup_info.name = NULL;
 
@@ -11554,6 +11590,11 @@ static bool setting_append_list_input_remap_port_options(
    char key_port[64];
    char label_port[64];
    settings_t *settings = config_get_ptr();
+
+   /* Defensive: same shape as the other two input-options populate
+    * helpers above — *list deref on the per-user assign block. */
+   if (!list || !*list || !list_info)
+      return false;
 
    group_info.name      = NULL;
    subgroup_info.name   = NULL;

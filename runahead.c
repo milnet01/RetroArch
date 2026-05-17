@@ -1047,6 +1047,15 @@ static void mylist_resize(my_list *list,
    void *element    = NULL;
    if (new_size < 0)
       new_size      = 0;
+   /* Defensive against signed-overflow on `list->capacity * 2` below
+    * (capacity grows geometrically; a wrap to negative would let the
+    * realloc(data, 0) branch run and the post-realloc walk underflow
+    * list->data[i].  Practical runahead bounds — MAX_RUNAHEAD_FRAMES
+    * (12) * MAX_USERS — keep capacity well under INT_MAX, so this is
+    * paranoid; closes the clang-analyzer security.ArrayBound path
+    * that traces through mylist_destroy → here. */
+   if (list->capacity < 0)
+      return;
    new_capacity     = new_size;
    old_size         = list->size;
 
