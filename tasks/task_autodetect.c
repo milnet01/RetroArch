@@ -240,7 +240,7 @@ static void input_autoconfigure_set_config_file(
    /* Read device display name */
    if (alternative > 0)
       snprintf(config_key + _len, sizeof(config_key) - _len,
-               "_alt%d",alternative);
+               "_alt%u",alternative);
 
    if (  (entry = config_get_entry(config, config_key))
          && (entry->value && *entry->value))

@@ -8851,8 +8851,8 @@ static void netplay_announce(netplay_t *netplay)
       "mitm_session=%s&"
       "mitm_custom_addr=%s&"
       "mitm_custom_port=%d&"
-      "player_count=%d&"
-      "spectator_count=%d",
+      "player_count=%u&"
+      "spectator_count=%u",
       username,
       corename,
       coreversion,

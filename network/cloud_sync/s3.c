@@ -377,7 +377,7 @@ static bool s3_parse_url(const char *url, char *bucket,  char *region,
       RARCH_WARN(S3_PFX "Could not extract bucket from URL: %s\n", url);
 
    RARCH_LOG(S3_PFX "Extracted bucket: %s, region: %s, host: %s\n",
-             (!bucket || !*bucket) ? "(none)" : bucket, region, host);
+             (!*bucket) ? "(none)" : bucket, region, host);
 
    return (host && *host) && (bucket && *bucket);
 }
