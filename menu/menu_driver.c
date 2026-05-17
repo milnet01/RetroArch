@@ -6638,8 +6638,12 @@ void retroarch_menu_running_finished(bool quit)
 
 #if HAVE_RUNAHEAD
       /* Preemptive Frames isn't run behind the menu,
-       * so its savestate buffer is out of date. */
-      if (!settings->bools.menu_pause_libretro)
+       * so its savestate buffer is out of date.
+       * settings can be NULL early in lifecycle (config_get_ptr()
+       * returns the unset static — siblings at lines 6616/6626
+       * already gate the same field-read defensively); if so, the
+       * reset is moot because preempt hasn't been wired yet. */
+      if (settings && !settings->bools.menu_pause_libretro)
          command_event(CMD_EVENT_PREEMPT_RESET_BUFFER, NULL);
 #endif
    }
@@ -7332,7 +7336,7 @@ static int generic_menu_iterate(
                }
 #endif
             }
-            else
+            else if (selection_buf)
             {
                enum msg_hash_enums enum_idx = MSG_UNKNOWN;
                size_t selection             = menu_st->selection_ptr;

@@ -78,7 +78,11 @@ RETRO_BEGIN_DECLS
  * sensitive proof from clang-analyzer. */
 #define MENU_LIST_GET_SELECTION(list, idx) ((list) ? ((list)->selection_buf[(idx)]) : NULL)
 
-#define MENU_LIST_GET_STACK_SIZE(list, idx) ((list)->menu_stack[(idx)]->size)
+/* NULL-safe sibling of MENU_LIST_GET_SELECTION (audit S2).  Returns 0
+ * when list (or list->menu_stack[idx]) is NULL — same semantics as an
+ * empty stack so callers' `<= 1` / `> 1` guards still produce the right
+ * behaviour (treat as "already at root", no pop). */
+#define MENU_LIST_GET_STACK_SIZE(list, idx) (((list) && (list)->menu_stack[(idx)]) ? (list)->menu_stack[(idx)]->size : 0)
 
 #define MENU_ENTRIES_GET_SELECTION_BUF_PTR_INTERNAL(menu_st, idx) ((menu_st->entries.list) ? MENU_LIST_GET_SELECTION(menu_st->entries.list, (unsigned)idx) : NULL)
 #define MENU_ENTRIES_NEEDS_REFRESH(menu_st) (!((menu_st->flags & MENU_ST_FLAG_ENTRIES_NONBLOCKING_REFRESH) || !(menu_st->flags & MENU_ST_FLAG_ENTRIES_NEED_REFRESH)))

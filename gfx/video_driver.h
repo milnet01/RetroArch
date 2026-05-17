@@ -91,7 +91,13 @@
 
 #define VIDEO_DRIVER_GET_HW_CONTEXT_INTERNAL(video_st) (&video_st->hw_render)
 
-#define VIDEO_HAS_FOCUS(video_st) (video_st->current_video->focus ? (video_st->current_video->focus(video_st->data)) : true)
+/* NULL-safe on (video_st)->current_video.  Callers that have already
+ * proven current_video non-NULL pay only the redundant load; callers
+ * inside menu/reinit transitions (runloop.c:5735) where current_video
+ * is conditionally read in the surrounding code get a defined "true"
+ * instead of a NULL deref through ->focus.  Default "focused" matches
+ * the existing behaviour when the driver omits a focus probe. */
+#define VIDEO_HAS_FOCUS(video_st) (((video_st)->current_video && (video_st)->current_video->focus) ? ((video_st)->current_video->focus((video_st)->data)) : true)
 
 RETRO_BEGIN_DECLS
 

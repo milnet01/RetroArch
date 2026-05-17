@@ -1174,6 +1174,16 @@ static size_t find_driver_nonempty(
    }
    else if (!strcmp(label, "location_driver"))
    {
+      /* NULL-terminated driver table walked one-past-end intentionally
+       * (loop terminator).  clang-analyzer's security.ArrayBound check
+       * doesn't model the NULL sentinel and flags the in-bounds probe
+       * as OOB.  Same FP class as the audit's S4 / S11 driver-table
+       * suppressions in .cppcheck-suppress.txt (different tool, so
+       * NOLINT inline rather than a suppress file).  Other 8 driver
+       * tables in this function follow the same pattern but only the
+       * 2-element location_drivers (Linux default: location_null +
+       * NULL) tripped the checker. */
+      /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) */
       if (location_drivers[i])
          return strlcpy(s, location_drivers[i]->ident, len);
    }
@@ -1586,9 +1596,12 @@ void drivers_init(
    p_dispwidget->flags           |= DISPGFX_WIDGET_FLAG_PERSISTING;
 #endif
 #ifdef HAVE_MENU
-   /* By default, we want the menu to persist through driver reinits. */
-   if (menu_st)
-      menu_st->flags             |= MENU_ST_FLAG_DATA_OWN;
+   /* By default, we want the menu to persist through driver reinits.
+    * menu_state_get_ptr() returns &menu_driver_state (static struct
+    * address); the prior `if (menu_st)` defensive guard was dead and
+    * cued clang-analyzer to flag the unconditional read at line 1736
+    * as potentially-NULL.  Same dead-defensive class as Bundle 54. */
+   menu_st->flags             |= MENU_ST_FLAG_DATA_OWN;
 #endif
 
    /* Content av_info based automatic swap interval must be set early. */
@@ -2284,6 +2297,8 @@ static struct string_list *string_list_new_special(
          break;
 #endif
       case STRING_LIST_LOCATION_DRIVERS:
+         /* See FP note at find_driver_nonempty (line ~1175). */
+         /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) */
          for (i = 0; location_drivers[i]; i++)
          {
             const char *opt  = location_drivers[i]->ident;

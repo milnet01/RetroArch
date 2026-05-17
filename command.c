@@ -2526,8 +2526,13 @@ void command_event_reinit(const int flags)
    unsigned      cached_snapshot_h    = 0;
    size_t        cached_snapshot_p    = 0;
 
-   if (     video_st
-         && video_st->frame_cache_data
+   /* video_state_get_ptr() returns &video_driver_st (static struct
+    * address); the prior `video_st &&` defensive clause was dead and
+    * cued clang-analyzer to flag downstream unconditional reads of
+    * video_st (lines 2584/2589) as potentially-NULL.  Same Bundle-54
+    * dead-defensive class as the ozone->theme / ozone->default_theme
+    * cleanups. */
+   if (     video_st->frame_cache_data
          && video_st->frame_cache_data != RETRO_HW_FRAME_BUFFER_VALID
          && video_st->frame_cache_height
          && video_st->frame_cache_pitch)
