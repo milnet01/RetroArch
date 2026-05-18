@@ -5913,7 +5913,7 @@ static void materialui_render_selected_entry_aux_savestate_list(
 {
    math_matrix_4x4 mymat;
    materialui_node_t *node = (materialui_node_t*)list->list[selection].userdata;
-   float background_x      = (float)(x_offset + (int)mui->landscape_optimization.border_width) + node->entry_width;
+   float background_x;
    float background_y      = (float)header_height;
    /* Note: If landscape optimisations are enabled,
     * need to allow space for a second divider at
@@ -5923,11 +5923,17 @@ static void materialui_render_selected_entry_aux_savestate_list(
                2 : 1));
    int background_height   = (int)video_height - (int)header_height -
          (int)mui->nav_bar_layout_height - (int)mui->status_bar.height;
-   float thumbnail_x       = background_x + (float)mui->margin +
-         (mui->landscape_optimization.enabled ? mui->entry_divider_width : 0);
-   float thumbnail_y       = background_y + (background_height - mui->thumbnail_height_max) / 2;
+   float thumbnail_x;
+   float thumbnail_y       = background_y + (background_height - mui->thumbnail_height_max) / 2.0f;
    gfx_display_t *p_disp   = disp_get_ptr();
    settings_t *settings    = config_get_ptr();
+
+   if (!node)
+      return;
+
+   background_x            = (float)(x_offset + (int)mui->landscape_optimization.border_width) + node->entry_width;
+   thumbnail_x             = background_x + (float)mui->margin +
+         (mui->landscape_optimization.enabled ? mui->entry_divider_width : 0);
 
    /* Portrait moves thumbnail to bottom and full width */
    if (mui->flags & MUI_FLAG_IS_PORTRAIT)
@@ -5937,7 +5943,7 @@ static void materialui_render_selected_entry_aux_savestate_list(
             (int)mui->nav_bar_layout_height - (int)mui->status_bar.height;
       background_width  = video_width;
       background_height = mui->thumbnail_height_max + (mui->margin * 2);
-      thumbnail_x       = background_x + (background_width - mui->thumbnail_width_max) / 2;
+      thumbnail_x       = background_x + (background_width - mui->thumbnail_width_max) / 2.0f;
       thumbnail_y       = background_y + (float)mui->margin;
    }
 
@@ -6001,7 +6007,6 @@ static void materialui_render_selected_entry_aux_savestate_list(
             NULL);
 
    /* Draw thumbnails */
-   if (node)
    {
       gfx_thumbnail_t *thumbnail = &mui->thumbnails.savestate;
 
@@ -7334,8 +7339,8 @@ static void materialui_draw_no_thumbnail_available(
                video_height,
                (unsigned)icon_size,
                mui->textures.list[MUI_TEXTURE_IMAGE],
-               x_position + ((view_width - icon_size) / 2),
-               video_height - y_position - icon_size - ((view_height - icon_size) / 2),
+               x_position + ((view_width - icon_size) / 2.0f),
+               video_height - y_position - icon_size - ((view_height - icon_size) / 2.0f),
                0.0f,
                1.0f,
                mui->colors.missing_thumbnail_icon,
@@ -7346,7 +7351,7 @@ static void materialui_draw_no_thumbnail_available(
       gfx_display_draw_text(
          mui->font_data.list.font,
          msg_hash_to_str(MSG_NO_THUMBNAIL_AVAILABLE),
-         x_position + (view_width / 2),
+         x_position + (view_width / 2.0f),
          video_height - y_position - ((view_height - icon_size * 1.50f) / 2),
          video_width,
          video_height,
@@ -9656,10 +9661,12 @@ static void materialui_populate_entries(void *data, const char *path,
    materialui_handle_t *mui   = (materialui_handle_t*)data;
    struct menu_state *menu_st = menu_state_get_ptr();
    settings_t *settings       = config_get_ptr();
-   uint8_t remember_selection = settings->uints.menu_remember_selection;
+   uint8_t remember_selection;
 
    if (!mui || !settings)
       return;
+
+   remember_selection         = settings->uints.menu_remember_selection;
 
    /* Set menu title */
    menu_entries_get_title(mui->menu_title, sizeof(mui->menu_title));
@@ -10034,6 +10041,10 @@ static bool materialui_preswitch_tabs(materialui_handle_t *mui,
     * (stack size should be zero here, but account
     * for unknown errors)  */
    menu_stack = MENU_LIST_GET(menu_list, 0);
+
+   if (!menu_stack)
+      return false;
+
    stack_size = menu_stack->size;
 
    /* Sanity check
@@ -12027,7 +12038,7 @@ static void materialui_list_insert(void *userdata,
                {
                   char val[NAME_MAX_LENGTH];
                   unsigned user_value = i + 1;
-                  size_t _len = snprintf(val, sizeof(val), "%d", user_value);
+                  size_t _len = snprintf(val, sizeof(val), "%u", user_value);
                   strlcpy(val       + _len,
                         "_input_binds_list",
                         sizeof(val) - _len);
@@ -12042,13 +12053,13 @@ static void materialui_list_insert(void *userdata,
             /* Playlist manager icons */
             else if (string_is_equal(fullpath, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LIST)))
             {
-               size_t path_size         = strlen(path);
                /* Set defaults */
                node->icon_texture_index = MUI_TEXTURE_PLAYLIST;
                node->icon_type          = MUI_ICON_TYPE_INTERNAL;
                if (     mui->textures.playlist.size >= 1
                      && (path && *path))
                {
+                  size_t path_size      = strlen(path);
                   if (string_ends_with_size(path, "_history.lpl",
                         path_size, STRLEN_CONST("_history.lpl")))
                   {
