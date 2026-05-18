@@ -29,7 +29,7 @@
 #include <encodings/crc32.h>
 #include <streams/file_stream.h>
 
-#define SUITE_NAME "hash"
+#define SUITE_NAME "utils"
 
 START_TEST (test_md5)
 {
@@ -37,23 +37,23 @@ START_TEST (test_md5)
    MD5_CTX ctx;
    MD5_Init(&ctx);
    MD5_Final(output, &ctx);
-   ck_assert(!memcmp(
+   ck_assert_msg(!memcmp(
       "\xd4\x1d\x8c\xd9\x8f\x00\xb2\x04\xe9\x80\x09\x98\xec\xf8\x42\x7e",
-      output, 16));
+      output, 16), "MD5 digest of empty input does not match expected");
    MD5_Init(&ctx);
    MD5_Update(&ctx, "The quick brown fox jumps over the lazy dog", 43);
    MD5_Final(output, &ctx);
-   ck_assert(!memcmp(
+   ck_assert_msg(!memcmp(
       "\x9e\x10\x7d\x9d\x37\x2b\xb6\x82\x6b\xd8\x1d\x35\x42\xa4\x19\xd6",
-      output, 16));
+      output, 16), "MD5 digest of fox sentence (single update) does not match expected");
    MD5_Init(&ctx);
    MD5_Update(&ctx, "The quick brown fox jumps over the lazy dog", 43);
    MD5_Update(&ctx, "The quick brown fox jumps over the lazy dog", 43);
    MD5_Update(&ctx, "The quick brown fox jumps over the lazy dog", 43);
    MD5_Final(output, &ctx);
-   ck_assert(!memcmp(
+   ck_assert_msg(!memcmp(
       "\x4e\x67\xdb\x4a\x7a\x40\x6b\x0c\xfd\xad\xd8\x87\xcd\xe7\x88\x8e",
-      output, 16));
+      output, 16), "MD5 digest of fox sentence x3 (chained update) does not match expected");
 }
 END_TEST
 
@@ -121,9 +121,12 @@ START_TEST (test_crc32_file)
 {
    char tmpfile[512];
    FILE *fd;
+   /* TODO: tmpnam has a TOCTOU race + is deprecated on glibc.
+    * Tracked in ROADMAP as a Test-Audit follow-up to migrate to
+    * mkstemp (POSIX) / GetTempFileName (Windows). */
    tmpnam(tmpfile);
    fd = fopen(tmpfile, "wb");
-   ck_assert(fd != NULL);
+   ck_assert_ptr_nonnull(fd);
    fwrite("12345678", 1, 8, fd);
    fclose(fd);
 
@@ -131,6 +134,8 @@ START_TEST (test_crc32_file)
    /* Error checking */
    ck_assert_uint_eq(file_crc32(0, "/this/path/should/not/exist"), 0);
    ck_assert_uint_eq(file_crc32(0, NULL), 0);
+
+   remove(tmpfile);
 }
 END_TEST
 

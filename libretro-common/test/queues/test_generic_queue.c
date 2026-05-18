@@ -136,8 +136,11 @@ START_TEST (test_generic_queue_empty)
 }
 END_TEST
 
+/* No-op free callback. Test values are static string literals — generic_queue
+ * still requires a free callback to exercise its free-with-fn path. */
 void _free_value(void *value)
 {
+   (void)value;
    return;
 }
 
@@ -323,6 +326,7 @@ START_TEST (test_generic_queue_remove_first)
 
    generic_queue_free(queue, &_free_value);
 }
+END_TEST
 
 START_TEST (test_generic_queue_remove_middle)
 {
@@ -339,6 +343,7 @@ START_TEST (test_generic_queue_remove_middle)
 
    generic_queue_free(queue, &_free_value);
 }
+END_TEST
 
 START_TEST (test_generic_queue_remove_last)
 {
@@ -355,6 +360,7 @@ START_TEST (test_generic_queue_remove_last)
 
    generic_queue_free(queue, &_free_value);
 }
+END_TEST
 
 START_TEST (test_generic_queue_iterator_free)
 {

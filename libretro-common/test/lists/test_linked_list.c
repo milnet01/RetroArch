@@ -218,6 +218,7 @@ START_TEST (test_linked_list_get_first_matching_function_null)
 
    linked_list_free(list, NULL);
 }
+END_TEST
 
 bool _matches_function(void *value, void *state)
 {
@@ -260,6 +261,7 @@ START_TEST (test_linked_list_get_last_matching_function_null)
 
    linked_list_free(list, NULL);
 }
+END_TEST
 
 START_TEST (test_linked_list_get_last_matching_no_match)
 {
@@ -1188,6 +1190,7 @@ START_TEST (test_linked_list_foreach_valid)
 
    linked_list_free(list, NULL);
 }
+END_TEST
 
 Suite *create_suite(void)
 {

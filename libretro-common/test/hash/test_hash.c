@@ -33,8 +33,8 @@ START_TEST (test_sha256)
 {
    char output[65];
    sha256_hash(output, (uint8_t*)"abc", 3);
-   ck_assert(!strcmp(output,
-      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
+   ck_assert_str_eq(output,
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
 END_TEST
 
@@ -43,15 +43,20 @@ START_TEST (test_sha1)
    char output[41];
    char tmpfile[512];
    FILE *fd;
+   /* TODO: tmpnam has a TOCTOU race + is deprecated on glibc.
+    * Tracked in ROADMAP as a Test-Audit follow-up to migrate to
+    * mkstemp (POSIX) / GetTempFileName (Windows). */
    tmpnam(tmpfile);
    fd = fopen(tmpfile, "wb");
-   ck_assert(fd != NULL);
+   ck_assert_ptr_nonnull(fd);
    fwrite("abc", 1, 3, fd);
    fclose(fd);
    sha1_calculate(tmpfile, output);
 
-   ck_assert(!strcmp(output,
-      "A9993E364706816ABA3E25717850C26C9CD0D89D"));
+   ck_assert_str_eq(output,
+      "A9993E364706816ABA3E25717850C26C9CD0D89D");
+
+   remove(tmpfile);
 }
 END_TEST
 
