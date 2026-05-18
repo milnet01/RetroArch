@@ -5093,7 +5093,13 @@ static int xmb_draw_item(
    uintptr_t texture_switch            = 0;
    bool draw_text_value                = false;
    int extra_margins_setting_left      = 0;
+   /* cppcheck-suppress duplicateExpressionTernary ; `? 37 : 37` intent
+    * placeholder — author keeps the ps3_layout / non-ps3_layout split
+    * structure visible so the two arms can diverge later without restructuring
+    * (same pattern as the `0 && X` placeholder closed in Bundle 62). */
    unsigned ticker_limit               = ((xmb->use_ps3_layout) ? 37 : 37) * xmb->scale_mod[0];
+   /* cppcheck-suppress duplicateExpressionTernary ; same `? 58 : 58` intent
+    * placeholder for line_ticker_width. */
    unsigned line_ticker_width          = ((xmb->use_ps3_layout) ? 58 : 58) * xmb->scale_mod[3];
    xmb_node_t *node                    = (xmb_node_t*)list->list[i].userdata;
    bool use_smooth_ticker              = settings->bools.menu_ticker_smooth;
@@ -8975,7 +8981,12 @@ static void xmb_frame(void *data, video_frame_info_t *video_info)
          float margins_title_min   = -(xmb->icon_size / 5.0f);
          float margins_title       = (xmb->margins_title_bottom < margins_title_min)
                ? margins_title_min : xmb->margins_title_bottom;
+         /* Inner `(icon_thumbnails ? 1.25f : 1.25f)` below is an intent
+          * placeholder — value-split structure preserved for future
+          * divergence. cppcheck-suppress comment is anchored to the
+          * line carrying the ternary itself. */
          float height_offset       = (current_menu_icon != XMB_CURRENT_MENU_ICON_NORMAL && !icon_thumbnails)
+               /* cppcheck-suppress duplicateExpressionTernary */
                ? 0 : xmb->icon_size * (icon_thumbnails ? 1.25f : 1.25f);
          float thumb_width         = left_thumbnail_margin_width;
          float thumb_height        = thumbnail_margin_height_under - margins_title - height_offset;

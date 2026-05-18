@@ -4863,14 +4863,24 @@ static void rgui_render_osk(
          ticker_smooth->selected    = true;
          ticker_smooth->field_width = input_label_max_length * rgui->font_width_stride;
          ticker_smooth->src_str     = input_label;
+         /* cppcheck-suppress autoVariables ; input_label_buf is a function
+          * local consumed synchronously by gfx_animation_ticker_smooth()
+          * below; ticker_smooth is overwritten with fresh locals at every
+          * caller and no one reads stale dst_str between calls (FP). */
          ticker_smooth->dst_str     = input_label_buf;
          ticker_smooth->dst_str_len = sizeof(input_label_buf);
+         /* cppcheck-suppress autoVariables ; ticker_x_offset is a function
+          * local consumed synchronously by gfx_animation_ticker_smooth()
+          * below (same pattern as dst_str above; FP). */
          ticker_smooth->x_offset    = &ticker_x_offset;
 
          gfx_animation_ticker_smooth(ticker_smooth);
       }
       else
       {
+         /* cppcheck-suppress autoVariables ; same shape as the smooth
+          * branch above — input_label_buf is consumed synchronously by
+          * gfx_animation_ticker() below (FP). */
          ticker->s                  = input_label_buf;
          ticker->len                = input_label_max_length;
          ticker->str                = input_label;
