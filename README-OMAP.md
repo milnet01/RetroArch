@@ -1,5 +1,7 @@
 # RetroArch OMAP video driver
 
+> **⚠️ Historical reference (targets OMAP3 / OMAP4 hardware: Pandora handheld, Beagleboard, Pandaboard; kernels of that era).** The driver is still wired in (`HAVE_OMAP` in `Makefile.common`, source at `gfx/drivers/omap_gfx.c`) but mainline has steered OMAP toward `omapdrm` / KMS and omapfb is deprecated. Setup steps below target the omapfb-era sysfs layout (`/sys/devices/platform/omapdss`) and may not apply on modern kernels.
+
 The OMAP video driver for RetroArch uses the omapfb (OMAP framebuffer) driver from the Linux kernel. omapfb is not to be confused with omapdrm, which is the corresponding DRM driver.
 OMAP framebuffer support is available on platforms like the Pandora (OMAP3) handheld console, the Beagleboard (OMAP3) single-board computer or the Pandaboard (OMAP4), which is also a single-board computer.
 The OMAP display hardware provides free scaling to native screen dimensions, using a high-quality polyphase filter.
@@ -34,5 +36,5 @@ Last but not least enable the overlay and the HDMI display:
 
 The video driver name is 'omap'. It honors the following video settings:
 
-   - video\_monitor\_index (selects the fb device used, index = 1 -> fb0, index = 2 -> fb1, etc.)
-   - video\_vsync (use to disable vsync, however this is not recommended)
+   - `video_monitor_index` (selects the fb device used, index = 1 -> fb0, index = 2 -> fb1, etc.)
+   - `video_vsync` (use to disable vsync, however this is not recommended)

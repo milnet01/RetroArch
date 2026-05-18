@@ -1,5 +1,7 @@
 # RetroArch Exynos-G2D video driver
 
+> **⚠️ Historical reference (last verified ~2014, ODROID-X2 / Exynos4412 / kernel 3.15.y).** This driver is still wired in (`HAVE_EXYNOS` in `Makefile.common`, source at `gfx/drivers/exynos_gfx.c`) but the setup story below targets long-EOL hardware and kernels. Expect breakage on current kernels; treat the build steps as a starting point, not a recipe.
+
 The Exynos-G2D video driver for RetroArch uses the Exynos DRM layer for presentation and the Exynos G2D block to scale and blit the emulator framebuffer to the screen. The G2D subsystem is a separate functional block on modern Samsung Exynos SoCs (in particular Exynos4412 and Exynos5250) that accelerates various kind of 2D blit operations. It can fill, copy, scale and blend pixel buffers and therefore provides adequate functionality for RetroArch purposes.
 
 ## Reasons to use the driver
@@ -12,9 +14,9 @@ Since the G2D block is present on all modern Exynos SoCs, the natural way of pro
 
 The author uses a Hardkernel ODROID-X2, which is an developer board powered by an Exynos4412 SoC. The vendor supplied kernel, a Linux tree based on the 3.8.y branch, currently offers no way to use the G2D because of issues related to clock setup. However upstreaming work is in progress and a tree based on 3.15.y, with some slight modifications, is available from here:
 
-[odroid-3.15.y repository](https://github.com/tobiasjakobi/linux-odroid)
+[odroid-3.15.y repository](https://github.com/tobiasjakobi/linux-odroid) (the linked fork is no longer maintained as of 2026; the Exynos DRM API has since landed in mainline libdrm so a modern userland may build without these patches — verify via `pkg-config --modversion libdrm_exynos`).
 
-Please refer to the minimalistic documentation in README-ODROID for setup.
+There is no `README-ODROID` in this repository; an older revision of this file referenced one that has not been tracked in tree.
 
 ## Performance analysis
 
@@ -43,8 +45,8 @@ to enable it.
 
 The video driver name is 'exynos'. It honors the following video settings:
 
-   - video\_monitor\_index
-   - video\_fullscreen\_x and video\_fullscreen\_y
+   - `video_monitor_index`
+   - `video_fullscreen_x` and `video_fullscreen_y`
 
 The monitor index maps to the DRM connector index. If it is zero, then it just selects the first 'sane' connector, which means that it is connected to a display device and it provides at least one useable mode. If the value is non-zero, it forces the selection of this connector. For example, on the author's ODROID-X2, with an odroid-3.15.y kernel, the HDMI connector has index 1.
 

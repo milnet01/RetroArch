@@ -31,23 +31,25 @@ The 18 files >5k LoC each have author-marked module boundaries. Each line range 
 
 | File | LoC | Boundaries (verify against current banner comments before each run) |
 |---|---:|---|
-| `menu/menu_setting.c` | 26030 | `populate_settings_bool` / `_int` / `_uint` / `_float` / `_size` / `_array` / `_path` blocks; line 11608-11671 already uses table-driven pattern |
-| `menu/menu_displaylist.c` | 16776 | per-driver gating sites at 2587, 2695, 2697, 5176, 6789, 6848, 6870, 15317; coupling-smell cluster |
-| `menu/drivers/ozone.c` | 13436 | sidebar (~0-2500), main grid (~2500-5500), thumbnails (~5500-7500), playlists (~7500-10000), settings views (~10000-13436); boundaries are author-banner-comment-driven |
-| `menu/drivers/materialui.c` | 12231 | themes ~1200 lines; 5 view-types' compute/render triples; navigation; gestures (boundaries ARE banner comments — read the file head for the canonical list) |
-| `menu/drivers/xmb.c` | 10356 | category bar / item list / thumbnails / drawer animations |
-| `network/netplay/netplay_frontend.c` | 10256 | discovery, handshake, sync, frame, message routing |
-| `menu/cbs/menu_cbs_ok.c` | 10212 | per-action OK handlers (1 file = ~150 handlers); split by action class |
+| `menu/menu_setting.c` | 26056 | `populate_settings_bool` / `_int` / `_uint` / `_float` / `_size` / `_array` / `_path` blocks; line 11608-11671 already uses table-driven pattern |
+| `menu/menu_displaylist.c` | 16785 | per-driver gating sites at 2587, 2695, 2697, 5176, 6789, 6848, 6870, 15317; coupling-smell cluster |
+| `menu/drivers/ozone.c` | 13458 | sidebar (~0-2500), main grid (~2500-5500), thumbnails (~5500-7500), playlists (~7500-10000), settings views (~10000-13458); boundaries are author-banner-comment-driven |
+| `menu/drivers/materialui.c` | 12244 | themes ~1200 lines; 5 view-types' compute/render triples; navigation; gestures (boundaries ARE banner comments — read the file head for the canonical list) |
+| `menu/drivers/xmb.c` | 10381 | category bar / item list / thumbnails / drawer animations |
+| `network/netplay/netplay_frontend.c` | 10357 | discovery, handshake, sync, frame, message routing |
+| `menu/cbs/menu_cbs_ok.c` | 10219 | per-action OK handlers (1 file = ~150 handlers); split by action class |
 | `retroarch.c` | 9167 | global init, runloop entry, driver wiring, signal handling |
-| `ui/drivers/ui_qt_widgets.cpp` | 8830 | Qt UI — single lane (UI/Qt) |
-| `runloop.c` | 8518 | env-callback dispatcher, frame timing, env-callback NULL guards |
-| `menu/drivers/rgui.c` | 8447 | retro UI driver — single concern, no further split |
-| `input/input_driver.c` | 8376 | bind config, autoconfig, hotkey, remap |
-| `gfx/drivers/vulkan.c` | 8343 | Vulkan backend — single concern |
-| `menu/menu_driver.c` | 8330 | menu state machine, driver dispatch, transitions |
+| `ui/drivers/ui_qt_widgets.cpp` | 8835 | Qt UI — single lane (UI/Qt) |
+| `runloop.c` | 8552 | env-callback dispatcher, frame timing, env-callback NULL guards |
+| `menu/drivers/rgui.c` | 8467 | retro UI driver — single concern, no further split |
+| `input/input_driver.c` | 8385 | bind config, autoconfig, hotkey, remap |
+| `gfx/drivers/vulkan.c` | 8353 | Vulkan backend — single concern |
+| `menu/menu_driver.c` | 8335 | menu state machine, driver dispatch, transitions |
 | `gfx/drivers/d3d9hlsl.c` | 8312 | Windows-only, **out of Linux scope** — drop unless reviewing Windows port |
-| `configuration.c` | 7725 | populate, save, load, defaults — paired with menu_setting.c |
+| `configuration.c` | 7768 | populate, save, load, defaults — paired with menu_setting.c |
 | `gfx/drivers/d3d12.c` | 7125 | Windows-only, **out of Linux scope** |
+
+(LoCs above as of 2026-05-18 / Bundle 70 audit-branch state. The doc-header says "verify against current banner comments before each run" — the actual mechanism is `wc -l` on each path; re-run before any indie-review dispatch.)
 
 Where the boundaries are unstable / unmapped, the lane brief should say so explicitly: "review materialui.c lines 0-1200 (themes); ignore the rest."
 
@@ -62,7 +64,7 @@ The 2026-04-25 sweep used these 8 lanes. They've held up across 33 fix bundles �
 **Source paths:**
 - `runloop.c` (focus on `RETRO_ENVIRONMENT_*` dispatch — main env-callback entry)
 - Anywhere `RETRO_ENVIRONMENT_` appears (grep first; cluster ~30 sites)
-- `cores/libretro-common/libretro.h` (vendored — read for contract, do not flag)
+- `libretro-common/include/libretro.h` (vendored — read for contract, do not flag)
 
 **Contract docs:** `libretro.h` env-callback descriptions; `RETRO_ENVIRONMENT_*` numeric command list.
 
@@ -98,11 +100,11 @@ The 2026-04-25 sweep used these 8 lanes. They've held up across 33 fix bundles �
 
 ### Lane 3 — driver-pattern meta
 
-**Source paths:** the four `*_driver_find_driver` implementations:
-- `audio/audio_driver.c:429-461`
-- `input/input_driver.c:5044-5077`
-- `menu/menu_driver.c:4620-4648`
-- `gfx/video_driver.c:3012-3034`
+**Source paths:** the four `*_driver_find_driver` implementations (line ranges below are best refreshed by `grep -n '^bool .*_driver_find_driver\b'` before dispatch — file growth drifts the anchors each bundle):
+- `audio/audio_driver.c:429` (also `microphone_driver_find_driver` at `:2272`)
+- `input/input_driver.c:5047`
+- `menu/menu_driver.c` (`menu_driver_find_driver` — re-grep)
+- `gfx/video_driver.c:2903`
 
 Plus the shared helper `driver_find_index` in `retroarch.c:1262`.
 
@@ -171,7 +173,7 @@ Plus the `*_null` driver triplet (`audio_null`, `input_null`/`video_null`/`menu_
 
 ### Lane 6 — cloud sync + cheevos
 
-**Source paths:** `network/cloud_sync/{webdav,google_drive,s3}.c`, `tasks/task_cloudsync.c`, `cheevos/{cheevos_client,rcheevos}.c`. Plus the streaming-upload spec in `docs/private/specs/2026-04-27-cloud-sync-streaming-upload-design.md`.
+**Source paths:** `network/cloud_sync/{webdav,google_drive,s3}.c`, `tasks/task_cloudsync.c`, `cheevos/{cheevos.c,cheevos_client.c,cheevos_menu.c,cheevos_rvz.c}` (the in-tree cheevos files — the rcheevos library lives vendored at `deps/rcheevos/` and is out-of-scope per `scope.txt`). Plus the streaming-upload spec in `docs/private/specs/2026-04-27-cloud-sync-streaming-upload-design.md`.
 
 **Contract docs:** `cloud_sync_driver.h` (the sync driver contract), the streaming-upload spec.
 

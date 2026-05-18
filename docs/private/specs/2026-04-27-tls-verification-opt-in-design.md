@@ -1,10 +1,27 @@
-# TLS Verification — Opt-In with Hostile-WiFi Warning (Design)
+# TLS Verification — Default-On with Documented Opt-Out (Design)
 
 **Date:** 2026-04-27
-**Source:** `docs/private/ROADMAP.md` line 170 — indie-review CRITICAL.
-**Status:** draft, awaiting user review
+**Source:** `docs/private/ROADMAP.md` — indie-review CRITICAL ("TLS certificate verification effectively disabled" entry; section anchor, not line — body churns each bundle).
+**Status:** draft, awaiting user review — **REQUIRES REFRESH** before implementation (see banner below).
 **Target:** `local/fixes-2026-04` (RA-side opt-in) + upstream PR (vendored mbedtls helper)
 **Effort estimate:** 2–3 days RA-side; upstream coordination is open-ended.
+
+> **⚠️ Cold-eyes 2026-05-18 status update.**
+>
+> A cold-eyes pass against current source flagged eight load-bearing issues. Apply before any implementation bundle opens.
+>
+> 1. **Title ↔ Goal-1 collision (renamed).** Spec was titled "Opt-In" but Goal 1 reads "verification is mandatory by default" — that is opt-OUT, not opt-in. The title has been corrected. Update any back-references (commit messages, ROADMAP entries) that still read "TLS opt-in spec" / "tls-opt-in-design.md" — the filename is unchanged for stable cross-refs.
+> 2. **`RARCH_ERR` / `RARCH_WARN` cannot be called from inside `libretro-common/net/net_socket_ssl_mbed.c` as drafted** — current file has zero `RARCH_*` references and no `#include "verbosity.h"`. Adding either creates exactly the merge debt §4 says it's trying to avoid. Use a vendoring-clean weak-hook (`void ssl_socket_log_verify_fail(...)` default-no-op in libretro-common, RA-side override calls `RARCH_ERR`) or return a distinct error code and let the RA caller log.
+> 3. **BearSSL backend is silently un-covered.** `qb/config.libs.sh:481-502` shows two vendored TLS backends — `HAVE_BUILTINBEARSSL` and `HAVE_BUILTINMBEDTLS`; the file `libretro-common/net/net_socket_ssl_bear.c` exists and reads `/etc/ssl/certs/ca-certificates.crt`. A user building with BearSSL gets zero behavioural change under this spec. Either extend the spec with a parallel BearSSL section (`br_x509_minimal_set_*` knobs) or scope the title/goals to "mbedtls backend only" and roadmap BearSSL separately. Don't ship without resolving this.
+> 4. **Vendored mbedtls path is wrong.** Spec line 230 says `libretro-common/include/mbedtls/ssl.h` — actual path is **`deps/mbedtls/mbedtls/ssl.h`** (verified `find .`).
+> 5. **`network/net_compat.h` does not exist at the repo root.** Spec line 132 cites it as a placement option. The vendored header is at `libretro-common/include/net/net_compat.h`. Put the new enum in a new RA-side header (`network/tls_config.h`) — placing it in the vendored header creates §4-type merge debt.
+> 6. **Failure-mode enumeration is incomplete (dim 10).** Summary names "expired, self-signed, hostname-mismatch, chain-broken." Missing: **revocation-unavailable (CRL/OCSP)**, **time-skew (device-clock-wrong → cert reads expired — common on consoles without RTC)**, **captive-portal redirect** (handshake fails because the portal's cert is presented for the target domain), **enterprise MITM proxy refusing on REQUIRED**. Add a `## Failure modes` section enumerating all of these with expected log line + user-visible behaviour per mode.
+> 7. **Static `ssl_authmode` is not thread-safe.** Spec lines 148, 186 acknowledge but skip the race. Cloud-sync tasks run on the task queue (separate threads); a settings-change write while a connect-time read is in flight races. Either guard with `_Atomic unsigned` (C11, under `HAVE_THREADS`), or snapshot into a local at connect-entry and accept "mid-session toggle takes effect next connection" (document this — it interacts with the consent-dialog UX).
+> 8. **No numeric SLOs (dim 9) and no automated test wiring (dim 15).** Add a `## Performance budget` (handshake p99: 2 s desktop, 5 s console-class) — and a libcheck test under `libretro-common/test/net/` (per `CLAUDE.md`'s tests section) exercising `ssl_socket_set_verify_mode` with stub mbedtls. Commit to *exact* log-line regex contracts so the conformance tests can match them.
+>
+> Plus low/info nits: dead code path at spec line 162 (mbedtls already returned non-zero from handshake under REQUIRED, so the `get_verify_result` block is unreached); `99.5%/0.5%` figures (line 55) are unsourced; error message at line 168 should name the actionable menu path (Settings → Network → Advanced → TLS Verification) rather than the made-up URL "settings/tls/verification"; CHANGES.md `# Future` entry shape is undefined.
+>
+> These corrections are tracked in `docs/private/ROADMAP.md` under the cold-eyes-2026-05-18 fold-in block; resolve before the implementation bundle opens.
 
 ---
 

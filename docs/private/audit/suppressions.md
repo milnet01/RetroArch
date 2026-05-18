@@ -44,9 +44,9 @@ When a suppression entry says "verified resolved-stale," the underlying issue do
 
 **Why FP:** `thumbnail_path` is a stack array (`char thumbnail_path[PATH_MAX_LENGTH]`); cppcheck's deref-before-check pattern doesn't apply. Reported by Bundle 5 triage and ruled won't-fix.
 
-**Action:** Inline suppress at the offending line(s) with `// cppcheck-suppress nullPointerArithmeticRedundantCheck` once cppcheck's `.cppcheck-suppress.txt` file is introduced (S12).
+**Action:** Inline-suppress at the offending line(s) with `// cppcheck-suppress nullPointerArithmeticRedundantCheck`. (`.cppcheck-suppress.txt` from S12 is project-wide per-rule; per-line FP suppressions on stack-array cases stay inline.)
 
-**Status:** ❌ Won't fix. Inline-suppress when the suppress file lands.
+**Status:** ❌ Won't fix. Apply inline-suppress at next bundle that touches `gfx_thumbnail.c`.
 
 ---
 
@@ -96,7 +96,7 @@ When a suppression entry says "verified resolved-stale," the underlying issue do
 
 **Rule:** `cppcheck` `identicalInnerCondition`.
 
-**Sites (resolved):** `audio/audio_driver.c:447`, `audio/drivers/dsound.c:452`, `audio/drivers/openal.c:129`, `cheat_manager.c:1820+1873`, `menu/menu_driver.c:4647`, `camera/camera_driver.c:155` — all stripped (option B: copy-paste residue) in Bundle 34. `tasks/task_content.c:609` is a confirmed FP (the trailing-slash strip can null `*dir` if `dir == "/"`); marked with inline `cppcheck-suppress identicalInnerCondition`.
+**Sites (resolved):** `audio/audio_driver.c:447`, `audio/drivers/dsound.c:452`, `audio/drivers/openal.c:129`, `cheat_manager.c:1820+1873`, `menu/menu_driver.c:4647`, `camera/camera_driver.c:155` — all stripped (option B: copy-paste residue) in Bundle 34. `tasks/task_content.c:609` is a confirmed FP — the trailing-slash strip would null `*dir` if `dir == "/"`, so the inner re-check is load-bearing, not dead code. Marked with inline `cppcheck-suppress identicalInnerCondition`.
 
 **Why originally pending:** Each was a defensive double-check. Driver tables are `const`-qualified static arrays so the inner predicate could never have changed value mid-iteration; comprehension cost (every reader re-checking the same predicate twice) was paying for nothing.
 

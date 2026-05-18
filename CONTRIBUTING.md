@@ -98,7 +98,7 @@ Some non-obvious things to be aware of:
 
 If you have contributed a chunk of source code that is written to you, you should add yourself to
 the copyright header in the file. If you have made a significant contribution you should add
-yourself to the `AUTHORS` file, adding your full name, e-mail, and the feature you worked on.
+yourself to the `AUTHORS.h` file, adding your full name, e-mail, and the feature you worked on.
 
 ## Commit Access
 

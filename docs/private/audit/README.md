@@ -29,6 +29,7 @@ SID=$(date +%s)
 cppcheck --enable=warning,style,performance,portability,information,missingInclude \
   --std=c11 --language=c \
   --suppress=missingIncludeSystem --suppress=unusedFunction --suppress=unknownMacro \
+  --suppressions-list=.cppcheck-suppress.txt \
   --inline-suppr --xml --xml-version=2 -j 4 \
   $(awk '/^[^#]/ {print "-i"$0}' docs/private/audit/scope.txt) \
   . 2> /tmp/audit-cppcheck-$SID.xml
@@ -66,8 +67,8 @@ Fall back to a full scan if more than ~50 files changed (per `audit-config.json`
 
 ```
 /indie-review            # default 8 lanes per indie-review-partition.md
-/indie-review --quick    # 3 lanes (libretro env, drivers, cloud sync)
-/indie-review --thorough # 10 lanes (Lane 7 split into 3 sub-lanes)
+/indie-review --quick    # 3 lanes (libretro env, driver-pattern meta, network commands / IPC)
+/indie-review --thorough # 10 lanes (Lane 7 replaced by sub-lanes 7a + 7b + 7c — total 8 - 1 + 3 = 10)
 ```
 
 Phase 1 of the orchestrator should:
@@ -78,7 +79,7 @@ Phase 1 of the orchestrator should:
 ## Adding a new tool
 
 1. Add a section to `audit-config.json` under `tools.<name>` with `command`, `flags`, `scope_apply` (if applicable), and a `known_issues` array.
-2. If the tool emits a non-trivial format, add a parser to `aggregate.py` (`parse_<tool>` + a `--from-<tool>` argument).
+2. If the tool emits a non-trivial format, add `parse_<tool>` to `aggregate.py` and register it in the `PARSERS` dict. The `--from-<tool>` argument is derived automatically from `PARSERS` — do not add it by hand.
 3. Add the tool to the `presets.default` list (if it should run by default) or only `presets.all` (if it's expensive / specialised).
 4. Update this README's quick-reference command examples.
 
@@ -114,9 +115,9 @@ Use these as the target the next run should beat or meet.
 
 Updated when each bundle folds in; canonical count lives at the top of [`../ROADMAP.md`](../ROADMAP.md).
 
-- **Through Bundle 49 (2026-05-02): 187 distinct fixes across 69 files.**
-- **clang-tidy** has since run (cumulative 12 bundles between 36–44 plus follow-ups); generated `compile_commands.json` is in tree.
-- **cppcheck** `materialui.c` macro-config exhaustion is still the lone partial — every other tool finishes.
+- **Latest cumulative count, including bundle-id, is the canonical figure at the top of [`../ROADMAP.md`](../ROADMAP.md).** Do not pin a snapshot here — the snapshots have historically drifted N bundles behind.
+- **clang-tidy** has run (cumulative across bundles 36–44 + follow-ups, plus the Bundle 61 `clang-analyzer-*` sweep and Bundle 64 tree-wide `bugprone-integer-division` sweep); `compile_commands.json` is in tree.
+- **cppcheck** `materialui.c` macro-config exhaustion was closed in Bundle 62 by running with `--max-configs=1` plus inline FP suppressions. Every cppcheck tool now finishes.
 - **clazy** still deferred; Qt UI surface remains small.
 
 The 2026-04-25 baseline numbers are anchors for the *next full audit* run to compare against — when re-running cppcheck/semgrep/ruff/bandit from scratch, expect raw counts to drop substantially relative to the 660-raw baseline as a result of the fix-stream above.

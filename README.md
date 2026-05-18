@@ -1,4 +1,3 @@
-[![Build Status](https://travis-ci.org/libretro/RetroArch.svg?branch=master)](https://travis-ci.org/libretro/RetroArch)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/8936/badge.svg)](https://scan.coverity.com/projects/retroarch)
 [![Crowdin](https://badges.crowdin.net/retroarch/localized.svg)](https://crowdin.com/project/retroarch)
 
@@ -203,7 +202,7 @@ It is not recommended to change this unless you know what you're doing.
 These can later be tweaked by using a config file.
 A sample configuration file is installed to `/etc/retroarch.cfg`. This is the system-wide config file.
 
-RetroArch will on startup create a config file in `$XDG\_CONFIG\_HOME/retroarch/retroarch.cfg` if it does not exist.
+RetroArch will on startup create a config file in `$XDG_CONFIG_HOME/retroarch/retroarch.cfg` if it does not exist.
 Users only need to configure a certain option if the desired value deviates from the value defined in config.def.h.
 
 To configure joypads, use the built-in menu or manually configure them in `retroarch.cfg`.
@@ -334,11 +333,9 @@ The links below belong to our official channels. Links other than this may have 
 - [Twitter](https://twitter.com/libretro)
 - [Reddit](https://www.reddit.com/r/RetroArch/)
 - [YouTube](https://www.youtube.com/Libretro)
-- [Google Post](https://posts.google.com/share/55Nhs2jG)
 - [Steam](https://store.steampowered.com/app/1118310/RetroArch/)
 - [YouTube Topic](https://www.youtube.com/channel/UC5q007PYyQPgin0HHbzF0zQ)
 - [Patreon](https://www.patreon.com/libretro)
-- [BOUNTYSOURCE](https://www.bountysource.com/teams/libretro/issues)
 - [Discord](https://discord.gg/C4amCeV)
 - [Teespring](https://teespring.com/stores/retroarch)
 - [Documentation](https://docs.libretro.com/)

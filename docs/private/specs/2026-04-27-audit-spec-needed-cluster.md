@@ -1,11 +1,24 @@
 # Audit 2026-04 — Spec-Needed Cluster (S1–S12)
 
 **Date:** 2026-04-27
-**Status:** closed 2026-04-27 — full cluster (S1–S12) implemented across Bundles 31 (S6+S8), 33 (S7), 34 (S1+S2+S3+S5+S10+S11+S12 + S9 policy), 35 (S4). See `docs/private/ROADMAP.md` for the per-item commit hashes.
-**Source:** `docs/private/ROADMAP.md` — "Cheap-to-spec (audit-2026-04, audit-2026-04-25)" section, 12 items filtered by `audit-triage` subagent.
-**Scope:** twelve invariant / contract decisions surfaced by cppcheck + semgrep that the static analyser cannot resolve without project-side intent. Each maps to one or more code sites that are correct *iff* the invariant holds. Once the decision is made, the enforcement is almost always one of: `static_assert`, runtime bounds harden, or a project-policy suppression file.
+**Status:** ✅ **closed 2026-04-27** — full cluster (S1–S12) implemented across Bundles 31 (S6+S8), 33 (S7), 34 (S1+S2+S3+S5+S10+S11+S12 + S9 policy), 35 (S4). Plus Bundle 36 follow-up sweep (`44e71ead14`) for S2 extension to materialui+rgui. See `docs/private/ROADMAP.md` "Spec-needed" subsection for the per-item commit hashes.
+**Source:** `docs/private/ROADMAP.md` — "Spec-needed" section, 12 items filtered by `audit-triage` subagent. (Section anchor; body line-numbers churn.)
+**Scope:** twelve invariant / contract decisions surfaced by cppcheck + semgrep that the static analyser cannot resolve without project-side intent. Each maps to one or more code sites that are correct *iff* the invariant holds. Once the decision is made, the enforcement is almost always one of: `_Static_assert`, runtime bounds harden, or a project-policy suppression file.
 
-These are **contracts, not features.** None of the twelve are user-visible behaviour changes; they are "should this be defended at compile time, at runtime, or never" calls. The audit flagged them as cheap (most are <1 day, three are <2 hours) but they have been pending because each requires a deliberate yes/no rather than an obvious mechanical fix.
+These are **contracts, not features.** None of the twelve are user-visible behaviour changes; they are "should this be defended at compile time, at runtime, or never" calls. The audit flagged them as cheap (most are <1 day, three are <2 hours) but they were pending until 2026-04-27 because each required a deliberate yes/no rather than an obvious mechanical fix.
+
+> **⚠️ Cold-eyes 2026-05-18 status update.**
+>
+> The cluster is closed; the spec stays as the historical decision record. Five corrections apply when reading the body — the body itself is preserved unchanged so the decision-rationale-narrative remains intact:
+>
+> 1. **Active-voice / "decision pending" reads.** Each S-section's "Decision" / "Recommendation" subsections describe the option that was chosen. Refer to the corresponding ROADMAP "Spec-needed" closure entry (named by S-number) for the actual chosen path + commit hash. A future addendum or a status footer per S-section is welcome.
+> 2. **`retro_static_assert` shim does not exist.** Spec line 70 parenthetical and the §S6 / §S8 test-shape code blocks reference `retro_static_assert`; current code uses plain **`_Static_assert(...)`** (verified at `menu/cbs/menu_cbs_scan.c:43, 47` and `input/drivers_joypad/xinput_joypad.c:140`). Read the test-shape blocks with that substitution.
+> 3. **`menu_driver.h:255` is actually `:260`** — the cited `MENU_SETTINGS_INPUT_DESC_END` line for the S6 invariant. (`input_defines.h:103,124` is correct.)
+> 4. **§S4 recommendation contradicts what shipped.** Body says "ask upstream"; the cluster closed via option (2) per-line cppcheck suppression — see `.cppcheck-suppress.txt:21-38` and Bundle 35.
+> 5. **§"Follow-on spec docs (proposed)" `<date>` placeholders are stale.** All three sibling specs exist in `docs/private/specs/` dated **2026-04-27** (menu-driver-swap, tls-verification-opt-in, cloud-sync-streaming-upload). Replace `<date>` with `2026-04-27` and drop "(proposed)" framing.
+> 6. **Pre-fix line citations** in §S6 / §S8 (e.g. `xinput_joypad.c:136 g_xinput_states[4]` at spec line 78) reflect Bundle-31 pre-fix state. Post-fix the array is at `:148` and the bound is at `:300`. Treat numbered cites in the closed-spec body as historical, not navigational; the live anchors live in the ROADMAP closure entries.
+>
+> Tracked under cold-eyes-2026-05-18 fold-in in `docs/private/ROADMAP.md`.
 
 ---
 

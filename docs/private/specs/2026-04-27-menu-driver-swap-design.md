@@ -1,10 +1,25 @@
 # Menu Driver Swap — Runtime Tree Rebuild (Design)
 
 **Date:** 2026-04-27
-**Source:** `docs/private/ROADMAP.md` line 191 — indie-review HIGH (recurrence from audit S2 cluster).
-**Status:** draft, awaiting user review
+**Source:** `docs/private/ROADMAP.md` — indie-review HIGH (recurrence from audit S2 cluster). (Section anchor; line numbers churn each bundle.)
+**Status:** draft, awaiting user review — **REQUIRES REFRESH** before implementation (see banner below).
 **Target:** `local/fixes-2026-04` once approved
-**Effort estimate:** 1–2 days
+**Effort estimate:** 1–2 days — but **D2 is moot** (see banner) so the lift estimate (0.5 day) is removable; revise total to ~1.5 days.
+
+> **⚠️ Cold-eyes 2026-05-18 status update.**
+>
+> A cold-eyes pass against current source flagged three load-bearing inaccuracies in this spec. The spec stays as the historical design record; the corrections below MUST be applied before any implementation bundle.
+>
+> 1. **Gating-site line numbers (Current behaviour table, below) are stale by ~26 lines.** Spec says `menu_setting.c:18806 / :19016 / :19308 / :19552 / :19833 / :20330 / :20533 / :20804 / :20857 / :20921 / :20990 / :22801 / :22980`; current source has them at `:18832 / :19042 / :19334 / :19578 / :19859 / :20356 / :20559 / :20830 / :20863 / :20883 / :20947 / :21016 / :22827 / :23006`. Re-run the grep against HEAD before keying any code change to the table; do not edit the table here — line numbers will be stale again by the next bundle.
+> 2. **API names `menu_settings_list_new` / `menu_settings_list_free` do not exist.** The real names are **`menu_setting_new`** (`menu/menu_setting.c:25955`, decl `menu/menu_setting.h:102`) and **`menu_setting_free`** (`menu/menu_setting.c:25743`, decl `menu/menu_setting.h:104`). Every architecture-box mention of `menu_settings_list_{new,free}` below should be read as `menu_setting_{new,free}`.
+> 3. **Decision D2 is moot.** `menu_setting_free` already exists as a callable function and is already invoked **outside shutdown** at `menu/menu_driver.c:2283` (`menu_entries_settings_deinit`), reachable from menu deinit paths. The Phase 1 "lift" (0.5 day) is therefore unnecessary; the rebuild path calls the existing function. D2's A-vs-B framing should be deleted.
+> 4. **Gating-site count.** "20+" undercounts. Current source has 25 sites (21 `string_is_equal(...)` form + 4 `memcmp(..., "glui", 5)` form). Sample table here is illustrative, not exhaustive.
+> 5. **D1 precedent appeal.** "Matches audio/video driver-swap precedent" is unverified — grep across `runloop.h`/`runloop.c`/`retroarch.c` for `RECONFIGURE` returns zero hits; the actual precedent is the synchronous `video_driver_reinit` call at `gfx/video_driver.c:4827`, invoked from `command.c`. Re-evaluate D1(A) vs (B) against the actually-existing pattern, not the imagined deferred-flag pattern.
+> 6. **`glui` vs `materialui` aliasing** — spec uses `glui` everywhere; that is the legacy ident the menu config stores (set in `menu/drivers/materialui.c:12232` and ROADMAP closes the aliasing question in S11 follow-up). One sentence at first mention would prevent reader confusion.
+> 7. **Failure-fallback ordering (D3).** Architecture box deinit-frees-old before init-new; if init-new fails, the "fall back to old driver" path requires re-running `menu_driver_init(old)`. Tighten the order: build-new-first (with a flipped `menu_driver` copy), tear-down-old only on full success.
+> 8. **Missing edge cases.** Swap during context-menu popup; swap during a task overlay; swap with content loaded vs unloaded. None covered.
+>
+> These corrections are tracked in `docs/private/ROADMAP.md` under the cold-eyes-2026-05-18 fold-in block; resolve before the implementation bundle opens.
 
 ---
 

@@ -1,10 +1,26 @@
 # Cloud Sync — Streaming Upload (Design)
 
 **Date:** 2026-04-27
-**Source:** `docs/private/ROADMAP.md` line 202 — indie-review MEDIUM. (`s3.c:1838` reads entire file into RAM.)
-**Status:** draft, awaiting user review
-**Target:** `local/fixes-2026-04`
-**Effort estimate:** 2 days for the cap+stream path; +1 day if we extend to WebDAV / Google Drive in the same bundle.
+**Source:** `docs/private/ROADMAP.md` — indie-review MEDIUM, "cloud_sync_update reads entire file into RAM" entry (section anchor; body line numbers churn).
+**Status:** draft — **Phase 1 SHIPPED 2026-04-29 (Bundle 32, commit `c3ebdb11e4`).** Phases 2–4 still draft.
+**Target:** `local/fixes-2026-04` (Phases 2–4)
+**Effort estimate:** Phase 1 done; Phases 2–4 ~1.5 days (revised down from 0.5 + 0.5 + open-ended once the multipart-state shape is confirmed).
+
+> **⚠️ Cold-eyes 2026-05-18 status update.**
+>
+> A cold-eyes pass against current source flagged multiple staleness + factual issues. The spec stays as the historical design record; the corrections below MUST be applied before any further implementation work.
+>
+> 1. **Phase 1 has shipped.** Bundle 32 (commit `c3ebdb11e4`) added `cloud_sync_max_upload_mb` to `configuration.h:252`, `DEFAULT_CLOUD_SYNC_MAX_UPLOAD_MB = 2048` to `config.def.h:1495`, the load/save wiring at `configuration.c:2715`, and the menu UI at `menu/menu_setting.c`. The cap-check landed at the **dispatch layer** (`network/cloud_sync_driver.c:129-164` — `cloud_sync_update` wraps every backend) rather than the per-backend layout this spec proposed. The dispatch-layer pattern is strictly better — one site serves all three backends. **Sections "Data model / Phase 1" describing per-backend caps are SUPERSEDED; do not implement.**
+> 2. **All `s3.c` line cites are drifted ~130 lines.** Spec says `s3.c:1807` for `s3_update`, `:1838` for the malloc, `:1860+` for multipart. Current source: `s3_update` is at **`s3.c:1941`**, the malloc at **`:1972`**, multipart starts at **`:1994`**. Bundles 17/26/32/52/56/63 grew the file. Don't pin to line numbers; key changes against `s3_update` / `s3_sha256_hash` / etc. by function name.
+> 3. **mbedtls SHA-256 API is the *unsuffixed legacy* shape, not `_ret`.** Spec lines 234, 246, 250 propose `mbedtls_sha256_starts_ret` / `_update_ret` / `_finish_ret`. Vendored `deps/mbedtls/mbedtls/sha256.h:83,92,101` declares **only** `mbedtls_sha256_starts(ctx, is224)`, `_update(ctx, in, ilen)`, `_finish(ctx, out)`. Use the unsuffixed names. Also note `s3.c:386` already has a working `s3_sha256_hash(const char *data, size_t len)` helper — extend it (offer an incremental variant) rather than introducing a parallel helper.
+> 4. **Multipart is materially worse than the spec hedges.** Goal 3 / Phase 4 frame multipart as "audit, maybe needs fixing." Verified: `mp_st->file_data` (s3.c around 2014) carries the **entire file buffer** for the duration of every part; each part SHA + body reads via `mp_st->file_data + offset`. The "if multipart allocs full parts" hedge is wrong — multipart carries the full *file*, not full *parts*. Phase 4 is therefore a definite refactor with known shape (mp state needs `RFILE *` + offset, seek per part), not an audit. Bump the Phase 4 estimate accordingly.
+> 5. **No `## Failure modes` section.** Network drop mid-upload, S3 5xx retry budget, OAuth-token expiry, quota exhaustion (HTTP 507), conflict resolution on stale-remote — none enumerated. Add the section before implementation.
+> 6. **No numeric SLOs.** Spec claims "64 KB scratch buffer is the only allocation" but doesn't pin a target. Add: max heap inflation per concurrent upload (e.g. 256 KB on desktop, 128 KB on console-class); max retries on 5xx with exponential backoff bound.
+> 7. **TLS spec dependency unmentioned.** Sibling `2026-04-27-tls-verification-opt-in-design.md` names cloud_sync as an affected surface. Cross-link: "TLS verification (sibling spec) MUST be `required` or `optional` before this work hardens privacy claims; streaming changes the data-at-risk shape (incremental vs one-shot) but not the auth surface."
+> 8. **A third D3 option exists.** D3 framed as two-pass-disk vs SigV4-streaming-chunks. AWS S3 accepts `x-amz-content-sha256: UNSIGNED-PAYLOAD` for HTTPS single-PUT plus `Content-MD5` for integrity — one-pass, no SigV4-chunk complexity. Worth comparing against (A) and (B).
+> 9. **Settings-UI placement cross-spec disagreement.** This spec puts the upload cap under *Settings → Cloud Sync → Advanced*; the sibling TLS spec puts its setting under *Settings → Network → Advanced*. Pre-existing menu UI uses a flat *Network* page with section dividers; neither spec verified against `menu_setting.c`. Pick one convention and align both specs.
+>
+> These corrections are tracked in `docs/private/ROADMAP.md` under the cold-eyes-2026-05-18 fold-in block; resolve before the next implementation bundle opens.
 
 ---
 

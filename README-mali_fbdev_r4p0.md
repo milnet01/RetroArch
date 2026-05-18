@@ -1,5 +1,18 @@
-USAGE NOTES
-===========
+USAGE NOTES — Mali fbdev OpenGL ES context (NOT a top-level video driver)
+=========================================================================
+
+> ⚠️ Historical reference. Targets Allwinner sunxi-3.4-era kernels and
+> r4p0 Mali userland blobs that are no longer obtainable from the linked
+> sources (the odroid forum thread and the r4p0-mp400-fbdev.tar URL
+> below both 404 as of 2026; the ARM Mali developer portal moved to
+> developer.arm.com years ago). The driver itself is still wired in
+> (HAVE_MALI_FBDEV in Makefile.common, source at
+> gfx/drivers_context/mali_fbdev_ctx.c) but the setup steps target EOL
+> hardware. Treat as a porting reference, not a recipe.
+>
+> Genre note: mali_fbdev is a *context* driver feeding gl / glcore on
+> fbdev — set video_driver = gl (NOT video_driver = mali_fbdev) and the
+> mali fbdev context auto-selects when available.
 
 This driver is meant for devices with Allwinner SoCs with Mali400 3D block and a
 good fbdev implementation. It is derived from the old Android GLES driver.
