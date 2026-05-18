@@ -3255,7 +3255,7 @@ static size_t setting_get_string_representation_max_users(
       rarch_setting_t *setting, char *s, size_t len)
 {
    if (setting)
-      return snprintf(s, len, "%d", *setting->value.target.unsigned_integer);
+      return snprintf(s, len, "%u", *setting->value.target.unsigned_integer);
    return 0;
 }
 
@@ -5167,7 +5167,7 @@ static size_t setting_get_string_representation_crt_switch_resolution_super(
       return strlcpy(s, "NATIVE", len);
    else if (*setting->value.target.unsigned_integer == 1)
       return strlcpy(s, "DYNAMIC", len);
-   return snprintf(s, len, "%d", *setting->value.target.unsigned_integer);
+   return snprintf(s, len, "%u", *setting->value.target.unsigned_integer);
 }
 
 static size_t setting_get_string_representation_uint_playlist_sublabel_runtime_type(
@@ -7146,7 +7146,7 @@ static size_t setting_get_string_representation_turbo_duty_cycle(
             return strlcpy(s,
                   msg_hash_to_str(MENU_ENUM_LABEL_VALUE_TURBO_DUTY_CYCLE_HALF), len);
          default:
-            return snprintf(s, len, "%d", *setting->value.target.unsigned_integer);
+            return snprintf(s, len, "%u", *setting->value.target.unsigned_integer);
       }
    }
    return 0;
@@ -7228,7 +7228,7 @@ static size_t setting_get_string_representation_input_touch_scale(
       rarch_setting_t *setting, char *s, size_t len)
 {
    if (setting)
-      return snprintf(s, len, "x%d", *setting->value.target.unsigned_integer);
+      return snprintf(s, len, "x%u", *setting->value.target.unsigned_integer);
    return 0;
 }
 

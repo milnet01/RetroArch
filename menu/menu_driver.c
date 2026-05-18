@@ -2409,13 +2409,13 @@ static bool menu_driver_displaylist_push(
    bool ret                       = false;
    enum msg_hash_enums enum_idx   = MSG_UNKNOWN;
    file_list_t *list              = MENU_LIST_GET(menu_st->entries.list, 0);
-   menu_file_list_cbs_t *cbs      = (menu_file_list_cbs_t*)
-      list->list[list->size - 1].actiondata;
+   menu_file_list_cbs_t *cbs      = NULL;
 
    menu_displaylist_info_init(&info);
 
    if (list && list->size)
    {
+      cbs       = (menu_file_list_cbs_t*)list->list[list->size - 1].actiondata;
       path      = list->list[list->size - 1].path;
       label     = list->list[list->size - 1].label;
       type      = list->list[list->size - 1].type;
@@ -3331,6 +3331,8 @@ bool menu_shader_manager_save_auto_preset(
 
 static enum action_iterate_type action_iterate_type(const char *label)
 {
+   if (!label)
+      return ITERATE_TYPE_DEFAULT;
    if (!strcmp(label, "info_screen"))
       return ITERATE_TYPE_INFO;
    if (string_starts_with_size(label, "help", STRLEN_CONST("help")))
@@ -7345,7 +7347,7 @@ static int generic_menu_iterate(
                }
 #endif
             }
-            else
+            else if (selection_buf)
             {
                enum msg_hash_enums enum_idx = MSG_UNKNOWN;
                size_t selection             = menu_st->selection_ptr;

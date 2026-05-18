@@ -910,8 +910,12 @@ static int explore_action_ok(const char *path, const char *label,
       struct menu_state   *menu_st  = menu_state_get_ptr();
       menu_list_t *menu_list        = menu_st->entries.list;
       file_list_t *menu_stack       = MENU_LIST_GET(menu_list, 0);
-      unsigned prev_type            = menu_stack->list[menu_stack->size - 1].type;
-      unsigned cat                  = (prev_type - EXPLORE_TYPE_FIRSTCATEGORY);
+      unsigned prev_type;
+      unsigned cat;
+      if (!menu_stack)
+         goto explore_action_ok_end;
+      prev_type                     = menu_stack->list[menu_stack->size - 1].type;
+      cat                           = (prev_type - EXPLORE_TYPE_FIRSTCATEGORY);
       if (cat < EXPLORE_CAT_COUNT)
       {
          explore_state_t *state = explore_state;
@@ -940,6 +944,7 @@ static int explore_action_ok(const char *path, const char *label,
          }
       }
    }
+explore_action_ok_end:
    filebrowser_clear_type();
    return generic_action_ok_displaylist_push(explore_tab,
          NULL, explore_tab, type, idx, entry_idx, ACTION_OK_DL_PUSH_DEFAULT);
@@ -951,7 +956,10 @@ static int explore_cancel(const char *path,
    struct menu_state   *menu_st  = menu_state_get_ptr();
    menu_list_t *menu_list        = menu_st->entries.list;
    file_list_t *menu_stack       = MENU_LIST_GET(menu_list, 0);
-   unsigned closed_type          = menu_stack->list[menu_stack->size - 1].type;
+   unsigned closed_type;
+   if (!menu_stack)
+      return action_cancel_pop_default(path, label, type, idx);
+   closed_type                   = menu_stack->list[menu_stack->size - 1].type;
    if (closed_type >= EXPLORE_TYPE_FIRSTITEM ||
        closed_type == EXPLORE_TYPE_FILTERNULL)
    {
@@ -1074,6 +1082,9 @@ static int explore_action_ok_deleteview(const char *path, const char *label,
    struct menu_state *menu_st    = menu_state_get_ptr();
    menu_list_t *menu_list        = menu_st->entries.list;
    file_list_t *menu_stack       = MENU_LIST_GET(menu_list, 0);
+
+   if (!menu_stack)
+      return explore_cancel(path, label, type, idx);
 
    filestream_delete(explore_get_view_path(menu_st, menu_list, menu_stack));
    explore_on_edit_views(MENU_ENUM_LABEL_EXPLORE_VIEW_DELETED);
@@ -1349,11 +1360,18 @@ unsigned menu_displaylist_explore(file_list_t *list, settings_t *settings)
    menu_handle_t *menu          = menu_st->driver_data;
    menu_list_t *menu_list       = menu_st->entries.list;
    file_list_t *menu_stack      = MENU_LIST_GET(menu_list, 0);
-   struct item_file *stack_top  = menu_stack->list;
-   size_t depth                 = menu_stack->size;
-   unsigned current_type        = (depth > 0 ? stack_top[depth - 1].type : 0);
-   unsigned previous_type       = (depth > 1 ? stack_top[depth - 2].type : 0);
-   unsigned current_cat         = current_type - EXPLORE_TYPE_FIRSTCATEGORY;
+   struct item_file *stack_top;
+   size_t depth;
+   unsigned current_type;
+   unsigned previous_type;
+   unsigned current_cat;
+   if (!menu_stack)
+      return (unsigned)list->size;
+   stack_top                    = menu_stack->list;
+   depth                        = menu_stack->size;
+   current_type                 = (depth > 0 ? stack_top[depth - 1].type : 0);
+   previous_type                = (depth > 1 ? stack_top[depth - 2].type : 0);
+   current_cat                  = current_type - EXPLORE_TYPE_FIRSTCATEGORY;
 
    /* overwrite the menu title function with our custom one */
    /* depth 1 is never popped so we can only do this on sub menus */

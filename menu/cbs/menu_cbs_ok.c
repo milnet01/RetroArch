@@ -1410,8 +1410,9 @@ int generic_action_ok_displaylist_push(
                   char *delim = path_content;
                   while (*delim && *delim != '#')
                      delim++;
-                  if (delim)
-                     *delim = '\0';
+                  /* delim is provably non-NULL (init from stack array);
+                   * scanning to '#' or '\0' leaves it at a valid byte */
+                  *delim = '\0';
                }
                menu_driver_set_pending_selection(path_basename(path_content));
             }
@@ -4499,7 +4500,7 @@ push_dropdown_list:
          sizeof(option_path_str) - _len,
          "%d", (int)option_index);
    snprintf(option_lbl_str, sizeof(option_lbl_str),
-         "%d", type);
+         "%u", type);
 
    /* TODO/FIXME: This should be refactored to make
     * use of a core-option-specific drop-down list,
@@ -7632,11 +7633,13 @@ static int action_ok_push_dropdown_item_disk_index(const char *path,
    unsigned disk_index           = (unsigned)idx;
    rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
    settings_t *settings          = config_get_ptr();
-   bool menu_insert_disk_resume  = settings->bools.menu_insert_disk_resume;
+   bool menu_insert_disk_resume  = false;
    bool disk_ejected             = false;
 
    if (!settings || !sys_info)
       return -1;
+
+   menu_insert_disk_resume       = settings->bools.menu_insert_disk_resume;
 
 #ifdef HAVE_AUDIOMIXER
    if (settings->bools.audio_enable_menu && settings->bools.audio_enable_menu_ok)
@@ -8347,11 +8350,13 @@ static int action_ok_disk_cycle_tray_status(const char *path,
 {
    rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
    settings_t *settings          = config_get_ptr();
-   bool menu_insert_disk_resume  = settings->bools.menu_insert_disk_resume;
+   bool menu_insert_disk_resume  = false;
    bool verbosity                = false;
 
    if (!settings || !sys_info)
       return -1;
+
+   menu_insert_disk_resume       = settings->bools.menu_insert_disk_resume;
 
 #ifdef HAVE_AUDIOMIXER
    if (settings->bools.audio_enable_menu && settings->bools.audio_enable_menu_ok)
@@ -8381,11 +8386,13 @@ static int action_ok_disk_image_append(const char *path,
    struct menu_state *menu_st    = menu_state_get_ptr();
    menu_handle_t *menu           = menu_st->driver_data;
    settings_t *settings          = config_get_ptr();
-   bool menu_insert_disk_resume  = settings->bools.menu_insert_disk_resume;
+   bool menu_insert_disk_resume  = false;
    const char *menu_path         = NULL;
 
    if (!menu || !settings || !sys_info)
       return -1;
+
+   menu_insert_disk_resume       = settings->bools.menu_insert_disk_resume;
 
 #ifdef HAVE_AUDIOMIXER
    if (settings->bools.audio_enable_menu && settings->bools.audio_enable_menu_ok)
