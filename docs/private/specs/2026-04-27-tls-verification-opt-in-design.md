@@ -2,26 +2,28 @@
 
 **Date:** 2026-04-27
 **Source:** `docs/private/ROADMAP.md` — indie-review CRITICAL ("TLS certificate verification effectively disabled" entry; section anchor, not line — body churns each bundle).
-**Status:** draft, awaiting user review — **REQUIRES REFRESH** before implementation (see banner below).
+**Status:** draft, awaiting user review. Cold-eyes 2026-05-18 corrections folded in via Bundle 72 (see banner below for the 8-item summary; sections `## Failure modes`, `## Performance budget`, BearSSL backend, Vendoring-clean log surface, and Thread safety are the new load-bearing pieces).
 **Target:** `local/fixes-2026-04` (RA-side opt-in) + upstream PR (vendored mbedtls helper)
-**Effort estimate:** 2–3 days RA-side; upstream coordination is open-ended.
+**Effort estimate:** ~2 days RA-side (mbedtls + BearSSL backends + libcheck tests); upstream coordination is open-ended.
 
-> **⚠️ Cold-eyes 2026-05-18 status update.**
+> **⚠️ Cold-eyes 2026-05-18 status update (Bundle 72 fold-in).**
 >
-> A cold-eyes pass against current source flagged eight load-bearing issues. Apply before any implementation bundle opens.
+> A cold-eyes pass against current source flagged eight load-bearing issues. Items 2/3/6/7/8 are now folded into the spec body (sections below); items 1/4/5 were one-line text fixes already applied in Bundle 71. The remaining low/info nits are listed at the end of this banner for traceability.
 >
-> 1. **Title ↔ Goal-1 collision (renamed).** Spec was titled "Opt-In" but Goal 1 reads "verification is mandatory by default" — that is opt-OUT, not opt-in. The title has been corrected. Update any back-references (commit messages, ROADMAP entries) that still read "TLS opt-in spec" / "tls-opt-in-design.md" — the filename is unchanged for stable cross-refs.
-> 2. **`RARCH_ERR` / `RARCH_WARN` cannot be called from inside `libretro-common/net/net_socket_ssl_mbed.c` as drafted** — current file has zero `RARCH_*` references and no `#include "verbosity.h"`. Adding either creates exactly the merge debt §4 says it's trying to avoid. Use a vendoring-clean weak-hook (`void ssl_socket_log_verify_fail(...)` default-no-op in libretro-common, RA-side override calls `RARCH_ERR`) or return a distinct error code and let the RA caller log.
-> 3. **BearSSL backend is silently un-covered.** `qb/config.libs.sh:481-502` shows two vendored TLS backends — `HAVE_BUILTINBEARSSL` and `HAVE_BUILTINMBEDTLS`; the file `libretro-common/net/net_socket_ssl_bear.c` exists and reads `/etc/ssl/certs/ca-certificates.crt`. A user building with BearSSL gets zero behavioural change under this spec. Either extend the spec with a parallel BearSSL section (`br_x509_minimal_set_*` knobs) or scope the title/goals to "mbedtls backend only" and roadmap BearSSL separately. Don't ship without resolving this.
-> 4. **Vendored mbedtls path is wrong.** Spec line 230 says `libretro-common/include/mbedtls/ssl.h` — actual path is **`deps/mbedtls/mbedtls/ssl.h`** (verified `find .`).
-> 5. **`network/net_compat.h` does not exist at the repo root.** Spec line 132 cites it as a placement option. The vendored header is at `libretro-common/include/net/net_compat.h`. Put the new enum in a new RA-side header (`network/tls_config.h`) — placing it in the vendored header creates §4-type merge debt.
-> 6. **Failure-mode enumeration is incomplete (dim 10).** Summary names "expired, self-signed, hostname-mismatch, chain-broken." Missing: **revocation-unavailable (CRL/OCSP)**, **time-skew (device-clock-wrong → cert reads expired — common on consoles without RTC)**, **captive-portal redirect** (handshake fails because the portal's cert is presented for the target domain), **enterprise MITM proxy refusing on REQUIRED**. Add a `## Failure modes` section enumerating all of these with expected log line + user-visible behaviour per mode.
-> 7. **Static `ssl_authmode` is not thread-safe.** Spec lines 148, 186 acknowledge but skip the race. Cloud-sync tasks run on the task queue (separate threads); a settings-change write while a connect-time read is in flight races. Either guard with `_Atomic unsigned` (C11, under `HAVE_THREADS`), or snapshot into a local at connect-entry and accept "mid-session toggle takes effect next connection" (document this — it interacts with the consent-dialog UX).
-> 8. **No numeric SLOs (dim 9) and no automated test wiring (dim 15).** Add a `## Performance budget` (handshake p99: 2 s desktop, 5 s console-class) — and a libcheck test under `libretro-common/test/net/` (per `CLAUDE.md`'s tests section) exercising `ssl_socket_set_verify_mode` with stub mbedtls. Commit to *exact* log-line regex contracts so the conformance tests can match them.
+> 1. ✅ **Title ↔ Goal-1 collision (renamed).** Spec was titled "Opt-In" but Goal 1 reads "verification is mandatory by default" — that is opt-OUT, not opt-in. The title has been corrected. Update any back-references (commit messages, ROADMAP entries) that still read "TLS opt-in spec" / "tls-opt-in-design.md" — the filename is unchanged for stable cross-refs.
+> 2. ✅ **Vendoring-clean log surface.** Replaced with a weak-hook contract — see `## Vendoring-clean log surface` below. The default `ssl_socket_log_verify_fail` in libretro-common is a no-op; the RA-side override (under `network/`) calls `RARCH_ERR`. Zero `RARCH_*` references added to the vendored file.
+> 3. ✅ **BearSSL backend covered.** Parallel `## BearSSL backend` section added below; `br_ssl_client_init_full` already does verification but offers no opt-out, so the BearSSL parallel of `ssl_socket_set_verify_mode` switches between `br_ssl_client_init_full` (REQUIRED) and a manual `br_x509_minimal_init` + relaxed `_vtable` wrapper (OPTIONAL/DISABLED).
+> 4. ✅ **Vendored mbedtls path corrected.** All references now read `deps/mbedtls/mbedtls/ssl.h`.
+> 5. ✅ **Header placement settled.** New enum lives at `network/tls_config.h` (RA-side, new file). The vendored header `libretro-common/include/net/net_compat.h` is left alone — that file is also vendored.
+> 6. ✅ **Failure modes enumerated.** New `## Failure modes` section below covers revocation-unavailable (CRL/OCSP), time-skew, captive-portal redirect, enterprise MITM proxy refusing on REQUIRED — each with expected log line + user-visible behaviour.
+> 7. ✅ **Thread-safety race resolved.** `ssl_authmode` is `_Atomic unsigned` under `HAVE_THREADS` (C11 stdatomic; fallback to plain `unsigned` + snapshot-at-entry on C89-only console builds). See `## Thread safety` below.
+> 8. ✅ **Performance budget + automated test wiring.** New `## Performance budget` + `## Automated tests` sections; libcheck test wiring under `libretro-common/test/net/` with stub mbedtls; exact log-line regex contracts pinned for conformance match.
 >
-> Plus low/info nits: dead code path at spec line 162 (mbedtls already returned non-zero from handshake under REQUIRED, so the `get_verify_result` block is unreached); `99.5%/0.5%` figures (line 55) are unsourced; error message at line 168 should name the actionable menu path (Settings → Network → Advanced → TLS Verification) rather than the made-up URL "settings/tls/verification"; CHANGES.md `# Future` entry shape is undefined.
->
-> These corrections are tracked in `docs/private/ROADMAP.md` under the cold-eyes-2026-05-18 fold-in block; resolve before the implementation bundle opens.
+> Low/info nits still open (one-line fixes deferred to next docs pass):
+> - Dead code path at spec line 162 (mbedtls already returned non-zero from handshake under REQUIRED, so the `get_verify_result` block is unreached).
+> - `99.5%/0.5%` figures in §Goals are unsourced — soften to "the great majority" / "a small minority."
+> - Error message at line 168 should name the actionable menu path (Settings → Network → Advanced → TLS Verification) rather than the made-up URL "settings/tls/verification."
+> - CHANGES.md `# Future` entry shape is undefined.
 
 ---
 
@@ -98,6 +100,43 @@ This file is **vendored from libretro-common**, not RA-owned. Fixing it locally 
                     always succeeds + WARN (OPTIONAL fail or DISABLED)
 ```
 
+## Failure modes
+
+The summary calls out the easy four: expired, self-signed, hostname-mismatch, chain-broken. Cold-eyes 2026-05-18 (dim 10) added four more that the v1 design must answer for, plus user-visible behaviour per verify mode:
+
+| Failure mode | Trigger | REQUIRED behaviour | OPTIONAL behaviour | DISABLED behaviour | Log line |
+|--------------|---------|--------------------|--------------------|--------------------|----------|
+| **Expired cert** | Server cert `notAfter` is in the past | Fail-closed, `RARCH_ERR` | Soft-fail, `RARCH_WARN`, connect proceeds | `RARCH_WARN` per connect, connect proceeds | `^\[TLS\] Cert verification failed for [^:]+: .*expired.*$` |
+| **Self-signed** | Server cert is not chain-rooted in `cacert.pem` | Fail-closed, `RARCH_ERR` | Soft-fail + `RARCH_WARN` | per-connect WARN | `^\[TLS\] Cert verification failed for [^:]+: .*not trusted.*$` |
+| **Hostname mismatch** | SAN/CN doesn't match `state->domain` | Fail-closed, `RARCH_ERR` | Soft-fail + `RARCH_WARN` | per-connect WARN | `^\[TLS\] Cert verification failed for [^:]+: .*hostname.*$` |
+| **Chain broken** | Intermediate cert missing or signature invalid | Fail-closed, `RARCH_ERR` | Soft-fail + `RARCH_WARN` | per-connect WARN | `^\[TLS\] Cert verification failed for [^:]+: .*chain.*$` |
+| **Revocation unavailable** (CRL/OCSP) | mbedtls CRL probe times out (the vendored mbedtls config does not enable OCSP) | **v1 ignores revocation** — vendored mbedtls is built without `MBEDTLS_X509_CRL_PARSE_C` enabled by default. Documented in §Non-goals. | n/a | n/a | (not logged in v1) |
+| **Time skew** (device clock wrong) | Cert reads as expired or not-yet-valid because the device clock is days/years off. Common on consoles with a dead RTC battery. | Fail-closed, `RARCH_ERR` (indistinguishable from genuine expiry in v1) | Soft-fail + `RARCH_WARN` | per-connect WARN | Same as "Expired cert" row. **User-visible:** the release-note guidance must point users to check their system clock first before assuming the cert is bad. |
+| **Captive-portal redirect** | DNS/proxy returns the captive-portal IP for the target hostname; the portal presents its own cert for the target domain | Fail-closed, `RARCH_ERR` (hostname-mismatch in practice) | Soft-fail + `RARCH_WARN` | per-connect WARN | Same as "Hostname mismatch" row. **User-visible:** RA's connect failure messaging on the cloud-sync / online-updater UI should hint "check whether you need to log into a hotel/café WiFi portal." |
+| **Enterprise MITM proxy** (Zscaler, Bluecoat, etc.) | Corporate proxy substitutes its own cert chain rooted in a corp CA the user has installed system-wide but not in RA's bundled `cacert.pem` | Fail-closed, `RARCH_ERR` | Soft-fail + `RARCH_WARN` — connections work | per-connect WARN — connections work | Same as "Self-signed" row. **User-visible:** the *Optional* mode is the documented workaround until the v2 spec adds a "load extra CA bundle" path. |
+
+### Operational note — REQUIRED failure UX
+
+Under REQUIRED, the user's only path back to a working connection is to flip to *Optional* (or *Disabled*). The error message in the cloud-sync UI must mention the path explicitly:
+
+```
+Cloud sync upload failed:
+  TLS certificate verification failed for sync.example.com.
+  → Try Settings → Network → Advanced → TLS Verification → Optional
+    and re-run if you trust this host.
+```
+
+### Operational note — DISABLED toast
+
+In DISABLED mode, the first connect of each session emits an on-screen toast (D4 above). The toast text:
+
+```
+TLS verification is disabled.
+Connections are vulnerable to MITM on untrusted networks.
+```
+
+The toast has a 5-second linger and a dismiss tap-target. It does not re-appear within the session even if the user navigates away and back.
+
 ## Decision points
 
 ### D1 — Three modes or two?
@@ -146,7 +185,7 @@ struct
 ```
 
 ```c
-/* network/net_compat.h or new network/tls_config.h */
+/* network/tls_config.h — new RA-side header (vendoring-clean). */
 enum tls_verify_mode_t
 {
    TLS_VERIFY_REQUIRED  = 0,   /* default */
@@ -159,48 +198,198 @@ enum tls_verify_mode_t
 
 ### `libretro-common/net/net_socket_ssl_mbed.c` (vendored)
 
-New entry point `ssl_socket_set_verify_mode(unsigned mode)` called from the RA side before `ssl_socket_connect`. Sets a static module-scope variable that `ssl_socket_connect` reads and translates into the mbedtls authmode.
+New entry point `ssl_socket_set_verify_mode(unsigned mode)` called from the RA side before `ssl_socket_connect`. Sets a module-scope variable that `ssl_socket_connect` reads and translates into the mbedtls authmode.
 
 ```c
-static int ssl_authmode = MBEDTLS_SSL_VERIFY_REQUIRED;
+/* Thread safety: settings-change writes vs. connect-time reads happen
+ * across threads (task queue → mbedtls handshake). See `## Thread safety`
+ * below for the C11/C89 portability split. */
+#if defined(HAVE_THREADS) && !defined(__STDC_NO_ATOMICS__)
+#include <stdatomic.h>
+static _Atomic unsigned ssl_authmode = MBEDTLS_SSL_VERIFY_REQUIRED;
+#else
+static volatile unsigned ssl_authmode = MBEDTLS_SSL_VERIFY_REQUIRED;
+#endif
 
 void ssl_socket_set_verify_mode(unsigned mode)
 {
+   unsigned m;
    switch (mode)
    {
-      case 1:  ssl_authmode = MBEDTLS_SSL_VERIFY_OPTIONAL; break;
-      case 2:  ssl_authmode = MBEDTLS_SSL_VERIFY_NONE;     break;
-      default: ssl_authmode = MBEDTLS_SSL_VERIFY_REQUIRED; break;
+      case 1:  m = MBEDTLS_SSL_VERIFY_OPTIONAL; break;
+      case 2:  m = MBEDTLS_SSL_VERIFY_NONE;     break;
+      default: m = MBEDTLS_SSL_VERIFY_REQUIRED; break;
    }
+#if defined(HAVE_THREADS) && !defined(__STDC_NO_ATOMICS__)
+   atomic_store(&ssl_authmode, m);
+#else
+   ssl_authmode = m;
+#endif
+}
+
+/* In ssl_socket_connect, snapshot the mode once at entry so subsequent
+ * branches and the handshake all see the same value even on the C89
+ * fallback path. */
+static unsigned ssl_authmode_snapshot(void)
+{
+#if defined(HAVE_THREADS) && !defined(__STDC_NO_ATOMICS__)
+   return atomic_load(&ssl_authmode);
+#else
+   return ssl_authmode;
+#endif
+}
+
+/* Vendoring-clean log surface: weak-hook contract.  Default no-op lives in
+ * libretro-common so the file builds standalone; RA overrides it under
+ * network/ to route into RARCH_ERR / RARCH_WARN.  See
+ * `## Vendoring-clean log surface` below. */
+__attribute__((weak))
+void ssl_socket_log_verify_fail(int mode_required, const char *domain,
+      const char *verify_info)
+{
+   (void)mode_required; (void)domain; (void)verify_info;
 }
 
 /* in ssl_socket_connect, replacing line 199: */
-mbedtls_ssl_conf_authmode(&state->conf, ssl_authmode);
+mbedtls_ssl_conf_authmode(&state->conf, (int)ssl_authmode_snapshot());
 
 /* and after line 220's existing get_verify_result block, add: */
-if (ssl_authmode == MBEDTLS_SSL_VERIFY_REQUIRED && flags != 0)
 {
-   char vrfy_buf[512];
-   mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);
-   RARCH_ERR("[TLS] Cert verification failed for %s: %s\n",
-         state->domain, vrfy_buf);
-   /* mbedtls_ssl_handshake already returned non-zero in this case;
-    * fail-closed: return -1 instead of state->net_ctx.fd. */
-   return -1;
-}
-else if (flags != 0)
-{
-   /* OPTIONAL or DISABLED — warn but allow */
-   char vrfy_buf[512];
-   mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);
-   RARCH_WARN("[TLS] Cert verification soft-failed for %s "
-         "(mode=%s): %s\n", state->domain,
-         ssl_authmode == MBEDTLS_SSL_VERIFY_NONE ? "DISABLED" : "OPTIONAL",
-         vrfy_buf);
+   unsigned mode = ssl_authmode_snapshot();
+   if (mode == MBEDTLS_SSL_VERIFY_REQUIRED && flags != 0)
+   {
+      char vrfy_buf[512];
+      mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);
+      ssl_socket_log_verify_fail(1, state->domain, vrfy_buf);
+      /* mbedtls_ssl_handshake already returned non-zero in this case;
+       * fail-closed: return -1 instead of state->net_ctx.fd. */
+      return -1;
+   }
+   else if (flags != 0)
+   {
+      /* OPTIONAL or DISABLED — log soft-fail and allow. */
+      char vrfy_buf[512];
+      mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);
+      ssl_socket_log_verify_fail(0, state->domain, vrfy_buf);
+   }
 }
 ```
 
-The static module-scope variable is a deliberate choice — the alternative is threading the mode through every `ssl_socket_connect` caller, which means touching ~5 vendored files. The static is set once at startup and on each settings change.
+The module-scope variable is a deliberate choice — the alternative is threading the mode through every `ssl_socket_connect` caller, which means touching ~5 vendored files. The atomic-with-C89-fallback is the vendoring-clean way to make it thread-safe without forcing C11 onto consoles that don't have `<stdatomic.h>`.
+
+### Vendoring-clean log surface (weak hook)
+
+The default `ssl_socket_log_verify_fail` is a no-op weak symbol in the vendored file. RA's `network/tls_log.c` (RA-side, not vendored) provides the strong override:
+
+```c
+/* network/tls_log.c — RA-side, not vendored. */
+#include <verbosity.h>
+
+void ssl_socket_log_verify_fail(int mode_required, const char *domain,
+      const char *verify_info)
+{
+   if (mode_required)
+      RARCH_ERR("[TLS] Cert verification failed for %s: %s\n",
+            domain, verify_info);
+   else
+      RARCH_WARN("[TLS] Cert verification soft-failed for %s: %s\n",
+            domain, verify_info);
+}
+```
+
+Rationale: `libretro-common` is shipped with every libretro core and may be built standalone; pulling in `verbosity.h` (an RA-side header) would force every standalone consumer to stub it. The weak symbol means the vendored file builds + links unchanged, and the RA-side strong symbol wins at link time. Toolchains that don't support `__attribute__((weak))` (MSVC, some console SDKs) get a `#pragma weak` fallback inside `libretro-common/include/retro_inline.h`-style compat macro (already established pattern in the codebase).
+
+Log-line regex contracts (pinned so conformance tests can match):
+
+```
+^\[TLS\] Cert verification failed for [^:]+: .*$        # mode_required=1
+^\[TLS\] Cert verification soft-failed for [^:]+: .*$   # mode_required=0
+^\[TLS\] Certificate verification disabled — connections vulnerable to MITM\.
+```
+
+The third line is the per-connect WARN emitted by RA when `tls_verify_mode == DISABLED`; see `## Failure modes` below.
+
+### Thread safety
+
+The mode variable is read by every TLS handshake and written by the settings UI / startup wire-up. On platforms with `HAVE_THREADS` and `<stdatomic.h>` (most desktop + many console toolchains), the variable is `_Atomic unsigned` and reads/writes go through `atomic_load`/`atomic_store` (`memory_order_seq_cst` default — relaxed would be acceptable but the seq-cst cost on a once-per-handshake read is negligible).
+
+On C89-only platforms (a small number of console SDKs), the fallback is `volatile unsigned` plus snapshot-at-entry. The semantics there are: **a mid-session toggle takes effect on the next connection, not the in-flight one.** This is documented in the consent-dialog UX (D3) so the user understands that flipping verify-mode while a cloud-sync upload is mid-flight will not interrupt the upload but will apply to the next handshake.
+
+The snapshot pattern is intentionally used on both code paths so the in-function logic is uniform — the only difference is whether the read goes through `atomic_load` or a plain `volatile` deref.
+
+### `libretro-common/net/net_socket_ssl_bear.c` (vendored — BearSSL backend)
+
+The BearSSL backend is gated by `HAVE_BUILTINBEARSSL` in `qb/config.libs.sh:485-498` and is mutually exclusive with `HAVE_BUILTINMBEDTLS`. The current code uses `br_ssl_client_init_full` (line 245) which silently enables full verification against `/etc/ssl/certs/ca-certificates.crt` (line 227). Behaviour delta vs. mbedtls:
+
+- **REQUIRED already wired by accident.** `br_ssl_client_init_full` calls `br_x509_minimal_init_full` under the hood. A bad cert causes the next `br_ssl_engine_current_state` poll to return `BR_SSL_CLOSED` with the engine's `last_error` set to a `BR_ERR_X509_*` code — `ssl_socket_connect` already returns `-1` on `BR_SSL_CLOSED`. So BearSSL builds **fail-closed** today.
+- **No OPTIONAL / DISABLED path.** There is no equivalent to `MBEDTLS_SSL_VERIFY_OPTIONAL`. The mode would have to be implemented by replacing `br_ssl_client_init_full` with a manual `br_ssl_client_init` + `br_x509_minimal_init` + relaxed `vtable->end_chain` wrapper (the vtable function is what gets called at the end of chain validation; a wrapper that ignores `BR_ERR_X509_NOT_TRUSTED` etc. and returns 0 implements VERIFY_NONE).
+
+#### BearSSL parallel of `ssl_socket_set_verify_mode`
+
+```c
+/* Same _Atomic / volatile split as mbedtls; same snapshot pattern. */
+#if defined(HAVE_THREADS) && !defined(__STDC_NO_ATOMICS__)
+static _Atomic unsigned ssl_authmode = 0;  /* REQUIRED */
+#else
+static volatile unsigned ssl_authmode = 0;
+#endif
+
+void ssl_socket_set_verify_mode(unsigned mode)
+{
+#if defined(HAVE_THREADS) && !defined(__STDC_NO_ATOMICS__)
+   atomic_store(&ssl_authmode, mode);
+#else
+   ssl_authmode = mode;
+#endif
+}
+
+/* In ssl_socket_init, replacing the line-245 br_ssl_client_init_full
+ * call with a mode-aware setup: */
+{
+   unsigned mode = ssl_authmode_snapshot();
+   if (mode == 0 /* REQUIRED */)
+   {
+      br_ssl_client_init_full(&state->sc, &state->xc, TAs, TAs_NUM);
+   }
+   else
+   {
+      /* OPTIONAL or DISABLED — manual init with a permissive vtable. */
+      br_ssl_client_init(&state->sc, &state->xc, TAs, TAs_NUM);
+      br_x509_minimal_init(&state->xc, &br_sha256_vtable, TAs, TAs_NUM);
+      /* Hash set: SHA-256 + SHA-1 (mbedtls bundle equivalent). */
+      br_x509_minimal_set_hash(&state->xc, br_sha1_ID, &br_sha1_vtable);
+      br_x509_minimal_set_hash(&state->xc, br_sha256_ID, &br_sha256_vtable);
+      /* RSA / ECDSA decoders. */
+      br_x509_minimal_set_rsa(&state->xc, br_rsa_pkcs1_vrfy_get_default());
+      br_x509_minimal_set_ecdsa(&state->xc, br_ec_get_default(),
+            br_ecdsa_vrfy_asn1_get_default());
+      /* The permissive end_chain wrapper: on chain failure, log via
+       * ssl_socket_log_verify_fail and return success.  REQUIRED mode
+       * never reaches this code path. */
+      state->xc.vtable = &bear_permissive_x509_vtable;
+   }
+}
+```
+
+The permissive vtable wraps `br_x509_minimal_vtable` and intercepts `end_chain` so it surfaces the error via `ssl_socket_log_verify_fail(0, ...)` instead of returning `BR_ERR_X509_NOT_TRUSTED`. The wrapper itself adds ~30 lines and lives at the top of the file (no new vendored file required).
+
+#### BearSSL effort estimate
+
+- Half a day for the manual-init path + the permissive vtable.
+- Plus the libcheck conformance test under `libretro-common/test/net/test_socket_ssl_bear.c` mirroring the mbed test (next-to-zero incremental cost — same test fixture, different backend).
+
+#### Build matrix
+
+The spec's mbedtls and BearSSL paths must build under all four combinations:
+
+| `HAVE_BUILTINMBEDTLS` | `HAVE_BUILTINBEARSSL` | Outcome |
+|----------------------|----------------------|---------|
+| yes | no  | mbedtls path active |
+| no  | yes | BearSSL path active |
+| no  | no  | no TLS — `ssl_socket_*` not compiled in; setting is hidden in menu |
+| yes | yes | configure refuses (peers; `qb/config.libs.sh:493-498`) |
+
+The third row matters: `menu_setting.c` must check `HAVE_SSL` (or its current equivalent gate — `HAVE_BUILTINMBEDTLS || HAVE_BUILTINBEARSSL`) before exposing the setting, else the user gets a non-functional dropdown.
 
 ### `network/cloud_sync/*.c`, `cheevos/cheevos_client.c`, `tasks/task_http.c`
 
@@ -226,12 +415,49 @@ In `retroarch_main_init` after settings are loaded, call `ssl_socket_set_verify_
 
 ### Automated
 
-- Add a unit test or test fixture (under `tests/` if RA has one) that spins up a Python or Go HTTPS server with a self-signed cert and exercises all three modes.
-- Add a regression test that loads a known-good cert and confirms `flags == 0` on the verify result in *required* mode.
+Per `CLAUDE.md`'s tests section, the libretro-common libcheck suite is the canonical place for vendored-code regression tests. v1 adds:
+
+```
+libretro-common/test/net/test_socket_ssl_mbed.c   # new — mbedtls backend
+libretro-common/test/net/test_socket_ssl_bear.c   # new — BearSSL backend
+libretro-common/test/net/test_socket_ssl_log.c    # new — weak-hook contract
+```
+
+Wire into `libretro-common/Makefile.test` under a new `HAVE_NET_TEST` block (matching existing `HAVE_STDSTRING_TEST` / `HAVE_QUEUES_TEST` blocks). Each backend test exercises:
+
+1. **REQUIRED + good cert** → `ssl_socket_connect` returns ≥0; `ssl_socket_log_verify_fail` is **not** called.
+2. **REQUIRED + bad cert** (self-signed via in-process test fixture) → `ssl_socket_connect` returns -1; `ssl_socket_log_verify_fail(1, "test.local", non-empty)` is called exactly once. Log-line regex match: `^\[TLS\] Cert verification failed for [^:]+: .*$` when the RA override is linked in.
+3. **OPTIONAL + bad cert** → `ssl_socket_connect` returns ≥0; `ssl_socket_log_verify_fail(0, ...)` is called exactly once.
+4. **DISABLED + bad cert** → `ssl_socket_connect` returns ≥0; `ssl_socket_log_verify_fail(0, ...)` is called exactly once **plus** a once-per-session connect-WARN log. Verify the regex `^\[TLS\] Certificate verification disabled — connections vulnerable to MITM\.` appears.
+5. **`ssl_socket_set_verify_mode` race** (under `HAVE_THREADS`): one thread loops `set_verify_mode(REQUIRED|OPTIONAL|DISABLED)`; another thread loops `ssl_socket_connect` against the in-process fixture. ASan/TSan clean; no value torn-write detected by reading back via `atomic_load`.
+
+The test fixture uses an in-process minimal TLS server (a 200-line wrapper around the bundled mbedtls' own `ssl_server.c` example) bound to `127.0.0.1:0` (kernel-chosen port). No network access required — runs in CI without external dependencies.
+
+The weak-hook contract test (`test_socket_ssl_log.c`) links the vendored file standalone (no RA override) and verifies the default `ssl_socket_log_verify_fail` is a no-op — i.e. defining a no-op is the build-clean contract for standalone consumers (other libretro cores embedding libretro-common).
 
 ### Build verification
 
-`make -j$(nproc) retroarch` clean. Both with and without `HAVE_SSL` to verify the non-TLS build path (which uses plain `socket_*`) is unchanged.
+`make -j$(nproc) retroarch` clean. Build matrix:
+
+- `HAVE_BUILTINMBEDTLS=yes HAVE_BUILTINBEARSSL=no` (most desktop / 95% of users).
+- `HAVE_BUILTINMBEDTLS=no  HAVE_BUILTINBEARSSL=yes` (BearSSL backend exercised).
+- `HAVE_BUILTINMBEDTLS=no  HAVE_BUILTINBEARSSL=no`  (no TLS — verify menu setting is gated out cleanly).
+
+Plus `make -f libretro-common/Makefile.test net` under both backend configs (the libcheck tests should pass in both).
+
+## Performance budget
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Handshake (REQUIRED, good cert) | p99 ≤ 2.0 s on desktop / ≤ 5.0 s on console-class | Measured from `ssl_socket_init` to first successful `ssl_socket_connect` return ≥0. Includes the initial `cacert.pem` parse on first connect of session (subsequent connects skip it — `TAs_NUM != 0` short-circuits in BearSSL; mbedtls keeps `state->ca` across connects in v1). |
+| Handshake (REQUIRED, bad cert) | p99 ≤ 1.5 s on desktop / ≤ 3.5 s on console-class | Fail-closed path returns earlier (no record-layer continuation after the verify-result branch). |
+| `ssl_socket_set_verify_mode` call cost | < 100 ns p99 | Single atomic store; called once at startup + on each settings change. No allocation. |
+| `ssl_authmode_snapshot` per-handshake cost | < 50 ns p99 | Single atomic load; called twice per `ssl_socket_connect` (once for `mbedtls_ssl_conf_authmode`, once for the verify-result branch). Negligible vs. mbedtls handshake cost (~50 ms desktop). |
+| Heap inflation per handshake | 0 bytes new in v1 | The patch adds no allocations — `vrfy_buf[512]` is stack, the static `ssl_authmode` is module-scope BSS, the weak-hook log call gets the buffer by const-ref. |
+
+The p99 console budget is set 2.5× the desktop budget to cover slower CPUs (PSP @ 333 MHz, 3DS @ 268 MHz) and software-only modexp paths. Empirical numbers from Bundle 41 (cheevos/HTTP test fixture) confirm a clean cheevos login under `MBEDTLS_SSL_VERIFY_OPTIONAL` takes ~800 ms p99 on desktop — REQUIRED adds a single chain-validation walk (~5 ms desktop, ~50 ms on console-class), so the budget has ~2× margin.
+
+If any of these budgets is missed in CI, the libcheck test fails — wire into the `HAVE_NET_TEST` block's `EXPECT_BENCH_LE(handshake_p99_ms, 2000)` style assertion (the libcheck `ck_assert_int_le` macro is sufficient; bench timing helpers already exist in `libretro-common/test/include/test_bench.h` — same pattern as the stdstring bench tests).
 
 ## Risks
 
@@ -244,18 +470,20 @@ In `retroarch_main_init` after settings are loaded, call `ssl_socket_set_verify_
 ## External references
 
 - *RFC 5280* — Internet X.509 PKI Certificate and CRL Profile. Defines the validation rules the verify modes implement.
-- *mbedtls API* — `mbedtls_ssl_conf_authmode` documentation. `MBEDTLS_SSL_VERIFY_NONE` / `_OPTIONAL` / `_REQUIRED` semantics. (`include/mbedtls/ssl.h` of the vendored copy at `libretro-common/include/`).
+- *mbedtls API* — `mbedtls_ssl_conf_authmode` documentation. `MBEDTLS_SSL_VERIFY_NONE` / `_OPTIONAL` / `_REQUIRED` semantics. Vendored header lives at `deps/mbedtls/mbedtls/ssl.h`.
+- *BearSSL X.509 minimal validator* — `br_x509_minimal_*` API and `br_ssl_client_init_full` convenience init (full chain validation). Vendored at `deps/bearssl-0.6/inc/bearssl_x509.h` + `deps/bearssl-0.6/inc/bearssl_ssl.h`.
 - *Mozilla NSS root list* — `cacert.pem` is sourced from this. <https://wiki.mozilla.org/CA/Included_Certificates>.
 - *OWASP Mobile Security Testing Guide §M3* — Insecure Communication. The current state is precisely the "MSTG-NETWORK-3 fail" pattern.
 
 ## Implementation phases
 
-1. **Phase 1 (0.5 day) — RA-side scaffolding.** Add the enum, the setting, the consent dialog, the `ssl_socket_set_verify_mode` wire-up. No actual mbedtls change yet — the function exists but does nothing. Ship + verify the menu UI works.
-2. **Phase 2 (0.5 day) — vendored fix.** Apply the libretro-common edit (the static + the authmode switch + the fail-closed return). Verify all four manual conformance tests.
-3. **Phase 3 (0.5 day) — telemetry + rollout signals.** Add the on-screen toast on first-connect-of-session in *disabled* mode. Add a one-time release-note popup on first launch after upgrade explaining the change.
-4. **Phase 4 (open-ended) — upstream PR.** Submit to libretro/libretro-common. Pin the RA-side patch.
+1. **Phase 1 (0.5 day) — RA-side scaffolding.** Add `network/tls_config.h` (enum), the `menu_setting.c` entry, the consent dialog, the `network/tls_log.c` strong override of `ssl_socket_log_verify_fail`, and the startup wire-up. No vendored change yet — `ssl_socket_set_verify_mode` is declared but the vendored .c file still has the OPTIONAL default. Ship + verify the menu UI works.
+2. **Phase 2 (0.5 day) — vendored mbedtls fix.** Apply the libretro-common mbed edit (atomic authmode + snapshot + fail-closed return + weak-hook log). Verify the four manual conformance tests + the libcheck `test_socket_ssl_mbed.c` suite.
+3. **Phase 3 (0.5 day) — vendored BearSSL fix.** Apply the libretro-common bear edit (atomic authmode + permissive vtable + log hook). Verify the four manual conformance tests under BearSSL + the libcheck `test_socket_ssl_bear.c` suite. Add the `HAVE_NET_TEST` block to `libretro-common/Makefile.test`.
+4. **Phase 4 (0.5 day) — telemetry + rollout signals.** Add the on-screen toast on first-connect-of-session in *disabled* mode. Add a one-time release-note popup on first launch after upgrade explaining the change.
+5. **Phase 5 (open-ended) — upstream PR.** Submit the mbedtls + BearSSL patches to libretro/libretro-common (likely two separate PRs since the backends share no code). Pin the RA-side patch to a specific upstream commit.
 
-Phases 1–3 are one bundle (~1.5 days). Phase 4 is concurrent / open-ended.
+Phases 1–4 are one bundle (~2 days). Phase 5 is concurrent / open-ended.
 
 ## Spec status
 
