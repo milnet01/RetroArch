@@ -89,10 +89,23 @@ For full guidelines please see the [Coding Standards](https://docs.libretro.com/
 Some non-obvious things to be aware of:
 
   - Code should be both C89 and ISO C++ compatible. This is a requirement for XBox 360 and MSVC to
-    properly build. Think of it as a C++ compatible subset of C99.
-  - There must be no warnings in your code (enabled by `-Wall` for GCC compilers), do also note that
-    different compilers may produce different warnings.
+    properly build. Think of it as a C++ compatible subset of C99. In particular: no declaration
+    after statement (declare locals at the top of a function or block), no `for (int i = ...)`,
+    no variable-length arrays, and no `//`-only comments.
+  - There must be no warnings in your code (enabled by `-Wall` for GCC compilers); also stay
+    `-Wsign-compare` clean, and where practical build with `MISSING_DECLS=1` to catch
+    `-Werror=missing-declarations`. Different compilers may produce different warnings.
   - Avoid using deprecated APIs, these will be removed in the future at some point.
+  - Use Allman-style braces, and no braces for single-statement blocks (unless the body is a
+    multi-line macro). Prefer `for (;;)` over `while (true)`.
+  - Avoid one-line getter/setter functions in hot paths. Function-call overhead is measurable on
+    PSP/3DS/Wii-class hardware; read/write the struct field directly.
+  - Sort struct members by alignment (`long double` → `double` → `int64_t` → pointer → `size_t` →
+    `int` → `int16_t` → `char` → `bool`). Interleave pointer + matching `_len` fields.
+  - Console stacks can be as small as 128 KB. Avoid `char path[PATH_MAX_LENGTH]` arrays as locals in
+    deep call stacks; prefer the caller's buffer or a single allocation.
+  - Gate new features behind a `HAVE_*` macro from `config.h` so size-constrained targets can opt
+    out, and update copyright headers in any file you substantially modify.
 
 ## Copyright Headers and AUTHORS
 

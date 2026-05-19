@@ -62,29 +62,31 @@ RetroArch also emphasizes being easy to integrate into various launcher frontend
 
 ## Platforms
 
-RetroArch has been ported to the following platforms:
+RetroArch has been ported to a wide range of platforms. The list below is split
+between targets that are actively built and maintained today, and historic ports
+that are kept in tree for reference but may no longer build cleanly on current
+toolchains.
+
+### Actively built
+
    - Android (2.x to most recent version)
    - Apple iOS
-   - Apple macOS (PPC, x86-32 and x86-64)
+   - Apple macOS (x86-64, Apple Silicon)
    - Apple tvOS
-   - Blackberry
    - DOS
    - Emscripten (WebAssembly and JavaScript)
    - FreeBSD
    - Haiku
    - LG webOS
    - Linux
-   - Original Microsoft Xbox
-   - Microsoft Xbox 360 (Libxenon/XeXDK)
    - Microsoft Xbox One
    - Microsoft Xbox Series S/X
    - Miyoo
    - NetBSD
-   - Nintendo NES/SNES Classic Edition
    - Nintendo GameCube
    - Nintendo Wii
-   - Nintendo Switch
    - Nintendo Wii U
+   - Nintendo Switch
    - Nintendo 3DS/2DS
    - OpenBSD
    - OpenDingux
@@ -94,23 +96,42 @@ RetroArch has been ported to the following platforms:
    - PlayStation Portable
    - PlayStation Vita
    - Raspberry Pi
-   - ReactOS
-   - Redox OS
-   - RetroFW
    - RS90
-   - SerenityOS
    - Solaris
-   - Windows NT 3.5
-   - Windows 95
-   - Windows 98
-   - Windows 2000
-   - Windows XP
-   - Windows Millennium
-   - Windows Vista
    - Windows 7
    - Windows 8
    - Windows 10
    - Windows 11
+
+### Historically ported
+
+These targets have been built at some point, but are not part of the active CI
+matrix. They may need toolchain or source adjustments to build on current
+systems.
+
+   - Apple macOS (PPC, x86-32)
+   - Blackberry
+   - Nintendo NES/SNES Classic Edition
+   - Original Microsoft Xbox
+   - Microsoft Xbox 360 (Libxenon/XeXDK)
+   - ReactOS
+   - Redox OS
+   - RetroFW
+   - SerenityOS
+   - Windows NT 3.5
+   - Windows 95 / 98 / Millennium
+   - Windows 2000 / XP / Vista
+
+### Platform-specific build notes
+
+A handful of older or niche targets have standalone notes at the repository
+root. They are kept as historical reference — banners at the top of each file
+flag the EOL hardware/kernel they target — but remain useful as porting
+starting points:
+
+   - [`README-exynos.md`](README-exynos.md) — Samsung Exynos G2D video driver (ODROID-X2-era).
+   - [`README-mali_fbdev_r4p0.md`](README-mali_fbdev_r4p0.md) — Mali r4p0 fbdev OpenGL ES context (Allwinner Cubieboard-era).
+   - [`README-OMAP.md`](README-OMAP.md) — OMAP omapfb video driver (Pandora / Beagleboard / Pandaboard-era).
 
 ## Dependencies (PC)
 
@@ -124,7 +145,10 @@ following dependencies come as recommended:
    - GL headers / Vulkan headers
    - X11 headers and libs, or EGL/KMS/GBM
 
-OSX port of RetroArch requires latest versions of Xcode to build.
+macOS builds require a reasonably current Xcode (the deployment target is set
+via `-mmacosx-version-min` in the Apple makefiles; Xcode 12 or newer is the
+practical floor today). See the [Documentation Center](https://docs.libretro.com/)
+for the canonical macOS / Xcode build steps.
 
 RetroArch can utilize these libraries if enabled:
 

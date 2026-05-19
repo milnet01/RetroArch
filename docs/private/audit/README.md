@@ -99,6 +99,14 @@ When a file crosses 5k LoC:
 3. Add a row to `indie-review-partition.md`'s big-file table with the line ranges per concern.
 4. Decide which lane the file belongs to; add it to that lane's source paths with `(focus on lines X-Y)` qualifier.
 
+The same `wc -l` step is also how the existing entries in
+`indie-review-partition.md` are kept honest: file lengths drift +10 to +40
+lines between bundles, so before each `/indie-review` run, re-run `wc -l` on
+the big-file table's paths and refresh any line ranges whose endpoints have
+slipped past their author-banner boundaries. The doc instructs reviewers to
+"verify against current banner comments before each run" — `wc -l` is the
+practical mechanism for that verification.
+
 ## Calibration anchors
 
 The 2026-04-25 baseline (fixed historical anchor; do not move):

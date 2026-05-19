@@ -36,5 +36,21 @@ Last but not least enable the overlay and the HDMI display:
 
 The video driver name is 'omap'. It honors the following video settings:
 
+OMAP-specific knobs:
+
    - `video_monitor_index` (selects the fb device used, index = 1 -> fb0, index = 2 -> fb1, etc.)
    - `video_vsync` (use to disable vsync, however this is not recommended)
+
+On-screen-display font (handled identically to other video drivers — listed
+here so the boundary is explicit):
+
+   - `video_font_enable`, `path_font`, `video_font_size`
+   - `video_msg_color_r`, `video_msg_color_g`, `video_msg_color_b`
+   - `video_msg_pos_x`, `video_msg_pos_y`
+
+Anything else surfaced in the menu's *Video* section (filters, shaders,
+rotation overrides, etc.) is **not** honored by this driver — the OMAP
+omapfb back-end is intentionally minimal and only reads the settings listed
+above. Cross-check against `gfx/drivers/omap_gfx.c` (search for
+`settings->`) if a setting you expect to take effect appears to be silently
+ignored.

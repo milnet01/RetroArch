@@ -12,9 +12,9 @@ If you want to use such a device with an upstream kernel, the GPU block will mos
 
 Since the G2D block is present on all modern Exynos SoCs, the natural way of proceeding would be to use it instead of the GPU block. The G2D is still a dedicated piece of hardware, so all operations are offloaded from the CPU. It should be noted though, that using the G2D instead of the GPU removes the possibility to use GPU shaders to enhance the image quality of your emulator core of choice. If the user relies on these enhancements, then he's advised to continue using the GPU, most likely by using the EGL/GLES video driver.
 
-The author uses a Hardkernel ODROID-X2, which is an developer board powered by an Exynos4412 SoC. The vendor supplied kernel, a Linux tree based on the 3.8.y branch, currently offers no way to use the G2D because of issues related to clock setup. However upstreaming work is in progress and a tree based on 3.15.y, with some slight modifications, is available from here:
+The author uses a Hardkernel ODROID-X2, which is an developer board powered by an Exynos4412 SoC. The vendor supplied kernel, a Linux tree based on the 3.8.y branch, currently offers no way to use the G2D because of issues related to clock setup. However upstreaming work is in progress and a tree based on 3.15.y, with some slight modifications, was historically available as `github.com/tobiasjakobi/linux-odroid`.
 
-[odroid-3.15.y repository](https://github.com/tobiasjakobi/linux-odroid) (the linked fork is no longer maintained as of 2026; the Exynos DRM API has since landed in mainline libdrm so a modern userland may build without these patches — verify via `pkg-config --modversion libdrm_exynos`).
+> **Note (2026):** the `tobiasjakobi/linux-odroid` fork URL above 404s today and has no working public mirror. The Exynos DRM driver and userspace API landed in mainline Linux and mainline `libdrm` years ago; verify your distro carries it via `pkg-config --modversion libdrm_exynos` before chasing the historical patches. A web-archive snapshot of the fork's README may still be reachable via the Wayback Machine if the original commit history is required.
 
 There is no `README-ODROID` in this repository; an older revision of this file referenced one that has not been tracked in tree.
 
@@ -33,15 +33,13 @@ The average time to display the emulator framebuffer on screen is roughly 2058 m
 
 ## Configuration
 
-The video driver uses the libdrm API to interface with the DRM. Some patches are still missing in the upstream tree, therefore the user is advised to use the 'exynos' branch of the repository mentioned below.
+The video driver uses the libdrm API to interface with the DRM. Historically the user was advised to use the 'exynos' branch of `github.com/tobiasjakobi/libdrm` (URL now 404 — see the note above); the Exynos DRM API has since been merged into mainline libdrm.
 
-[libdrm repository](https://github.com/tobiasjakobi/libdrm)
-
-Make sure that the Exynos API support is enabled. If you're building libdrm from source, then use
+If you're building libdrm from source on a current tree, the Exynos API is enabled via:
 
     ./configure --enable-exynos-experimental-api
 
-to enable it.
+(older mainline) or the equivalent `-Dlibdrm-exynos=true` meson option on recent libdrm.
 
 The video driver name is 'exynos'. It honors the following video settings:
 
