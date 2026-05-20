@@ -27,6 +27,8 @@
 
 #include <lrc_hash.h>
 
+#include "../test_tmpfile.h"
+
 #define SUITE_NAME "hash"
 
 START_TEST (test_sha256)
@@ -43,11 +45,8 @@ START_TEST (test_sha1)
    char output[41];
    char tmpfile[512];
    FILE *fd;
-   /* TODO: tmpnam has a TOCTOU race + is deprecated on glibc.
-    * Tracked in ROADMAP as a Test-Audit follow-up to migrate to
-    * mkstemp (POSIX) / GetTempFileName (Windows). */
-   tmpnam(tmpfile);
-   fd = fopen(tmpfile, "wb");
+
+   fd = test_tmpfile_open(tmpfile, sizeof(tmpfile));
    ck_assert_ptr_nonnull(fd);
    fwrite("abc", 1, 3, fd);
    fclose(fd);

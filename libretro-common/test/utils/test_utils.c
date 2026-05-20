@@ -29,6 +29,8 @@
 #include <encodings/crc32.h>
 #include <streams/file_stream.h>
 
+#include "../test_tmpfile.h"
+
 #define SUITE_NAME "utils"
 
 START_TEST (test_md5)
@@ -121,11 +123,8 @@ START_TEST (test_crc32_file)
 {
    char tmpfile[512];
    FILE *fd;
-   /* TODO: tmpnam has a TOCTOU race + is deprecated on glibc.
-    * Tracked in ROADMAP as a Test-Audit follow-up to migrate to
-    * mkstemp (POSIX) / GetTempFileName (Windows). */
-   tmpnam(tmpfile);
-   fd = fopen(tmpfile, "wb");
+
+   fd = test_tmpfile_open(tmpfile, sizeof(tmpfile));
    ck_assert_ptr_nonnull(fd);
    fwrite("12345678", 1, 8, fd);
    fclose(fd);
@@ -160,8 +159,7 @@ START_TEST (test_crc32_file_large)
    /* Chunked CRC over the file must equal the one-shot CRC over the bytes. */
    expected = encoding_crc32(0, buf, total);
 
-   tmpnam(tmpfile);
-   fd = fopen(tmpfile, "wb");
+   fd = test_tmpfile_open(tmpfile, sizeof(tmpfile));
    ck_assert_ptr_nonnull(fd);
    ck_assert_uint_eq(total, fwrite(buf, 1, total, fd));
    fclose(fd);

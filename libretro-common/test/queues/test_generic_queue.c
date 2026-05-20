@@ -31,6 +31,25 @@ static char *_value_1 = "value1";
 static char *_value_2 = "value2";
 static char *_value_3 = "value3";
 
+/* Checked fixture: a fresh [v1, v2, v3] queue per test in the ThreeElement
+ * tcase. Values are static literals, so the teardown frees with a NULL
+ * callback (no per-value free needed). */
+static generic_queue_t *g_queue;
+
+static void setup_three_element_queue(void)
+{
+   g_queue = generic_queue_new();
+   generic_queue_push(g_queue, _value_1);
+   generic_queue_push(g_queue, _value_2);
+   generic_queue_push(g_queue, _value_3);
+}
+
+static void teardown_three_element_queue(void)
+{
+   generic_queue_free(g_queue, NULL);
+   g_queue = NULL;
+}
+
 START_TEST (test_generic_queue_create)
 {
    generic_queue_t *queue = generic_queue_new();
@@ -255,113 +274,62 @@ static void _verify_queue_values(generic_queue_t *queue, int count, ...)
 
 START_TEST (test_generic_queue_iterator_remove_first)
 {
-   generic_queue_t *queue;
    generic_queue_iterator_t *iterator;
 
-   queue = generic_queue_new();
-   generic_queue_push(queue, _value_1);
-   generic_queue_push(queue, _value_2);
-   generic_queue_push(queue, _value_3);
-
-   iterator = generic_queue_iterator(queue, true);
+   iterator = generic_queue_iterator(g_queue, true);
    iterator = generic_queue_iterator_remove(iterator);
    generic_queue_iterator_free(iterator);
 
-   _verify_queue_values(queue, 2, _value_2, _value_3);
-
-   generic_queue_free(queue, &_free_value);
+   _verify_queue_values(g_queue, 2, _value_2, _value_3);
 }
 END_TEST
 
 START_TEST (test_generic_queue_iterator_remove_middle)
 {
-   generic_queue_t *queue;
    generic_queue_iterator_t *iterator;
 
-   queue = generic_queue_new();
-   generic_queue_push(queue, _value_1);
-   generic_queue_push(queue, _value_2);
-   generic_queue_push(queue, _value_3);
-
-   iterator = generic_queue_iterator(queue, true);
+   iterator = generic_queue_iterator(g_queue, true);
    iterator = generic_queue_iterator_next(iterator);
    iterator = generic_queue_iterator_remove(iterator);
    generic_queue_iterator_free(iterator);
 
-   _verify_queue_values(queue, 2, _value_1, _value_3);
-
-   generic_queue_free(queue, &_free_value);
+   _verify_queue_values(g_queue, 2, _value_1, _value_3);
 }
 END_TEST
 
 START_TEST (test_generic_queue_iterator_remove_last)
 {
-   generic_queue_t *queue;
    generic_queue_iterator_t *iterator;
 
-   queue = generic_queue_new();
-   generic_queue_push(queue, _value_1);
-   generic_queue_push(queue, _value_2);
-   generic_queue_push(queue, _value_3);
-
-   iterator = generic_queue_iterator(queue, false);
+   iterator = generic_queue_iterator(g_queue, false);
    iterator = generic_queue_iterator_remove(iterator);
    generic_queue_iterator_free(iterator);
 
-   _verify_queue_values(queue, 2, _value_1, _value_2);
-
-   generic_queue_free(queue, &_free_value);
+   _verify_queue_values(g_queue, 2, _value_1, _value_2);
 }
 END_TEST
 
 START_TEST (test_generic_queue_remove_first)
 {
-   generic_queue_t *queue;
+   ck_assert_ptr_eq(generic_queue_remove(g_queue, _value_1), _value_1);
 
-   queue = generic_queue_new();
-   generic_queue_push(queue, _value_1);
-   generic_queue_push(queue, _value_2);
-   generic_queue_push(queue, _value_3);
-
-   ck_assert_ptr_eq(generic_queue_remove(queue, _value_1), _value_1);
-
-   _verify_queue_values(queue, 2, _value_2, _value_3);
-
-   generic_queue_free(queue, &_free_value);
+   _verify_queue_values(g_queue, 2, _value_2, _value_3);
 }
 END_TEST
 
 START_TEST (test_generic_queue_remove_middle)
 {
-   generic_queue_t *queue;
+   ck_assert_ptr_eq(generic_queue_remove(g_queue, _value_2), _value_2);
 
-   queue = generic_queue_new();
-   generic_queue_push(queue, _value_1);
-   generic_queue_push(queue, _value_2);
-   generic_queue_push(queue, _value_3);
-
-   ck_assert_ptr_eq(generic_queue_remove(queue, _value_2), _value_2);
-
-   _verify_queue_values(queue, 2, _value_1, _value_3);
-
-   generic_queue_free(queue, &_free_value);
+   _verify_queue_values(g_queue, 2, _value_1, _value_3);
 }
 END_TEST
 
 START_TEST (test_generic_queue_remove_last)
 {
-   generic_queue_t *queue;
+   ck_assert_ptr_eq(generic_queue_remove(g_queue, _value_3), _value_3);
 
-   queue = generic_queue_new();
-   generic_queue_push(queue, _value_1);
-   generic_queue_push(queue, _value_2);
-   generic_queue_push(queue, _value_3);
-
-   ck_assert_ptr_eq(generic_queue_remove(queue, _value_3), _value_3);
-
-   _verify_queue_values(queue, 2, _value_1, _value_2);
-
-   generic_queue_free(queue, &_free_value);
+   _verify_queue_values(g_queue, 2, _value_1, _value_2);
 }
 END_TEST
 
@@ -395,14 +363,21 @@ Suite *create_suite(void)
    tcase_add_test(tc_core, test_generic_queue_iterator);
    tcase_add_test(tc_core, test_generic_queue_shift_free);
    tcase_add_test(tc_core, test_generic_queue_remove_one);
-   tcase_add_test(tc_core, test_generic_queue_iterator_remove_first);
-   tcase_add_test(tc_core, test_generic_queue_iterator_remove_middle);
-   tcase_add_test(tc_core, test_generic_queue_iterator_remove_last);
-   tcase_add_test(tc_core, test_generic_queue_remove_first);
-   tcase_add_test(tc_core, test_generic_queue_remove_middle);
-   tcase_add_test(tc_core, test_generic_queue_remove_last);
    tcase_add_test(tc_core, test_generic_queue_iterator_free);
    suite_add_tcase(s, tc_core);
+
+   {
+      TCase *tc_three = tcase_create("ThreeElement");
+      tcase_add_checked_fixture(tc_three, setup_three_element_queue,
+            teardown_three_element_queue);
+      tcase_add_test(tc_three, test_generic_queue_iterator_remove_first);
+      tcase_add_test(tc_three, test_generic_queue_iterator_remove_middle);
+      tcase_add_test(tc_three, test_generic_queue_iterator_remove_last);
+      tcase_add_test(tc_three, test_generic_queue_remove_first);
+      tcase_add_test(tc_three, test_generic_queue_remove_middle);
+      tcase_add_test(tc_three, test_generic_queue_remove_last);
+      suite_add_tcase(s, tc_three);
+   }
 
    return s;
 }
