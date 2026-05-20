@@ -132,6 +132,9 @@ START_TEST (test_generic_queue_empty)
    queue = generic_queue_new();
    ck_assert_ptr_null(generic_queue_pop(queue));
    ck_assert_ptr_null(generic_queue_unshift(queue));
+   ck_assert_int_eq(generic_queue_length(NULL), 0);
+   ck_assert_ptr_null(generic_queue_remove(queue, _value_1));
+   ck_assert_ptr_null(generic_queue_iterator(queue, true));
    generic_queue_free(queue, NULL);
 }
 END_TEST

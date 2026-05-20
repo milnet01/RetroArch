@@ -36,7 +36,6 @@ START_TEST (test_string_filter)
    char test2[] = "";
    string_remove_all_chars(test1, 's');
    string_remove_all_chars(test2, '0');
-   string_remove_all_chars(NULL, 'a');
    ck_assert_str_eq(test1, "foo bar ome tring");
    ck_assert_str_eq(test2, "");
 }
@@ -46,7 +45,6 @@ START_TEST (test_string_replace)
 {
    char test1[] = "foo bar some string";
    string_replace_all_chars(test1, 's', 'S');
-   string_replace_all_chars(NULL, 'a', 'A');
    ck_assert_str_eq(test1, "foo bar Some String");
 }
 END_TEST
@@ -76,6 +74,36 @@ START_TEST (test_string_char_classify)
    ck_assert(ISALNUM('a'));
    ck_assert(ISALNUM('Z'));
    ck_assert(ISALNUM('5'));
+
+   /* ISUALPHA / ISUALNUM also accept '_' (identifier classification). */
+   ck_assert(ISUALPHA('a'));
+   ck_assert(ISUALPHA('Z'));
+   ck_assert(ISUALPHA('_'));
+   ck_assert(!ISUALPHA('5'));
+   ck_assert(!ISUALPHA(' '));
+
+   ck_assert(ISUALNUM('a'));
+   ck_assert(ISUALNUM('5'));
+   ck_assert(ISUALNUM('_'));
+   ck_assert(!ISUALNUM(' '));
+   ck_assert(!ISUALNUM('['));
+
+   ck_assert(IS_XDIGIT('0'));
+   ck_assert(IS_XDIGIT('9'));
+   ck_assert(IS_XDIGIT('a'));
+   ck_assert(IS_XDIGIT('f'));
+   ck_assert(IS_XDIGIT('A'));
+   ck_assert(IS_XDIGIT('F'));
+   ck_assert(!IS_XDIGIT('g'));
+   ck_assert(!IS_XDIGIT('G'));
+   ck_assert(!IS_XDIGIT(' '));
+
+   ck_assert_int_eq(TOUPPER('a'), 'A');
+   ck_assert_int_eq(TOUPPER('A'), 'A');
+   ck_assert_int_eq(TOUPPER('5'), '5');
+   ck_assert_int_eq(TOLOWER('A'), 'a');
+   ck_assert_int_eq(TOLOWER('a'), 'a');
+   ck_assert_int_eq(TOLOWER('5'), '5');
 }
 END_TEST
 

@@ -139,6 +139,40 @@ START_TEST (test_crc32_file)
 }
 END_TEST
 
+START_TEST (test_crc32_file_large)
+{
+   /* A file larger than one CRC32_BUFFER_SIZE chunk forces file_crc32's
+    * read loop past i==0 (a full read, not-yet-EOF, second iteration) —
+    * the 8-byte test_crc32_file fixture never reaches that boundary. The
+    * nread < 0 branch needs a read error on a regular file and is left
+    * platform-dependent / uncovered. */
+   size_t total = CRC32_BUFFER_SIZE + 8;
+   unsigned char *buf;
+   uint32_t expected;
+   char tmpfile[512];
+   FILE *fd;
+   size_t i;
+
+   buf = (unsigned char*)malloc(total);
+   ck_assert_ptr_nonnull(buf);
+   for (i = 0; i < total; i++)
+      buf[i] = (unsigned char)(i & 0xff);
+   /* Chunked CRC over the file must equal the one-shot CRC over the bytes. */
+   expected = encoding_crc32(0, buf, total);
+
+   tmpnam(tmpfile);
+   fd = fopen(tmpfile, "wb");
+   ck_assert_ptr_nonnull(fd);
+   ck_assert_uint_eq(total, fwrite(buf, 1, total, fd));
+   fclose(fd);
+
+   ck_assert_uint_eq(file_crc32(0, tmpfile), expected);
+
+   remove(tmpfile);
+   free(buf);
+}
+END_TEST
+
 Suite *create_suite(void)
 {
    Suite *s = suite_create(SUITE_NAME);
@@ -147,6 +181,7 @@ Suite *create_suite(void)
    tcase_add_test(tc_core, test_md5);
    tcase_add_test(tc_core, test_crc32);
    tcase_add_test(tc_core, test_crc32_file);
+   tcase_add_test(tc_core, test_crc32_file_large);
    suite_add_tcase(s, tc_core);
 
    return s;

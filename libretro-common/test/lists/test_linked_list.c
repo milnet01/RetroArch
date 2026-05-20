@@ -122,6 +122,12 @@ START_TEST (test_linked_list_add)
 }
 END_TEST
 
+START_TEST (test_linked_list_add_null)
+{
+   linked_list_add(NULL, _value_1);
+}
+END_TEST
+
 START_TEST (test_linked_list_insert_empty)
 {
    linked_list_t *list = linked_list_new();
@@ -698,6 +704,21 @@ START_TEST (test_linked_list_remove_first_matching_null)
 }
 END_TEST
 
+START_TEST (test_linked_list_remove_first_matching_function_null)
+{
+   linked_list_t *list = linked_list_new();
+   linked_list_add(list, _value_1);
+   linked_list_add(list, _value_2);
+   linked_list_add(list, _value_3);
+
+   ck_assert_ptr_null(linked_list_remove_first_matching(list, NULL));
+
+   _verify_list(list, 3, _value_1, _value_2, _value_3);
+
+   linked_list_free(list, NULL);
+}
+END_TEST
+
 START_TEST (test_linked_list_remove_first_matching_empty)
 {
    linked_list_t *list = linked_list_new();
@@ -801,6 +822,21 @@ START_TEST (test_linked_list_remove_last_matching_null)
 }
 END_TEST
 
+START_TEST (test_linked_list_remove_last_matching_function_null)
+{
+   linked_list_t *list = linked_list_new();
+   linked_list_add(list, _value_1);
+   linked_list_add(list, _value_2);
+   linked_list_add(list, _value_3);
+
+   ck_assert_ptr_null(linked_list_remove_last_matching(list, NULL));
+
+   _verify_list(list, 3, _value_1, _value_2, _value_3);
+
+   linked_list_free(list, NULL);
+}
+END_TEST
+
 START_TEST (test_linked_list_remove_last_matching_empty)
 {
    linked_list_t *list = linked_list_new();
@@ -901,6 +937,21 @@ END_TEST
 START_TEST (test_linked_list_remove_all_matching_null)
 {
    linked_list_remove_all_matching(NULL, &_match_value_1);
+}
+END_TEST
+
+START_TEST (test_linked_list_remove_all_matching_function_null)
+{
+   linked_list_t *list = linked_list_new();
+   linked_list_add(list, _value_1);
+   linked_list_add(list, _value_2);
+   linked_list_add(list, _value_3);
+
+   linked_list_remove_all_matching(list, NULL);
+
+   _verify_list(list, 3, _value_1, _value_2, _value_3);
+
+   linked_list_free(list, NULL);
 }
 END_TEST
 
@@ -1146,6 +1197,18 @@ START_TEST (test_linked_list_iterator_remove_last)
 }
 END_TEST
 
+START_TEST (test_linked_list_iterator_next_null)
+{
+   ck_assert_ptr_null(linked_list_iterator_next(NULL));
+}
+END_TEST
+
+START_TEST (test_linked_list_iterator_value_null)
+{
+   ck_assert_ptr_null(linked_list_iterator_value(NULL));
+}
+END_TEST
+
 START_TEST (test_linked_list_iterator_free_null)
 {
    linked_list_iterator_free(NULL);
@@ -1192,6 +1255,41 @@ START_TEST (test_linked_list_foreach_valid)
 }
 END_TEST
 
+static size_t _foreach_args_count;
+static size_t _foreach_args_index[8];
+static void *_foreach_args_value[8];
+static void _foreach_args_fn(size_t index, void *value)
+{
+   if (_foreach_args_count < 8)
+   {
+      _foreach_args_index[_foreach_args_count] = index;
+      _foreach_args_value[_foreach_args_count] = value;
+   }
+   _foreach_args_count++;
+}
+
+START_TEST (test_linked_list_foreach_args)
+{
+   linked_list_t *list = linked_list_new();
+   linked_list_add(list, _value_1);
+   linked_list_add(list, _value_2);
+   linked_list_add(list, _value_3);
+
+   _foreach_args_count = 0;
+   linked_list_foreach(list, &_foreach_args_fn);
+
+   ck_assert_uint_eq(3, _foreach_args_count);
+   ck_assert_uint_eq(0, _foreach_args_index[0]);
+   ck_assert_uint_eq(1, _foreach_args_index[1]);
+   ck_assert_uint_eq(2, _foreach_args_index[2]);
+   ck_assert_ptr_eq(_value_1, _foreach_args_value[0]);
+   ck_assert_ptr_eq(_value_2, _foreach_args_value[1]);
+   ck_assert_ptr_eq(_value_3, _foreach_args_value[2]);
+
+   linked_list_free(list, NULL);
+}
+END_TEST
+
 Suite *create_suite(void)
 {
    Suite *s = suite_create(SUITE_NAME);
@@ -1201,6 +1299,7 @@ Suite *create_suite(void)
    tcase_add_test(tc_core, test_linked_list_free);
    tcase_add_test(tc_core, test_linked_list_free_with_fn);
    tcase_add_test(tc_core, test_linked_list_add);
+   tcase_add_test(tc_core, test_linked_list_add_null);
    tcase_add_test(tc_core, test_linked_list_insert_empty);
    tcase_add_test(tc_core, test_linked_list_insert_first);
    tcase_add_test(tc_core, test_linked_list_insert_middle);
@@ -1249,6 +1348,7 @@ Suite *create_suite(void)
    tcase_add_test(tc_core, test_linked_list_remove_all_only);
    tcase_add_test(tc_core, test_linked_list_remove_all_multiple);
    tcase_add_test(tc_core, test_linked_list_remove_first_matching_null);
+   tcase_add_test(tc_core, test_linked_list_remove_first_matching_function_null);
    tcase_add_test(tc_core, test_linked_list_remove_first_matching_empty);
    tcase_add_test(tc_core, test_linked_list_remove_first_matching_not_found);
    tcase_add_test(tc_core, test_linked_list_remove_first_matching_first);
@@ -1257,6 +1357,7 @@ Suite *create_suite(void)
    tcase_add_test(tc_core, test_linked_list_remove_first_matching_only);
    tcase_add_test(tc_core, test_linked_list_remove_first_matching_multiple);
    tcase_add_test(tc_core, test_linked_list_remove_last_matching_null);
+   tcase_add_test(tc_core, test_linked_list_remove_last_matching_function_null);
    tcase_add_test(tc_core, test_linked_list_remove_last_matching_empty);
    tcase_add_test(tc_core, test_linked_list_remove_last_matching_not_found);
    tcase_add_test(tc_core, test_linked_list_remove_last_matching_first);
@@ -1265,6 +1366,7 @@ Suite *create_suite(void)
    tcase_add_test(tc_core, test_linked_list_remove_last_matching_only);
    tcase_add_test(tc_core, test_linked_list_remove_last_matching_multiple);
    tcase_add_test(tc_core, test_linked_list_remove_all_matching_null);
+   tcase_add_test(tc_core, test_linked_list_remove_all_matching_function_null);
    tcase_add_test(tc_core, test_linked_list_remove_all_matching_empty);
    tcase_add_test(tc_core, test_linked_list_remove_all_matching_not_found);
    tcase_add_test(tc_core, test_linked_list_remove_all_matching_first);
@@ -1282,10 +1384,13 @@ Suite *create_suite(void)
    tcase_add_test(tc_core, test_linked_list_iterator_remove_first);
    tcase_add_test(tc_core, test_linked_list_iterator_remove_middle);
    tcase_add_test(tc_core, test_linked_list_iterator_remove_last);
+   tcase_add_test(tc_core, test_linked_list_iterator_next_null);
+   tcase_add_test(tc_core, test_linked_list_iterator_value_null);
    tcase_add_test(tc_core, test_linked_list_iterator_free_null);
    tcase_add_test(tc_core, test_linked_list_foreach_null_list);
    tcase_add_test(tc_core, test_linked_list_foreach_null_fn);
    tcase_add_test(tc_core, test_linked_list_foreach_valid);
+   tcase_add_test(tc_core, test_linked_list_foreach_args);
    suite_add_tcase(s, tc_core);
 
    return s;

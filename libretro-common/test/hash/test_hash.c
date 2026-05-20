@@ -60,6 +60,21 @@ START_TEST (test_sha1)
 }
 END_TEST
 
+START_TEST (test_sha1_digest)
+{
+   /* In-memory SHA1 (SHA1Digest) is a separate code path from the
+    * file-based sha1_calculate above; it diverges on Apple (CC_SHA1)
+    * vs the bundled implementation, so cover it directly. */
+   const uint8_t expected[20] = {
+      0xA9, 0x99, 0x3E, 0x36, 0x47, 0x06, 0x81, 0x6A, 0xBA, 0x3E,
+      0x25, 0x71, 0x78, 0x50, 0xC2, 0x6C, 0x9C, 0xD0, 0xD8, 0x9D
+   };
+   uint8_t digest[20];
+   SHA1Digest((const uint8_t*)"abc", 3, digest);
+   ck_assert_mem_eq(digest, expected, 20);
+}
+END_TEST
+
 START_TEST (test_djb2)
 {
    ck_assert_uint_eq(djb2_calculate("retroarch"), 0xFADF3BCF);
@@ -73,6 +88,7 @@ Suite *create_suite(void)
    TCase *tc_core = tcase_create("Core");
    tcase_add_test(tc_core, test_sha256);
    tcase_add_test(tc_core, test_sha1);
+   tcase_add_test(tc_core, test_sha1_digest);
    tcase_add_test(tc_core, test_djb2);
    suite_add_tcase(s, tc_core);
 

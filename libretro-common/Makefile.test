@@ -1,7 +1,12 @@
 
 OBJDIR = ../obj-unix
 
-TEST_UNIT_CFLAGS = $(CFLAGS) -Iinclude $(LDFLAGS) -lcheck $(LIBCHECK_CFLAGS) -Werror -Wdeclaration-after-statement -fsanitize=address -fsanitize=undefined -ftest-coverage -fprofile-arcs -ggdb
+# -Wno-error=discarded-qualifiers: GCC 15 + newer glibc make strchr/strrchr/etc.
+# const-generic (return const char* for const char* input). Vendored libretro-common
+# functions like file_path.c:find_last_slash return char* from strrchr() by design,
+# matching the traditional string.h contract; the mainline build (Makefile.common)
+# does not enable this -Werror class. Keep it a warning here, not a build break.
+TEST_UNIT_CFLAGS = $(CFLAGS) -Iinclude $(LDFLAGS) -lcheck $(LIBCHECK_CFLAGS) -Werror -Wno-error=discarded-qualifiers -Wdeclaration-after-statement -fsanitize=address -fsanitize=undefined -ftest-coverage -fprofile-arcs -ggdb
 
 TEST_GENERIC_QUEUE = test/queues/test_generic_queue
 TEST_GENERIC_QUEUE_SRC = test/queues/test_generic_queue.c queues/generic_queue.c
@@ -11,16 +16,16 @@ TEST_LINKED_LIST_SRC = test/lists/test_linked_list.c lists/linked_list.c
 
 TEST_STDSTRING = test/string/test_stdstring
 TEST_STDSTRING_SRC = test/string/test_stdstring.c string/stdstring.c encodings/encoding_utf.c \
-		     compat/compat_strl.c
+		     compat/compat_strl.c compat/compat_strldup.c
 
 TEST_UTILS = test/utils/test_utils
 TEST_UTILS_SRC = test/utils/test_utils.c utils/md5.c encodings/encoding_crc32.c \
-		streams/file_stream.c vfs/vfs_implementation.c file/file_path.c \
+		streams/file_stream.c vfs/vfs_implementation.c file/file_path.c file/file_path_io.c \
 		compat/compat_strl.c time/rtime.c string/stdstring.c encodings/encoding_utf.c
 
 TEST_HASH = test/hash/test_hash
 TEST_HASH_SRC = test/hash/test_hash.c hash/lrc_hash.c \
-		streams/file_stream.c vfs/vfs_implementation.c file/file_path.c \
+		streams/file_stream.c vfs/vfs_implementation.c file/file_path.c file/file_path_io.c \
 		compat/compat_strl.c time/rtime.c string/stdstring.c encodings/encoding_utf.c
 
 all:
