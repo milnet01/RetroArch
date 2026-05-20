@@ -1,21 +1,21 @@
 # Audit 2026-04 — Spec-Needed Cluster (S1–S12)
 
 **Date:** 2026-04-27
-**Status:** ✅ **closed 2026-04-27** — full cluster (S1–S12) implemented across Bundles 31 (S6+S8), 33 (S7), 34 (S1+S2+S3+S5+S10+S11+S12 + S9 policy), 35 (S4). Plus Bundle 36 follow-up sweep (`44e71ead14`) for S2 extension to materialui+rgui. See `docs/private/ROADMAP.md` "Spec-needed" subsection for the per-item commit hashes.
+**Status:** ✅ **closed 2026-04-27** — full cluster (S1–S12) implemented across Bundles 31 (S6+S8), 33 (S7), 34 (S1+S2+S3+S5+S10+S11+S12 + S9 policy), 35 (S4). Plus Bundle 36 follow-up sweep (`44e71ead14`) for S2 extension to materialui+rgui. Per-item chosen-option + commit are in the `## Closure summary` table below (and the `docs/private/ROADMAP.md` "Spec-needed" subsection carries the per-site detail).
 **Source:** `docs/private/ROADMAP.md` — "Spec-needed" section, 12 items filtered by `audit-triage` subagent. (Section anchor; body line-numbers churn.)
 **Scope:** twelve invariant / contract decisions surfaced by cppcheck + semgrep that the static analyser cannot resolve without project-side intent. Each maps to one or more code sites that are correct *iff* the invariant holds. Once the decision is made, the enforcement is almost always one of: `_Static_assert`, runtime bounds harden, or a project-policy suppression file.
 
 These are **contracts, not features.** None of the twelve are user-visible behaviour changes; they are "should this be defended at compile time, at runtime, or never" calls. The audit flagged them as cheap (most are <1 day, three are <2 hours) but they were pending until 2026-04-27 because each required a deliberate yes/no rather than an obvious mechanical fix.
 
-> **⚠️ Cold-eyes 2026-05-18 status update.**
+> **⚠️ Cold-eyes 2026-05-18 status update (items 1 + 5 folded in via Bundle 75).**
 >
-> The cluster is closed; the spec stays as the historical decision record. Five corrections apply when reading the body — the body itself is preserved unchanged so the decision-rationale-narrative remains intact:
+> The cluster is closed; the spec stays as the historical decision record. Six corrections apply when reading the body. Items 1 and 5 are now folded into the spec (a `## Closure summary` table + corrected follow-on-spec paths); items 2/3/4/6 stay as **reading-notes** — the per-S body prose is deliberately preserved as the decision-rationale narrative, so read it with these substitutions:
 >
-> 1. **Active-voice / "decision pending" reads.** Each S-section's "Decision" / "Recommendation" subsections describe the option that was chosen. Refer to the corresponding ROADMAP "Spec-needed" closure entry (named by S-number) for the actual chosen path + commit hash. A future addendum or a status footer per S-section is welcome.
+> 1. ✅ **Outcome recorded.** Each S-section's "Decision" / "Recommendation" reads in the recommending tense. The new `## Closure summary` table below records the option that actually shipped + bundle + commit for all twelve, so the outcome is readable without cross-walking the ROADMAP. *(Bundle 75.)*
 > 2. **`retro_static_assert` shim does not exist.** Spec line 70 parenthetical and the §S6 / §S8 test-shape code blocks reference `retro_static_assert`; current code uses plain **`_Static_assert(...)`** (verified at `menu/cbs/menu_cbs_scan.c:43, 47` and `input/drivers_joypad/xinput_joypad.c:140`). Read the test-shape blocks with that substitution.
 > 3. **`menu_driver.h:255` is actually `:260`** — the cited `MENU_SETTINGS_INPUT_DESC_END` line for the S6 invariant. (`input_defines.h:103,124` is correct.)
-> 4. **§S4 recommendation contradicts what shipped.** Body says "ask upstream"; the cluster closed via option (2) per-line cppcheck suppression — see `.cppcheck-suppress.txt:21-38` and Bundle 35.
-> 5. **§"Follow-on spec docs (proposed)" `<date>` placeholders are stale.** All three sibling specs exist in `docs/private/specs/` dated **2026-04-27** (menu-driver-swap, tls-verification-opt-in, cloud-sync-streaming-upload). Replace `<date>` with `2026-04-27` and drop "(proposed)" framing.
+> 4. **§S4 recommendation contradicts what shipped.** Body says "ask upstream"; the cluster closed via option (2) per-line cppcheck suppression — see `.cppcheck-suppress.txt` and Bundle 35 (`8c3d825be6`). The `## Closure summary` table records the shipped option.
+> 5. ✅ **Follow-on-spec paths corrected.** The `<date>` placeholders are replaced with the real `2026-04-27-*.md` filenames (and the two that were renamed since — `tls-verification-opt-in`, `cloud-sync-streaming-upload`); the "(proposed)" framing is dropped since all three specs now exist. *(Bundle 75.)*
 > 6. **Pre-fix line citations** in §S6 / §S8 (e.g. `xinput_joypad.c:136 g_xinput_states[4]` at spec line 78) reflect Bundle-31 pre-fix state. Post-fix the array is at `:148` and the bound is at `:300`. Treat numbered cites in the closed-spec body as historical, not navigational; the live anchors live in the ROADMAP closure entries.
 >
 > Tracked under cold-eyes-2026-05-18 fold-in in `docs/private/ROADMAP.md`.
@@ -39,6 +39,27 @@ These are **contracts, not features.** None of the twelve are user-visible behav
 | 11 | S4 — qnx/vivante/xegl `HAVE_EGL` matrix | needs a maintainer answer | gate the file or harden | depends on build matrix question |
 
 S6 and S8 are the cheapest wins: each closes with one `static_assert` plus (for S8) a one-line index harden, and both turn the invariant violation into a build break that future-proofs the cluster.
+
+---
+
+## Closure summary (what shipped)
+
+The cluster closed 2026-04-27. Each S-section below reads in the recommending tense (it is the historical decision rationale); this table records the option that **actually shipped** so the outcome is readable without cross-walking the ROADMAP. Code anchors drift — re-grep by symbol; the ROADMAP "Spec-needed" closure entries carry the per-site detail.
+
+| Item | Chosen option | Bundle | Commit |
+|------|---------------|--------|--------|
+| **S1** — `(1 << 31)` flag enums | mechanical `1u << N` rewrite (+ `turbo_pressed`/`hold_pressed` → `uint32_t`) | 34 | `d6bbeeab55` |
+| **S2** — `MENU_LIST_GET[_SELECTION]` contract | (A) macro stays NULL-safe; all unguarded `->size`/`->list[]` callers swept + contract comment | 34 (+ debt-sweep + 55) | `335bb31cf9`, `382ee9f83f`, `3537f96a38` |
+| **S3** — wayland `HAVE_LIBDECOR_H` if/else | (A) hoist the auto-monitor branch out of the `#ifdef` | 34 | `db21ebd07e` |
+| **S4** — qnx/vivante/xegl `HAVE_EGL` | **(2)** per-line cppcheck suppression — EGL-by-design, no upstream answer needed (not the body's "ask upstream") | 35 | `8c3d825be6` |
+| **S5** — `input_key_pressed()` | (A) declared public API in `input_driver.h` + entry-point bounds-check | 34 | `233568bfe0` |
+| **S6** — bind-index arithmetic | compile-time `_Static_assert` ×2 (plain `_Static_assert`, not a `retro_static_assert` shim) | 31 | `630c7294fd` |
+| **S7** — wayland touch-index | off-by-one `<=` → `<` + bound-owner invariant comment | 33 | `e67532e244` |
+| **S8** — XInput port count | `#define MAX_XINPUT_USERS 4` (XUSER_MAX_COUNT) + `_Static_assert` + file sweep | 31 | `630c7294fd` |
+| **S9** — semgrep double-free FP | project-policy suppression (`AUDIT-POLICY.md` + `aggregate.py` KNOWN_FP_RULES) | 34 | _policy — no code commit_ |
+| **S10** — `(1 << pad)` shifts | coupled with S1 (`1u << pad`); xdk/xinput sites already swept in Bundle 31 | 34 | `d6bbeeab55` |
+| **S11** — identicalInnerCondition | (B) strip inner checks (note: `task_content.c:609` kept — load-bearing FP, inline-suppressed) | 34 | `9ddc80cb84` |
+| **S12** — JNI `missingReturn` FP | `.cppcheck-suppress.txt` anchor + `--suppressions-list` wire-up in `audit-config.json` | 34 | `b27a516cf5` |
 
 ---
 
@@ -430,12 +451,12 @@ This is a **maintainer answer**, not a code change. Three possible answers:
 
 ---
 
-## Follow-on spec docs (proposed)
+## Follow-on spec docs
 
-These were surfaced by the audit + indie-review but are feature specs in their own right:
+These were surfaced by the audit + indie-review as feature specs in their own right; all three have since been drafted (sibling docs in `docs/private/specs/`, all dated 2026-04-27):
 
-1. **Menu driver swap — runtime tree rebuild** (`docs/private/specs/<date>-menu-driver-swap-design.md`). Indie-review HIGH at line 191 of ROADMAP. Touches ~10 sites in `menu_setting.c` and the menu init path. Behaviour spec: when does the tree rebuild, who owns the rebuild, what user-visible state is preserved across the swap.
-2. **TLS verification opt-in / hostile-WiFi warning** (`docs/private/specs/<date>-tls-opt-in-design.md`). Indie-review CRITICAL at line 170. Vendored in `libretro-common`; needs upstream coordination plus a RetroArch-side warning UI for the interim opt-out.
-3. **Cloud-sync streaming upload** (`docs/private/specs/<date>-cloud-sync-streaming-design.md`). Indie-review MEDIUM at line 202. `s3_update` reads entire file into RAM; spec the streaming or chunked-cap API.
+1. **Menu driver swap — runtime tree rebuild** (`docs/private/specs/2026-04-27-menu-driver-swap-design.md`). Indie-review HIGH. Rebuilds the 25 driver-gated setting-tree sites + the menu init path on a mid-session driver swap. Behaviour spec: when the tree rebuilds, who owns the rebuild, what user-visible state is preserved.
+2. **TLS verification — default-on with documented opt-out** (`docs/private/specs/2026-04-27-tls-verification-opt-in-design.md`). Indie-review CRITICAL. Vendored in `libretro-common`; needs upstream coordination plus a RetroArch-side warning UI for the interim opt-out. *(Filename keeps the `-opt-in-` stem for stable cross-refs; the spec title was corrected to "Default-On with Documented Opt-Out" in Bundle 72.)*
+3. **Cloud-sync streaming upload** (`docs/private/specs/2026-04-27-cloud-sync-streaming-upload-design.md`). Indie-review MEDIUM. `s3_update` read the entire file into RAM; the spec covers the size cap (Phase 1 shipped Bundle 32) + the streaming-read path.
 
-The current spec doc closes the audit's "spec-needed" backlog. The three above are the indie-review's "feature behaviour" backlog and would be drafted on demand.
+The current spec doc closes the audit's "spec-needed" backlog; the three above are the indie-review's "feature behaviour" backlog.
