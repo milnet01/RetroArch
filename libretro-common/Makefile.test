@@ -58,6 +58,23 @@ all:
 	     -a test/queues/coverage.info
 	genhtml -o test/coverage/ test/coverage.info
 
+# build — compile + link every suite but DON'T run it (no test execution,
+# no lcov coverage). This is the orphan-test detector: it catches a SUT
+# whose signature drifted out from under a test (compile error, as in the
+# 17-months-stale string_replace_substring 3-arg call Bundle 70 found) and
+# an undefined-reference link break (e.g. a SUT helper a test still calls
+# that was renamed/removed, as Bundle 76 found for strldup / path_is_directory).
+# Cheap enough to run every audit pass; needs libcheck headers + lib to link
+# but no test run / coverage. See docs/private/audit/README.md.
+build:
+	$(CC) $(TEST_UNIT_CFLAGS) $(TEST_STDSTRING_SRC)     -o $(TEST_STDSTRING)
+	$(CC) $(TEST_UNIT_CFLAGS) $(TEST_UTILS_SRC)         -o $(TEST_UTILS)
+	$(CC) $(TEST_UNIT_CFLAGS) $(TEST_HASH_SRC)          -o $(TEST_HASH)
+	$(CC) $(TEST_UNIT_CFLAGS) $(TEST_LINKED_LIST_SRC)   -o $(TEST_LINKED_LIST)
+	$(CC) $(TEST_UNIT_CFLAGS) $(TEST_GENERIC_QUEUE_SRC) -o $(TEST_GENERIC_QUEUE)
+
 clean:
 	rm -f *.gcda *.gcno
+
+.PHONY: all build clean
 
