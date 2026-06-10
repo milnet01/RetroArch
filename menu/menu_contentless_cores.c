@@ -209,7 +209,10 @@ void menu_contentless_cores_get_info(const char *core_id,
    if (   !contentless_cores_state
        || !contentless_cores_state->info_entries
        || (!core_id || !*core_id))
+   {
       *info = NULL;
+      return;
+   }
 
    *info = RHMAP_GET_STR(contentless_cores_state->info_entries, core_id);
 }
