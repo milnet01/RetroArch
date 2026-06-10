@@ -76,6 +76,28 @@ Phase 1 of the orchestrator should:
 2. For each lane, grep the relevant `ROADMAP.md` slice (file paths in the lane → matching ROADMAP lines) and attach as part of the brief. This is the dedup-during-review optimization that cuts agent output 30-50% on a project this far along.
 3. Apply the per-lane gotcha list from the partition file as the "memory" attachment the indie-review skill expects.
 
+## Quick reference — auditing the test suite
+
+The `libretro-common/` libcheck unit suite is not wired into any CI here
+(`Makefile.test` is run by hand). Two checks belong in every audit pass:
+
+```bash
+# Orphan-test detection — compile + link every suite, no run, no coverage.
+# Catches a SUT signature change that orphaned a test (compile error) or a
+# renamed/removed SUT helper a test still links against (undefined reference).
+# Needs libcheck headers + lib; does NOT run the tests. Fast.
+make -f libretro-common/Makefile.test build
+
+# Full run (build + execute + lcov coverage) — needs libcheck + lcov installed.
+make -f libretro-common/Makefile.test
+```
+
+`make … build` is the cheap gate: it would have caught the 17-months-stale
+`string_replace_substring` 3-arg call (Bundle 70) and the `strldup` /
+`path_is_directory` link breaks (Bundle 76) at the audit pass instead of letting
+them accrete silently. For test-suite *quality* (flakiness, weak assertions,
+duplication, missing `END_TEST` pairs) run the global `/test-audit` skill.
+
 ## Adding a new tool
 
 1. Add a section to `audit-config.json` under `tools.<name>` with `command`, `flags`, `scope_apply` (if applicable), and a `known_issues` array.
