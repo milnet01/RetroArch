@@ -4766,7 +4766,7 @@ push_dropdown_list:
          sizeof(option_path_str) - _len,
          "%d", (int)option_index);
    snprintf(option_lbl_str, sizeof(option_lbl_str),
-         "%d", type);
+         "%u", type);
 
    /* TODO/FIXME: This should be refactored to make
     * use of a core-option-specific drop-down list,
@@ -8776,7 +8776,7 @@ static int action_ok_disk_cycle_tray_status(const char *path,
 {
    rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
    settings_t *settings          = config_get_ptr();
-   bool menu_insert_disk_resume;
+   bool menu_insert_disk_resume  = false;
    bool verbosity                = false;
 
    if (!settings || !sys_info)
@@ -8812,7 +8812,7 @@ static int action_ok_disk_image_append(const char *path,
    struct menu_state *menu_st    = menu_state_get_ptr();
    menu_handle_t *menu           = menu_st->driver_data;
    settings_t *settings          = config_get_ptr();
-   bool menu_insert_disk_resume;
+   bool menu_insert_disk_resume  = false;
    const char *menu_path         = NULL;
 
    if (!menu || !settings || !sys_info)

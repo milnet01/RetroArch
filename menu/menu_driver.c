@@ -3539,6 +3539,8 @@ static enum action_iterate_type action_iterate_type(const char *label, struct me
 {
    if (menu_st->dialog_st.confirm_msg && menu_st->dialog_st.confirm_cmd)
       return ITERATE_TYPE_CONFIRM;
+   if (!label)
+      return ITERATE_TYPE_DEFAULT;
    if (!strcmp(label, "info_screen"))
       return ITERATE_TYPE_INFO;
    if (string_starts_with_size(label, "help", STRLEN_CONST("help")))

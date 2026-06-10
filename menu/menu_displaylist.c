@@ -1710,7 +1710,7 @@ static unsigned menu_displaylist_parse_core_option_dropdown_list(
       return 0;
 
    val_d[0]     = '\0';
-   snprintf(val_d, sizeof(val_d), "%d", option_index);
+   snprintf(val_d, sizeof(val_d), "%u", option_index);
 
    /* Get option itself + current value */
    option = (struct core_option*)&coreopts->opts[option_index];
@@ -4920,12 +4920,15 @@ static int menu_displaylist_parse_horizontal_content_actions(
          {
             menu_list_t *menu_list      = menu_st->entries.list;
             file_list_t *menu_stack     = MENU_LIST_GET(menu_list, 0);
-            struct item_file *stack_top = menu_stack->list;
-            size_t depth                = menu_stack->size;
-            unsigned current_type       = (depth > 0 ? stack_top[depth - 1].type : 0);
+            if (menu_stack)
+            {
+               struct item_file *stack_top = menu_stack->list;
+               size_t depth                = menu_stack->size;
+               unsigned current_type       = (depth > 0 ? stack_top[depth - 1].type : 0);
 
-            if (current_type)
-               remove_entry_enabled = false;
+               if (current_type)
+                  remove_entry_enabled = false;
+            }
          }
 
          if (remove_entry_enabled)
@@ -6739,7 +6742,7 @@ static int menu_displaylist_parse_input_device_type_list(
 
    for (i = 0; i < types; i++)
    {
-      snprintf(device_id, sizeof(device_id), "%d", devices[i]);
+      snprintf(device_id, sizeof(device_id), "%u", devices[i]);
 
       desc = NULL;
       name = NULL;
@@ -9577,7 +9580,7 @@ unsigned menu_displaylist_build_list(
                snprintf(val_s, sizeof(val_s),
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_INPUT_USER_BINDS),
                      p+1);
-               snprintf(val_d, sizeof(val_d), "%d", p);
+               snprintf(val_d, sizeof(val_d), "%u", p);
                if (menu_entries_append(list, val_s, val_d,
                         MSG_UNKNOWN,
                         MENU_SETTINGS_REMAPPING_PORT_BEGIN + p, p, 0, NULL))
@@ -10162,19 +10165,19 @@ unsigned menu_displaylist_build_list(
                   char val_d[NAME_MAX_LENGTH], str[NAME_MAX_LENGTH];
                   /* If there is exact refresh rate available, use it */
                   if (video_list[i].refreshrate_float > 0.0f)
-                     snprintf(str, sizeof(str), "%dx%d (%.3f Hz)%s%s",
+                     snprintf(str, sizeof(str), "%ux%u (%.3f Hz)%s%s",
                         VIDEO_SCALE_W(video_list[i].dims),
                         VIDEO_SCALE_H(video_list[i].dims),
                         video_list[i].refreshrate_float,
                         video_list[i].interlaced ? "[i]":"",
                         video_list[i].dblscan    ? "[d]":"");
                   else
-                     snprintf(str, sizeof(str), "%dx%d (%d Hz)%s",
+                     snprintf(str, sizeof(str), "%ux%u (%u Hz)%s",
                         VIDEO_SCALE_W(video_list[i].dims),
                         VIDEO_SCALE_H(video_list[i].dims),
                         video_list[i].refreshrate,
                         video_list[i].interlaced ? "[i]":"");
-                  snprintf(val_d, sizeof(val_d), "%d", i);
+                  snprintf(val_d, sizeof(val_d), "%u", i);
                   if (menu_entries_append(list,
                            str,
                            val_d,
@@ -13918,7 +13921,7 @@ static unsigned menu_displaylist_build_shader_parameter(
       {
          char val_s[16], val_d[16];
          snprintf(val_s, sizeof(val_s), "%.2f", current_value);
-         snprintf(val_d, sizeof(val_d), "%d", i);
+         snprintf(val_d, sizeof(val_d), "%u", i);
 
          if (menu_entries_append(list,
                   val_s,
