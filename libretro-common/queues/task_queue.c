@@ -72,6 +72,23 @@ static bool task_threaded_enable            = false;
 
 #ifdef HAVE_THREADS
 static uintptr_t main_thread_id             = 0;
+/* Lock contract (slocks are non-recursive - never re-acquire one you already
+ * hold, directly or via a callback):
+ *  - running_lock  : the 'tasks_running' list, the worker-thread control state
+ *                    (worker_continue / worker_thread), and each task's
+ *                    'task_data' result payload. task_data sits under this lock
+ *                    rather than property_lock by design: its validity is tied
+ *                    to the task's membership in the running set - the worker
+ *                    publishes it and the gather/callback path consumes it -
+ *                    not to the display-property render path.
+ *  - finished_lock : the 'tasks_finished' list.
+ *  - property_lock : the display-facing task properties touched by both the
+ *                    UI/render thread and the worker: title, error, progress,
+ *                    flags. Held by task_queue_push_progress while it renders.
+ *  - queue_lock    : insertion ordering within a list during a push.
+ * Where two are nested the order is running_lock -> queue_lock and
+ * running_lock -> property_lock (see retro_task_threaded_gather); never the
+ * reverse. */
 static slock_t *running_lock                = NULL;
 static slock_t *finished_lock               = NULL;
 static slock_t *property_lock               = NULL;
@@ -109,6 +126,10 @@ static void task_queue_push_progress(retro_task_t *task)
    /* msg_push callback interacts directly with the task properties (particularly title).
     * make sure another thread doesn't modify them while rendering
     */
+   /* CONTRACT: property_lock is held across both the msg_push callback and the
+    * task->progress_cb call below. slocks are non-recursive, so neither
+    * callback may invoke any task_get_ or task_set_ accessor - they re-acquire
+    * property_lock and self-deadlock. Read task fields directly if needed. */
    slock_lock(property_lock);
 #endif
 
