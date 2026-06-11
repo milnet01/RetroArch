@@ -294,3 +294,9 @@ pkg/psl1ght/pkg/USRDIR/shaders_cg/
 # Python build artifacts (docs/private/audit/aggregate.py + any future helpers)
 __pycache__/
 *.pyc
+
+# Local audit-aggregator cache (docs/private/audit/aggregate.py output; not source)
+.audit_cache/
+
+# KDE/Dolphin per-folder metadata (machine-local desktop cruft)
+.directory
