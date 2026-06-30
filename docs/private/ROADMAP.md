@@ -300,6 +300,39 @@ These are exploitable now and have concrete reproducers.
   pre-existing Bundle-65 deferred set (knownConditionTrueFalse,
   unusedStructMember, duplicateCondition). Still open tree-wide: `xmb.c`
   (~48), `rgui.c` (~47).
+  Progress (2026-07-01, Bundle 85 / fixes f710e8c6be): the caller-safe
+  tree-wide arm advanced to `xmb.c` — 37 sites cleared (16
+  constVariablePointer, 18 shadowVariable, 3 variableScope), same shape
+  as Bundle 81/84. shadowVariable detail: the `xmb_render` touch/drag
+  path re-caches the function-scope pointers — menu_st (process
+  singleton), menu_list / selection_buf (provably equal to the outer at
+  the decl point, no list swap before them in their branch) — so those
+  inner decls were removed; current_menu_icon in both thumbnail blocks
+  and the pending-load config reads (playlist / upscale-threshold /
+  network-on-demand) likewise reuse the outer. Renamed where the value
+  genuinely differs: the drag handlers write `menu_st->selection_ptr`
+  mid-frame (vertical-drag path), so xmb_render's inner `selection`
+  re-fetches are necessary — renamed pointer_selection (pointer block)
+  and pending_selection (pending-thumbnail block); the xmb_frame battery
+  powerstate buffer renamed battery_msg. Two more pure removals:
+  xmb_parse_menu_entry_action's MENU_ACTION_SCAN menu_st re-fetch, and
+  xmb_frame's show_icon_thumbnail selection (selection_ptr unwritten
+  between the outer assign and the inner use). variableScope: messagebox
+  per-line width into the `if (*start)` block; xmb_init_scale_mod's
+  counter i into its inner block; xmb_init_ribbon's col into the inner
+  for-loop body. Deferred (documented): the 4 thumbnail-float
+  variableScope findings (scaled_thumb_height / thumb_x in both
+  left/right thumbnail blocks) — an interdependent float group whose
+  partial scope-split would have to drag in the unflagged sibling
+  thumb_y and would read less idiomatically than its mirror block.
+  Verified: clean xmb.o build (no -Wdiscarded-qualifiers), style
+  cppcheck re-run = 0 constVariablePointer/shadowVariable on xmb.c (only
+  the 4 deferred thumbnail variableScope remain), full make -j retroarch
+  LD clean (20.8 MiB), ./retroarch --version boots (1.22.2). Still open
+  on `xmb.c`: 9× constParameterPointer (signature-touching arm, deferred
+  as on materialui/ozone per Bundle 81/82) + the pre-existing deferred
+  set (knownConditionTrueFalse, duplicateExpressionTernary,
+  duplicateCondition). Still open tree-wide: `rgui.c` (~47).
 - ✅ **TIDY — clang-tidy `bugprone-integer-division` in `menu/drivers/materialui.c` (5 sites, surfaced by Bundle 62).** _(Bundle 64 — widened tree-wide to 51 sites across 8 files (materialui 5, ozone 26, xmb 10, gfx_widgets 2, gfx_display 4, gfx/widgets/leaderboard 1, gfx/widgets/screenshot 2, gfx/widgets/volume 1) and closed in `2137199165` on `local/fixes-2026-04`. Fix shape: integer-literal divisor → float literal (`/ 2` → `/ 2.0f`, also `/ 4`, `/ 6`, `/ 8`, `/ 12`) — division happens in float space, ½-px centring drift gone wherever result feeds a float coord. Behaviour-preserving in int-returning contexts. clang-tidy on the 8 files: 0 warnings post-Bundle. `make -j4 retroarch` clean, binary runs.)_
 - 📋 **TIDY — clang-tidy `readability-misleading-indentation` at `menu/drivers/materialui.c:12086`.** The `break;` at the end of a switch-case body whose preceding statement is an unbraced `else materialui_set_node_playlist_icon(...);` (line 12082-12083). clang-tidy reads the `break;`'s indent against the unbraced `else` body and flags as misleading. **Likely FP per project style** — `CODING-GUIDELINES` (referenced from CLAUDE.md) explicitly mandates "No braces for single-statement blocks", and the `break;` is correctly indented relative to its enclosing `case`, not its preceding `else`. Right resolution is either an inline `// NOLINTNEXTLINE(readability-misleading-indentation)` with a one-line comment naming the no-brace style, OR a project-level `.clang-tidy` disabling the check (since the style guide makes it unactionable codebase-wide). Defer until clang-tidy `readability-*` is brought into the audit checks list — currently the audit-config only enables `bugprone-*` + `clang-analyzer-*`, so this never lights up under the audit pipeline (only under interactive clangd).
   Note (2026-06-30, Bundle 83): site line drifted — the unbraced-else-then-break pattern is now at materialui.c:12071-12075, not :12086 (:12086 is now an unrelated `size_t _len` decl in materialui_list_clear). Resolution constraint clarified: the suggested inline NOLINTNEXTLINE is NOT usable here — it is a //-style line comment, which this codebase's C89 rule (no //-only comments) forbids, and clang-tidy honours only //-style NOLINT. The sole clean fix is a repo-root .clang-tidy disabling readability-misleading-indentation tree-wide — a broad change for a check not in the audit pipeline (only bugprone-* + clang-analyzer-* run). Kept deferred per the bullet's own precondition (until readability-* enters the audit checks list).
