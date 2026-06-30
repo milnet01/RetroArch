@@ -2640,7 +2640,7 @@ static void materialui_draw_icon(
 static void materialui_draw_thumbnail(
       materialui_handle_t *mui,
       gfx_thumbnail_t *thumbnail,
-      settings_t *settings,
+      const settings_t *settings,
       gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
@@ -3337,7 +3337,7 @@ static void (*materialui_compute_entries_box)(
 
 /* Compute the scroll value depending on the highlighted entry */
 static float materialui_get_scroll(materialui_handle_t *mui,
-      gfx_display_t *p_disp)
+      const gfx_display_t *p_disp)
 {
    size_t i;
    const materialui_node_t *node    = NULL;
@@ -3400,7 +3400,7 @@ static float materialui_get_scroll(materialui_handle_t *mui,
 /* Returns true if specified entry is currently
  * displayed on screen */
 static INLINE bool materialui_entry_onscreen(
-      materialui_handle_t *mui, size_t idx)
+      const materialui_handle_t *mui, size_t idx)
 {
    return   (idx >= mui->first_onscreen_entry)
          && (idx <= mui->last_onscreen_entry);
@@ -3414,7 +3414,7 @@ static INLINE bool materialui_entry_onscreen(
  *   towards currently selected item
  * > Returns index of selected item */
 static size_t materialui_auto_select_onscreen_entry(
-      materialui_handle_t *mui,
+      const materialui_handle_t *mui,
       enum materialui_onscreen_entry_position_type target_entry)
 {
    struct menu_state *menu_st = menu_state_get_ptr();
@@ -4169,7 +4169,7 @@ static void materialui_render(void *data,
 /* Utility functions */
 
 static enum materialui_entry_value_type materialui_get_entry_value_type(
-      materialui_handle_t *mui,
+      const materialui_handle_t *mui,
       const char *entry_value, bool entry_checked,
       unsigned entry_type, enum msg_file_type entry_file_type,
       uint8_t entry_setting_type)
@@ -4249,7 +4249,7 @@ static enum materialui_entry_value_type materialui_get_entry_value_type(
 
 static void materialui_render_switch_icon(
       materialui_handle_t *mui,
-      materialui_node_t *node,
+      const materialui_node_t *node,
       gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
@@ -4767,7 +4767,7 @@ static void materialui_render_menu_entry_playlist_list(
    int label_y                = 0;
    bool draw_text_outside     = (x_offset != 0);
    bool draw_thumbnails       = (mui->list_view_type != MUI_LIST_VIEW_PLAYLIST);
-   settings_t *settings       = config_get_ptr();
+   const settings_t *settings       = config_get_ptr();
    gfx_display_t *p_disp      = disp_get_ptr();
 
    if (!p_disp->dispctx->handles_transform)
@@ -5033,7 +5033,7 @@ static void materialui_render_menu_entry_playlist_dual_icon(
          && ((divider_y + (mui->entry_divider_width * 2)) <
             (video_height - mui->nav_bar_layout_height - mui->status_bar.height));
    gfx_display_t *p_disp   = disp_get_ptr();
-   settings_t *settings    = config_get_ptr();
+   const settings_t *settings    = config_get_ptr();
 
    if (!p_disp->dispctx->handles_transform)
    {
@@ -5643,7 +5643,7 @@ static void materialui_render_selected_entry_aux_playlist_desktop(
          (mui->landscape_optimization.enabled ? mui->entry_divider_width : 0);
    float thumbnail_y       = background_y + (float)mui->margin;
    gfx_display_t *p_disp   = disp_get_ptr();
-   settings_t *settings    = config_get_ptr();
+   const settings_t *settings    = config_get_ptr();
 
    /* Sanity check */
    if (   (background_width  <= 0)
@@ -5922,7 +5922,7 @@ static void materialui_render_selected_entry_aux_savestate_list(
    float thumbnail_x;
    float thumbnail_y       = background_y + (background_height - mui->thumbnail_height_max) / 2.0f;
    gfx_display_t *p_disp   = disp_get_ptr();
-   settings_t *settings    = config_get_ptr();
+   const settings_t *settings    = config_get_ptr();
 
    if (!node)
       return;
@@ -6158,7 +6158,7 @@ static size_t materialui_list_get_size(void *data, enum menu_list_type type)
 }
 
 static void materialui_render_background(
-      materialui_handle_t *mui,
+      const materialui_handle_t *mui,
       uintptr_t tex_bg,
       gfx_display_t *p_disp,
       void *userdata,
@@ -6285,7 +6285,7 @@ static void materialui_render_landscape_border(
 }
 
 static void materialui_render_selection_highlight(
-      materialui_handle_t *mui,
+      const materialui_handle_t *mui,
       gfx_display_t *p_disp, void *userdata,
       unsigned video_width, unsigned video_height,
       unsigned header_height, int x_offset,
@@ -6373,7 +6373,7 @@ static void materialui_render_selection_highlight(
 static void materialui_render_entry_touch_feedback(
       materialui_handle_t *mui,
       gfx_display_t *p_disp, void *userdata,
-      menu_input_t *menu_input,
+      const menu_input_t *menu_input,
       unsigned video_width, unsigned video_height,
       unsigned header_height, int x_offset,
       size_t current_selection)
@@ -6477,7 +6477,7 @@ static void materialui_render_header(
       materialui_handle_t *mui,
       const uintptr_t *tex_list,
       struct menu_state *menu_st,
-      menu_list_t *menu_list,
+      const menu_list_t *menu_list,
       settings_t *settings,
       gfx_display_t *p_disp,
       void *userdata,
@@ -7872,7 +7872,7 @@ static void materialui_frame(void *data, video_frame_info_t *video_info)
    struct menu_state *menu_st     = menu_state_get_ptr();
    menu_list_t *menu_list         = menu_st->entries.list;
    const file_list_t *list              = menu_list ? MENU_LIST_GET_SELECTION(menu_list, (unsigned)0) : NULL;
-   menu_input_t *menu_input       = &menu_st->input_state;
+   const menu_input_t *menu_input       = &menu_st->input_state;
    size_t selection               = menu_st->selection_ptr;
    unsigned header_height         = p_disp->header_height;
    enum gfx_animation_ticker_type
@@ -9408,7 +9408,7 @@ static void materialui_animate_scroll(materialui_handle_t *mui,
 static void materialui_navigation_set(void *data, bool scroll)
 {
    materialui_handle_t *mui   = (materialui_handle_t*)data;
-   gfx_display_t *p_disp      = disp_get_ptr();
+   const gfx_display_t *p_disp      = disp_get_ptr();
    const struct menu_state *menu_st = menu_state_get_ptr();
    size_t selection           = menu_st->selection_ptr;
 
@@ -10004,7 +10004,7 @@ static int materialui_environ(enum menu_environ_cb type, void *data,
  * - Clicking a menu-type tab on the navigation bar
  * - Using left/right to navigate between top level menus */
 static bool materialui_preswitch_tabs(materialui_handle_t *mui,
-      materialui_nav_bar_menu_tab_t *target_tab)
+      const materialui_nav_bar_menu_tab_t *target_tab)
 {
    size_t stack_size              = 0;
    file_list_t *menu_stack        = NULL;
@@ -10092,9 +10092,9 @@ static bool materialui_preswitch_tabs(materialui_handle_t *mui,
  *   event - in this case, 'action' is used to determine
  *   target tab */
 static int materialui_switch_tabs(materialui_handle_t *mui,
-      materialui_nav_bar_menu_tab_t *tab, enum menu_action action)
+      const materialui_nav_bar_menu_tab_t *tab, enum menu_action action)
 {
-   materialui_nav_bar_menu_tab_t *target_tab = tab;
+   const materialui_nav_bar_menu_tab_t *target_tab = tab;
 
    /* Reset status parameters to default values
     * > Saves checks later */
@@ -10579,7 +10579,7 @@ static enum menu_action materialui_parse_menu_entry_action(
          {
             size_t i;
             size_t main_menu_tab_index                   = 0;
-            materialui_nav_bar_menu_tab_t *main_menu_tab = NULL;
+            const materialui_nav_bar_menu_tab_t *main_menu_tab = NULL;
 
             /* Find index of main menu tab */
             for (i = 0; i < mui->nav_bar.num_menu_tabs; i++)

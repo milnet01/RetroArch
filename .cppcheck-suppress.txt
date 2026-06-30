@@ -104,3 +104,33 @@ syntaxError:frontend/drivers/platform_emscripten.c:1058
 # Code compiles cleanly under gcc/clang with the real ffmpeg headers
 # installed - this is purely an analyser limitation.
 syntaxError:record/drivers/record_ffmpeg.c:317
+
+# --- S20: materialui.c shared-function-pointer callbacks (const param FP) -----
+# These six static functions are each assigned to a SHARED function pointer
+# whose signature every sibling implementation must match, so a per-impl const
+# qualifier on a param is not a caller-local change:
+#   - materialui_list_push           -> menu_ctx_driver_t.list_push vtable slot
+#                                       (menu/drivers/materialui.c:12217)
+#   - materialui_render_process_entry_default / _savestate_list
+#                                       -> materialui_render_process_entry fnptr
+#                                       (assigned at :3816, :8294, :8320, :8327)
+#   - materialui_render_menu_entry_default / _playlist_dual_icon /
+#     _playlist_desktop / _savestate_list -> materialui_render_menu_entry fnptr
+#                                       (assigned at :5607, :8309, :8315, :8321, :8328)
+# cppcheck's own message flags this ("if 'x' is declared with const you might
+# also need to cast function pointer(s)").  Const-ifying one implementation
+# would diverge its type from the shared pointer and the sibling impls assigned
+# to it, requiring a function-pointer cast or a lockstep typedef + all-impl
+# change across every menu driver — out of scope for a style sweep.  Confirmed
+# false-positive (vtable / shared-fnptr signature constraint).  Bundle 82.
+constParameterCallback:menu/drivers/materialui.c:3493
+constParameterCallback:menu/drivers/materialui.c:3494
+constParameterCallback:menu/drivers/materialui.c:3798
+constParameterCallback:menu/drivers/materialui.c:3799
+constParameterCallback:menu/drivers/materialui.c:4310
+constParameterCallback:menu/drivers/materialui.c:5010
+constParameterCallback:menu/drivers/materialui.c:5182
+constParameterCallback:menu/drivers/materialui.c:5183
+constParameterCallback:menu/drivers/materialui.c:5284
+constParameterCallback:menu/drivers/materialui.c:10691
+constParameterCallback:menu/drivers/materialui.c:10692
