@@ -1,0 +1,22 @@
+{
+    "docs_dir": "docs",
+    "roadmap": "docs/private/ROADMAP.md",
+    "source_roots": [
+        "gfx",
+        "libretro-common",
+        "wii",
+        "input",
+        "wiiu",
+        "pkg",
+        "audio",
+        "intl",
+        "tasks",
+        "menu",
+        "frontend"
+    ],
+    "specs_dir": "docs/private/specs",
+    "test_roots": [
+        "libretro-common/test",
+        "tests-other"
+    ]
+}
