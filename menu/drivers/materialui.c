@@ -38,7 +38,6 @@
 #endif
 
 #include "../../gfx/gfx_surface.h"
-#include "../../frontend/frontend_driver.h"
 #include "../../ui/ui_companion_driver.h"
 
 #include "../menu_driver.h"
@@ -48,11 +47,9 @@
 #include "../../gfx/gfx_thumbnail.h"
 #include "../../msg_hash_lbl_str.h"
 
-#include "../../core_info.h"
 #include "../../configuration.h"
 #include "../../runtime_file.h"
 #include "../../file_path_special.h"
-#include "../../input/input_osk.h"
 #include "../../list_special.h"
 #include "../../tasks/tasks_internal.h"
 
