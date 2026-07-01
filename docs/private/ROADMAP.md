@@ -222,6 +222,33 @@ These are the highest-confidence findings — multiple reviewers coming at the c
 These are exploitable now and have concrete reproducers.
 
 - 🚧 **CRITICAL — TLS certificate verification effectively disabled.** `libretro-common/net/net_socket_ssl_mbed.c:199` uses `MBEDTLS_SSL_VERIFY_OPTIONAL`; the verify result is logged into a buffer and discarded — connection proceeds against any cert including self-signed. **Every** HTTPS request in cloud sync (Google Drive OAuth + Drive API, S3 SigV4 signing, WebDAVS), cheevos (RetroAchievements API), and online updater is un-authenticated. On hostile WiFi, an MITM captures Google OAuth refresh tokens, AWS secret access keys, and RA credentials. Vendored — fix must go upstream first; a temporary RA-side opt-out with a giant warning would be acceptable. (Not in audit; indie-review only.) _(Spec drafted 2026-04-27 → [`docs/private/specs/2026-04-27-tls-verification-opt-in-design.md`](specs/2026-04-27-tls-verification-opt-in-design.md). Three-mode design (REQUIRED default / OPTIONAL bridging / DISABLED with consent dialog), advanced-tier UI, vendored fix paired with upstream PR. ~2-3 days RA-side; phase 1 alone closes the indie-review concern.)_
+  Progress (2026-07-01, Bundle 87 / fixes `436928da68`): secure core landed
+  on `local/fixes-2026-04`. The indie-review CRITICAL is closed for the
+  mbedtls backend this fork builds — `net_socket_ssl_mbed.c` now defaults to
+  `MBEDTLS_SSL_VERIFY_REQUIRED` and fails closed (handshake returns
+  non-zero, `ssl_socket_connect` returns -1) with a logged reason; OPTIONAL
+  soft-fails + warns and proceeds; DISABLED skips verification + warns on
+  every connect. New `tls_verify_mode` setting (RA enum
+  `network/tls_config.h`; persisted `uints.tls_verify_mode`; Settings →
+  Network → Advanced, `SD_FLAG_ADVANCED`), applied live via
+  `general_write_handler` and once at startup in `retroarch_main_init`.
+  Vendoring-clean log surface: weak `ssl_socket_log_verify_fail/_disabled`
+  no-op hooks in the backend, RA-side `RARCH_ERR/WARN` overrides in new
+  `network/tls_log.c` (griffin-wired). BearSSL already fails closed (its
+  native behaviour) — given a minimal `set_verify_mode` so it links; its
+  OPTIONAL/DISABLED opt-out (permissive vtable) is deferred and it keeps
+  verifying regardless (fail-safe). 16 files, +212/-3; `make -j retroarch`
+  clean, boots 1.22.2, config key + UI strings verified. Deviations from
+  spec (documented inline): `volatile unsigned` instead of C11 atomics
+  (single aligned word, next-connection semantics; keeps the vendored file
+  C89-clean); REQUIRED-failure logging moved to the reachable
+  handshake-failure path (the spec's line-220 REQUIRED branch is dead code —
+  its own cold-eyes nit #1). Still open, deferred as non-security-core:
+  one-time consent dialog on selecting Disabled (D3), on-screen toast +
+  upgrade release-note popup (Phase 4), BearSSL permissive-vtable opt-out,
+  libcheck suites under `libretro-common/test/net/`, and the upstream
+  libretro-common PR (Phase 5). Bullet stays 🚧 until those land; the
+  exploitable MITM hole itself is closed on this build.
 - ✅ **CRITICAL — Network command socket binds 0.0.0.0 unauthenticated.** `command.c:257-258`. _(Fixed `8aedb937f1` — bind hardcoded to `127.0.0.1`. Cross-host IPC users should prefer SSH local-forward; a setting-driven opt-out is roadmapped but intentionally unwired so the safe default ships universally.)_
 - ✅ **CRITICAL — `command_write_ram` heap-write OOB driven from the wire.** `command.c:970-990`. _(Fixed `8aedb937f1` — capped the write loop at 4096 bytes via `COMMAND_WRITE_RAM_MAX_BYTES`. Threading the actual descriptor length through `rcheevos_patch_address` is a deeper API change; this cap is generous for cheat-poke use and prevents arbitrary heap-write past the descriptor.)_
 - ✅ **CRITICAL — `natt_parse_desc_node` NULL-deref + inverted recursion on hostile UPnP response.** `network/natt.c:268-318`. _(Fixed `9953abc994` — same fix as the audit C1 entry above.)_

@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-27
 **Source:** `docs/private/ROADMAP.md` — indie-review CRITICAL ("TLS certificate verification effectively disabled" entry; section anchor, not line — body churns each bundle).
-**Status:** draft, awaiting user review. Cold-eyes 2026-05-18 corrections folded in via Bundle 72 (see banner below for the 8-item summary; sections `## Failure modes`, `## Performance budget`, BearSSL backend, Vendoring-clean log surface, and Thread safety are the new load-bearing pieces).
+**Status:** Decision points resolved 2026-07-01 (D1 = three modes, D2 = Network → Advanced, D3 = persist + one-time consent, D4 = log + toast). **Secure core implemented Bundle 87** (fixes `436928da68` on `local/fixes-2026-04`): mbedtls default-REQUIRED + fail-closed, three-mode setting, per-connect logging, live + startup wire-up. Remaining (deferred, non-security-core): consent dialog (D3), toast + upgrade popup (Phase 4), BearSSL permissive-vtable opt-out, libcheck suites, upstream PR (Phase 5). See the ROADMAP TLS bullet for the full fold-in. Cold-eyes 2026-05-18 corrections folded in via Bundle 72 (see banner below for the 8-item summary; sections `## Failure modes`, `## Performance budget`, BearSSL backend, Vendoring-clean log surface, and Thread safety are the new load-bearing pieces).
 **Target:** `local/fixes-2026-04` (RA-side opt-in) + upstream PR (vendored mbedtls helper)
 **Effort estimate:** ~2 days RA-side (mbedtls + BearSSL backends + libcheck tests); upstream coordination is open-ended.
 
