@@ -333,6 +333,40 @@ These are exploitable now and have concrete reproducers.
   as on materialui/ozone per Bundle 81/82) + the pre-existing deferred
   set (knownConditionTrueFalse, duplicateExpressionTernary,
   duplicateCondition). Still open tree-wide: `rgui.c` (~47).
+  Progress (2026-07-01, Bundle 86 / fixes dc2e9d2dfc): the caller-safe
+  tree-wide arm reached its last file, `rgui.c` — 32 sites cleared, 12
+  deferred, closing the "aggregate across all menu drivers" arm
+  (materialui/ozone/xmb/rgui all done). constVariablePointer (15) +
+  constVariable (2): pointer/array locals never written-through marked
+  const — src, background_buf, rgui (×3), p_disp (×2), menu_st,
+  custom_vp, runloop_st, and the two rain `weights[]` lookup tables. The
+  scanline-fill thickness block flagged only src_d; consted its src_a/
+  src_b/src_c siblings too for group consistency (all four are read-only
+  memcpy sources) — noted in the commit. Every const compiler-verified
+  (zero -Wdiscarded-qualifiers), no false positives. shadowVariable (2):
+  removed the redundant inner `menu_st` re-fetch in rgui_render's
+  fs-thumbnail title block and rgui_pointer_up's select block — both
+  reuse the outer menu_state_get_ptr() singleton (pointer never
+  reassigned; the select-block write to `menu_st->selection_ptr` now
+  binds to the outer). variableScope (13 of 25): a4 into `if (a3 > 0)`;
+  fs- and mini-thumbnail `src`/`dst` declared inside their memcpy loops
+  (one move clears both the scope and const findings); blit-line-regular
+  and -shadow glyph counters `i`/`j` into the `symbol != ' '` block; osk
+  `title_x`/`title_width` into the inner label `if`; upscale `x_src`/
+  `y_src` into their nearest for-body. Deferred (12): the particle-effect
+  render cluster (snow/rain/vortex/starfield, ~2073-2239) — loop
+  temporaries the file deliberately hoists to case-block top, and
+  `on_screen` already carries a prior-pass rationale comment for keeping
+  block scope; left as a coherent group, mirroring xmb.c's
+  interdependent-group deferral. Verified: clean rgui.o build (no
+  warnings), style cppcheck re-run = 0 constVariablePointer/constVariable/
+  shadowVariable on rgui.c (only the 12 deferred particle-cluster
+  variableScope remain), full make -j retroarch LD clean (20 MiB),
+  ./retroarch --version boots (1.22.2). Still open on `rgui.c`: 10×
+  constParameterPointer + 1× constParameterCallback (signature-touching
+  arm, deferred as on materialui/ozone/xmb) + the pre-existing deferred
+  set (knownConditionTrueFalse, autoVariables). Tree-wide caller-safe
+  arm now complete across all four menu drivers.
 - ✅ **TIDY — clang-tidy `bugprone-integer-division` in `menu/drivers/materialui.c` (5 sites, surfaced by Bundle 62).** _(Bundle 64 — widened tree-wide to 51 sites across 8 files (materialui 5, ozone 26, xmb 10, gfx_widgets 2, gfx_display 4, gfx/widgets/leaderboard 1, gfx/widgets/screenshot 2, gfx/widgets/volume 1) and closed in `2137199165` on `local/fixes-2026-04`. Fix shape: integer-literal divisor → float literal (`/ 2` → `/ 2.0f`, also `/ 4`, `/ 6`, `/ 8`, `/ 12`) — division happens in float space, ½-px centring drift gone wherever result feeds a float coord. Behaviour-preserving in int-returning contexts. clang-tidy on the 8 files: 0 warnings post-Bundle. `make -j4 retroarch` clean, binary runs.)_
 - 📋 **TIDY — clang-tidy `readability-misleading-indentation` at `menu/drivers/materialui.c:12086`.** The `break;` at the end of a switch-case body whose preceding statement is an unbraced `else materialui_set_node_playlist_icon(...);` (line 12082-12083). clang-tidy reads the `break;`'s indent against the unbraced `else` body and flags as misleading. **Likely FP per project style** — `CODING-GUIDELINES` (referenced from CLAUDE.md) explicitly mandates "No braces for single-statement blocks", and the `break;` is correctly indented relative to its enclosing `case`, not its preceding `else`. Right resolution is either an inline `// NOLINTNEXTLINE(readability-misleading-indentation)` with a one-line comment naming the no-brace style, OR a project-level `.clang-tidy` disabling the check (since the style guide makes it unactionable codebase-wide). Defer until clang-tidy `readability-*` is brought into the audit checks list — currently the audit-config only enables `bugprone-*` + `clang-analyzer-*`, so this never lights up under the audit pipeline (only under interactive clangd).
   Note (2026-06-30, Bundle 83): site line drifted — the unbraced-else-then-break pattern is now at materialui.c:12071-12075, not :12086 (:12086 is now an unrelated `size_t _len` decl in materialui_list_clear). Resolution constraint clarified: the suggested inline NOLINTNEXTLINE is NOT usable here — it is a //-style line comment, which this codebase's C89 rule (no //-only comments) forbids, and clang-tidy honours only //-style NOLINT. The sole clean fix is a repo-root .clang-tidy disabling readability-misleading-indentation tree-wide — a broad change for a check not in the audit pipeline (only bugprone-* + clang-analyzer-* run). Kept deferred per the bullet's own precondition (until readability-* enters the audit checks list).
