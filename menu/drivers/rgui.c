@@ -1281,10 +1281,12 @@ static uint16_t argb32_to_rgb5a3(uint32_t col)
        * borders to appear too bright. We therefore have to darken
        * each RGB component according to the difference between Gekko
        * alpha and normal 4 bit alpha values... */
-      unsigned a4    = a >> 4;
       float a_factor = 1.0f;
       if (a3 > 0) /* Avoid divide by zero errors... */
-         a_factor = ((float)a4 * (1.0f / 15.0f)) / ((float)a3 * (1.0f / 7.0f));
+      {
+         unsigned a4 = a >> 4;
+         a_factor    = ((float)a4 * (1.0f / 15.0f)) / ((float)a3 * (1.0f / 7.0f));
+      }
       r = (unsigned)(((float)r * a_factor) + 0.5f);
       g = (unsigned)(((float)g * a_factor) + 0.5f);
       b = (unsigned)(((float)b * a_factor) + 0.5f);
@@ -1691,7 +1693,7 @@ static void rgui_fill_rect(
     * perform a solid fill */
    if (dark_color == light_color)
    {
-      uint16_t *src = scanline_even + x_start;
+      const uint16_t *src = scanline_even + x_start;
       uint16_t *dst = data + x_start;
 
       /* Populate source array */
@@ -1704,10 +1706,10 @@ static void rgui_fill_rect(
    }
    else if (thickness)
    {
-      uint16_t *src_a      = NULL;
-      uint16_t *src_b      = NULL;
-      uint16_t *src_c      = NULL;
-      uint16_t *src_d      = NULL;
+      const uint16_t *src_a = NULL;
+      const uint16_t *src_b = NULL;
+      const uint16_t *src_c = NULL;
+      const uint16_t *src_d = NULL;
       uint16_t *dst        = data + x_start;
 
       /* Determine in which order the source arrays
@@ -1764,8 +1766,8 @@ static void rgui_fill_rect(
    }
    else
    {
-      uint16_t *src_a      = NULL;
-      uint16_t *src_b      = NULL;
+      const uint16_t *src_a = NULL;
+      const uint16_t *src_b = NULL;
       uint16_t *dst        = data + x_start;
 
       /* Determine in which order the source arrays
@@ -1936,7 +1938,7 @@ static void rgui_init_particle_effect(
          break;
       case RGUI_PARTICLE_EFFECT_RAIN:
          {
-            uint8_t weights[] = { /* 60 entries */
+            const uint8_t weights[] = { /* 60 entries */
                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
@@ -2125,7 +2127,7 @@ static void rgui_render_particle_effect(
          break;
       case RGUI_PARTICLE_EFFECT_RAIN:
          {
-            uint8_t weights[] = { /* 60 entries */
+            const uint8_t weights[] = { /* 60 entries */
                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
@@ -2717,7 +2719,7 @@ static void rgui_render_background(
       size_t fb_pitch)
 {
    frame_buf_t *frame_buf      = &rgui->frame_buf;
-   frame_buf_t *background_buf = &rgui->background_buf;
+   const frame_buf_t *background_buf = &rgui->background_buf;
 
    /* Sanity check */
    if (     !frame_buf->data
@@ -2766,8 +2768,6 @@ static void rgui_render_fs_thumbnail(
       unsigned width, height;
       unsigned fs_thumbnail_width  = rgui->fs_thumbnail.width;
       unsigned fs_thumbnail_height = rgui->fs_thumbnail.height;
-      uint16_t *src                = NULL;
-      uint16_t *dst                = NULL;
       uint8_t border_width         = 1;
 
       /* Ensure that thumbnail is centred
@@ -2803,8 +2803,8 @@ static void rgui_render_fs_thumbnail(
       /* Copy thumbnail to framebuffer */
       for (y = 0; y < height; y++)
       {
-         src = fs_thumbnail_data + thumb_x_offset + ((y + thumb_y_offset) * fs_thumbnail_width);
-         dst = frame_buf_data + (y + fb_y_offset) * (fb_pitch >> 1) + fb_x_offset;
+         const uint16_t *src = fs_thumbnail_data + thumb_x_offset + ((y + thumb_y_offset) * fs_thumbnail_width);
+         uint16_t       *dst = frame_buf_data + (y + fb_y_offset) * (fb_pitch >> 1) + fb_x_offset;
 
          memcpy(dst, src, width * sizeof(uint16_t));
       }
@@ -2895,8 +2895,6 @@ static void rgui_render_mini_thumbnail(
       unsigned y;
       unsigned fb_x_offset, fb_y_offset;
       unsigned thumbnail_fullwidth = rgui_get_mini_thumbnail_fullwidth(rgui);
-      uint16_t *src                = NULL;
-      uint16_t *dst                = NULL;
       unsigned term_width          = rgui->term_layout.width * rgui->font_width_stride;
       unsigned term_height         = rgui->term_layout.height * rgui->font_height_stride;
 
@@ -2931,8 +2929,8 @@ static void rgui_render_mini_thumbnail(
       /* Copy thumbnail to framebuffer */
       for (y = 0; y < thumbnail->height; y++)
       {
-         src = thumbnail->data + (y * thumbnail->width);
-         dst = frame_buf_data + (y + fb_y_offset) *
+         const uint16_t *src = thumbnail->data + (y * thumbnail->width);
+         uint16_t       *dst = frame_buf_data + (y + fb_y_offset) *
                (fb_pitch >> 1) + fb_x_offset;
 
          memcpy(dst, src, thumbnail->width * sizeof(uint16_t));
@@ -3492,7 +3490,6 @@ static void rgui_blit_line_regular(
 
    while (message && *message)
    {
-      unsigned i, j;
       uint8_t symbol = (uint8_t)*message++;
 
       if (symbol >= RGUI_NUM_FONT_GLYPHS_REGULAR)
@@ -3500,6 +3497,7 @@ static void rgui_blit_line_regular(
 
       if (symbol != ' ')
       {
+         unsigned i, j;
          bool *symbol_lut = lut[symbol];
 
          for (j = 0; j < FONT_HEIGHT; j++)
@@ -3540,7 +3538,6 @@ static void rgui_blit_line_regular_shadow(
 
    while (message && *message)
    {
-      unsigned i, j;
       uint8_t symbol = (uint8_t)*message++;
 
       if (symbol >= RGUI_NUM_FONT_GLYPHS_REGULAR)
@@ -3548,6 +3545,7 @@ static void rgui_blit_line_regular_shadow(
 
       if (symbol != ' ')
       {
+         unsigned i, j;
          bool *symbol_lut = lut[symbol];
 
          for (j = 0; j < FONT_HEIGHT; j++)
@@ -4692,7 +4690,7 @@ static int rgui_osk_ptr_at_pos(
 {
    /* This is a lazy copy/paste from rgui_render_osk(),
     * but it will do for now... */
-   rgui_t *rgui                = (rgui_t*)data;
+   const rgui_t *rgui          = (rgui_t*)data;
 
    if (rgui)
    {
@@ -4702,7 +4700,7 @@ static int rgui_osk_ptr_at_pos(
       const unsigned ptr_offset_x       = 2;
       const unsigned ptr_offset_y       = 2;
       const unsigned keyboard_offset_x  = 10;
-      gfx_display_t *p_disp             = disp_get_ptr();
+      const gfx_display_t *p_disp       = disp_get_ptr();
       unsigned key_width                = rgui->font_width  +(key_text_offset_x * 2);
       unsigned key_height               = rgui->font_height +(key_text_offset_y * 2);
       unsigned ptr_width                = key_width  - (ptr_offset_x * 2);
@@ -4765,7 +4763,7 @@ static void rgui_render_osk(
    int osk_ptr                    = input_st->osk_ptr;
    char **osk_grid                = input_st->osk_grid;
    const char *input_str          = menu_input_dialog_get_buffer();
-   struct menu_state *menu_st     = menu_state_get_ptr();
+   const struct menu_state *menu_st = menu_state_get_ptr();
    const char *input_label        = menu_st->input_dialog_kb_label;
 
    /* Sanity check 1 */
@@ -5329,9 +5327,7 @@ static void rgui_render(void *data, unsigned width, unsigned height,
        * view, which causes ugly flickering when scrolling quickly
        * through a list...) */
       char thumbnail_title_buf[NAME_MAX_LENGTH];
-      unsigned title_x, title_width;
       const char *thumbnail_title = NULL;
-      struct menu_state *menu_st  = menu_state_get_ptr();
       bool is_state_slot          = *rgui->savestate_thumbnail_file_path;
       thumbnail_title_buf[0]      = '\0';
 
@@ -5342,6 +5338,7 @@ static void rgui_render(void *data, unsigned width, unsigned height,
       if (     gfx_thumbnail_get_label(menu_st->thumbnail_path_data, &thumbnail_title)
             || is_state_slot)
       {
+         unsigned title_x, title_width;
          /* State slot title */
          if (is_state_slot)
          {
@@ -6012,7 +6009,7 @@ static void rgui_get_video_config(
 {
    /* Could use settings->video_vp_custom directly,
     * but this seems to be the standard way of doing it... */
-   video_viewport_t *custom_vp      = &settings->video_vp_custom;
+   const video_viewport_t *custom_vp = &settings->video_vp_custom;
    video_settings->aspect_ratio_idx = video_aspect_ratio_idx;
    video_settings->vp.width         = custom_vp->width;
    video_settings->vp.height        = custom_vp->height;
@@ -6814,7 +6811,6 @@ static void rgui_set_texture(void *data)
          unsigned out_width;
          unsigned out_height;
          uint32_t x_ratio, y_ratio;
-         unsigned x_src, y_src;
          unsigned x_dst, y_dst;
          frame_buf_t *frame_buf   = &rgui->frame_buf;
          frame_buf_t *upscale_buf = &rgui->upscale_buf;
@@ -6868,10 +6864,10 @@ static void rgui_set_texture(void *data)
 
          for (y_dst = 0; y_dst < out_height; y_dst++)
          {
-            y_src = (y_dst * y_ratio) >> 16;
+            unsigned y_src = (y_dst * y_ratio) >> 16;
             for (x_dst = 0; x_dst < out_width; x_dst++)
             {
-               x_src = (x_dst * x_ratio) >> 16;
+               unsigned x_src = (x_dst * x_ratio) >> 16;
                upscale_buf->data[(y_dst * out_width) + x_dst] = frame_buf->data[(y_src * fb_width) + x_src];
             }
          }
@@ -7022,7 +7018,7 @@ static void rgui_update_savestate_thumbnail_path(void *data, unsigned i)
                || string_is_equal(entry.label, MENU_ENUM_LABEL_SAVE_STATE_STR))
          {
             char path[PATH_MAX_LENGTH];
-            runloop_state_t *runloop_st = runloop_state_get_ptr();
+            const runloop_state_t *runloop_st = runloop_state_get_ptr();
             int state_slot              = settings->ints.state_slot;
 
             /* State slot dropdown */
@@ -7700,7 +7696,7 @@ static int rgui_pointer_up(
                      (rgui->flags & RGUI_FLAG_SHOW_FULLSCREEN_THUMBNAIL)
                   && (rgui->flags & RGUI_FLAG_ENTRY_HAS_THUMBNAIL)
                   && (rgui->fs_thumbnail.is_valid || (rgui->thumbnail_queue_size > 0));
-            gfx_display_t *p_disp  = disp_get_ptr();
+            const gfx_display_t *p_disp = disp_get_ptr();
             unsigned header_height = p_disp->header_height;
 
             /* Normal pointer input */
@@ -7720,8 +7716,6 @@ static int rgui_pointer_up(
                   return rgui_menu_entry_action(rgui, entry, selection, MENU_ACTION_CANCEL);
                else if (ptr <= (end - 1))
                {
-                  struct menu_state *menu_st = menu_state_get_ptr();
-
                   /* Perform 'select' on the pointed item */
                   menu_st->selection_ptr = ptr;
                   rgui_navigation_set(rgui, false);
@@ -8104,7 +8098,7 @@ static void rgui_toggle(void *userdata, bool menu_on)
 
 static void rgui_context_reset(void *data, bool is_threaded)
 {
-   rgui_t *rgui = (rgui_t*)data;
+   const rgui_t *rgui = (rgui_t*)data;
 
    if (!rgui)
       return;
@@ -8121,7 +8115,7 @@ static void rgui_context_reset(void *data, bool is_threaded)
 
 static void rgui_context_destroy(void *data)
 {
-   rgui_t *rgui = (rgui_t*)data;
+   const rgui_t *rgui = (rgui_t*)data;
 
    if (!rgui)
       return;
