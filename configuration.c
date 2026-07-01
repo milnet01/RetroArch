@@ -2703,6 +2703,7 @@ static struct config_uint_setting *populate_settings_uint(
    SETTING_UINT("netplay_input_latency_frames_range", &settings->uints.netplay_input_latency_frames_range, true, 0, false);
    SETTING_UINT("netplay_share_digital",              &settings->uints.netplay_share_digital, true, DEFAULT_NETPLAY_SHARE_DIGITAL, false);
    SETTING_UINT("netplay_share_analog",               &settings->uints.netplay_share_analog,  true, DEFAULT_NETPLAY_SHARE_ANALOG, false);
+   SETTING_UINT("tls_verify_mode",                    &settings->uints.tls_verify_mode, true, DEFAULT_TLS_VERIFY_MODE, false);
 #endif
 #ifdef HAVE_COMMAND
    SETTING_UINT("network_cmd_port",              &settings->uints.network_cmd_port,    true, DEFAULT_NETWORK_CMD_PORT, false);

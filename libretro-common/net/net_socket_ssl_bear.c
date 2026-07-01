@@ -229,6 +229,38 @@ static void initialize(void)
    free(certs_pem);
 }
 
+/* --- TLS certificate-verification policy (RetroArch fork) ---------------
+ * BearSSL's br_ssl_client_init_full (below) always performs full
+ * verification and fails-closed on a bad chain, so REQUIRED — the safe
+ * default — is already this backend's behaviour. The OPTIONAL/DISABLED
+ * opt-out has no native BearSSL equivalent; it needs a manual
+ * br_x509_minimal_init plus a permissive end_chain vtable wrapper (see the
+ * TLS-verification design doc's "BearSSL backend" section) and is deferred.
+ * Until then this backend keeps verifying regardless of the selected mode
+ * (fail-safe). The stored value exists so the setting wiring links; it is
+ * intentionally not yet consulted. */
+static volatile unsigned ssl_authmode = 0; /* 0 == TLS_VERIFY_REQUIRED */
+
+void ssl_socket_set_verify_mode(unsigned mode)
+{
+   ssl_authmode = mode;
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak))
+void ssl_socket_log_verify_fail(int mode_required, const char *domain,
+      const char *verify_info)
+{
+   (void)mode_required; (void)domain; (void)verify_info;
+}
+
+__attribute__((weak))
+void ssl_socket_log_verify_disabled(const char *domain)
+{
+   (void)domain;
+}
+#endif
+
 void* ssl_socket_init(int fd, const char *domain)
 {
    struct ssl_state *state = (struct ssl_state*)calloc(1, sizeof(*state));

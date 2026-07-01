@@ -7707,6 +7707,14 @@ MSG_HASH(
    "Digital Input Sharing"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE,
+   "TLS Certificate Verification"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_TLS_VERIFY_MODE,
+   "Controls how server certificates are checked on secure (HTTPS) connections used by Cloud Sync, RetroAchievements and the Online Updater. 'Required' rejects untrusted certificates and protects against man-in-the-middle attacks. Only lower this if you connect through a corporate proxy or to a self-signed host you trust."
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_NETPLAY_REQUEST_DEVICE_I,
    "Request Device %u"
    )
@@ -10874,6 +10882,18 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_DIGITAL_VOTE,
    "Vote"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_REQUIRED,
+   "Required (Recommended)"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_OPTIONAL,
+   "Optional (Warn Only)"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_DISABLED,
+   "Disabled (Insecure)"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_ANALOG,

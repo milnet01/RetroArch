@@ -170,10 +170,52 @@ error:
    return NULL;
 }
 
+/* --- TLS certificate-verification policy (RetroArch fork) ---------------
+ * A single module-scope mode selects the mbedtls authmode used by every
+ * ssl_socket_connect. REQUIRED (fail-closed) is the default so an unset
+ * value is safe. `volatile` is sufficient here: the value is a single
+ * aligned word, written from the settings/startup thread and read once per
+ * handshake; a mid-flight toggle simply applies to the *next* connection.
+ * We deliberately avoid C11 <stdatomic.h> to keep this vendored file
+ * C89-clean on console toolchains. */
+static volatile unsigned ssl_authmode = MBEDTLS_SSL_VERIFY_REQUIRED;
+
+void ssl_socket_set_verify_mode(unsigned mode)
+{
+   /* mode is a tls_verify_mode value (0 required / 1 optional / 2 disabled);
+    * translate to the mbedtls authmode constant. */
+   switch (mode)
+   {
+      case 1:  ssl_authmode = MBEDTLS_SSL_VERIFY_OPTIONAL; break;
+      case 2:  ssl_authmode = MBEDTLS_SSL_VERIFY_NONE;     break;
+      default: ssl_authmode = MBEDTLS_SSL_VERIFY_REQUIRED; break;
+   }
+}
+
+/* Weak no-op logging hooks; RetroArch overrides these in network/tls_log.c.
+ * Kept weak so libretro-common still builds/links standalone. Toolchains
+ * without __attribute__((weak)) (e.g. MSVC) rely on the RA strong symbol
+ * always being linked in the RetroArch build. */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak))
+void ssl_socket_log_verify_fail(int mode_required, const char *domain,
+      const char *verify_info)
+{
+   (void)mode_required; (void)domain; (void)verify_info;
+}
+
+__attribute__((weak))
+void ssl_socket_log_verify_disabled(const char *domain)
+{
+   (void)domain;
+}
+#endif
+
 int ssl_socket_connect(void *state_data,
       void *data, bool timeout_enable, bool nonblock)
 {
    int ret, flags;
+   unsigned authmode;
    struct ssl_state *state = (struct ssl_state*)state_data;
 
    if (timeout_enable)
@@ -196,7 +238,10 @@ int ssl_socket_connect(void *state_data,
                MBEDTLS_SSL_PRESET_DEFAULT) != 0)
       return -1;
 
-   mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+   authmode = ssl_authmode;
+   mbedtls_ssl_conf_authmode(&state->conf, (int)authmode);
+   if (authmode == MBEDTLS_SSL_VERIFY_NONE)
+      ssl_socket_log_verify_disabled(state->domain);
    mbedtls_ssl_conf_ca_chain(&state->conf, &state->ca, NULL);
    mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
    mbedtls_ssl_conf_dbg(&state->conf, ssl_debug, stderr);
@@ -214,13 +259,30 @@ int ssl_socket_connect(void *state_data,
    while ((ret = mbedtls_ssl_handshake(&state->ctx)) != 0)
    {
       if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE)
+      {
+         /* Fail-closed: under REQUIRED a bad certificate makes the
+          * handshake return here (MBEDTLS_ERR_X509_CERT_VERIFY_FAILED)
+          * before we reach the verify-result block below. Surface the
+          * reason, then bail. */
+         if (ret == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED)
+         {
+            char     vrfy_buf[512];
+            uint32_t vflags = mbedtls_ssl_get_verify_result(&state->ctx);
+            mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", vflags);
+            ssl_socket_log_verify_fail(1, state->domain, vrfy_buf);
+         }
          return -1;
+      }
    }
 
    if ((flags = mbedtls_ssl_get_verify_result(&state->ctx)) != 0)
    {
       char vrfy_buf[512];
       mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);
+      /* Reached only under OPTIONAL/DISABLED — the handshake succeeded
+       * despite a verification failure. Log the soft-fail and let the
+       * connection proceed (the mode's documented behaviour). */
+      ssl_socket_log_verify_fail(0, state->domain, vrfy_buf);
    }
 
    return state->net_ctx.fd;

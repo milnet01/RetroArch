@@ -607,6 +607,7 @@
 #define MENU_ENUM_LABEL_NETPLAY_REQUEST_DEVICE_I_STR "netplay_request_device_%u"
 #define MENU_ENUM_LABEL_NETPLAY_SHARE_ANALOG_STR "netplay_share_analog"
 #define MENU_ENUM_LABEL_NETPLAY_SHARE_DIGITAL_STR "netplay_share_digital"
+#define MENU_ENUM_LABEL_TLS_VERIFY_MODE_STR "tls_verify_mode"
 #define MENU_ENUM_LABEL_NETPLAY_INPUT_LATENCY_FRAMES_MIN_STR "netplay_input_latency_frames_min"
 #define MENU_ENUM_LABEL_NETPLAY_INPUT_LATENCY_FRAMES_RANGE_STR "netplay_input_latency_frames_range"
 #define MENU_ENUM_LABEL_NETPLAY_DISCONNECT_STR "menu_netplay_disconnect"
