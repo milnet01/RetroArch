@@ -9852,19 +9852,21 @@ static bool setting_append_list_input_player_options(
    rarch_setting_group_info_t subgroup_info;
    settings_t *settings                       = config_get_ptr();
    rarch_system_info_t *sys_info              = &runloop_state_get_ptr()->system;
+   const struct retro_keybind* const defaults = (user == 0)
+         ? retro_keybinds_1 : retro_keybinds_rest;
+   const char *binds_group_label              = msg_hash_to_str
+         ((enum msg_hash_enums)(MENU_ENUM_LABEL_INPUT_USER_1_BINDS + user));
+
    /* Defensive: SETTINGS_LIST_APPEND short-circuits on `!*list`, then
     * the post-macro `(*list)[list_info->index - 1].xxx = ...` writes
     * deref `*list` unconditionally — NULL deref if *list was NULL on
     * entry.  In practice the caller (menu_setting_initialize) populates
     * *list before invoking us, but the analyzer flags the per-user loop
     * write at line ~9894 as NULL-derefable.  Bail to keep the contract
-    * symmetric with the macro. */
+    * symmetric with the macro.  (Guard placed after the declarations
+    * above to satisfy C89's no-code-before-declarations rule.) */
    if (!list || !*list || !list_info)
       return false;
-   const struct retro_keybind* const defaults = (user == 0)
-         ? retro_keybinds_1 : retro_keybinds_rest;
-   const char *binds_group_label              = msg_hash_to_str
-         ((enum msg_hash_enums)(MENU_ENUM_LABEL_INPUT_USER_1_BINDS + user));
 
    group_info.name                            = NULL;
    subgroup_info.name                         = NULL;

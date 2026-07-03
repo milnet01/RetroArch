@@ -523,11 +523,12 @@ void rarch_log_file_init(
     * follows the same pattern in the override-active branch. */
    char log_directory[DIR_MAX_LENGTH];
    char log_file_path[PATH_MAX_LENGTH];
-   log_directory[0] = '\0';
-   log_file_path[0] = '\0';
    static bool log_file_created              = false;
    static char timestamped_log_file_name[64] = {0};
    bool logging_to_file                      = main_verbosity_st.initialized;
+   /* Empty-string-init after all declarations (C89: no code before decls). */
+   log_directory[0] = '\0';
+   log_file_path[0] = '\0';
 
    /* If this is the first run, generate a timestamped log
     * file name (do this even when not outputting timestamped

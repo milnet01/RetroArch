@@ -1732,12 +1732,13 @@ bool runloop_environment_cb(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_SET_MESSAGE:
       {
          const struct retro_message *msg;
+#if defined(HAVE_GFX_WIDGETS)
+         dispgfx_widget_t *p_dispwidget  = dispwidget_get_ptr();
+#endif
          if (!data)
             return false;
          msg = (const struct retro_message*)data;
 #if defined(HAVE_GFX_WIDGETS)
-         dispgfx_widget_t *p_dispwidget  = dispwidget_get_ptr();
-
          if (p_dispwidget->active)
             gfx_widget_set_libretro_message(
                   msg->msg,

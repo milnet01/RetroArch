@@ -126,7 +126,9 @@ enum runloop_flags
    RUNLOOP_FLAG_IDLE                              = (1u << 28),
    RUNLOOP_FLAG_FOCUSED                           = (1u << 29),
    RUNLOOP_FLAG_FORCE_NONBLOCK                    = (1u << 30),
-   RUNLOOP_FLAG_IS_INITED                         = (1u << 31)
+   /* (int) cast keeps this bit-31 flag within the C89 enum int-range while
+    * the unsigned shift still avoids signed-overflow UB (audit S1+S10). */
+   RUNLOOP_FLAG_IS_INITED                         = (int)(1u << 31)
 };
 
 /* Contains the current retro_fastforwarding_override
