@@ -44,8 +44,10 @@ set -uo pipefail
 
 # ---- config ---------------------------------------------------------------
 
-# The exact image CI's i686 jobs run in (.github/workflows/Linux.yml,
-# Linux-Headless.yml -> container.image). Docker Hub, addressed for podman.
+# The image CI's Linux.yml (CI Linux (i686)) job runs in via container.image.
+# Only that ONE workflow uses it; the headless job runs natively on ubuntu-latest
+# (we reuse this image for headless locally — see job_headless_i686). Docker Hub,
+# addressed for podman.
 IMG_I686="docker.io/reallibretroretroarch/libretro-build-i386-ubuntu:xenial-gcc9"
 
 # Environment alignment for the NATIVE c89 job.
@@ -268,17 +270,12 @@ job_linux_i686() {
                make -j"$(getconf _NPROCESSORS_ONLN)" info all'
 }
 
-# Linux-Headless.yml :: linux-nomenu  (i686 container)
-#   Aligned deviation from the workflow's bare `./configure --disable-menu`:
-#   we add --disable-qt. The `xenial-gcc9` image is a MUTABLE tag whose bundled
-#   Qt5/moc no longer links RetroArch's Qt frontend — `master` itself fails the
-#   Qt link in this image, independent of any branch change (verified 2026-07-03).
-#   CI's headless job stays green because its effective runtime env links Qt5;
-#   ours (a drifted image pull) does not. The job's PURPOSE is the no-menu build
-#   path, orthogonal to the Qt frontend, so disabling Qt reproduces that intent
-#   without the image-drift false failure. See docs/private/DEPENDENCY-POLICY.md
-#   (unpinned CI image tags). Drop --disable-qt once the image (or its digest
-#   pin) links Qt again.
+# Linux-Headless.yml :: linux-nomenu  ("(i686)" name, but CI runs it on ubuntu-latest)
+#   We reuse the xenial-gcc9 i686 image (isolation) and add --disable-qt — a
+#   deviation from the workflow's bare --disable-menu. CI's headless job runs
+#   Qt-off (ubuntu-latest, no Qt dev, so HAVE_QT=0); --disable-qt reproduces that,
+#   and this image's bundled Qt5 doesn't link RA's Qt frontend anyway. Full
+#   rationale + the Qt-link detail: docs/private/DEPENDENCY-POLICY.md §4a.
 job_headless_i686() {
     ensure_image || return 1
     git -C "$ROOT" archive --format=tar "$ARCHIVE_REF" | podman run --rm -i --user root "$IMG_I686" \
