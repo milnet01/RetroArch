@@ -475,6 +475,7 @@ static void drm_plane_setup(struct drm_surface *surface)
    if (!plane_resources)
    {
       RARCH_ERR("[DRM] No scaling planes available.\n");
+      return;
    }
 
    RARCH_LOG("[DRM] Number of planes on FD %d is %d.\n",
@@ -642,7 +643,7 @@ static int modeset_create_dumbfb(int fd, struct modeset_buf *buf,
 static bool init_drm(void)
 {
    uint i;
-   drmModeConnector *connector;
+   drmModeConnector *connector = NULL;
 
    drm.fd = open("/dev/dri/card0", O_RDWR);
 
