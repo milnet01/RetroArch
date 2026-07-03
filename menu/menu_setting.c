@@ -11220,7 +11220,8 @@ static bool setting_append_list_input_player_options(
     * entry.  In practice the caller (menu_setting_initialize) populates
     * *list before invoking us, but the analyzer flags the per-user loop
     * write at line ~9894 as NULL-derefable.  Bail to keep the contract
-    * symmetric with the macro. */
+    * symmetric with the macro.  (Guard placed after the declarations
+    * above to satisfy C89's no-code-before-declarations rule.) */
    if (!list || !*list || !list_info)
       return false;
 
