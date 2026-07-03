@@ -20,6 +20,12 @@
 # ---------- vendored / third-party (out of scope; upstream-only) ----------
 deps/
 libretro-common/
+# gfx/include/ is entirely vendored third-party graphics headers (GL, Cg,
+# vulkan, ANGLE, d3d8/9, MESA, pixman, dxsdk) plus the Broadcom/RPi VideoCore
+# userland blob (gfx/include/userland/ — own LICENCE, raspicam/hello_pi apps).
+# None of it is RetroArch-authored source. A gfx/ cppcheck sweep without this
+# prune drowns in ~1600 findings from gfx/include/userland/ alone (Bundle 89).
+gfx/include/
 
 # ---------- build artifacts ----------
 obj-unix/
