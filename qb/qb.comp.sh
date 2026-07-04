@@ -71,6 +71,36 @@ if [ "$cc_works" = '0' ] && [ "$USE_LANG_C" = 'yes' ]; then
 	die 1 'Error: Cannot proceed without a working C compiler.'
 fi
 
+# Checking whether the mold linker is usable (faster linking).
+#   mold is a drop-in, ld-compatible linker (Linux/BSD). Probe by
+#   link-testing -fuse-ld=mold with the detected compiler; that link
+#   test is the portability guarantee -- it fails cleanly when mold is
+#   absent or the (possibly cross) toolchain does not support it, and we
+#   fall back to the default linker. --disable-mold skips the probe;
+#   --enable-mold warns (non-fatal) if the probe then fails. The flag is
+#   appended to LDFLAGS in qb.make.sh, AFTER library detection, so the
+#   HAVE_* feature probes are unaffected by the linker choice.
+if [ "$cc_works" = '1' ] && [ "$HAVE_MOLD" != 'no' ]; then
+	printf %s 'Checking whether the mold linker works ... '
+
+	cat << EOF > "$TEMP_C"
+int main(void) { return 0; }
+EOF
+
+	if $(printf %s "$CC") -fuse-ld=mold "$TEMP_C" -o "$TEMP_EXE" >/dev/null 2>&1; then
+		HAVE_MOLD='yes'
+		printf %s\\n 'yes'
+	else
+		if [ "$USER_MOLD" = 'yes' ]; then
+			die : 'Warning: --enable-mold requested but -fuse-ld=mold does not work; using the default linker.'
+		fi
+		HAVE_MOLD='no'
+		printf %s\\n 'no'
+	fi
+
+	rm -f -- "$TEMP_C" "$TEMP_EXE"
+fi
+
 # Checking for working C++
 cat << EOF > "$TEMP_CXX"
 #include <iostream>
