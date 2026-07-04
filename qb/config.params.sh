@@ -20,6 +20,7 @@ HAVE_OPENGLES_CFLAGS=      # C-flags for custom GLES library
 HAVE_CACA=no               # Libcaca support
 HAVE_SIXEL=auto            # Libsixel support
 HAVE_DEBUG=no              # Enable a debug build
+HAVE_MOLD=auto             # Use the mold linker when available (faster linking)
 HAVE_LIBRETRODB=yes        # Libretrodb support
 HAVE_MENU=yes              # Enable menu drivers
 HAVE_GFX_WIDGETS=yes       # Enable graphics widgets
