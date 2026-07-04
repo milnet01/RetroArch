@@ -215,6 +215,10 @@ job_samples_tasks() {
       make clean all && test -x archive_name_safety_test
       timeout 60 ./archive_name_safety_test && echo "[pass] archive_name_safety_test"
 
+      cd "$w/samples/tasks/cloudsync"
+      make clean all && test -x cloudsync_path_safety_test
+      timeout 60 ./cloudsync_path_safety_test && echo "[pass] cloudsync_path_safety_test"
+
       cd "$w/samples/tasks/http"
       make clean all SANITIZER=address && test -x http_method_match_test
       timeout 60 ./http_method_match_test && echo "[pass] http_method_match_test" )
