@@ -1323,6 +1323,7 @@ DATA RUNLOOP
 #endif
 #endif
 #include "../save.c"
+#include "../tasks/task_save_rastate.c"
 #include "../tasks/task_save.c"
 #include "../tasks/task_movie.c"
 #include "../tasks/task_image.c"

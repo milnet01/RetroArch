@@ -101,6 +101,25 @@ jobs:
           timeout 60 ./cloudsync_path_safety_test
           echo "[pass] cloudsync_path_safety_test"
 
+      - name: Build and run rastate_bounds_test
+        shell: bash
+        working-directory: samples/tasks/save_rastate
+        run: |
+          set -eu
+          # Regression test for the save-state block-bounds fix in
+          # tasks/task_save.c::content_load_rastate1 (commit 1f59d9d31d).
+          # A downloaded save state could declare a per-block size that
+          # overflows the 8-byte alignment add or runs past the buffer;
+          # the inner MEM/ACHV/RPLY dispatchers then read the attacker's
+          # length. Like cloudsync above, this #includes the REAL predicate
+          # source (tasks/task_save_rastate.c) -- extracted into its own
+          # dependency-free TU so the test exercises the shipped code. A
+          # revert of the bounds arithmetic fails this test.
+          make clean all
+          test -x rastate_bounds_test
+          timeout 60 ./rastate_bounds_test
+          echo "[pass] rastate_bounds_test"
+
       - name: Build and run http_method_match_test (ASan)
         shell: bash
         working-directory: samples/tasks/http

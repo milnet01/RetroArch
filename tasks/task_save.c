@@ -47,6 +47,7 @@
 #include "../runloop.h"
 #include "../verbosity.h"
 #include "tasks_internal.h"
+#include "task_save_rastate.h"
 
 #ifdef EMSCRIPTEN
 /* Filesystem is in-memory anyway, use huge chunks since each
@@ -939,12 +940,9 @@ static bool content_load_rastate1(unsigned char* input, size_t len)
          return false;
       }
 
-      /* Cast each byte to uint32_t before shifting -- input[7] << 24
-       * on a signed int target is undefined when the top bit is set. */
-      block_size = ( ((uint32_t)input[7]) << 24
-                   | ((uint32_t)input[6]) << 16
-                   | ((uint32_t)input[5]) << 8
-                   | ((uint32_t)input[4]));
+      /* Decode the little-endian block size (UB-safe: rastate_read_le32
+       * widens each byte to unsigned long before shifting). */
+      block_size = (size_t)rastate_read_le32(input + 4);
       marker     = input;
 
       input += 8;
@@ -953,10 +951,10 @@ static bool content_load_rastate1(unsigned char* input, size_t len)
        * extends past the provided buffer; the inner block dispatchers
        * (core_unserialize, replay_set_serialized_data,
        * rcheevos_set_serialized_data) all read block_size bytes from
-       * input without their own bounds check. Reject up front. */
-      block_aligned = CONTENT_ALIGN_SIZE(block_size);
-      if (   block_aligned < block_size /* alignment arithmetic overflow */
-          || block_aligned > (size_t)(stop - input))
+       * input without their own bounds check. Reject up front (also
+       * catches the alignment-arithmetic overflow). */
+      if (!rastate_block_advance_ok(block_size, (size_t)(stop - input),
+               &block_aligned))
       {
          RARCH_ERR("[State] rastate block_size %u exceeds remaining buffer.\n",
                (unsigned)block_size);
