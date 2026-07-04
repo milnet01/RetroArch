@@ -556,6 +556,30 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
 
 ---
 
+### 📝 Cold-eyes 2026-07-04
+
+Docs reviewed: 5 (new `docs/private/standards/` set — README index + coding /
+file-naming / documentation / security standards, 436 lines). Loops to
+clean: 4 (HIGH→HIGH→0-HIGH/2-MED→0-MED). Findings fixed: ~25 across the
+loops (all verified against source). The standards **consolidate and
+reference** the existing authorities (`CLAUDE.md`, `CODING-GUIDELINES`,
+`CONTRIBUTING.md`, root `SECURITY.md`, `AUDIT-POLICY.md`,
+`DEPENDENCY-POLICY.md`) rather than duplicating them; the upstream root
+`SECURITY.md` (vuln-reporting policy) is left untouched.
+
+Notable catches the loop fixed: a security-rule that miscited the WebDAV
+`cnonce` (`2386e898d4`) as CSPRNG-sourced when the ROADMAP explicitly says it
+is **not** (overstated a crypto property); TLS listed under "Closed" without
+a "secure core only" qualifier; a broken `local-CI.sh (repo root)` pointer
+that ignored the fixes-worktree split; a reproduce-before-fix cross-ref
+aimed at docs that don't cover it (repointed to `CLAUDE.md` §Tests); the
+audit-cache filename grammar tightened to match the real tree. Residual
+LOW/INFO were the fork's two-branch drift (cited fixes live on
+`local/fixes-2026-04`, not the audit branch) — now documented in the
+security standard's §3 verification note.
+
+---
+
 ### 📝 Cold-eyes 2026-05-18
 
 Docs reviewed: 17 (across 8 lanes — contracts, fork-ops, audit-infra, 4 spec docs, platform READMEs). Loops to clean: 1 (single-pass; substantial rewrites surfaced as banners + deferred items rather than re-looped — user RAM pressure at 19% avail). Findings verified: ~100. Findings fixed in-place this session: 31. Findings deferred to ROADMAP follow-ups (below): 27 — substantive spec rewrites and design-decision items.
