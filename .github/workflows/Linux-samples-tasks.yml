@@ -120,6 +120,24 @@ jobs:
           timeout 60 ./rastate_bounds_test
           echo "[pass] rastate_bounds_test"
 
+      - name: Build and run natt_desc_parse_test
+        shell: bash
+        working-directory: samples/tasks/natt_desc
+        run: |
+          set -eu
+          # Regression test for the UPnP IGD description-parser fix in
+          # network/natt.c::natt_parse_desc_node (commit 9953abc994): a
+          # hostile router's description XML could crash the parser (NULL
+          # child->next deref on a leaf/empty-root response), and a real
+          # nested <service> was never reached (inverted recursion). The
+          # walk was split into network/natt_desc.c so this test #includes
+          # the REAL parser and drives it with hand-built hostile rxml trees
+          # -- the pre-fix code segfaults these, the fixed code rejects them.
+          make clean all
+          test -x natt_desc_parse_test
+          timeout 60 ./natt_desc_parse_test
+          echo "[pass] natt_desc_parse_test"
+
       - name: Build and run http_method_match_test (ASan)
         shell: bash
         working-directory: samples/tasks/http

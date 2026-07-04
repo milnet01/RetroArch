@@ -1278,6 +1278,7 @@ THREAD
 NETPLAY
 ============================================================ */
 #ifdef HAVE_NETWORKING
+#include "../network/natt_desc.c"
 #include "../network/natt.c"
 #include "../network/netplay/netplay_frontend.c"
 #include "../network/netplay/netplay_room_parse.c"
