@@ -82,6 +82,25 @@ jobs:
           timeout 60 ./archive_name_safety_test
           echo "[pass] archive_name_safety_test"
 
+      - name: Build and run cloudsync_path_safety_test
+        shell: bash
+        working-directory: samples/tasks/cloudsync
+        run: |
+          set -eu
+          # Regression test for the path-traversal fix in
+          # tasks/task_cloudsync.c::task_cloud_sync_fetch_server_file
+          # (commit 18b55ec71a). A hostile sync server's manifest key
+          # could escape the cloud-sync base dir via ".." / absolute
+          # components. Unlike the archive test above, this #includes
+          # the REAL predicate source (tasks/task_cloudsync_path.c) --
+          # extracted into its own dependency-free TU precisely so the
+          # test exercises the shipped code, not a copy. A revert of
+          # the guard fails this test.
+          make clean all
+          test -x cloudsync_path_safety_test
+          timeout 60 ./cloudsync_path_safety_test
+          echo "[pass] cloudsync_path_safety_test"
+
       - name: Build and run http_method_match_test (ASan)
         shell: bash
         working-directory: samples/tasks/http

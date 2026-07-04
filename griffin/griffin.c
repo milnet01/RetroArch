@@ -1724,6 +1724,7 @@ CLOUD SYNC
 ============================================================ */
 #ifdef HAVE_CLOUDSYNC
 #include "../tasks/task_cloudsync.c"
+#include "../tasks/task_cloudsync_path.c"
 #include "../network/cloud_sync_driver.c"
 #include "../network/cloud_sync/webdav.c"
 #ifdef HAVE_SSL
