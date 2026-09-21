@@ -639,3 +639,54 @@ Follow-up items (the items the cold-eyes pass surfaced that need decisions, not 
 
 
 
+
+### 📝 Contract-gate 2026-09-21 (review-contract, global-skill rename fallout)
+
+Triggered by retiring six dead global skill names across the fork's docs
+(`84d5339a93`). Rule 14 armed the gate on the three standards whose edits
+changed what a conformer would do. Review history for this directory lives
+in the commit bodies, not in the documents — see each loop's commit.
+
+- ✅ **`docs/private/standards/README.md` — gate ran to cap (3 loops, 3
+  cold lanes each).** 13 verified findings, 13 fixed, 1 dismissed. Commits
+  `797bb1a175` (loop 1), `6dcff40686` (loop 2), `27f509a1fb` (loop 3 +
+  cap report). Largest class: the precedence rule contradicted itself in
+  three different ways across the loops, and the file kept restating rule
+  14 and `review-contract` mechanics — every restatement drifted. Loop 3
+  deleted that surface rather than repairing it a fourth time.
+- ✅ **Fork override of global rule 14a declared** (`5a551008ed`). Specs
+  stay at `docs/private/specs/YYYY-MM-DD-<slug>.md`: `docs/private/` exists
+  so fork docs never collide with upstream on a re-vendor, and this fork's
+  ROADMAP is id-less so there is no `<ID>` to name a spec with. Scoped to
+  spec locations and filenames only. Recorded in the repo-root `CLAUDE.md`
+  § Fork document locations, per the mechanism global § The foundation
+  grants a per-project `CLAUDE.md`.
+- 🚧 **`docs/private/standards/documentation-standard.md` — gate in
+  progress.** Loop 1 complete and committed (`329f4b3cc0`): 4 verified, 4
+  fixed — a feedback path that did not exist, a test-contract exemption
+  keyed to a `tests/features/` directory this fork has never had, a record
+  obligation that fired on only one of rule 14's two branches, and section
+  6 presupposing line-number citations. **Loop 2 was dispatched but its
+  lanes did not return before the session ended — re-run loop 2 from a
+  fresh packet.** Cap is 3 for a standard.
+- 📋 **`docs/private/standards/file-naming-standard.md` — gate not yet
+  run.** Armed by `84d5339a93`, which replaced `/bump` with `cut-release`
+  in section 3. Packet pre-check found its claims sound: the three
+  version-bearing files exist, `.claude/bump.json` is genuinely absent as
+  the file states, and `pkg/snap/snapcraft.yaml` is genuinely absent as the
+  file states.
+- 📋 **Repo-root `CLAUDE.md` — gate not yet run.** Armed by `5a551008ed`:
+  declaring the 14a override changed where a conformer writes a spec, and
+  rule 14's scope covers a project `CLAUDE.md`.
+- 📋 **MEDIUM — DOC — line-number citations across the fork's docs.**
+  `/mnt/Games/CLAUDE.md` binds inside this repo (nothing here contradicts
+  it) and forbids counts, line numbers and sizes in documents — name the
+  section, heading, filename or symbol instead.
+  `documentation-standard.md` §6 now states this, but the existing
+  citations were not swept: a few sit in the repo-root `CLAUDE.md` and many
+  more in this ROADMAP. The ROADMAP's are a dated append-only record and
+  were true when written, so they are not simply wrong and a blanket
+  rewrite would damage the record. Needs its own decision: sweep the live
+  documents only, or adopt a carve-out for dated records. One stale
+  instance was already found and fixed this session
+  (`Makefile.common:2750`, actually 2751).
