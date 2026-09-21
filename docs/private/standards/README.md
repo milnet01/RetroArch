@@ -38,9 +38,10 @@ rules that aren't captured anywhere else.
 Global meta-rules in `~/.claude/CLAUDE.md` (e.g. the `review-contract` gate)
 apply across every project and sit outside this substance chain. They are
 not ranked by the clauses below, and nothing in this directory displaces
-them — the repo-root `CLAUDE.md` states that nothing in this fork overrides
-the global rules. A fork standard that contradicts one is a defect in the
-fork standard.
+them. Only the repo-root `CLAUDE.md` may override a global rule, by the
+mechanism `~/.claude/CLAUDE.md` § The foundation grants it, and it records
+each override it carries. A fork standard that contradicts a global rule
+with no such override recorded is a defect in the fork standard.
 
 Resolve a **substance** disagreement by the Map's Authoritative-source
 column. Read these in order; the first that applies wins, and the third is a

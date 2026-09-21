@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Project-specific guidance for Claude Code in this repository. Layers on top of `~/.claude/CLAUDE.md` (global rules) — nothing here overrides those; this file only adds RetroArch-specific institutional knowledge that isn't derivable from the code.
+Project-specific guidance for Claude Code in this repository. Layers on top of `~/.claude/CLAUDE.md` (global rules). It adds RetroArch-specific institutional knowledge that isn't derivable from the code, and carries exactly one deliberate override, recorded under "Fork document locations" below.
 
 ## What this is
 
@@ -103,6 +103,17 @@ From `CODING-GUIDELINES`, `CONTRIBUTING.md`, and the C89/console-portability con
   - `version.all`'s own top-of-file comment names `pkg/snap/snapcraft.yaml`, but that file does **not** exist in this tree (snap packaging lives elsewhere); ignore that line of the comment unless snap is re-introduced.
 - User-visible changes go to `CHANGES.md` under `# Future` until release.
 - Fork-only audit/refactor work goes to `docs/private/ROADMAP.md`, **not** `CHANGES.md` — `CHANGES.md` is user-visible, the private ROADMAP is engineering-internal.
+
+## Fork document locations (override of global rule 14a)
+
+**Fork specs live at `docs/private/specs/YYYY-MM-DD-<slug>.md`, not at `docs/specs/<ID>-<topic>.md`.** This overrides global rule 14a's fixed locations, using the mechanism `~/.claude/CLAUDE.md` § The foundation grants a per-project `CLAUDE.md`. A session following it says which it followed, as that section requires.
+
+Two fork-specific reasons:
+
+- This is a downstream fork of a tree we do not own and re-sync from. Every fork-authored document lives under `docs/private/` so a re-vendor never collides with upstream — and a top-level `docs/specs/` is exactly such a collision.
+- The `<ID>-` half assumes a roadmap that allocates ids. This fork's `docs/private/ROADMAP.md` is deliberately id-less (legacy ants-v1; see `docs/private/standards/documentation-standard.md` §2), so there are no ids to name a spec with.
+
+The override reaches spec **locations and filenames** only. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
 
 ## Fork workflow (private)
 

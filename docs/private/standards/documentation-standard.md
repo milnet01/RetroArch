@@ -45,7 +45,10 @@ release notes only in the private roadmap.
 
 ## 4. Specs and design docs
 
-- Live at `docs/private/specs/YYYY-MM-DD-<slug>.md`.
+- Live at `docs/private/specs/YYYY-MM-DD-<slug>.md`. This is an override of
+  global rule 14a's fixed locations, declared and reasoned in the repo-root
+  `CLAUDE.md` § Fork document locations — not a divergence this file grants
+  itself.
 - **A spec / design / ADR / standard whose edit changes what a conformer
   would do runs through `review-contract`, before implementation.** This is
   a hard rule (`~/.claude/CLAUDE.md` rule 14, which owns the trigger, the
