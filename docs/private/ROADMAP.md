@@ -666,9 +666,15 @@ in the commit bodies, not in the documents — see each loop's commit.
   fixed — a feedback path that did not exist, a test-contract exemption
   keyed to a `tests/features/` directory this fork has never had, a record
   obligation that fired on only one of rule 14's two branches, and section
-  6 presupposing line-number citations. **Loop 2 was dispatched but its
-  lanes did not return before the session ended — re-run loop 2 from a
-  fresh packet.** Cap is 3 for a standard.
+  6 presupposing line-number citations. **Loop 2 also complete and
+  committed** (`77c6b39867`): all three lanes returned late, after the
+  handoff above was written — 4 verified, 4 fixed, including a section 2
+  that misdescribed this ROADMAP's own status legend (omitting `🔄` and
+  `❌`, which have live uses and exist to keep a suppressed false positive
+  distinguishable from a regression). **Loop 3 is owed** — the cap is 3 for
+  a standard, so it is the last one. Two of loop 2's four findings landed
+  on text loop 1 wrote, both of them new absolutes asserted beyond what a
+  finding established.
 - 📋 **`docs/private/standards/file-naming-standard.md` — gate not yet
   run.** Armed by `84d5339a93`, which replaced `/bump` with `cut-release`
   in section 3. Packet pre-check found its claims sound: the three
