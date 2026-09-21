@@ -36,7 +36,11 @@ rules that aren't captured anywhere else.
 ## Precedence
 
 Global meta-rules in `~/.claude/CLAUDE.md` (e.g. the `review-contract` gate)
-apply across every project and sit outside this substance chain.
+apply across every project and sit outside this substance chain. They are
+not ranked by the clauses below, and nothing in this directory displaces
+them — the repo-root `CLAUDE.md` states that nothing in this fork overrides
+the global rules. A fork standard that contradicts one is a defect in the
+fork standard.
 
 Resolve a **substance** disagreement by the Map's Authoritative-source
 column. Read these in order; the first that applies wins, and the third is a
@@ -61,18 +65,16 @@ don't work around it.
 
 ## Changing a standard
 
-A standard is a contract document. Per `~/.claude/CLAUDE.md` rule 14, an
-edit that changes what a conformer would do is run through
-`review-contract --genre standard` **before** it is relied on. Rule 14 owns
-the trigger, the loop cap and what a clean exit is; this file does not
-restate them, so that it cannot drift from them.
+A standard is a contract document, and so is this index: an edit to the Map
+or to Precedence changes what every conformer obeys. Both are governed by
+this section.
 
-Record the loop in the commit body. Rule 14 requires a commit-body line
-saying the question was asked; where the gate's own loop log lives is
-`review-contract`'s to decide, and this directory keeps it in the commit
-body rather than in a section of each standard. Neither record is
-back-filled afterwards.
+`~/.claude/CLAUDE.md` rule 14 decides whether an edit needs the gate, what
+its exceptions are, what the loop cap is, what a clean exit is, and what
+record is owed on each branch. This file restates none of that, so that it
+cannot drift from it. When the gate does run it is
+`review-contract --genre standard`, and `review-contract` decides where its
+loop log lives.
 
-An edit that does **not** change what a conformer would do skips the gate
-and still owes rule 14's one-line commit-body record saying the question was
-asked and answered no. Rule 14 requires that line on both branches.
+A new standard or policy adds its Map row in the same commit. Until it has
+one, Precedence clause 3 governs it rather than clause 2.
