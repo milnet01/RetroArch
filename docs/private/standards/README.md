@@ -17,8 +17,8 @@ rules that aren't captured anywhere else.
 | Topic | Authoritative source | Fork standard (here) |
 |---|---|---|
 | Coding style / C89 portability | `CODING-GUIDELINES` (root), `CONTRIBUTING.md` §Coding style (root), `CLAUDE.md` (root, fork ops) | [`coding-standard.md`](coding-standard.md) — consolidates + adds verification discipline |
-| File / path / identifier naming | scattered in `CLAUDE.md` + `Makefile.common` conventions | [`file-naming-standard.md`](file-naming-standard.md) — single home |
-| Documentation (roadmap, changelog, commits) | `CLAUDE.md`, `CHANGES.md`, `docs/private/ROADMAP.md` | [`documentation-standard.md`](documentation-standard.md) |
+| File / path / identifier naming | — | [`file-naming-standard.md`](file-naming-standard.md) — single home; consolidates conventions previously scattered across `CLAUDE.md` and `Makefile.common` |
+| Documentation (roadmap, changelog, commits) | — | [`documentation-standard.md`](documentation-standard.md) — governs `CHANGES.md`, `docs/private/ROADMAP.md` and commit messages |
 | Security posture / secure-coding rules | — (root `SECURITY.md` is the vuln-*reporting* policy and carries no coding rules; see below) | [`security-standard.md`](security-standard.md) — threat model + secure-coding rules + accepted-risk register |
 | Dependency / version pinning | — | [`../DEPENDENCY-POLICY.md`](../DEPENDENCY-POLICY.md) |
 | Static-analysis false-positive patterns + suppressions | — | [`../AUDIT-POLICY.md`](../AUDIT-POLICY.md) |
@@ -42,16 +42,16 @@ Resolve a **substance** disagreement by the Map's Authoritative-source
 column. Read these in order; the first that applies wins, and the third is a
 residual tie-break, not a ranking that overrides the two above it.
 
-1. **The Map names an upstream source** (coding style, portability):
-   upstream wins, and the fork standard governs only its fork-operational
-   additions. Root `CLAUDE.md` is listed on that row for its fork-ops
-   content — where it paraphrases an upstream rule it yields to the upstream
-   file; its fork-ops rules do not.
-2. **The Map names no upstream source** (naming, roadmap/doc conventions,
-   secure-coding rules, dependency pinning, audit suppressions): the fork
-   standard or policy in the right-hand column is authoritative for that
-   substance, including over root `CLAUDE.md`. Both `../`-rooted policies
-   are governed by this clause and by "Changing a standard" below.
+1. **The Authoritative-source cell names a file** — coding style and
+   portability, the only row where it does: that file wins on substance,
+   and the fork standard governs only its fork-operational additions. Root
+   `CLAUDE.md` is listed there for its fork-ops content; where it
+   paraphrases an upstream rule it yields to the upstream file, and where
+   it states a fork-ops rule it does not.
+2. **The cell is `—`**: the fork standard or policy in the right-hand
+   column is authoritative for that substance, including over root
+   `CLAUDE.md`. Both `../`-rooted policies are governed by this clause and
+   by "Changing a standard" below.
 3. **No Map row covers the topic**: the more specific document wins —
    per-project `CLAUDE.md` → these fork standards → upstream
    `CODING-GUIDELINES` / `CONTRIBUTING.md`.
@@ -65,8 +65,13 @@ A standard is a contract document. Per `~/.claude/CLAUDE.md` rule 14, an
 edit that changes what a conformer would do is run through
 `review-contract --genre standard` **before** it is relied on. Rule 14 owns
 the trigger, the loop cap and what a clean exit is; this file does not
-restate them, so that it cannot drift from them. Record the loop in the
-commit body, which is the one form rule 14 accepts.
+restate them, so that it cannot drift from them.
+
+Record the loop in the commit body. Rule 14 requires a commit-body line
+saying the question was asked; where the gate's own loop log lives is
+`review-contract`'s to decide, and this directory keeps it in the commit
+body rather than in a section of each standard. Neither record is
+back-filled afterwards.
 
 An edit that does **not** change what a conformer would do skips the gate
 and still owes rule 14's one-line commit-body record saying the question was
