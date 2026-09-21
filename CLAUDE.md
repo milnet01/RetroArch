@@ -106,7 +106,9 @@ From `CODING-GUIDELINES`, `CONTRIBUTING.md`, and the C89/console-portability con
 
 ## Fork document locations (override of global rule 14a)
 
-**Fork specs live at `docs/private/specs/YYYY-MM-DD-<slug>.md`, not at `docs/specs/<ID>-<topic>.md`.** This overrides global rule 14a's fixed locations, using the mechanism `~/.claude/CLAUDE.md` § The foundation grants a per-project `CLAUDE.md`. A session following it says which it followed, as that section requires.
+**Fork specs, design documents and ADRs live at `docs/private/specs/YYYY-MM-DD-<slug>.md`** — not at `docs/specs/<ID>-<topic>.md`, and not at `docs/design.md`. This overrides global rule 14a's fixed locations, using the mechanism `~/.claude/CLAUDE.md` § The foundation grants a per-project `CLAUDE.md`. A session following it says which it followed, as that section requires.
+
+Design documents are named here deliberately: that directory already holds three `-design.md` files, so an override naming specs alone would have left them claiming an authority that did not cover them.
 
 Two fork-specific reasons:
 

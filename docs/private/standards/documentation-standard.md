@@ -17,9 +17,15 @@ release notes only in the private roadmap.
 
 ## 2. ROADMAP format (ants-v1)
 
-- Emoji-status narrator bullets: `📋 planned`, `🚧 in-progress`,
-  `✅ shipped`, `💭 considered`. Bullets are id-less (legacy ants-v1);
-  do not add `[PROJ-NNNN]` ids to existing bullets.
+- Emoji-status narrator bullets, matching the legend at the head of
+  `docs/private/ROADMAP.md`, which is authoritative for this vocabulary:
+  `📋 pending`, `🚧 in progress`, `✅ done`, `🔄 deferred / waiting on
+  upstream`, `❌ won't-fix / verified-FP / resolved-stale`. The last two
+  are kept deliberately after closure — the analyser re-reports a
+  suppressed false positive every run, and without its own mark a
+  suppressed finding is indistinguishable from a live regression.
+  Bullets are id-less (legacy ants-v1); do not add `[PROJ-NNNN]` ids to
+  existing bullets.
 - A closed bullet cites its fix commit(s). The prevailing form is
   `_(Fixed `<sha>` — <what/why>.)_`; fix-branch closures also use
   `_(Bundle N — fixed in `<sha>` on `local/fixes-2026-04`. <what/why>.)_`.
@@ -49,9 +55,12 @@ release notes only in the private roadmap.
   global rule 14a's fixed locations, declared and reasoned in the repo-root
   `CLAUDE.md` § Fork document locations — not a divergence this file grants
   itself.
-- **A spec / design / ADR / standard whose edit changes what a conformer
-  would do runs through `review-contract`, before implementation.** The
-  loop is the gate; a self-read does not satisfy it, and loop 2+ runs cold.
+- **A document whose edit changes what a conformer would do runs through
+  `review-contract`, before implementation.** The loop is the gate; a
+  self-read does not satisfy it, and loop 2+ runs cold. Rule 14 decides
+  which documents are in scope — this file does not enumerate them, and an
+  earlier enumeration here omitted policies while the sibling
+  [`README.md`](README.md) § Precedence had them gated.
 - `~/.claude/CLAUDE.md` rule 14 owns everything else about that gate — the
   trigger, its exclusions (including which test contracts are exempt and on
   what conditions), the loop cap, what a clean exit is, and what record is
@@ -76,9 +85,13 @@ can't be verified on disk because it concerns intent or future direction,
 mark it as an open question rather than asserting it.
 
 Citation **form** is `/mnt/Games/CLAUDE.md`'s rule, which binds inside this
-repo because nothing here contradicts it: name the section, heading,
-filename or symbol — not a count, a line number or a size. A line number
-drifts by construction, which is why it is not a citation form here.
+repo: in prose, name the section, heading, filename or symbol — not a
+count, a line number or a size. A line number drifts by construction, which
+is why it is not a citation form here.
+
+That governs prose. It does not reach a structured datum in a table cell,
+which is a field rather than a citation — §2's bundle-table `sites` count
+is the live case, and it stays.
 
 ## 7. Ants MCP feedback
 
