@@ -46,11 +46,12 @@ release notes only in the private roadmap.
 ## 4. Specs and design docs
 
 - Live at `docs/private/specs/YYYY-MM-DD-<slug>.md`.
-- **Every spec / design / ADR / standard runs through `/cold-eyes` until a
-  pass returns zero verified findings, before implementation.** This is a
-  hard rule (`~/.claude/CLAUDE.md` rule 14) — the loop is the gate, a
-  self-read does not satisfy it. Loop 2+ runs cold (do not brief the
-  reviewer on prior findings). Record the loop.
+- **A spec / design / ADR / standard whose edit changes what a conformer
+  would do runs through `review-contract`, before implementation.** This is
+  a hard rule (`~/.claude/CLAUDE.md` rule 14, which owns the trigger, the
+  loop cap and what a clean exit is) — the loop is the gate, a self-read
+  does not satisfy it. Loop 2+ runs cold (do not brief the reviewer on
+  prior findings). Record the loop.
 - Per-feature test contracts (`tests/features/<name>/spec.md`) are exempt —
   a self-read suffices.
 

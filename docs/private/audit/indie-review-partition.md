@@ -1,6 +1,6 @@
 # Indie-review subsystem partition (memoized)
 
-Lane partition for `/indie-review` on this fork. Loaded by the orchestrator at Phase 1 instead of being re-decided every run.
+Lane partition for `review-code` on this fork. Loaded by the orchestrator at Phase 1 instead of being re-decided every run.
 
 ## Why this exists
 

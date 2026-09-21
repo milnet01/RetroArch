@@ -35,7 +35,7 @@ rules that aren't captured anywhere else.
 
 ## Precedence
 
-Global meta-rules in `~/.claude/CLAUDE.md` (e.g. the `/cold-eyes` gate)
+Global meta-rules in `~/.claude/CLAUDE.md` (e.g. the `review-contract` gate)
 apply across every project and sit outside this substance chain.
 
 For a **substance** disagreement about a topic whose Authoritative source in
@@ -49,7 +49,9 @@ ordering is a bug in the docs — fix it, don't work around it.
 
 ## Changing a standard
 
-A standard is a contract document. Per `~/.claude/CLAUDE.md` rule 14, any
-new or edited standard here is run through `/cold-eyes` until a pass returns
-zero verified findings **before** it is relied on. Record the loop in the
+A standard is a contract document. Per `~/.claude/CLAUDE.md` rule 14, an
+edit that changes what a conformer would do is run through
+`review-contract --genre standard` **before** it is relied on. Rule 14 owns
+the trigger, the loop cap and what a clean exit is; this file does not
+restate them, so that it cannot drift from them. Record the loop in the
 commit message or an adjacent note.

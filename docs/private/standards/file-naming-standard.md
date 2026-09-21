@@ -41,7 +41,7 @@ carrying the version string is updated in one commit:
 
 `version.all`'s top-of-file comment also names `pkg/snap/snapcraft.yaml`,
 which does **not** exist in this tree — ignore that line unless snap
-packaging is reintroduced. The `/bump` skill automates this list where a
+packaging is reintroduced. The `cut-release` skill automates this list where a
 `.claude/bump.json` recipe exists; this fork has none checked in, so update
 the trio by hand (or add the recipe first).
 

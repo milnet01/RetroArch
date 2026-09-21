@@ -33,7 +33,7 @@ Console targets (`Makefile.psp1`, `Makefile.ctr`, `Makefile.ps2`, `Makefile.wii`
 No integration-level test runner. What exists:
 
 - **libretro-common unit tests** — `cd libretro-common && make -f Makefile.test` (needs `libcheck`; builds with ASan+UBSan+gcov). Covers stdstring, hash, queues, lists, utils. Add new tests under `libretro-common/test/<area>/` and wire into `libretro-common/Makefile.test`.
-- **Replay-based input tests** — `tests-other/*.ratst` are JSON action recordings replayed by RetroArch itself (verbose log compared against expectation). Not wired into a CI target here; see `Makefile.common:2750` for the `HAVE_TEST_DRIVERS` build flag (gates `test_joypad.o` + `test_input.o`).
+- **Replay-based input tests** — `tests-other/*.ratst` are JSON action recordings replayed by RetroArch itself (verbose log compared against expectation). Not wired into a CI target here; see `Makefile.common:2751` for the `HAVE_TEST_DRIVERS` build flag (gates `test_joypad.o` + `test_input.o`).
 - **Manual** — runtime issues: run with `-v` and reproduce.
 
 Applying global rule 10 (reproduce-before-fix) here: for libretro-common bugs, write the failing libcheck test under `libretro-common/test/<area>/` first; for runtime/input bugs, check whether a `.ratst` replay can capture the symptom before patching.

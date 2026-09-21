@@ -1,16 +1,16 @@
 # Audit infrastructure
 
-Project-side configuration for the global `/audit` and `/indie-review` skills. Their default invocations rediscover scope, tool flags, FP classes, and subsystem partition every run. On a 1.56M-LoC tree that's expensive — the 2026-04-25 baseline run produced **660 raw → 24 actionable** findings (~96% noise rate) and ~1.5M tokens across 8 indie-review lanes. This directory pins the rediscovered facts so future runs start from the calibrated state.
+Project-side configuration for the global `check-code` and `review-code` skills. Their default invocations rediscover scope, tool flags, FP classes, and subsystem partition every run. On a 1.56M-LoC tree that's expensive — the 2026-04-25 baseline run produced **660 raw → 24 actionable** findings (~96% noise rate) and ~1.5M tokens across 8 indie-review lanes. This directory pins the rediscovered facts so future runs start from the calibrated state.
 
 ## Files
 
 | File | What it is | Loaded by |
 |---|---|---|
 | [`scope.txt`](scope.txt) | Canonical Linux-desktop-scope prune list. One subtree per line. | `aggregate.py`, cppcheck `-i`, semgrep `--exclude`, clang-tidy filter, human grep |
-| [`audit-config.json`](audit-config.json) | Per-tool invocations: cppcheck/clang-tidy/semgrep/clazy/gitleaks/trivy/ruff/bandit flags + configs + known issues + presets (`default` / `quick` / `all` / `secrets`) + incremental-mode anchor | `/audit` orchestrator (when supported) — until then, copy commands by hand |
+| [`audit-config.json`](audit-config.json) | Per-tool invocations: cppcheck/clang-tidy/semgrep/clazy/gitleaks/trivy/ruff/bandit flags + configs + known issues + presets (`default` / `quick` / `all` / `secrets`) + incremental-mode anchor | `check-code` orchestrator (when supported) — until then, copy commands by hand |
 | [`suppressions.md`](suppressions.md) | Catalog of FP / won't-fix / awaiting-spec finding classes, with pre-triage drop rules | `aggregate.py --no-drop-known` to disable; triage subagent for narrative context |
-| [`aggregate.py`](aggregate.py) | Pre-triage rule-id × directory aggregator. Reads cppcheck XML / semgrep JSON / ruff JSON / pre-normalized JSON. Cuts triage input ~10× when raw findings >200. | `/audit` step 8 (pre-triage aggregation) |
-| [`indie-review-partition.md`](indie-review-partition.md) | Memoized 8-lane subsystem map with line ranges for the 18 mega-files, contract docs, external specs, and per-lane gotcha lists | `/indie-review` Phase 1 |
+| [`aggregate.py`](aggregate.py) | Pre-triage rule-id × directory aggregator. Reads cppcheck XML / semgrep JSON / ruff JSON / pre-normalized JSON. Cuts triage input ~10× when raw findings >200. | `check-code` step 6 (aggregation) |
+| [`indie-review-partition.md`](indie-review-partition.md) | Memoized 8-lane subsystem map with line ranges for the 18 mega-files, contract docs, external specs, and per-lane gotcha lists | `review-code` Phase 1 |
 
 ## Quick reference — running an audit
 
@@ -96,7 +96,7 @@ make -f libretro-common/Makefile.test
 `string_replace_substring` 3-arg call (Bundle 70) and the `strldup` /
 `path_is_directory` link breaks (Bundle 76) at the audit pass instead of letting
 them accrete silently. For test-suite *quality* (flakiness, weak assertions,
-duplication, missing `END_TEST` pairs) run the global `/test-audit` skill.
+duplication, missing `END_TEST` pairs) run the global `review-tests` skill.
 
 ## Adding a new tool
 
@@ -123,7 +123,7 @@ When a file crosses 5k LoC:
 
 The same `wc -l` step is also how the existing entries in
 `indie-review-partition.md` are kept honest: file lengths drift +10 to +40
-lines between bundles, so before each `/indie-review` run, re-run `wc -l` on
+lines between bundles, so before each `review-code` run, re-run `wc -l` on
 the big-file table's paths and refresh any line ranges whose endpoints have
 slipped past their author-banner boundaries. The doc instructs reviewers to
 "verify against current banner comments before each run" — `wc -l` is the
@@ -154,7 +154,7 @@ The 2026-04-25 baseline numbers are anchors for the *next full audit* run to com
 
 ## What this is NOT
 
-- Not a replacement for the global `/audit` and `/indie-review` skills — it's the **project-pinned config** they need to consume.
+- Not a replacement for the global `check-code` and `review-code` skills — it's the **project-pinned config** they need to consume.
 - Not a fix-the-bugs tool — `aggregate.py` produces a triage-input summary; the audit-triage subagent still picks actionable items.
 - Not an upstream-able artifact — this is fork-only configuration. If RetroArch upstream wants similar tooling, this is a starting point, not a deliverable.
 
@@ -162,5 +162,5 @@ The 2026-04-25 baseline numbers are anchors for the *next full audit* run to com
 
 - [`../ROADMAP.md`](../ROADMAP.md) — fork roadmap, per-finding history, bundle commit table.
 - [`../specs/`](../specs/) — feature/contract specs awaiting implementation.
-- [`~/.claude/skills/audit/SKILL.md`](~/.claude/skills/audit/SKILL.md) — global audit skill (consumed by `/audit`).
-- [`~/.claude/skills/indie-review/SKILL.md`](~/.claude/skills/indie-review/SKILL.md) — global indie-review skill (consumed by `/indie-review`).
+- [`~/.claude/skills/check-code/SKILL.md`](~/.claude/skills/check-code/SKILL.md) — global static-analysis skill, successor to `/audit`.
+- [`~/.claude/skills/review-code/SKILL.md`](~/.claude/skills/review-code/SKILL.md) — global cold-review skill, successor to `/indie-review`.
