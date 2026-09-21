@@ -50,13 +50,13 @@ release notes only in the private roadmap.
   `CLAUDE.md` § Fork document locations — not a divergence this file grants
   itself.
 - **A spec / design / ADR / standard whose edit changes what a conformer
-  would do runs through `review-contract`, before implementation.** This is
-  a hard rule (`~/.claude/CLAUDE.md` rule 14, which owns the trigger, the
-  loop cap and what a clean exit is) — the loop is the gate, a self-read
-  does not satisfy it. Loop 2+ runs cold (do not brief the reviewer on
-  prior findings). Record the loop.
-- Per-feature test contracts (`tests/features/<name>/spec.md`) are exempt —
-  a self-read suffices.
+  would do runs through `review-contract`, before implementation.** The
+  loop is the gate; a self-read does not satisfy it, and loop 2+ runs cold.
+- `~/.claude/CLAUDE.md` rule 14 owns everything else about that gate — the
+  trigger, its exclusions (including which test contracts are exempt and on
+  what conditions), the loop cap, what a clean exit is, and what record is
+  owed on each branch, gate or no gate. This file restates none of it, so
+  that it cannot drift from it.
 
 ## 5. Standards & policies
 
@@ -69,17 +69,22 @@ release notes only in the private roadmap.
 
 ## 6. Every factual claim is verified
 
-Any doc statement naming a file, function, line, constant, commit, or
-version is backed by a grep/read against current source before it is
-written — not by recall. A citation that has drifted (stale line number,
-wrong path) is a documentation bug. When a claim can't be verified on disk
-because it concerns intent or future direction, mark it as an open question
-rather than asserting it.
+Any doc statement naming a file, function, constant, commit, or version is
+backed by a grep/read against current source before it is written — not by
+recall. A citation that has drifted is a documentation bug. When a claim
+can't be verified on disk because it concerns intent or future direction,
+mark it as an open question rather than asserting it.
+
+Citation **form** is `/mnt/Games/CLAUDE.md`'s rule, which binds inside this
+repo because nothing here contradicts it: name the section, heading,
+filename or symbol — not a count, a line number or a size. A line number
+drifts by construction, which is why it is not a citation form here.
 
 ## 7. Ants MCP feedback
 
 Cross-session tooling feedback goes to the `<repo-dir>_Ants_MCP_Feedback.md`
-file that sits as a sibling of the repo root (today
-`/mnt/Games/Scripts/Linux/RetroArch_Ants_MCP_Feedback.md`), via the
-`feedback_query` / `feedback_log` verbs — append findings at the end, never
+file inside the sibling `Ants_MCP_Feedback_Files/` directory one level above
+the repo root (today
+`/mnt/Games/Scripts/Linux/Ants_MCP_Feedback_Files/RetroArch_Ants_MCP_Feedback.md`),
+via the `feedback_query` / `feedback_log` verbs — append findings at the end, never
 edit a maintainer tracking block, never self-assign `ANTS-NNNN` ids.
