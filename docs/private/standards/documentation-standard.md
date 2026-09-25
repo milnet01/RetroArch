@@ -56,7 +56,7 @@ release notes only in the private roadmap.
 - Body: what changed and **why**, plus the verification performed
   ("builds; cppcheck clears the site"). A six-month reader must understand
   why the code looks this way without the author.
-- Source fixes commit to `local/fixes-2026-04`; roadmap/docs commit to
+- Source fixes commit to `local/fixes-2026-09` (`local/fixes-2026-04` is the pre-sync backup); roadmap/docs commit to
   `local/audit-2026-04`. Bundle commits cross-reference each other by SHA.
 - A commit Claude Code writes ends with the `Co-Authored-By:` trailer its
   attribution instruction specifies.

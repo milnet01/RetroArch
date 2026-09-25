@@ -128,7 +128,7 @@ Every other new text follows the parent rule: names, not counts, line numbers or
 This checkout is a libretro/RetroArch fork carrying ongoing audit + refactor work. The fork is operated under a two-branch model that the upstream tree does not mirror:
 
 - **`local/audit-2026-04`** — roadmap + docs branch. `docs/private/ROADMAP.md`, `docs/private/AUDIT-POLICY.md`, `docs/private/specs/`, `docs/private/plans/`, and `docs/private/audit/` live here. All cold-eyes / indie-review / audit-fold-in commits land on this branch.
-- **`local/fixes-2026-04`** — source-fix branch. Its worktree is `/mnt/Games/Scripts/Linux/ra-fixes`; if `git worktree list` does not show it, create it with `git worktree add /mnt/Games/Scripts/Linux/ra-fixes local/fixes-2026-04`. Never under `/tmp`, which is RAM on this machine. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
+- **`local/fixes-2026-09`** — source-fix branch. Its worktree is `/mnt/Games/Scripts/Linux/ra-fixes`; if `git worktree list` does not show it, create it with `git worktree add /mnt/Games/Scripts/Linux/ra-fixes local/fixes-2026-09`. Never under `/tmp`, which is RAM on this machine. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
 
 Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. When asked to "fold in" or "log a bundle", write it through `roadmap_log` on the audit branch — the roadmap store is the source of truth and the file is rendered from it; when asked to fix a finding, switch to the fixes-branch worktree.
 

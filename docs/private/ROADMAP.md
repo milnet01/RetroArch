@@ -1282,7 +1282,7 @@ settings, cheats and saves, and no desktop GUI. RetroDB owns choosing and
 downloading the best core, from a ranked list per system. The fork is synced to
 current upstream first, so the player is built on current code.
 
-- 📋 [RETR-0003] **SYNC — rebase the fork's fixes onto current upstream on a new branch.**
+- ✅ [RETR-0003] **SYNC — rebase the fork's fixes onto current upstream on a new branch.**
   The fork split from upstream at `6ff3332ea2` (2026-04-25). Upstream has since
   added 5,351 commits; `local/fixes-2026-04` carries 94 fork-only commits. A
   dry-run `git merge-tree` of the two shows 62 conflicting files. Plan (user's
@@ -1290,6 +1290,13 @@ current upstream first, so the player is built on current code.
   commits one at a time, and drop any upstream already made. Keep
   `local/fixes-2026-04` and `local/audit-2026-04` untouched as backups.
   Done when all five `local-CI.sh` jobs pass on the new branch.
+  Resolved 2026-09-25. `local/fixes-2026-09` is today's upstream plus 82 fork commits, pushed through the five-job local gate (all PASS). The 94 fixes-branch commits and 6 audit-only commits were replayed one at a time. Per-commit outcomes are in `docs/private/audit/upstream-sync-2026-09-decisions.md`: PARTIAL 29, PORTED 20, UPSTREAM-KEPT 9, UPSTREAM-FIXED 8, STYLE-DROPPED 5, REVERTED 1. The CRITICAL TLS fix (RETR-S0030) was ported onto upstream's settings_def system.
+
+  Three cold reviewers found six merge defects: C11 asserts, a thumbnail race, a const free, a griffin weak-symbol clash, a bsvmovie invariant and an unused variable. All six were fixed in `150ab86211`.
+
+  The local gate's c89 job now disables SDL3, matching retroarch.yml. The i686 failures were upstream's own (2141cd1676 failed on GitHub too), fixed upstream by 57da4697cc; the branch was rebased onto it. Fork `master` is merged up to upstream (its two FUNDING.yml commits net to nothing). `local/fixes-2026-04` and `local/audit-2026-04` are untouched backups.
+
+  Follow-ups: RETR-0005 to RETR-0009.
   **Layman:** Bring in five months of official RetroArch updates without losing any of the fork's own fixes.
   Kind: chore.
   Source: user-request-2026-09-25.

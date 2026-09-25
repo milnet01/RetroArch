@@ -79,7 +79,7 @@ desktop.
   `libretro-common` libcheck test can capture the symptom, write it first
   (see the root `CLAUDE.md` §Tests).
 - Before pushing `local/*` source branches, run `local-CI.sh` — it lives at
-  the root of the `local/fixes-2026-04` fixes worktree (the repo-root
+  the root of the `local/fixes-2026-09` fixes worktree (the repo-root
   `CLAUDE.md` § Fork workflow names its path), not on the audit branch.
   `local/*` pushes have not triggered GitHub CI to date, but no workflow
   filter guarantees that.
