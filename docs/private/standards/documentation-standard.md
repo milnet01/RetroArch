@@ -17,26 +17,31 @@ release notes only in the private roadmap.
 
 ## 2. ROADMAP format (ants-v1)
 
-- Emoji-status narrator bullets, matching the legend at the head of
+- **The Ants roadmap store is the source of truth.** `docs/private/ROADMAP.md`
+  is rendered from it, and a hand edit to the file is discarded by the next
+  `roadmap_log` write. Every change goes through `roadmap_log`; read with
+  `roadmap_query`.
+- Every item carries an id. Items migrated from the old id-less file carry
+  a synthesised `RETR-S<NNNN>` id; the store allocates ids for new items.
+  Cite an item by its id.
+- Emoji-status bullets, matching the legend at the head of
   `docs/private/ROADMAP.md`, which is authoritative for this vocabulary:
   `📋 pending`, `🚧 in progress`, `✅ done`, `🔄 deferred / waiting on
   upstream`, `❌ won't-fix / verified-FP / resolved-stale`. The last two
   are kept deliberately after closure — the analyser re-reports a
   suppressed false positive every run, and without its own mark a
   suppressed finding is indistinguishable from a live regression.
-  Bullets are id-less (legacy ants-v1); do not add `[PROJ-NNNN]` ids to
-  existing bullets.
+- An open item carries a `Layman:` summary. The store refuses a write
+  that touches an open item without one.
 - A closed bullet cites its fix commit(s). The prevailing form is
   `_(Fixed `<sha>` — <what/why>.)_`; fix-branch closures also use
   `_(Bundle N — fixed in `<sha>` on `local/fixes-2026-04`. <what/why>.)_`.
 - The **Bundle progress (running summary)** table at the top is the index:
   one row `| N | commit(s) | theme | sites |` per bundle, appended in
   ascending bundle order.
-- Prefer the Ants MCP verbs (`roadmap_query`, `roadmap_log`) over hand
-  edits where they apply. The bundle-progress **table row** is currently a
-  hand edit: `roadmap_log op:"bundle_row"` exists but was non-functional as of
-  2026-07-03 (its `cells` argument was unwired on the running server — see
-  the fork's `*_Ants_MCP_Feedback.md`); re-check before relying on it.
+- A bundle-progress table row is appended with `roadmap_log
+  op:"bundle_row"`, which escapes a `|` inside a cell. A bare `|` in a
+  cell splits the row and makes the render refuse.
 
 ## 3. Commit messages
 

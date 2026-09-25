@@ -113,7 +113,7 @@ Design documents are named here deliberately: that directory already holds three
 Two fork-specific reasons:
 
 - This is a downstream fork of a tree we do not own and re-sync from. Every fork-authored document lives under `docs/private/` so a re-vendor never collides with upstream — and a top-level `docs/specs/` is exactly such a collision.
-- The `<ID>-` half assumes a roadmap that allocates ids. This fork's `docs/private/ROADMAP.md` is deliberately id-less (legacy ants-v1; see `docs/private/standards/documentation-standard.md` §2), so there are no ids to name a spec with.
+- The existing specs are named by date, and the roadmap and the fork's audit docs cite them by those names. The roadmap now carries ids (`docs/private/standards/documentation-standard.md` §2), but renaming the specs to `<ID>-<topic>` would break every existing citation, so new specs keep the date form for one naming scheme per directory.
 
 The override reaches spec **locations and filenames** only. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
 
@@ -124,7 +124,7 @@ This checkout is a libretro/RetroArch fork carrying ongoing audit + refactor wor
 - **`local/audit-2026-04`** — roadmap + docs branch. `docs/private/ROADMAP.md`, `docs/private/AUDIT-POLICY.md`, `docs/private/specs/`, and `docs/private/audit/` live here. All cold-eyes / indie-review / audit-fold-in commits land on this branch.
 - **`local/fixes-2026-04`** — source-fix branch, typically checked out via the `/tmp/ra-fixes` worktree. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
 
-Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. When asked to "fold in" or "log a bundle", append to the ROADMAP on the audit branch; when asked to fix a finding, switch to the fixes-branch worktree.
+Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. When asked to "fold in" or "log a bundle", write it through `roadmap_log` on the audit branch — the roadmap store is the source of truth and the file is rendered from it; when asked to fix a finding, switch to the fixes-branch worktree.
 
 `docs/private/audit/aggregate.py` is the fork's local audit-aggregator that drives `last_audit_summary` / `audit_run` MCP integrations; `.cppcheck-suppress.txt` at repo root holds the cppcheck inline-suppression set the aggregator respects. See `docs/private/AUDIT-POLICY.md` for the false-positive-pattern +
 suppression contract.
