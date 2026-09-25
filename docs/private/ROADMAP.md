@@ -1346,3 +1346,15 @@ current upstream first, so the player is built on current code.
   **Layman:** A feature that copies the emulator core to a temporary file picks a guessable name, which another program on the machine could exploit.
   Kind: security.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit 92d8e97cd5.
+
+- 📋 [RETR-0007] **UPSTREAM — libretro-common linked_list_remove_*_matching crashes on a NULL callback.**
+  The fork's 00e6d85 guarded `linked_list_remove_first_matching` and
+  `linked_list_remove_all_matching` against a NULL `matches` callback. The
+  upstream sync kept upstream's vendored libretro-common unchanged, and
+  upstream still dereferences the NULL callback. It goes to libretro-common
+  upstream, with the fork's regression test (also dropped in the sync:
+  `3a6278b` END_TEST macros and `31e000b` tmpnam in the tests are the same
+  class). A candidate for the RETR-S0115 upstreaming batch.
+  **Layman:** A shared helper library crashes if it is asked to remove list items without being told how to match them; the fix belongs in the original project.
+  Kind: fix.
+  Source: upstream-sync 2026-09-25 (RETR-0003), fork commit 00e6d85.
