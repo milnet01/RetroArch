@@ -1332,3 +1332,17 @@ current upstream first, so the player is built on current code.
   **Layman:** A download helper might use a finished download's data after it has been cleaned up; check whether upstream's new design still allows it.
   Kind: investigate.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit de0c6000c8.
+
+- 📋 [RETR-0006] **SECURITY — run-ahead's temporary core copy still uses a predictable name.**
+  The fork's 92d8e97cd5 gave run-ahead's temp DLL a CSPRNG name and created
+  it with O_EXCL/O_NOFOLLOW. Upstream has replaced the read-then-write copy
+  with an async VFS copy task (`filestream_copy_begin`,
+  `RETRO_VFS_COPY_OVERWRITE`). Its fallback name still comes from a
+  time-seeded LCG, and the primary path overwrites a predictable
+  `<tmp>/<core_name>`. The fix belongs in libretro-common's VFS copy, which is
+  vendored, so it goes upstream (libretro-common or RetroArch) rather than into
+  a local patch. The sync kept upstream's code. A candidate for the RETR-S0115
+  upstreaming batch.
+  **Layman:** A feature that copies the emulator core to a temporary file picks a guessable name, which another program on the machine could exploit.
+  Kind: security.
+  Source: upstream-sync 2026-09-25 (RETR-0003), fork commit 92d8e97cd5.
