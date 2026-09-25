@@ -18,17 +18,20 @@ the same directory:
   (`audio/drivers/`, `gfx/drivers/`, `input/drivers_joypad/`, …), defining
   an instance named `<subsystem>_<name>`: `audio_driver_t audio_alsa`,
   `video_driver_t video_gl2`, `menu_ctx_driver_t menu_ctx_ozone`. Joypad
-  drivers are the exception: `input_device_driver_t sdl_joypad`.
-  Microphone drivers have no directory of their own: each is defined in
+  and HID drivers are the exceptions: `input_device_driver_t sdl_joypad`,
+  `hid_driver_t libusb_hid`.
+  Microphone drivers have no directory of their own: most are defined in
   the matching audio backend's file (`microphone_alsa` in
-  `audio/drivers/alsa.c`), and `microphone_drivers[]` is in
+  `audio/drivers/alsa.c`), some in a dedicated file beside it
+  (`audio/drivers/coreaudio_mic_macos.m`), and `microphone_drivers[]` is in
   `audio/audio_driver.c`.
 - Registered in the subsystem's NULL-terminated registry array
   (`video_drivers[]`, `audio_drivers[]`, `menu_ctx_drivers[]`, …), gated on
   a `HAVE_*` macro.
 
 Adding a driver: write its `.c` file named like its siblings (`alsa.c`,
-`gl2.c`; joypads `<name>_joypad.c`; record `record_<name>.c`); add its object under the right `HAVE_*`
+`gl2.c`; joypads `<name>_joypad.c`; HID `<name>_hid.c`; record
+`record_<name>.c`); add its object under the right `HAVE_*`
 block in `Makefile.common`; add it to `griffin/griffin.c` if it should
 build on consoles (see [`coding-standard.md`](coding-standard.md) §6);
 insert the `extern` + array entry in the registry.
@@ -78,9 +81,10 @@ Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
   `…-plan-loop-log.md`. The repo-root `CLAUDE.md` § Fork document locations
   declares these locations.
 - **Other review loop logs** (a standard, a policy, the repo-root
-  `CLAUDE.md`): `docs/private/reviews/<document-name>-loop-log.md`, named
-  after the document in lower case. The existing logs are the pattern:
-  `documentation-standard-loop-log.md`, `claude-md-loop-log.md`.
+  `CLAUDE.md`): `docs/private/reviews/<stem>-loop-log.md`, where `<stem>`
+  is the document's filename lower-cased with `.md` dropped
+  (`AUDIT-POLICY.md` → `audit-policy-loop-log.md`). One named exception:
+  the repo-root `CLAUDE.md` is `claude-md-loop-log.md`.
 - **Audit cache:** `.audit_cache/cppcheck-b<NN>[<letter>][-<scope>].xml`,
   where `NN` is the bundle number, an optional `<letter>` disambiguates
   re-runs within a bundle (`cppcheck-b58b.xml`), and an optional `<scope>`
@@ -98,6 +102,6 @@ Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
 
 - Match the file's existing convention; the tree is C, lower_snake_case for
   functions and variables, `UPPER_SNAKE` for macros/enums, `<subsys>_<name>`
-  for driver instances (joypads: `<name>_joypad`; see §1).
+  for driver instances (joypads `<name>_joypad`, HID `<name>_hid`; see §1).
 - No new global state without a subsystem `*_state_get_ptr()` accessor
   following the existing singleton pattern.
