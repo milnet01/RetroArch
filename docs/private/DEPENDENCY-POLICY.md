@@ -91,7 +91,7 @@ bump rather than a silent surprise.
 
 Concrete example in this tree — the CI i686 image
 `reallibretroretroarch/libretro-build-i386-ubuntu:xenial-gcc9`
-(`.github/workflows/Linux.yml:19`) bundles a Qt5 whose moc does not link
+(the `container:` image in `.github/workflows/Linux.yml`) bundles a Qt5 whose moc does not link
 RetroArch's Qt frontend: `master` itself fails that link in this image
 (verified 2026-07-03 by building it). This never surfaces on CI — `Linux.yml`
 passes `./configure --disable-qt …`, and the headless job (`Linux-Headless.yml`)

@@ -4,7 +4,7 @@ Project-specific guidance for Claude Code in this repository. Layers on top of `
 
 ## What this is
 
-RetroArch is the reference frontend for the libretro API. The bulk of the codebase is C (with some C++/Objective-C/Metal for platform glue), and most of it ports to ~50 platforms — desktop, consoles, handhelds, mobile, web. Portability constraints drive almost every coding decision below.
+RetroArch is the reference frontend for the libretro API. The bulk of the codebase is C (with some C++/Objective-C/Metal for platform glue), and most of it ports to dozens of platforms — desktop, consoles, handhelds, mobile, web. Portability constraints drive almost every coding decision below.
 
 ## Build system
 
@@ -16,7 +16,7 @@ make -j$(nproc)             # builds ./retroarch
 make V=1 DEBUG=1            # verbose / -O0 -g / separate obj-unix/debug/ tree
 ```
 
-Per-platform Makefiles live in the repo root: `Makefile.<platform>` (`Makefile.win`, `Makefile.ctr`, `Makefile.libnx`, `Makefile.ps2`, `Makefile.emscripten`, `Makefile.apple`, ...). All but the most exotic ones `include Makefile.common` (~3000 lines of `HAVE_*` conditionals — the actual source list).
+Per-platform Makefiles live in the repo root: `Makefile.<platform>` (`Makefile.win`, `Makefile.ctr`, `Makefile.libnx`, `Makefile.ps2`, `Makefile.emscripten`, `Makefile.apple`, ...). All but the most exotic ones `include Makefile.common` (the `HAVE_*` conditionals that form the actual source list).
 
 `Makefile.local` is a per-developer override `-include`d by the main Makefile — use it for personal `CFLAGS`, never commit it.
 
@@ -33,10 +33,10 @@ Console targets (`Makefile.psp1`, `Makefile.ctr`, `Makefile.ps2`, `Makefile.wii`
 No integration-level test runner. What exists:
 
 - **libretro-common unit tests** — `cd libretro-common && make -f Makefile.test` (needs `libcheck`; builds with ASan+UBSan+gcov). Covers stdstring, hash, queues, lists, utils. Add new tests under `libretro-common/test/<area>/` and wire into `libretro-common/Makefile.test`.
-- **Replay-based input tests** — `tests-other/*.ratst` are JSON action recordings replayed by RetroArch itself (verbose log compared against expectation). Not wired into a CI target here; see `Makefile.common:2751` for the `HAVE_TEST_DRIVERS` build flag (gates `test_joypad.o` + `test_input.o`).
+- **Replay-based input tests** — `tests-other/*.ratst` are JSON action recordings replayed by RetroArch itself (verbose log compared against expectation). Not wired into a CI target here; see the `HAVE_TEST_DRIVERS` block in `Makefile.common` for the build flag (gates `test_joypad.o` + `test_input.o`).
 - **Manual** — runtime issues: run with `-v` and reproduce.
 
-Applying global rule 10 (reproduce-before-fix) here: for libretro-common bugs, write the failing libcheck test under `libretro-common/test/<area>/` first; for runtime/input bugs, check whether a `.ratst` replay can capture the symptom before patching.
+Applying `~/.claude/standards/testing.md` §1 (test first) here: for libretro-common bugs, write the failing libcheck test under `libretro-common/test/<area>/` first; for runtime/input bugs, check whether a `.ratst` replay can capture the symptom before patching.
 
 ## Architecture
 
@@ -48,25 +48,25 @@ Every subsystem (video, audio, input, joypad, menu, camera, location, record, MI
 3. NULL-terminated array `<subsystem>_drivers[]` in `<subsystem>_driver.c`, gated on `HAVE_*` macros from `config.h`.
 4. Selection by string `ident` from configuration (or first available); the chosen driver pointer lives on the subsystem's static state struct.
 
-Examples: `gfx/video_driver.c:363` (`video_drivers[]`), `audio/audio_driver.c:128`, `input/input_driver.c:338`, `menu/menu_driver.c:331`. **Adding a new driver:** write `<name>.c`, add to `Makefile.common` under the right `HAVE_*` block (and to `griffin/griffin.c` if it should build on consoles), insert the `extern` + array entry in the subsystem's driver registry.
+Examples: `video_drivers[]` in `gfx/video_driver.c`, `audio_drivers[]` in `audio/audio_driver.c`, `input_drivers[]` in `input/input_driver.c`, `menu_ctx_drivers[]` in `menu/menu_driver.c`. **Adding a new driver:** write `<name>.c`, add to `Makefile.common` under the right `HAVE_*` block (and to `griffin/griffin.c` if it should build on consoles), insert the `extern` + array entry in the subsystem's driver registry.
 
 ### Singleton state
 Each subsystem keeps a single file-static struct accessed via `<subsystem>_state_get_ptr()`:
-- `runloop_state` (`runloop.c:322`) — main loop flags, msg queue, performance counters, frame counters
+- `runloop_state` (in `runloop.c`) — main loop flags, msg queue, performance counters, frame counters
 - `video_st`, `audio_st`, `input_driver_st`, `menu_st`, etc.
 
 **Not threadsafe by default**; protection is per-field (`runloop_st->msg_queue_lock`, etc.). When touching shared fields from a task thread, find the existing lock — don't add new ones.
 
 ### Main loop & lifecycle
-- `main_entry` (decl `frontend/frontend.h:39`, def `retroarch.c:6117`) -> `retroarch_main_init` (in `retroarch.c`) -> `runloop_iterate` (`runloop.c`).
-- `retroarch.c` (~9k lines) is the libretro environment-callback dispatcher, command-line parser, and core/content load orchestrator. The single-file size is **deliberate** — function-call overhead is measurable on consoles.
+- `rarch_main` (declared in `frontend/frontend.h`, defined in `retroarch.c`; its doc comment still calls it `main_entry`) -> `retroarch_main_init` (in `retroarch.c`) -> `runloop_iterate` (`runloop.c`).
+- `retroarch.c` is the libretro environment-callback dispatcher, command-line parser, and core/content load orchestrator. Its single-file size is **deliberate** — function-call overhead is measurable on consoles.
 - `command.c` — network/stdin command IPC (pause, save state, etc.).
 - `dynamic.c` / `dynamic.h` — load the libretro core via `dylib_load` and bind its symbols.
 
 ### Configuration
 - `config.def.h` — every default value.
-- `configuration.c` (~7700 lines) — parser, saver, override merging, per-core/per-content/per-game cfg layering. **Avoid getters/setters**; settings are accessed as struct fields on `settings_t`.
-- `menu/menu_setting.c` (~26000 lines) — the entire user-visible settings tree (label, range, callback) for the menu UI.
+- `configuration.c` — parser, saver, override merging, per-core/per-content/per-game cfg layering. **Avoid getters/setters**; settings are accessed as struct fields on `settings_t`.
+- `menu/menu_setting.c` — the entire user-visible settings tree (label, range, callback) for the menu UI.
 - `intl/msg_hash_*.h` — translatable strings, keyed by enum. Translations come from Crowdin (`Fetch translations from Crowdin` commits); don't edit non-`us` files by hand.
 
 **Every new setting needs three edits**: an entry in `menu/menu_setting.c`, a default in `config.def.h`, and a load/save line in `configuration.c`.
@@ -84,7 +84,7 @@ Both are **vendored**. `libretro-common/` mirrors github.com/libretro/libretro-c
 
 From `CODING-GUIDELINES`, `CONTRIBUTING.md`, and the C89/console-portability constraints. Compilers don't always catch violations.
 
-- **C89 + ISO C++ compatible.** No declaration-after-statement, no `for (int i = ...)`, no VLAs, no `//`-only comments — these break Xbox 360 / older MSVC builds. Declare variables at the top of a function or block. (This is the explicit-pin exception in global rule 5: don't reach for current C idioms here even though they'd compile on most targets.)
+- **C89 + ISO C++ compatible.** No declaration-after-statement, no `for (int i = ...)`, no VLAs, no `//`-only comments — these break Xbox 360 / older MSVC builds. Declare variables at the top of a function or block. (This is a deliberate exception to `~/.claude/standards/coding.md` §1.5's current-idioms rule: don't reach for current C idioms here even though they'd compile on most targets.)
 - **Allman braces.** No braces for single-statement blocks (unless the body is a multi-line macro).
 - `for (;;)` over `while (true)`.
 - **Avoid one-line getter/setter functions.** Read/write the struct field directly. Function-call overhead is real on PSP/3DS/Wii.
@@ -108,7 +108,7 @@ From `CODING-GUIDELINES`, `CONTRIBUTING.md`, and the C89/console-portability con
 
 **Fork specs, design documents and ADRs live at `docs/private/specs/YYYY-MM-DD-<slug>.md`** — not at `docs/specs/<ID>-<topic>.md`, and not at `docs/design.md`. **Build plans live at `docs/private/plans/YYYY-MM-DD-<slug>.md`**, not at `docs/plans/<ID>-<topic>.md`, including a plan `write-spec --plan` produces. This overrides global rule 14a's fixed locations, using the mechanism `~/.claude/CLAUDE.md` § The foundation grants a per-project `CLAUDE.md`. A session following it says which it followed, as that section requires.
 
-Design documents are named here deliberately: that directory already holds three `-design.md` files, so an override naming specs alone would have left them claiming an authority that did not cover them.
+Design documents are named here deliberately: that directory already holds `-design.md` files, so an override naming specs alone would have left them claiming an authority that did not cover them.
 
 Two fork-specific reasons:
 
@@ -131,7 +131,7 @@ New text uses names, not line numbers.
 This checkout is a libretro/RetroArch fork carrying ongoing audit + refactor work. The fork is operated under a two-branch model that the upstream tree does not mirror:
 
 - **`local/audit-2026-04`** — roadmap + docs branch. `docs/private/ROADMAP.md`, `docs/private/AUDIT-POLICY.md`, `docs/private/specs/`, `docs/private/plans/`, and `docs/private/audit/` live here. All cold-eyes / indie-review / audit-fold-in commits land on this branch.
-- **`local/fixes-2026-04`** — source-fix branch, typically checked out via the `/tmp/ra-fixes` worktree. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
+- **`local/fixes-2026-04`** — source-fix branch, checked out in its own worktree on disk — not under `/tmp`, which is RAM on this machine. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
 
 Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. When asked to "fold in" or "log a bundle", write it through `roadmap_log` on the audit branch — the roadmap store is the source of truth and the file is rendered from it; when asked to fix a finding, switch to the fixes-branch worktree.
 
