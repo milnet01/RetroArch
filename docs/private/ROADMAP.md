@@ -1218,7 +1218,7 @@ in the commit bodies, not in the documents — see each loop's commit.
   **Layman:** The repo's instruction file for Claude changed where specs go and still needs its independent review.
   Kind: doc.
 
-- 📋 [RETR-S0148] **MEDIUM — DOC — line-number citations across the fork's docs.**
+- ✅ [RETR-S0148] **MEDIUM — DOC — line-number citations across the fork's docs.**
   `/mnt/Games/CLAUDE.md` binds inside this repo (nothing here contradicts
   it) and forbids counts, line numbers and sizes in documents — name the
   section, heading, filename or symbol instead.
@@ -1236,6 +1236,14 @@ in the commit bodies, not in the documents — see each loop's commit.
   repo-root `CLAUDE.md` § Citation form (`aeb43c313d`). Still owed: the
   sweep of the live docs, meaning the standards, the policies and the
   repo-root `CLAUDE.md`.
+  Resolved 2026-09-25 (`c07532ed27`): the repo-root `CLAUDE.md` and
+  `DEPENDENCY-POLICY.md` now cite names, not line numbers. The CLAUDE.md
+  gate also removed sizes and corrected three stale claims. The
+  standards held no live line cites. Left as written by design:
+  `docs/private/audit/suppressions.md`, which mirrors the line-keyed
+  cppcheck suppression list, and `indie-review-partition.md`, which is a
+  size table. Dated records keep theirs, per the repo-root `CLAUDE.md` §
+  Citation form.
   **Layman:** The docs cite line numbers that go stale as code changes; we need to decide which docs to clean up.
   Kind: doc-fix.
 
