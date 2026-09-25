@@ -1358,3 +1358,27 @@ current upstream first, so the player is built on current code.
   **Layman:** A shared helper library crashes if it is asked to remove list items without being told how to match them; the fix belongs in the original project.
   Kind: fix.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit 00e6d85.
+
+- 📋 [RETR-0008] **TLS — re-apply the verification mode after a config reload or override.**
+  `ssl_socket_set_verify_mode` has two callers: startup in `retroarch.c` and
+  the menu write handler in `menu/menu_setting.c`. A per-core or per-game
+  override, or a config reload that changes `tls_verify_mode`, updates the
+  setting without pushing it to the SSL backend. The backend keeps the
+  previous mode, which may be looser than the new one. Fix: push the mode
+  after `config_load_override` and `config_load`. Part of the TLS fix
+  (RETR-S0030), fork branch `local/fixes-2026-09`.
+  **Layman:** If a game-specific settings file changes the secure-connection setting, the change is not applied until RetroArch restarts.
+  Kind: security.
+  Source: sync review 2026-09-25 (network lane).
+
+- 📋 [RETR-0009] **UPSTREAM — filestream_write_file_atomic can lose both copies when the rename fails.**
+  In libretro-common `streams/file_stream.c`, when the first rename of the
+  temp file fails, the helper deletes the destination and retries. If the
+  retry also fails, it deletes the temp file too, so neither the old nor the
+  new contents remain. The fork now relies on the helper for disk-index
+  saves. The helper is vendored, so the fix goes upstream: keep the temp
+  file, or restore the destination, when the retry fails. A candidate for
+  the RETR-S0115 upstreaming batch.
+  **Layman:** A shared save helper meant to prevent half-written files can, in a rare failure, delete both the old file and the new one.
+  Kind: fix.
+  Source: sync review 2026-09-25 (core lane).
