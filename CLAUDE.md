@@ -21,7 +21,7 @@ Per-platform Makefiles live in the repo root: `Makefile.<platform>` (`Makefile.w
 `Makefile.local` is a per-developer override `-include`d by the main Makefile — use it for personal `CFLAGS`, never commit it.
 
 ### Griffin (unity build)
-Console targets (`Makefile.psp1`, `Makefile.ctr`, `Makefile.ps2`, `Makefile.wii`, `Makefile.wiiu`, ...) build via **`griffin/griffin.c`**, which `#include`s the .c sources directly (`-DHAVE_GRIFFIN=1`). When you add or rename a source file, neither build picks it up on its own: add its `.o` to `Makefile.common` under the right `HAVE_*` block, and add it to `griffin/griffin.c` (or `griffin_cpp.cpp` / `griffin_objc.m`), or **griffin builds will silently miss it**. Verify any `.c` file you add appears in both lists.
+Console targets (`Makefile.psp1`, `Makefile.ctr`, `Makefile.ps2`, `Makefile.wii`, `Makefile.wiiu`, ...) build via **`griffin/griffin.c`**, which `#include`s the .c sources directly (`-DHAVE_GRIFFIN=1`). When you add or rename a source file, neither build picks it up on its own: add its `.o` to `Makefile.common` under the right `HAVE_*` block, and — if it should build on consoles — add it to `griffin/griffin.c` (or `griffin_cpp.cpp` / `griffin_objc.m`), or **griffin builds will silently miss it**. Verify every file meant for both appears in both lists.
 
 ### Other variants (one-liners)
 - **macOS bundle** — `make bundle` after `make` produces ad-hoc-signed `RetroArch.app`; min-OS derived from `-mmacosx-version-min`. `BUNDLE_*` overrides at the bottom of the root `Makefile`.
@@ -69,7 +69,7 @@ Each subsystem keeps a single file-static struct accessed via `<subsystem>_state
 - `menu/menu_setting.c` — the entire user-visible settings tree (label, range, callback) for the menu UI.
 - `intl/msg_hash_*.h` — translatable strings, keyed by enum. Translations come from Crowdin (`Fetch translations from Crowdin` commits); don't edit non-`us` files by hand.
 
-**A new setting spans many files**: at least an entry in `menu/menu_setting.c`, a default in `config.def.h`, a load/save line in `configuration.c`, and its `settings_t` field in `configuration.h`, plus its label enum and strings. To find the full set, pick an existing setting of the same type, search the tree for its name in lower case (`video_shader_delay`) and upper case (`VIDEO_SHADER_DELAY`, which finds its `MENU_LABEL(...)` enum and strings), and mirror every hit outside non-`us` translation files.
+**A new setting spans many files**: at least an entry in `menu/menu_setting.c`, a default in `config.def.h`, a load/save line in `configuration.c`, and its `settings_t` field in `configuration.h`, plus its label enum and strings. To find the full set, pick an existing setting of the same type, search the tree for its name in lower case (`video_shader_delay`) and upper case (`VIDEO_SHADER_DELAY`, which finds its `MENU_LABEL(...)` enum and strings), and mirror every registration hit: menu entry, default, load/save, `settings_t` field, label enum, sublabel and `us` strings. Hits in behaviour code (such as `runloop.c`) are where that one setting is used, not part of the pattern.
 
 ### Menu
 Four interchangeable menu drivers in `menu/drivers/`: **rgui** (low-spec text-grid), **ozone** (sidebar, default on desktop), **xmb** (PS3-style horizontal), **materialui** (touch). All read from the same `menu_displaylist`/`menu_entries`/`menu_setting` substrate. Cross-driver UI logic lives in `menu/`; driver-specific rendering lives in the driver file.
@@ -112,16 +112,16 @@ Two fork-specific reasons:
 - This is a downstream fork of a tree we do not own and re-sync from. Every fork-authored document lives under `docs/private/` so a re-vendor never collides with upstream — and a top-level `docs/specs/` or `docs/plans/` is exactly such a collision.
 - The existing specs are named by date, and the roadmap and the fork's audit docs cite them by those names. The roadmap now carries ids (`docs/private/standards/documentation-standard.md` §2), but renaming the specs to `<ID>-<topic>` would break every existing citation, so new specs keep the date form for one naming scheme per directory.
 
-The override reaches spec and plan **locations and filenames** only: `write-spec` is still how both are written, with its output redirected here. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
+The override reaches spec and plan **locations and filenames** only: `write-spec` is still how both are written. It does not read this override, so give it the paths: the spec or plan above, and its review loop log at `docs/private/reviews/<same-stem>-loop-log.md` instead of its default `docs/reviews/`. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
 
 ## Citation form (override of `/mnt/Games/CLAUDE.md`)
 
 `/mnt/Games/CLAUDE.md` § Writing and Editing Documents binds here: no counts, line numbers or sizes. This deeper file narrows it in two places, by the global rule that the deeper `CLAUDE.md` wins where two conflict:
 
 - A structured datum in a table cell is a field, not prose. The `Sites` count in the ROADMAP's bundle table stays.
-- A dated record keeps its line numbers as written: a closed roadmap entry, a commit body, a review loop log. It was true on its date, and rewriting it damages the record.
+- A dated record may cite line numbers, and keeps the ones it has: a closed roadmap entry, a commit body, a review loop log. It is written once and never revised, so a line number in it stays true of its date, and rewriting it damages the record.
 
-New text uses names, not line numbers.
+Every other new text uses names, not line numbers.
 
 ## Fork workflow (private)
 
