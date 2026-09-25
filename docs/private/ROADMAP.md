@@ -968,6 +968,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   reviews each branch and draft itself, records the final drafts in
   `docs/private/upstream-prs/`, then pushes the pr/* branches and opens
   the PRs and issues. This supersedes the earlier review-first decision.
+  Paused 2026-09-26 at the user's request. Record only; nothing is pushed or opened yet.
+  State: a background agent was preparing the local branches pr/* in worktree /mnt/Games/Scripts/Linux/ra-pr, with drafts in /mnt/Games/Scripts/Linux/ra-pr-drafts/. Its result was not yet reviewed.
+  Next session:
+  1. Check which branches and drafts exist and are complete; redo any missing ones.
+  2. Review each branch (topic-only diff, `make -j4`, C89 build of touched files) and each draft.
+  3. Record the final drafts in `docs/private/upstream-prs/`.
+  4. Push the branches and open the PRs and issues. The user has pre-approved this and will not review.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
