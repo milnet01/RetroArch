@@ -1008,6 +1008,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   samples-tasks, common-samples, linux-i686, headless-i686), all PASS.
   On `local/audit-2026-04` the hook correctly finds no gate, since that
   branch carries no source.
+  2026-09-26: GitHub Actions is DISABLED on milnet01/RetroArch at the
+  user's request. From about 19:00 on 2026-09-25, pushes to
+  `local/audit-2026-04` began triggering upstream's roughly 20 workflows
+  (96 runs, 18 failures, email flood); 32 queued runs were cancelled.
+  The fork relies on the local pre-push gate (`local-CI.sh`). PRs to
+  libretro are tested by libretro's own CI. Re-enable with `gh api -X
+  PUT repos/milnet01/RetroArch/actions/permissions -F enabled=true`.
   **Layman:** A script that repeats the Linux build checks locally already exists, but nothing runs it automatically before a push.
   Kind: chore.
   Source: peer-session claude-72 ci-gate sweep 2026-09-25.
