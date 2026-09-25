@@ -106,16 +106,16 @@ From `CODING-GUIDELINES`, `CONTRIBUTING.md`, and the C89/console-portability con
 
 ## Fork document locations (override of global rule 14a)
 
-**Fork specs, design documents and ADRs live at `docs/private/specs/YYYY-MM-DD-<slug>.md`** — not at `docs/specs/<ID>-<topic>.md`, and not at `docs/design.md`. This overrides global rule 14a's fixed locations, using the mechanism `~/.claude/CLAUDE.md` § The foundation grants a per-project `CLAUDE.md`. A session following it says which it followed, as that section requires.
+**Fork specs, design documents and ADRs live at `docs/private/specs/YYYY-MM-DD-<slug>.md`** — not at `docs/specs/<ID>-<topic>.md`, and not at `docs/design.md`. **Build plans live at `docs/private/plans/YYYY-MM-DD-<slug>.md`**, not at `docs/plans/<ID>-<topic>.md`, including a plan `write-spec --plan` produces. This overrides global rule 14a's fixed locations, using the mechanism `~/.claude/CLAUDE.md` § The foundation grants a per-project `CLAUDE.md`. A session following it says which it followed, as that section requires.
 
 Design documents are named here deliberately: that directory already holds three `-design.md` files, so an override naming specs alone would have left them claiming an authority that did not cover them.
 
 Two fork-specific reasons:
 
-- This is a downstream fork of a tree we do not own and re-sync from. Every fork-authored document lives under `docs/private/` so a re-vendor never collides with upstream — and a top-level `docs/specs/` is exactly such a collision.
+- This is a downstream fork of a tree we do not own and re-sync from. Every fork-authored document lives under `docs/private/` so a re-vendor never collides with upstream — and a top-level `docs/specs/` or `docs/plans/` is exactly such a collision.
 - The existing specs are named by date, and the roadmap and the fork's audit docs cite them by those names. The roadmap now carries ids (`docs/private/standards/documentation-standard.md` §2), but renaming the specs to `<ID>-<topic>` would break every existing citation, so new specs keep the date form for one naming scheme per directory.
 
-The override reaches spec **locations and filenames** only. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
+The override reaches spec and plan **locations and filenames** only. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
 
 ## Citation form (override of `/mnt/Games/CLAUDE.md`)
 
@@ -130,7 +130,7 @@ New text uses names, not line numbers.
 
 This checkout is a libretro/RetroArch fork carrying ongoing audit + refactor work. The fork is operated under a two-branch model that the upstream tree does not mirror:
 
-- **`local/audit-2026-04`** — roadmap + docs branch. `docs/private/ROADMAP.md`, `docs/private/AUDIT-POLICY.md`, `docs/private/specs/`, and `docs/private/audit/` live here. All cold-eyes / indie-review / audit-fold-in commits land on this branch.
+- **`local/audit-2026-04`** — roadmap + docs branch. `docs/private/ROADMAP.md`, `docs/private/AUDIT-POLICY.md`, `docs/private/specs/`, `docs/private/plans/`, and `docs/private/audit/` live here. All cold-eyes / indie-review / audit-fold-in commits land on this branch.
 - **`local/fixes-2026-04`** — source-fix branch, typically checked out via the `/tmp/ra-fixes` worktree. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
 
 Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. When asked to "fold in" or "log a bundle", write it through `roadmap_log` on the audit branch — the roadmap store is the source of truth and the file is rendered from it; when asked to fix a finding, switch to the fixes-branch worktree.

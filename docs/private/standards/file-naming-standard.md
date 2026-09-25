@@ -66,6 +66,7 @@ Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
   policies (`AUDIT-POLICY.md`, `DEPENDENCY-POLICY.md`);
   `docs/private/standards/<topic>-standard.md` for standards (this dir).
 - **Specs:** `docs/private/specs/YYYY-MM-DD-<slug>.md`.
+- **Plans:** `docs/private/plans/YYYY-MM-DD-<slug>.md`.
 - **Audit cache:** `.audit_cache/cppcheck-b<NN>[<letter>][-<scope>].xml`,
   where `NN` is the bundle number, an optional `<letter>` disambiguates
   re-runs within a bundle (`cppcheck-b58b.xml`), and an optional `<scope>`

@@ -59,19 +59,17 @@ release notes only in the private roadmap.
 - A commit Claude Code writes ends with the `Co-Authored-By:` trailer its
   attribution instruction specifies.
 
-## 4. Specs and design docs
+## 4. Specs, plans and design docs
 
-- Live at `docs/private/specs/YYYY-MM-DD-<slug>.md`. This is an override of
-  global rule 14a's fixed locations, declared and reasoned in the repo-root
-  `CLAUDE.md` § Fork document locations — not a divergence this file grants
-  itself.
-- **A document whose edit changes what a conformer would do runs through
-  `review-contract`, before implementation.** The loop is the gate; a
-  self-read does not satisfy it, and loop 2+ runs cold. Rule 14 decides
-  which documents are in scope — this file does not enumerate them, and an
-  earlier enumeration here omitted policies while the sibling
-  [`README.md`](README.md) § Precedence had them gated.
-- `~/.claude/CLAUDE.md` rule 14 owns everything else about that gate — the
+- Specs, design docs and ADRs live at `docs/private/specs/YYYY-MM-DD-<slug>.md`;
+  build plans at `docs/private/plans/YYYY-MM-DD-<slug>.md`. This is an
+  override of global rule 14a's fixed locations, declared and reasoned in
+  the repo-root `CLAUDE.md` § Fork document locations — not a divergence
+  this file grants itself.
+- Whether an edit runs through `review-contract` is `~/.claude/CLAUDE.md`
+  rule 14's call, exceptions included. This file does not enumerate the
+  documents in scope.
+- Rule 14 owns everything about that gate — the
   trigger, its exclusions (including which test contracts are exempt and on
   what conditions), the loop cap, what a clean exit is, and what record is
   owed on each branch, gate or no gate. This file restates none of it, so
