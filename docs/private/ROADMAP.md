@@ -1193,12 +1193,16 @@ in the commit bodies, not in the documents — see each loop's commit.
   **Layman:** The fork's documentation rulebook is part-way through an independent review and needs its final round.
   Kind: doc.
 
-- 📋 [RETR-S0146] **`docs/private/standards/file-naming-standard.md` — gate not yet run.**
+- ✅ [RETR-S0146] **`docs/private/standards/file-naming-standard.md` — gate not yet run.**
   Armed by `84d5339a93`, which replaced `/bump` with `cut-release`
   in section 3. Packet pre-check found its claims sound: the three
   version-bearing files exist, `.claude/bump.json` is genuinely absent as
   the file states, and `pkg/snap/snapcraft.yaml` is genuinely absent as the
   file states.
+  Resolved 2026-09-25: first gate on the file-naming standard. Three
+  loops, 11 verified findings: 10 fixed, 1 filed as RETR-0002. Capped
+  and shipped. The log is
+  `docs/private/reviews/file-naming-standard-loop-log.md`.
   **Layman:** The fork's file-naming rulebook changed and still needs its independent review.
   Kind: doc.
 
