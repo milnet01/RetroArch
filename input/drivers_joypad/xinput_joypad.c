@@ -137,8 +137,9 @@ static XInputGetStateEx_t g_XInputGetStateEx;
  * 4 on _XBOX and HAVE_XINPUT&&!HAVE_DINPUT, larger on desktop) breaks
  * the build instead of silently OOB'ing the connected/active arrays. */
 #define MAX_XINPUT_USERS 4
-_Static_assert(MAX_XINPUT_USERS <= DEFAULT_MAX_PADS,
-   "MAX_XINPUT_USERS must fit inside the project pad-id range");
+/* C89-portable compile-time assert (negative array size fails the build). */
+typedef char xinput_users_fit_pad_range[
+   (MAX_XINPUT_USERS <= DEFAULT_MAX_PADS) ? 1 : -1];
 
 #ifdef _XBOX1
 static XINPUT_FEEDBACK     g_xinput_rumble_states[MAX_XINPUT_USERS];

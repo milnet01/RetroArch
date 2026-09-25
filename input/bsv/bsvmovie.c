@@ -669,7 +669,10 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
       goto exit;
    handle->checkpoint_ready = true;
  exit:
-   handle->cur_save_size = size;
+   /* Only record the size once a buffer backs it (the OOM path above
+    * leaves cur_save NULL, and the next call re-allocates). */
+   if (handle->cur_save)
+      handle->cur_save_size = size;
    handle->last_save_size = handle->cur_save_size;
 
    if (compressed_data)

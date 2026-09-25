@@ -67,7 +67,7 @@ typedef struct
    char *nonce;
    char *algo;
    char *opaque;
-   const char *cnonce;
+   char *cnonce;
    unsigned nc;
    bool qop_auth;
    bool dav_verified;

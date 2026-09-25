@@ -43,13 +43,13 @@
  * indices must land inside their respective array dims; both relations
  * are true by construction today but adding a new bind keyword could
  * silently break them, so make the build fail instead. */
-_Static_assert(
-   (MENU_SETTINGS_INPUT_DESC_END - MENU_SETTINGS_INPUT_DESC_BEGIN)
-   == (RARCH_ANALOG_BIND_LIST_END * MAX_USERS),
-   "MENU_SETTINGS_INPUT_DESC range must equal RARCH_ANALOG_BIND_LIST_END * MAX_USERS");
-_Static_assert(
-   RARCH_ANALOG_BIND_LIST_END <= RARCH_CUSTOM_BIND_LIST_END,
-   "RARCH_ANALOG_BIND_LIST_END must fit inside input_remap_ids' inner dim");
+/* C89-portable compile-time asserts (a negative array size fails the
+ * build), matching libretro-common/include/retro_spsc.h. */
+typedef char menu_scan_desc_range_matches_binds[
+   ((MENU_SETTINGS_INPUT_DESC_END - MENU_SETTINGS_INPUT_DESC_BEGIN)
+    == (RARCH_ANALOG_BIND_LIST_END * MAX_USERS)) ? 1 : -1];
+typedef char menu_scan_analog_binds_fit_remap_dim[
+   (RARCH_ANALOG_BIND_LIST_END <= RARCH_CUSTOM_BIND_LIST_END) ? 1 : -1];
 
 #ifndef BIND_ACTION_SCAN
 #define BIND_ACTION_SCAN(cbs, name) (cbs)->action_scan = (name)
@@ -140,7 +140,6 @@ int action_switch_thumbnail(const char *path,
       const char *label, unsigned type, size_t idx)
 {
    struct menu_state *menu_st = menu_state_get_ptr();
-   size_t selection           = menu_st->selection_ptr;
    const char *menu_ident     = menu_driver_ident();
    settings_t *settings       = config_get_ptr();
    bool switch_enabled        = true;

@@ -278,7 +278,9 @@ void ssl_socket_set_verify_mode(unsigned mode)
  * Kept weak so libretro-common still builds/links standalone. Toolchains
  * without __attribute__((weak)) (e.g. MSVC) rely on the RA strong symbol
  * always being linked in the RetroArch build. */
-#if defined(__GNUC__) || defined(__clang__)
+/* Unity (griffin) builds compile network/tls_log.c's strong definitions into
+ * the same translation unit, where a weak twin is a redefinition error. */
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(HAVE_GRIFFIN)
 __attribute__((weak))
 void ssl_socket_log_verify_fail(int mode_required, const char *domain,
       const char *verify_info)
