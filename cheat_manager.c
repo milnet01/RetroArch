@@ -185,17 +185,25 @@ bool cheat_manager_save(
    {
       size_t _len = fill_pathname_join_special(cheats_file, cheat_database,
              path, sizeof(cheats_file));
-      strlcpy(cheats_file + _len, ".cht", sizeof(cheats_file) - _len);
+      strlcpy_lit(cheats_file + _len, ".cht", sizeof(cheats_file) - _len);
    }
 
    if (!overwrite)
       conf = config_file_new_from_path_to_string(cheats_file);
 
    if (!conf)
+   {
       if (!(conf = config_file_new_alloc()))
          return false;
-
-   conf->flags |= CONF_FILE_FLG_GUARANTEED_NO_DUPLICATES;
+      /* Only a config this function fills from empty can promise
+       * the setters that no key is already present.  The parsed
+       * one above already holds every key written below - claiming
+       * otherwise appended a duplicate of each, and since the
+       * first of a duplicate pair wins on reload, the save looked
+       * fine in memory while the file kept its old values and grew
+       * by a full copy on every save. */
+      conf->flags |= CONF_FILE_FLG_GUARANTEED_NO_DUPLICATES;
+   }
 
    config_set_int(conf, "cheats", cheat_st->size);
 
@@ -206,22 +214,22 @@ bool cheat_manager_save(
       char var_key[128];
       size_t _len = snprintf(var_key, sizeof(var_key), "cheat%u_", i);
 
-      strlcpy(var_key + _len, "desc", sizeof(var_key) - _len);
+      strlcpy_lit(var_key + _len, "desc", sizeof(var_key) - _len);
       if (cheat_st->cheats[i].desc && *cheat_st->cheats[i].desc)
          config_set_string(conf, var_key, cheat_st->cheats[i].desc);
       else
          config_set_string(conf, var_key, cheat_st->cheats[i].code);
 
-      strlcpy(var_key + _len, "code", sizeof(var_key) - _len);
+      strlcpy_lit(var_key + _len, "code", sizeof(var_key) - _len);
       config_set_string(conf, var_key, cheat_st->cheats[i].code);
 
-      strlcpy(var_key + _len, "enable", sizeof(var_key) - _len);
+      strlcpy_lit(var_key + _len, "enable", sizeof(var_key) - _len);
       config_set_string(conf, var_key,
                cheat_st->cheats[i].state
             ? "true"
             : "false");
 
-      strlcpy(var_key + _len, "big_endian", sizeof(var_key) - _len);
+      strlcpy_lit(var_key + _len, "big_endian", sizeof(var_key) - _len);
       config_set_string(conf, var_key,
                cheat_st->cheats[i].big_endian
             ? "true"
@@ -260,10 +268,21 @@ bool cheat_manager_save(
    return ret;
 }
 
+bool cheat_manager_working_code_ensure(void)
+{
+   cheat_manager_t *cheat_st = &cheat_manager_state;
+   if (!cheat_st->working_code)
+      cheat_st->working_code = (char*)calloc(1, CHEAT_CODE_SCRATCH_SIZE);
+   return cheat_st->working_code != NULL;
+}
+
 bool cheat_manager_copy_idx_to_working(unsigned idx)
 {
    cheat_manager_t *cheat_st   = &cheat_manager_state;
    if (!cheat_st->cheats || (cheat_st->size < idx + 1))
+      return false;
+
+   if (!cheat_manager_working_code_ensure())
       return false;
 
    memcpy(&cheat_st->working_cheat,
@@ -343,7 +362,8 @@ bool cheat_manager_copy_working_to_idx(unsigned idx)
    if (cheat_st->cheats[idx].code)
       free(cheat_st->cheats[idx].code);
 
-   cheat_st->cheats[idx].code = strdup(cheat_st->working_code);
+   cheat_st->cheats[idx].code = strdup(
+         cheat_st->working_code ? cheat_st->working_code : "");
 
    return true;
 }
@@ -391,7 +411,6 @@ static void cheat_manager_free(void)
    cheat_st->num_memory_buffers        = 0;
    cheat_st->total_memory_size         = 0;
    cheat_st->memory_initialized        = false;
-   cheat_st->memory_search_initialized = false;
 }
 
 static void cheat_manager_new(unsigned size)
@@ -610,9 +629,12 @@ bool cheat_manager_realloc(unsigned new_size, unsigned default_handler)
          cheat_st->cheats[i].desc = NULL;
       }
 
-      val = (struct item_cheat*)
-            realloc(cheat_st->cheats,
-            new_size * sizeof(struct item_cheat));
+      if (new_size != 0)
+      {
+         val = (struct item_cheat*)
+               realloc(cheat_st->cheats,
+               new_size * sizeof(struct item_cheat));
+      }
 
       /* realloc-to-tmp: on OOM 'val' is NULL, the original
        * cheat_st->cheats is still valid.  Pre-patch did
@@ -1044,8 +1066,6 @@ int cheat_manager_initialize_memory(rarch_setting_t *setting, size_t idx, bool w
          runloop_msg_queue_push(msg, _len, 1, 180, true, NULL,
                MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
       }
-
-      cheat_st->memory_search_initialized = true;
    }
 
    cheat_st->memory_initialized = true;
@@ -1264,6 +1284,158 @@ int cheat_manager_search_exact(rarch_setting_t *setting, size_t idx, bool wrapar
    return cheat_manager_search(CHEAT_SEARCH_TYPE_EXACT);
 }
 
+static void cheat_manager_search_input_cb_common(
+      const char *line,
+      unsigned *target,
+      enum cheat_search_type search_type)
+{
+   char *end             = NULL;
+   unsigned long value   = 0;
+   unsigned max_value    = 0;
+
+   if (!line || !*line)
+   {
+#ifdef HAVE_MENU
+      menu_input_dialog_end();
+#endif
+      return;
+   }
+
+   errno = 0;
+   value = strtoul(line, &end, 0);
+
+   if (errno || end == line)
+   {
+#ifdef HAVE_MENU
+      menu_input_dialog_end();
+#endif
+      return;
+   }
+
+   max_value = cheat_manager_get_state_search_size(
+         cheat_manager_state.search_bit_size);
+
+   if (value > max_value)
+      value = max_value;
+
+   *target = (unsigned)value;
+
+#ifdef HAVE_MENU
+   menu_input_dialog_end();
+#endif
+
+   cheat_manager_search(search_type);
+}
+
+static void cheat_manager_search_exact_input_cb(void *userdata,
+      const char *line)
+{
+   cheat_manager_search_input_cb_common(
+         line,
+         &cheat_manager_state.search_exact_value,
+         CHEAT_SEARCH_TYPE_EXACT);
+}
+
+static void cheat_manager_search_eqplus_input_cb(void *userdata,
+      const char *line)
+{
+   cheat_manager_search_input_cb_common(
+         line,
+         &cheat_manager_state.search_eqplus_value,
+         CHEAT_SEARCH_TYPE_EQPLUS);
+}
+
+static void cheat_manager_search_eqminus_input_cb(void *userdata,
+      const char *line)
+{
+   cheat_manager_search_input_cb_common(
+         line,
+         &cheat_manager_state.search_eqminus_value,
+         CHEAT_SEARCH_TYPE_EQMINUS);
+}
+
+static int cheat_manager_search_input_start(
+      rarch_setting_t *setting,
+      size_t idx,
+      bool wraparound,
+      unsigned current_value,
+      enum msg_hash_enums label_value,
+      enum msg_hash_enums label,
+      input_keyboard_line_complete_t cb)
+{
+#ifdef HAVE_MENU
+   char value_buf[32];
+   menu_input_ctx_line_t line;
+
+   memset(&line, 0, sizeof(line));
+
+   snprintf(value_buf, sizeof(value_buf), "%u", current_value);
+
+   line.label         = msg_hash_to_str(label_value);
+   line.label_setting = value_buf;
+   line.type          = label;
+   line.idx           = (unsigned)idx;
+   /* Not KB_TYPE_NUMBER: cheat_manager_search_input_cb_common() parses
+    * with strtoul(base 0), so '0x1f' is valid input here and a numeric
+    * keypad has no 'x' or 'a'-'f' to type it with. */
+   line.text_type     = MENU_INPUT_DIALOG_KB_TYPE_TEXT;
+   line.cb            = cb;
+
+   if (menu_input_dialog_start(&line))
+      return 0;
+#endif
+
+   return -1;
+}
+
+int cheat_manager_search_exact_input(rarch_setting_t *setting,
+      size_t idx, bool wraparound)
+{
+   if (cheat_manager_search_input_start(
+            setting,
+            idx,
+            wraparound,
+            cheat_manager_state.search_exact_value,
+            MENU_ENUM_LABEL_VALUE_CHEAT_SEARCH_EXACT,
+            MENU_ENUM_LABEL_CHEAT_SEARCH_EXACT,
+            cheat_manager_search_exact_input_cb) == 0)
+      return 0;
+
+   return cheat_manager_search_exact(setting, idx, wraparound);
+}
+
+int cheat_manager_search_eqplus_input(rarch_setting_t *setting,
+      size_t idx, bool wraparound)
+{
+   if (cheat_manager_search_input_start(
+            setting,
+            idx,
+            wraparound,
+            cheat_manager_state.search_eqplus_value,
+            MENU_ENUM_LABEL_VALUE_CHEAT_SEARCH_EQPLUS,
+            MENU_ENUM_LABEL_CHEAT_SEARCH_EQPLUS,
+            cheat_manager_search_eqplus_input_cb) == 0)
+      return 0;
+
+   return cheat_manager_search_eqplus(setting, idx, wraparound);
+}
+
+int cheat_manager_search_eqminus_input(rarch_setting_t *setting,
+      size_t idx, bool wraparound)
+{
+   if (cheat_manager_search_input_start(
+            setting,
+            idx,
+            wraparound,
+            cheat_manager_state.search_eqminus_value,
+            MENU_ENUM_LABEL_VALUE_CHEAT_SEARCH_EQMINUS,
+            MENU_ENUM_LABEL_CHEAT_SEARCH_EQMINUS,
+            cheat_manager_search_eqminus_input_cb) == 0)
+      return 0;
+
+   return cheat_manager_search_eqminus(setting, idx, wraparound);
+}
+
 int cheat_manager_search_lt(rarch_setting_t *setting, size_t idx, bool wraparound)
 {
    return cheat_manager_search(CHEAT_SEARCH_TYPE_LT);
@@ -1419,16 +1591,16 @@ int cheat_manager_add_matches(const char *path,
    runloop_msg_queue_push(msg, _len, 1, 180, true, NULL, MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
 
 #ifdef HAVE_MENU
-   menu_st->flags                 |=  MENU_ST_FLAG_ENTRIES_NEED_REFRESH
-                                   |  MENU_ST_FLAG_PREVENT_POPULATE;
+   menu_st->flags  |=  MENU_ST_FLAG_ENTRIES_NEED_REFRESH
+                    |  MENU_ST_FLAG_PREVENT_POPULATE;
 #endif
    return 0;
 }
 
-void cheat_manager_apply_rumble(struct item_cheat *cheat, unsigned int curr_value)
+static void cheat_manager_apply_rumble(struct item_cheat *cheat,
+      unsigned int curr_value, retro_time_t current_time)
 {
-   bool rumble               = false;
-   retro_time_t current_time = cpu_features_get_time_usec();
+   bool rumble = false;
 
    switch (cheat->rumble_type)
    {
@@ -1522,9 +1694,16 @@ void cheat_manager_apply_retro_cheats(void)
    bool cheat_applied          = false;
 #endif
    cheat_manager_t   *cheat_st = &cheat_manager_state;
+   retro_time_t current_time;
 
    if ((!cheat_st->cheats))
       return;
+
+   /* One reading for the whole pass: every cheat in it is applied at
+    * the same instant, and the clock is a syscall on more than one
+    * platform - a large cheat file would otherwise pay for one per
+    * entry, per frame. */
+   current_time = cpu_features_get_time_usec();
 
    for (i = 0; i < cheat_st->size; i++)
    {
@@ -1575,7 +1754,8 @@ void cheat_manager_apply_retro_cheats(void)
             break;
       }
 
-      cheat_manager_apply_rumble(&cheat_st->cheats[i], curr_val);
+      cheat_manager_apply_rumble(&cheat_st->cheats[i], curr_val,
+            current_time);
 
       switch (cheat_st->cheats[i].cheat_type)
       {
@@ -1912,8 +2092,8 @@ int cheat_manager_delete_match(rarch_setting_t *setting, size_t idx, bool wrapar
    cheat_manager_match_action(CHEAT_MATCH_ACTION_TYPE_DELETE,
          cheat_st->match_idx, NULL, NULL, NULL, NULL);
 #ifdef HAVE_MENU
-   menu_st->flags                 |=  MENU_ST_FLAG_ENTRIES_NEED_REFRESH
-                                   |  MENU_ST_FLAG_PREVENT_POPULATE;
+   menu_st->flags  |=  MENU_ST_FLAG_ENTRIES_NEED_REFRESH
+                    |  MENU_ST_FLAG_PREVENT_POPULATE;
 #endif
    return 0;
 }

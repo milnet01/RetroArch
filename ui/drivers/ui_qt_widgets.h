@@ -18,8 +18,8 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QString>
 #include <QStyledItemDelegate>
-#include <QTabWidget>
 #include <QToolButton>
 
 #include <retro_common_api.h>
@@ -47,8 +47,14 @@ class QLabel;
 class QLayout;
 class QPaintEvent;
 class QResizeEvent;
-class QSettings;
 class QVBoxLayout;
+/* Forward decls kept unconditional so that callers holding bare
+ * pointers to these (e.g. ui_qt.h's QPointer<ShaderParamsDialog>
+ * member) parse cleanly when HAVE_MENU is not defined. The full
+ * declarations below are gated; all use sites in ui_qt.cpp are
+ * already gated as well. */
+class ShaderPass;
+class ShaderParamsDialog;
 
 #ifdef HAVE_MENU
 class QWidget;
@@ -56,6 +62,35 @@ class OptionsCategory;
 class QListWidget;
 class QStackedLayout;
 #endif
+
+/* Content schema describing a single playlist row. Replaces the
+ * QHash<QString,QString> previously stored in PlaylistModel and
+ * passed around as the playlist row payload. The field set is the
+ * same keys the QHash carried; making it a struct removes a class
+ * of stringly-typed lookup bugs and a lot of toUtf8/from-key
+ * round trips at call sites. */
+struct PlaylistEntry
+{
+   QString path;
+   QString label;
+   QString labelNoExt;
+   QString corePath;
+   QString coreName;
+   QString crc32;
+   QString dbName;
+   QString plName;
+   QString plPath;
+   unsigned index = 0;
+};
+Q_DECLARE_METATYPE(PlaylistEntry)
+
+/* All of the settings widgets below take rarch_setting_t* or
+ * msg_hash_enums and call menu_* APIs in their implementations,
+ * so they are only meaningful when HAVE_MENU is enabled. Gating
+ * the declarations here lets moc skip generating metaobject code
+ * for them in --disable-menu builds (provided $(DEFINES) is passed
+ * to moc, which the top-level Makefile now does). */
+#ifdef HAVE_MENU
 
 class FormLayout : public QFormLayout
 {
@@ -83,7 +118,7 @@ public:
       if (!setting)
          return false;
 
-      ui_type = setting->ui_type;
+      ui_type = (enum ui_setting_type)setting->ui_type;
 
       switch (ui_type)
       {
@@ -160,7 +195,7 @@ public:
       if (!setting)
          return false;
 
-      ui_type = setting->ui_type;
+      ui_type = (enum ui_setting_type)setting->ui_type;
 
       switch (ui_type)
       {
@@ -329,7 +364,6 @@ private slots:
 private:
    void populate(double min, double max);
    rarch_setting_t *m_setting;
-   unsigned *m_value;
    QHash<unsigned, QString> m_hash;
 };
 
@@ -344,7 +378,6 @@ private slots:
    void paintEvent(QPaintEvent *event);
 private:
    rarch_setting_t *m_setting;
-   unsigned *m_target;
    unsigned m_value;
 };
 
@@ -360,7 +393,6 @@ private slots:
    void onButtonClicked(int id);
 private:
    rarch_setting_t *m_setting;
-   unsigned *m_value;
    QButtonGroup *m_buttonGroup;
 };
 
@@ -375,7 +407,6 @@ private slots:
    void paintEvent(QPaintEvent *event);
 private:
    rarch_setting_t *m_setting;
-   unsigned *m_value;
 };
 
 class SizeSpinBox : public QSpinBox
@@ -403,7 +434,6 @@ private slots:
    void paintEvent(QPaintEvent *event);
 private:
    rarch_setting_t *m_setting;
-   int *m_value;
 };
 
 class FloatSpinBox : public QDoubleSpinBox
@@ -558,6 +588,8 @@ protected:
    QColor color();
 };
 
+#endif /* HAVE_MENU - settings widgets block */
+
 class FileDropWidget : public QStackedWidget
 {
    Q_OBJECT
@@ -644,6 +676,7 @@ protected:
    void setSelection(const QRect &rect, QFlags<QItemSelectionModel::SelectionFlag> flags);
    void paintEvent(QPaintEvent*);
    void resizeEvent(QResizeEvent*);
+   void showEvent(QShowEvent*);
 
 private:
    QRectF viewportRectForRow(int row) const;
@@ -651,6 +684,9 @@ private:
    void refresh();
 
    int m_size = 255;
+public:
+   int gridSize() const { return m_size; }
+private:
    int m_spacing = DEFAULT_GRID_SPACING;
    QVector<QModelIndex> m_visibleIndexes;
    ViewMode m_viewMode = Centered;
@@ -699,10 +735,24 @@ protected:
    void paintEvent(QPaintEvent *event);
 };
 
+/* Shader-preset editor. Implementation lives behind both HAVE_MENU
+ * and HAVE_CG/GLSL/SLANG/HLSL in the .cpp; gate the declarations to
+ * match so moc does not emit metaobject code for a class that has
+ * no defined methods. Forward declarations above keep external
+ * pointer-typed members valid.
+ *
+ * The shader-preset editor also needs a shader stack: its definitions
+ * in ui_qt_widgets.cpp are under the same test, and so must this
+ * declaration be, or moc emits metaobject code that references methods
+ * no translation unit defines (a Qt build with no OpenGL/Vulkan dev
+ * packages - the CI Qt companion job - failed to link this way). */
+#if defined(HAVE_MENU) && (defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL))
+
 class ShaderPass
 {
 public:
    ShaderPass(struct video_shader_pass *passToCopy = NULL);
+   ShaderPass(const ShaderPass &other);
    ~ShaderPass();
    ShaderPass& operator=(const ShaderPass &other);
    struct video_shader_pass *pass;
@@ -769,6 +819,8 @@ protected:
    void paintEvent(QPaintEvent *event);
 };
 
+#endif /* HAVE_MENU + shader stack - shader-preset editor */
+
 class ViewOptionsWidget : public QWidget
 {
    Q_OBJECT
@@ -786,10 +838,9 @@ private:
    void showOrHideHighlightColor();
 
    MainWindow *m_mainwindow;
-   QSettings *m_settings;
    QCheckBox *m_saveGeometryCheckBox;
-   QCheckBox *m_saveDockPositionsCheckBox;
    QCheckBox *m_saveLastTabCheckBox;
+   QCheckBox *m_saveDockPositionsCheckBox;
    QCheckBox *m_showHiddenFilesCheckBox;
    QComboBox *m_themeComboBox;
    QSpinBox *m_thumbnailCacheSpinBox;
@@ -817,7 +868,15 @@ public slots:
    void hideDialog();
 private slots:
    void onRejected();
+protected:
+   /* The dialog's own geometry rides in desktop_menu_options_window
+    * ("x,y,w,h"), kept live like the main window's, when Remember Window
+    * Geometry is on. */
+   void resizeEvent(QResizeEvent *event);
+   void moveEvent(QMoveEvent *event);
 private:
+   void persistGeometry();
+   void restoreGeometry();
 #ifdef HAVE_MENU
    void addCategory(QWidget *widget, QString name, QString icon);
    void addCategory(OptionsCategory *category);
@@ -841,9 +900,9 @@ public:
    const QStringList getSelectedExtensions();
    bool filterInArchive();
    bool nameFieldEnabled();
-   void setEntryValues(const QHash<QString, QString> &contentHash);
+   void setEntryValues(const PlaylistEntry &entry);
 public slots:
-   bool showDialog(const QHash<QString, QString> &hash = QHash<QString, QString>());
+   bool showDialog(const PlaylistEntry &entry = PlaylistEntry());
    void hideDialog();
    void onAccepted();
    void onRejected();
@@ -853,7 +912,6 @@ private:
    void loadPlaylistOptions();
 
    MainWindow *m_mainwindow;
-   QSettings *m_settings;
    QLineEdit *m_nameLineEdit;
    QLineEdit *m_pathLineEdit;
    QLineEdit *m_extensionsLineEdit;
@@ -861,6 +919,11 @@ private:
    QComboBox *m_databaseComboBox;
    QCheckBox *m_extensionArchiveCheckBox;
 };
+
+/* Options dialog category/page hierarchy. Every widget() implementation
+ * builds a tree of the settings widgets above and calls menu_*
+ * functions, so this whole hierarchy is HAVE_MENU-only. */
+#ifdef HAVE_MENU
 
 class OptionsPage : public QObject
 {
@@ -893,6 +956,28 @@ protected:
    }
 
    QString m_displayName = "General";
+};
+
+/* SimplePage:
+ *   Trivial OptionsPage subclass whose widget() is a one-shot
+ *   create_widget(displaylist) call. Consolidates ~11 near-identical
+ *   leaf Page classes that only differ in display name and displaylist
+ *   enum. Use this for any page that does not need custom layout,
+ *   custom slots, or its own load()/apply(). */
+class SimplePage : public OptionsPage
+{
+   Q_OBJECT
+public:
+   SimplePage(enum menu_displaylist_ctl_state state,
+         QObject *parent = nullptr)
+      : OptionsPage(parent), m_state(state) {}
+   SimplePage(enum menu_displaylist_ctl_state state,
+         msg_hash_enums name,
+         QObject *parent = nullptr)
+      : OptionsPage(parent), m_state(state) { setDisplayName(name); }
+   QWidget *widget(); /* defined inline at end of header, after create_widget() */
+private:
+   enum menu_displaylist_ctl_state m_state;
 };
 
 class OptionsCategory : public QObject
@@ -936,14 +1021,6 @@ public:
    QVector<OptionsPage*> pages();
 };
 
-class DriversPage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   DriversPage(QObject *parent = nullptr);
-   QWidget *widget();
-};
-
 /***********************************************************
    AI Service
 ************************************************************/
@@ -952,14 +1029,6 @@ class AIServiceCategory : public OptionsCategory
 public:
    AIServiceCategory(QWidget *parent);
    QVector<OptionsPage*> pages();
-};
-
-class AIServicePage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   AIServicePage(QObject *parent = nullptr);
-   QWidget *widget();
 };
 
 /************************************************************
@@ -1039,14 +1108,6 @@ public:
    QWidget *widget();
 };
 
-class MenuSoundsPage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   MenuSoundsPage(QObject *parent = nullptr);
-   QWidget *widget();
-};
-
 /************************************************************
    Input
 ************************************************************/
@@ -1109,14 +1170,6 @@ public:
    QVector<OptionsPage*> pages();
 };
 
-class CorePage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   CorePage(QObject *parent = nullptr);
-   QWidget *widget();
-};
-
 /************************************************************
    Configuration
 ************************************************************/
@@ -1125,14 +1178,6 @@ class ConfigurationCategory : public OptionsCategory
 public:
    ConfigurationCategory(QWidget *parent);
    QVector<OptionsPage*> pages();
-};
-
-class ConfigurationPage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   ConfigurationPage(QObject *parent = nullptr);
-   QWidget *widget();
 };
 
 /************************************************************
@@ -1163,14 +1208,6 @@ public:
    QVector<OptionsPage*> pages();
 };
 
-class LoggingPage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   LoggingPage(QObject *parent = nullptr);
-   QWidget *widget();
-};
-
 /************************************************************
    Frame Throttle
 ************************************************************/
@@ -1179,22 +1216,6 @@ class FrameThrottleCategory : public OptionsCategory
 public:
    FrameThrottleCategory(QWidget *parent);
    QVector<OptionsPage*> pages();
-};
-
-class FrameThrottlePage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   FrameThrottlePage(QObject *parent = nullptr);
-   QWidget *widget();
-};
-
-class RewindPage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   RewindPage(QObject *parent = nullptr);
-   QWidget *widget();
 };
 
 /************************************************************
@@ -1241,14 +1262,6 @@ class ViewsPage : public OptionsPage
    Q_OBJECT
 public:
    ViewsPage(QObject *parent = nullptr);
-   QWidget *widget();
-};
-
-class QuickMenuPage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   QuickMenuPage(QObject *parent = nullptr);
    QWidget *widget();
 };
 
@@ -1344,14 +1357,6 @@ private:
    QGroupBox* createMitmServerGroup();
 };
 
-class UpdaterPage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   UpdaterPage(QObject *parent = nullptr);
-   QWidget *widget();
-};
-
 /************************************************************
    Playlists
 ************************************************************/
@@ -1406,14 +1411,6 @@ public:
    QVector<OptionsPage*> pages();
 };
 
-class DirectoryPage : public OptionsPage
-{
-   Q_OBJECT
-public:
-   DirectoryPage(QObject *parent = nullptr);
-   QWidget *widget();
-};
-
 static inline QWidget *create_widget(enum menu_displaylist_ctl_state name)
 {
    unsigned i;
@@ -1438,5 +1435,12 @@ static inline QWidget *create_widget(enum menu_displaylist_ctl_state name)
 
    return widget;
 }
+
+inline QWidget *SimplePage::widget()
+{
+   return create_widget(m_state);
+}
+
+#endif /* HAVE_MENU - options dialog hierarchy */
 
 #endif

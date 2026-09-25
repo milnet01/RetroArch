@@ -51,6 +51,10 @@
 #include "../common/egl_common.h"
 #endif
 
+#ifdef HAVE_OPENGL
+#include "../common/gl_common.h"
+#endif
+
 #ifdef HAVE_MENU
 #include "../../menu/menu_driver.h"
 #endif
@@ -210,7 +214,7 @@ static void gfx_ctx_go2_drm_swap_interval(void *data, int interval)
 }
 
 static bool gfx_ctx_go2_drm_set_video_mode(void *data,
-      unsigned width, unsigned height,
+      unsigned dims,
       bool fullscreen)
 {
    video_driver_state_t *video_st       = video_state_get_ptr();
@@ -263,19 +267,18 @@ static bool gfx_ctx_go2_drm_set_video_mode(void *data,
 }
 
 static void gfx_ctx_go2_drm_get_video_size(void *data,
-unsigned *width, unsigned *height)
+unsigned *dims)
 {
    gfx_ctx_go2_drm_data_t *drm = (gfx_ctx_go2_drm_data_t*)data;
 
    if (!drm)
       return;
 
-   *width  = drm->fb_width;
-   *height = drm->fb_height;
+   *dims = VIDEO_SCALE_PACK(drm->fb_width, drm->fb_height);
 }
 
 static void gfx_ctx_go2_drm_check_window(void *data, bool *quit,
-      bool *resize, unsigned *width, unsigned *height)
+      bool *resize, unsigned *dims)
 {
    unsigned w, h;
    gfx_ctx_go2_drm_data_t
@@ -299,10 +302,9 @@ static void gfx_ctx_go2_drm_check_window(void *data, bool *quit,
        h                = drm->native_height;
    }
 
-   if (*width != w || *height != h)
+   if (VIDEO_SCALE_W(*dims) != w || VIDEO_SCALE_H(*dims) != h)
    {
-       *width           = drm->fb_width = w;
-       *height          = drm->fb_height = h;
+       *dims           = VIDEO_SCALE_PACK(drm->fb_width = w, drm->fb_height = h);
        *resize          = false;
    }
    *quit                = (bool)frontend_driver_get_signal_handler_state();

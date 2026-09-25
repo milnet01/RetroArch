@@ -283,10 +283,12 @@ static int action_start_shader_action_parameter_generic(
    if (!shader_info.data)
       return 0;
 
+   /* Reset to initial via the owning-thread setter; initial and the
+    * range are stable outside set_shader's blocking window. */
    param          = &shader_info.data->parameters
       [parameter];
-   param->current = param->initial;
-   param->current = MIN(MAX(param->minimum, param->current), param->maximum);
+   video_shader_driver_set_parameter(shader_info.data, parameter,
+         MIN(MAX(param->minimum, param->initial), param->maximum));
 
    return menu_shader_manager_clear_parameter(menu_shader_get(), parameter);
 }
@@ -470,6 +472,42 @@ static int action_start_state_slot(
    return 0;
 }
 
+static int action_start_state_load(
+      const char *path, const char *label,
+      unsigned type, size_t idx, size_t entry_idx)
+{
+   settings_t *settings       = config_get_ptr();
+
+   if (settings->bools.quick_menu_show_undo_save_load_state)
+      return action_start_state_slot(path, label, type, idx, entry_idx);
+   else
+   {
+      if (generic_action_ok_command(CMD_EVENT_UNDO_LOAD_STATE) == -1)
+         return -1;
+      return generic_action_ok_command(CMD_EVENT_RESUME);
+   }
+
+   return 0;
+}
+
+static int action_start_state_save(
+      const char *path, const char *label,
+      unsigned type, size_t idx, size_t entry_idx)
+{
+   settings_t *settings       = config_get_ptr();
+
+   if (settings->bools.quick_menu_show_undo_save_load_state)
+      return action_start_state_slot(path, label, type, idx, entry_idx);
+   else
+   {
+      if (generic_action_ok_command(CMD_EVENT_UNDO_SAVE_STATE) == -1)
+         return -1;
+      return generic_action_ok_command(CMD_EVENT_RESUME);
+   }
+
+   return 0;
+}
+
 static int action_start_replay_slot(
       const char *path, const char *label,
       unsigned type, size_t idx, size_t entry_idx)
@@ -591,35 +629,42 @@ static int action_start_video_resolution(
       unsigned type, size_t idx, size_t entry_idx)
 {
 #if defined(GEKKO) || defined(PS2) || !defined(__PSL1GHT__) && !defined(__PS3__)
-   unsigned width = 0, height = 0;
+   unsigned dims = 0;
    char desc[64] = {0};
    global_t *global = global_get_ptr();
 
    /*  Reset the resolution id to zero */
    global->console.screen.resolutions.current.id = 0;
 
-   if (video_driver_get_video_output_size(&width, &height, desc, sizeof(desc)))
+   if (video_driver_get_video_output_size(&dims, desc, sizeof(desc)))
    {
       size_t _len;
       char msg[128];
+#if defined(GEKKO) || defined(PS2)
+      bool fullscreen = true;
+#else
+      /* The window state the frontend is in, as driver init reads it */
+      bool fullscreen = config_get_ptr()->bools.video_fullscreen
+            || (video_driver_get_disp_flags() & VIDEO_FLAG_FORCE_FULLSCREEN);
+#endif
       msg[0] = '\0';
 
 #if defined(_WIN32) || !defined(__PSL1GHT__) && !defined(__PS3__)
       generic_action_ok_command(CMD_EVENT_REINIT);
 #endif
-      video_driver_set_video_mode(width, height, true);
+      video_driver_set_video_mode(dims, fullscreen);
 #ifdef GEKKO
-      if (width == 0 || height == 0)
-         _len = strlcpy(msg, "Resetting to: DEFAULT", sizeof(msg));
+      if (!VIDEO_SCALE_W(dims) || !VIDEO_SCALE_H(dims))
+         _len = strlcpy_lit(msg, "Resetting to: DEFAULT", sizeof(msg));
       else
 #endif
       {
          if (*desc)
             _len = snprintf(msg, sizeof(msg), msg_hash_to_str(MSG_SCREEN_RESOLUTION_RESETTING_DESC),
-               width, height, desc);
+               VIDEO_SCALE_W(dims), VIDEO_SCALE_H(dims), desc);
          else
             _len = snprintf(msg, sizeof(msg), msg_hash_to_str(MSG_SCREEN_RESOLUTION_RESETTING_NO_DESC),
-               width, height);
+               VIDEO_SCALE_W(dims), VIDEO_SCALE_H(dims));
       }
 
       runloop_msg_queue_push(msg, _len, 1, 100, true, NULL,
@@ -1017,8 +1062,10 @@ static int menu_cbs_init_bind_start_compare_type(menu_file_list_cbs_t *cbs,
             BIND_ACTION_START(cbs, action_start_core_set_standalone_exempt);
             break;
          case MENU_SETTING_ACTION_SAVESTATE:
+            BIND_ACTION_START(cbs, action_start_state_save);
+            break;
          case MENU_SETTING_ACTION_LOADSTATE:
-            BIND_ACTION_START(cbs, action_start_state_slot);
+            BIND_ACTION_START(cbs, action_start_state_load);
             break;
          case MENU_SETTING_ACTION_PLAYREPLAY:
          case MENU_SETTING_ACTION_RECORDREPLAY:
