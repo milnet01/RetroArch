@@ -1202,10 +1202,15 @@ in the commit bodies, not in the documents — see each loop's commit.
   **Layman:** The fork's file-naming rulebook changed and still needs its independent review.
   Kind: doc.
 
-- 📋 [RETR-S0147] **Repo-root `CLAUDE.md` — gate not yet run.**
+- ✅ [RETR-S0147] **Repo-root `CLAUDE.md` — gate not yet run.**
   Armed by `5a551008ed`:
   declaring the 14a override changed where a conformer writes a spec, and
   rule 14's scope covers a project `CLAUDE.md`.
+  Resolved 2026-09-25: first gate on the repo-root `CLAUDE.md`. Three
+  loops, 14 verified findings, all fixed, capped and shipped at
+  `d3ff645a92`. The log is `docs/private/reviews/claude-md-loop-log.md`.
+  It also closed `write-spec`'s location-override gap at its source
+  (`~/.claude` `d24fce9`).
   **Layman:** The repo's instruction file for Claude changed where specs go and still needs its independent review.
   Kind: doc.
 
