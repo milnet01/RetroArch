@@ -61,7 +61,7 @@ Each subsystem keeps a single file-static struct accessed via `<subsystem>_state
 - `rarch_main` (declared in `frontend/frontend.h`, defined in `retroarch.c`; its doc comment still calls it `main_entry`) -> `retroarch_main_init` (in `retroarch.c`) -> `runloop_iterate` (`runloop.c`).
 - `retroarch.c` is the libretro environment-callback dispatcher, command-line parser, and core/content load orchestrator. Its single-file size is **deliberate** — function-call overhead is measurable on consoles.
 - `command.c` — network/stdin command IPC (pause, save state, etc.).
-- `dynamic.c` / `dynamic.h` — load the libretro core via `dylib_load` and bind its symbols.
+- `runloop.c` loads the libretro core via `dylib_load` and binds its symbols; `dynamic.h` declares the system-info helpers.
 
 ### Configuration
 - `config.def.h` — every default value.
