@@ -44,7 +44,7 @@ Applying `~/.claude/standards/testing.md` §1 (test first) here: for libretro-co
 Every subsystem (video, audio, input, joypad, menu, camera, location, record, MIDI, microphone, Bluetooth, Wi-Fi, ...) follows the same shape:
 
 1. Interface struct in `<subsystem>_driver.h` (vtable of function pointers, plus `const char *ident`).
-2. Concrete implementations in `<subsystem>/drivers/<name>.c`, each defining `const <subsystem>_driver_t <name>_<subsystem> = { ... };`.
+2. Concrete implementations in the subsystem's drivers directory, each defining an instance named `<subsystem>_<name>` (`audio_driver_t audio_alsa`, `video_driver_t video_gl2`; joypads are `<name>_joypad`). Directory and type names vary by subsystem; `docs/private/standards/file-naming-standard.md` §1 gives examples.
 3. NULL-terminated array `<subsystem>_drivers[]` in `<subsystem>_driver.c`, gated on `HAVE_*` macros from `config.h`.
 4. Selection by string `ident` from configuration (or first available); the chosen driver pointer lives on the subsystem's static state struct.
 

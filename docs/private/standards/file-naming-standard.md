@@ -8,13 +8,20 @@ doubt, grep for a sibling and match it.
 ## 1. Drivers (the dominant pattern)
 
 Every subsystem (video, audio, input, joypad, menu, camera, location,
-record, MIDI, microphone, Bluetooth, Wi-Fi, …) follows one shape:
+record, MIDI, microphone, Bluetooth, Wi-Fi, …) follows this shape. The
+directory, type and array names vary by subsystem, so match a sibling in
+the same directory:
 
-- Interface struct + vtable in `<subsystem>_driver.h`.
-- Each implementation in `<subsystem>/drivers/<name>.c`, defining
-  `const <subsystem>_driver_t <name>_<subsystem> = { … };`.
-- Registered in the NULL-terminated `<subsystem>_drivers[]` array in
-  `<subsystem>_driver.c`, gated on a `HAVE_*` macro.
+- Interface struct + vtable in the subsystem's driver header
+  (`audio/audio_driver.h`, `gfx/video_driver.h`, `menu/menu_driver.h`, …).
+- Each implementation is a `.c` file in the subsystem's drivers directory
+  (`audio/drivers/`, `gfx/drivers/`, `input/drivers_joypad/`, …), defining
+  an instance named `<subsystem>_<name>`: `audio_driver_t audio_alsa`,
+  `video_driver_t video_gl2`, `menu_ctx_driver_t menu_ctx_ozone`. Joypad
+  drivers are the exception: `input_device_driver_t sdl_joypad`.
+- Registered in the subsystem's NULL-terminated registry array
+  (`video_drivers[]`, `audio_drivers[]`, `menu_ctx_drivers[]`, …), gated on
+  a `HAVE_*` macro.
 
 Adding a driver: write `<name>.c`; add its object under the right `HAVE_*`
 block in `Makefile.common`; add it to `griffin/griffin.c` if it should
@@ -31,9 +38,9 @@ insert the `extern` + array entry in the registry.
 
 ## 3. Version-string files (lockstep — change together or not at all)
 
-The version lives in `version.all` (a C/Make/shell polyglot). Every file
-carrying the version string is updated in one commit. The repo-root
-`CLAUDE.md` § Versioning & release notes defines that set by a search, which
+The version lives in `version.all` (a C/Make/shell polyglot). Every file in
+the lockstep set is updated in one commit. The repo-root `CLAUDE.md`
+§ Versioning & release notes defines that set by a search, which
 finds `version.all`, `version.dtd`, `com.libretro.RetroArch.metainfo.xml`
 and the platform manifests under `pkg/`.
 
@@ -81,7 +88,7 @@ Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
 ## 6. Identifiers
 
 - Match the file's existing convention; the tree is C, lower_snake_case for
-  functions and variables, `UPPER_SNAKE` for macros/enums, `<name>_<subsys>`
-  for driver instances.
+  functions and variables, `UPPER_SNAKE` for macros/enums, `<subsys>_<name>`
+  for driver instances (joypads: `<name>_joypad`; see §1).
 - No new global state without a subsystem `*_state_get_ptr()` accessor
   following the existing singleton pattern.
