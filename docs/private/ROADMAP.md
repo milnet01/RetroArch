@@ -1234,3 +1234,14 @@ in the commit bodies, not in the documents — see each loop's commit.
   repo-root `CLAUDE.md`.
   **Layman:** The docs cite line numbers that go stale as code changes; we need to decide which docs to clean up.
   Kind: doc-fix.
+
+- 📋 [RETR-0002] **DOC — file-naming §6 "no new global state" does not say what counts.**
+  `docs/private/standards/file-naming-standard.md` §6 says "No new global
+  state without a subsystem `*_state_get_ptr()` accessor". It does not say
+  whether a file-scope `static` counts, or whether adding a field to an
+  existing `*_st` struct satisfies the rule. Two conformers could differ.
+  Pre-existing text outside the change that armed the gate, so it was filed
+  rather than fixed in the run (review-contract's blast-radius exit).
+  **Layman:** The naming rulebook bans new "global state" without saying whether an ordinary file-level variable counts.
+  Kind: doc-fix.
+  Source: review-contract 2026-09-25 file-naming-standard loop 2 (lane B).

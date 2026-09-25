@@ -86,8 +86,9 @@ desktop.
 
 ## 6. Griffin (console unity build) — the file-addition trap
 
-Adding or renaming a `.c` file: Linux/Windows builds pick it up via
-`Makefile.common`, but **griffin/console builds silently miss it** unless
-you also add it to `griffin/griffin.c` (or `griffin_cpp.cpp` /
+Adding or renaming a `.c` file: `Makefile.common` lists objects by hand,
+so add it there under its `HAVE_*` block for Linux/Windows builds, and
+**griffin/console builds silently miss it** unless you also add it to
+`griffin/griffin.c` (or `griffin_cpp.cpp` /
 `griffin_objc.m`). Verify any new `.c` appears in both. See
 [`file-naming-standard.md`](file-naming-standard.md) §Drivers.
