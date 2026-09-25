@@ -963,6 +963,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   - Issues G: run-ahead predictable temp name (RETR-0006), core-updater worker race (RETR-0005), and two for libretro-common, linked_list NULL callback (RETR-0007) and atomic-write loss (RETR-0009).
   - Branches are prepared from upstream/master in the worktree /mnt/Games/Scripts/Linux/ra-pr. Drafts are in /mnt/Games/Scripts/Linux/ra-pr-drafts/.
   - Nothing is pushed or opened until the user approves the drafts.
+  User update 2026-09-26: the user will NOT review the PR and issue
+  drafts ("I will go with your recommendations regardless"). The session
+  reviews each branch and draft itself, records the final drafts in
+  `docs/private/upstream-prs/`, then pushes the pr/* branches and opens
+  the PRs and issues. This supersedes the earlier review-first decision.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
