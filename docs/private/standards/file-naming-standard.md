@@ -32,27 +32,21 @@ insert the `extern` + array entry in the registry.
 ## 3. Version-string files (lockstep — change together or not at all)
 
 The version lives in `version.all` (a C/Make/shell polyglot). Every file
-carrying the version string is updated in one commit:
-
-- `version.all` (`PACKAGE_VERSION`)
-- `version.dtd`
-- `com.libretro.RetroArch.metainfo.xml` (`<release version="…" date="…">`,
-  newest entry)
+carrying the version string is updated in one commit. The repo-root
+`CLAUDE.md` § Versioning & release notes defines that set by a search, which
+finds `version.all`, `version.dtd`, `com.libretro.RetroArch.metainfo.xml`
+and the platform manifests under `pkg/`.
 
 `version.all`'s top-of-file comment also names `pkg/snap/snapcraft.yaml`,
 which does **not** exist in this tree — ignore that line unless snap
 packaging is reintroduced. The `cut-release` skill automates this list where a
 `.claude/bump.json` recipe exists; this fork has none checked in, so update
-the trio by hand (or add the recipe first).
+the set by hand (or add the recipe first).
 
-## 4. Settings (three-touchpoint rule)
+## 4. Settings
 
-Every new user-visible setting needs three edits, in these files (the three
-are independent — order not significant):
-
-- a default in `config.def.h`,
-- a load/save line in `configuration.c`,
-- a menu entry in `menu/menu_setting.c`.
+A new user-visible setting spans many files. The repo-root `CLAUDE.md`
+§ Configuration owns the search that finds every one of them.
 
 Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
 `us` file is hand-edited — the rest come from Crowdin.
@@ -60,13 +54,17 @@ Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
 ## 5. Fork-internal artefacts
 
 - **Branches:** `local/audit-<period>` (roadmap + docs) and
-  `local/fixes-<period>` (source fixes, worked in the `/tmp/ra-fixes`
-  worktree). Anything ready for upstream is rebased + PR'd separately.
+  `local/fixes-<period>` (source fixes, worked in the worktree the
+  repo-root `CLAUDE.md` § Fork workflow names). Anything ready for upstream is rebased + PR'd separately.
 - **Fork policies/standards:** `docs/private/<TOPIC>-POLICY.md` for
   policies (`AUDIT-POLICY.md`, `DEPENDENCY-POLICY.md`);
   `docs/private/standards/<topic>-standard.md` for standards (this dir).
 - **Specs:** `docs/private/specs/YYYY-MM-DD-<slug>.md`.
 - **Plans:** `docs/private/plans/YYYY-MM-DD-<slug>.md`.
+- **Spec and plan review loop logs:**
+  `docs/private/reviews/YYYY-MM-DD-<slug>-loop-log.md` and
+  `…-plan-loop-log.md`. The repo-root `CLAUDE.md` § Fork document locations
+  declares these locations.
 - **Audit cache:** `.audit_cache/cppcheck-b<NN>[<letter>][-<scope>].xml`,
   where `NN` is the bundle number, an optional `<letter>` disambiguates
   re-runs within a bundle (`cppcheck-b58b.xml`), and an optional `<scope>`
