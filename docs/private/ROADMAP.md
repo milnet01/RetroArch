@@ -1217,5 +1217,11 @@ in the commit bodies, not in the documents — see each loop's commit.
   documents only, or adopt a carve-out for dated records. One stale
   instance was already found and fixed this session
   (`Makefile.common:2750`, actually 2751).
+  Decision (user, 2026-09-25): sweep the live documents only. Dated
+  records keep their line numbers: closed roadmap entries, commit
+  bodies, loop logs. The carve-out is recorded as an override in the
+  repo-root `CLAUDE.md` § Citation form (`aeb43c313d`). Still owed: the
+  sweep of the live docs, meaning the standards, the policies and the
+  repo-root `CLAUDE.md`.
   **Layman:** The docs cite line numbers that go stale as code changes; we need to decide which docs to clean up.
   Kind: doc-fix.
