@@ -975,6 +975,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2. Review each branch (topic-only diff, `make -j4`, C89 build of touched files) and each draft.
   3. Record the final drafts in `docs/private/upstream-prs/`.
   4. Push the branches and open the PRs and issues. The user has pre-approved this and will not review.
+  2026-09-26: the six PR branches are built (all pass a full `make -j4`) and the drafts are recorded in `docs/private/upstream-prs/`. README.md there has the branch/commit table, the pre-open checklist, and what the drafting found. NOT opened, per the user.
+  Next session:
+  1. Run the checklist, then push and open.
+  2. Port three drafting improvements back to `local/fixes-2026-09`: the save.c SRAM atomic write, `content_replace_file`, and the cloud-sync framing helper.
+  3. Decide on a netcmd remote-access setting before opening B.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
