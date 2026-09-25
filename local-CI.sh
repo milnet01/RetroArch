@@ -26,9 +26,14 @@
 #   (or, for container jobs, piped straight into the container). Your working tree
 #   and its incremental build are never touched — no `make clean` runs in-place.
 #
-#   Deviation from the workflows, documented deliberately: builds add -j$(nproc).
-#   The workflows build serially; parallelism changes only wall-clock, never the
-#   pass/fail result.
+#   Deviation from the workflows, documented deliberately: builds run in
+#   parallel, $LOCAL_CI_JOBS jobs at once (default 4, to bound RAM on this
+#   machine). The workflows build serially; parallelism changes only wall-clock,
+#   never the pass/fail result.
+#
+#   Build trees and logs go under $LOCAL_CI_TMPDIR (default
+#   ~/.cache/local-ci), on disk: /tmp is tmpfs here, so a build tree there
+#   is held in RAM.
 #
 # USAGE
 #   ./local-CI.sh                 # run every runnable Linux job against HEAD
@@ -121,8 +126,11 @@ if [ "$REF" = "worktree" ]; then
     [ -z "$ARCHIVE_REF" ] && ARCHIVE_REF="HEAD"   # tree clean -> HEAD is identical
 fi
 
-LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/local-ci.XXXXXX")"
-JPAR="-j$(nproc 2>/dev/null || echo 2)"
+CI_TMP="${LOCAL_CI_TMPDIR:-${XDG_CACHE_HOME:-$HOME/.cache}/local-ci}"
+mkdir -p "$CI_TMP"
+LOGDIR="$(mktemp -d "$CI_TMP/local-ci.XXXXXX")"
+JOBS="${LOCAL_CI_JOBS:-4}"
+JPAR="-j$JOBS"
 
 echo "== local-CI.sh =="
 echo "repo:   $ROOT"
@@ -271,11 +279,11 @@ job_common_samples() {
 # Linux.yml :: build  (i686 container — bit-exact)
 job_linux_i686() {
     ensure_image || return 1
-    git -C "$ROOT" archive --format=tar "$ARCHIVE_REF" | podman run --rm -i --user root "$IMG_I686" \
+    git -C "$ROOT" archive --format=tar "$ARCHIVE_REF" | podman run --rm -i --user root -e JOBS="$JOBS" "$IMG_I686" \
       bash -c 'set -e; mkdir -p /b && cd /b && tar x
                ./configure --disable-qt --enable-xdelta
-               make -j"$(getconf _NPROCESSORS_ONLN)" clean
-               make -j"$(getconf _NPROCESSORS_ONLN)" info all'
+               make -j"$JOBS" clean
+               make -j"$JOBS" info all'
 }
 
 # Linux-Headless.yml :: linux-nomenu  ("(i686)" name, but CI runs it on ubuntu-latest)
@@ -286,10 +294,10 @@ job_linux_i686() {
 #   rationale + the Qt-link detail: docs/private/DEPENDENCY-POLICY.md §4a.
 job_headless_i686() {
     ensure_image || return 1
-    git -C "$ROOT" archive --format=tar "$ARCHIVE_REF" | podman run --rm -i --user root "$IMG_I686" \
+    git -C "$ROOT" archive --format=tar "$ARCHIVE_REF" | podman run --rm -i --user root -e JOBS="$JOBS" "$IMG_I686" \
       bash -c 'set -e; mkdir -p /b && cd /b && tar x
                ./configure --disable-menu --disable-qt
-               make -j"$(getconf _NPROCESSORS_ONLN)"'
+               make -j"$JOBS"'
 }
 
 # ---- driver ---------------------------------------------------------------
