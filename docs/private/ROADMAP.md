@@ -951,6 +951,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
 
 - 📋 [RETR-S0115] **MEDIUM — Upstreaming backlog for the clear-cut fork fixes (branch-drift reduction).**
   Many shipped fixes are plain `libretro/RetroArch` bugs, not fork-specific, yet they live only on `local/fixes-2026-04` — so they (a) help no other libretro user and (b) accrue merge debt as the fixes branch drifts from upstream `master` (already ~76/24 commits diverged at Bundle 67). The vendored-blocked items (`libretro-common/file/config_file.c` atomic write, `formats/json/rjson.c` `(json+1)`, `file/archive_file.c` NULL backend) are *only* fixable by upstreaming — they sit 🔄 today for exactly this reason. **Shape:** keep a tracked list of upstream-PR candidates (seed: the security fixes above + the `linked_list.c` NULL-guard flagged in Bundles 76/77 + the three vendored-common items) and PR them against upstream on a cadence; each merged PR lets the next re-vendor drop a local edit instead of clobbering it. Pairs with a periodic `local/fixes-2026-04` rebase-onto-`master` to bound drift. (Upstreaming is stated as policy in the header + per-item asides today, but there is no single tracked backlog — this is that tracker.)
+  User request 2026-09-25: share worthwhile fixes with the RetroArch
+  team. Sequenced after RETR-0003 (upstream sync). Replaying the 94 fork
+  fixes onto current upstream shows which ones upstream still lacks, and
+  a PR must target current `master`. The candidate list goes to the user
+  before any PR is opened, since PRs are public under `milnet01`.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1268,3 +1273,37 @@ in the commit bodies, not in the documents — see each loop's commit.
   **Layman:** The naming rulebook bans new "global state" without saying whether an ordinary file-level variable counts.
   Kind: doc-fix.
   Source: review-contract 2026-09-25 file-naming-standard loop 2 (lane B).
+
+## RetroDB player mode (2026-09-25)
+
+The user's new direction for the fork: RetroDB launches this fork's RetroArch in
+a player mode that goes straight into the game, with the in-game Quick Menu for
+settings, cheats and saves, and no desktop GUI. RetroDB owns choosing and
+downloading the best core, from a ranked list per system. The fork is synced to
+current upstream first, so the player is built on current code.
+
+- 📋 [RETR-0003] **SYNC — rebase the fork's fixes onto current upstream on a new branch.**
+  The fork split from upstream at `6ff3332ea2` (2026-04-25). Upstream has since
+  added 5,351 commits; `local/fixes-2026-04` carries 94 fork-only commits. A
+  dry-run `git merge-tree` of the two shows 62 conflicting files. Plan (user's
+  choice): create `local/fixes-2026-09` from `upstream/master`, re-apply the 94
+  commits one at a time, and drop any upstream already made. Keep
+  `local/fixes-2026-04` and `local/audit-2026-04` untouched as backups.
+  Done when all five `local-CI.sh` jobs pass on the new branch.
+  **Layman:** Bring in five months of official RetroArch updates without losing any of the fork's own fixes.
+  Kind: chore.
+  Source: user-request-2026-09-25.
+
+- 📋 [RETR-0004] **PLAYER — RetroDB launches the fork's RetroArch in a player mode.**
+  User's choices (2026-09-25): no new app, and no slim build for now. The
+  fork provides a player profile: its own config directory, fullscreen, launch
+  straight into the content, the in-game Quick Menu for settings, cheats and
+  save states, and saves kept apart from the user's normal RetroArch setup.
+  RetroDB owns core choice from a ranked list per system (a per-system and
+  per-game override, auto-download when missing) and the launch call. The
+  launch contract is agreed with the RetroDB session (retrodb-10) before
+  building. It binds code in both projects, so it needs a spec. Starts after
+  the SYNC item.
+  **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
+  Kind: feature.
+  Source: user-request-2026-09-25.
