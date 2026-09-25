@@ -61,7 +61,7 @@ Each subsystem keeps a single file-static struct accessed via `<subsystem>_state
 - `rarch_main` (declared in `frontend/frontend.h`, defined in `retroarch.c`; its doc comment still calls it `main_entry`) -> `retroarch_main_init` (in `retroarch.c`) -> `runloop_iterate` (`runloop.c`).
 - `retroarch.c` is the libretro environment-callback dispatcher, command-line parser, and core/content load orchestrator. Its single-file size is **deliberate** — function-call overhead is measurable on consoles.
 - `command.c` — network/stdin command IPC (pause, save state, etc.).
-- `runloop.c` loads the libretro core via `dylib_load` and binds its symbols; `dynamic.h` declares the system-info helpers.
+- `runloop.c` loads the libretro core via `dylib_load` and binds its symbols; `libretro_get_system_info` is declared in `runloop.h`; `dynamic.h` declares `libretro_free_system_info` and `libretro_find_subsystem_info`.
 
 ### Configuration
 - `config.def.h` — every default value.
@@ -69,7 +69,7 @@ Each subsystem keeps a single file-static struct accessed via `<subsystem>_state
 - `menu/menu_setting.c` — the entire user-visible settings tree (label, range, callback) for the menu UI.
 - `intl/msg_hash_*.h` — translatable strings, keyed by enum. Translations come from Crowdin (`Fetch translations from Crowdin` commits); don't edit non-`us` files by hand.
 
-**A new setting spans many files**: at least an entry in `menu/menu_setting.c`, a default in `config.def.h`, a load/save line in `configuration.c`, and its `settings_t` field in `configuration.h`, plus its label enum and strings. To find the full set, pick an existing setting of the same type, search the tree for its name in lower case (`video_shader_delay`) and upper case (`VIDEO_SHADER_DELAY`, which finds its `MENU_LABEL(...)` enum and strings), and mirror every registration hit: menu entry, default, load/save, `settings_t` field, label enum, sublabel and `us` strings. Hits in behaviour code (such as `runloop.c`) are where that one setting is used, not part of the pattern.
+**A new setting spans many files**: at least an entry in `menu/menu_setting.c`, a default in `config.def.h`, a load/save line in `configuration.c`, and its `settings_t` field in `configuration.h`, plus its label enum and strings. To find the full set, pick an existing setting of the same type, search the tree for its name in lower case (`video_shader_delay`) and upper case (`VIDEO_SHADER_DELAY`, which finds its `MENU_LABEL(...)` enum and strings), and mirror every registration hit: menu entry, default, load/save, `settings_t` field, label enum, sublabel and `us` strings. Hits in behaviour code (such as `runloop.c`) are where that one setting is used, not part of the pattern. The default is a `DEFAULT_*` macro in `config.def.h` that neither search matches; find its name in the `configuration.c` hit.
 
 ### Menu
 Four interchangeable menu drivers in `menu/drivers/`: **rgui** (low-spec text-grid), **ozone** (sidebar, default on desktop), **xmb** (PS3-style horizontal), **materialui** (touch). All read from the same `menu_displaylist`/`menu_entries`/`menu_setting` substrate. Cross-driver UI logic lives in `menu/`; driver-specific rendering lives in the driver file.
@@ -109,10 +109,10 @@ Design documents are named here deliberately: that directory already holds `-des
 
 Two fork-specific reasons:
 
-- This is a downstream fork of a tree we do not own and re-sync from. Every fork-authored document lives under `docs/private/` so a re-vendor never collides with upstream — and a top-level `docs/specs/` or `docs/plans/` is exactly such a collision.
+- This is a downstream fork of a tree we do not own and re-sync from. Every fork-authored document lives under `docs/private/` so a re-vendor never collides with upstream — and a top-level `docs/specs/`, `docs/plans/` or `docs/reviews/` is exactly such a collision.
 - The existing specs are named by date, and the roadmap and the fork's audit docs cite them by those names. The roadmap now carries ids (`docs/private/standards/documentation-standard.md` §2), but renaming the specs to `<ID>-<topic>` would break every existing citation, so new specs keep the date form for one naming scheme per directory.
 
-The override reaches spec and plan **locations and filenames** only: `write-spec` is still how both are written. It does not read this override, so give it the paths: the spec or plan above, and its review loop log at `docs/private/reviews/<same-stem>-loop-log.md` instead of its default `docs/reviews/`. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
+**Review loop logs live at `docs/private/reviews/YYYY-MM-DD-<slug>-loop-log.md`** for a spec and `…-plan-loop-log.md` for a plan, not under `docs/reviews/`. The roadmap id goes in the document's title line, since the filename carries the date. `write-spec` reads this declared override for the spec, the plan and both loop logs, and is still how specs and plans are written. The override reaches **locations and filenames** only. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
 
 ## Citation form (override of `/mnt/Games/CLAUDE.md`)
 
@@ -121,7 +121,7 @@ The override reaches spec and plan **locations and filenames** only: `write-spec
 - A structured datum in a table cell is a field, not prose. The `Sites` count in the ROADMAP's bundle table stays.
 - A dated record may cite line numbers, and keeps the ones it has: a closed roadmap entry, a commit body, a review loop log. It is written once and never revised, so a line number in it stays true of its date, and rewriting it damages the record.
 
-Every other new text uses names, not line numbers.
+Every other new text follows the parent rule: names, not counts, line numbers or sizes.
 
 ## Fork workflow (private)
 
