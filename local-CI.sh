@@ -64,7 +64,11 @@ IMG_I686="docker.io/reallibretroretroarch/libretro-build-i386-ubuntu:xenial-gcc9
 #     --disable-pipewire : retroarch.yml installs no libpipewire-0.3-dev, so CI
 #                          builds with HAVE_PIPEWIRE=0. (openSUSE ships it, and
 #                          the pipewire/spa system headers are not C89-clean.)
-C89_ALIGN=(--disable-pipewire)
+#     --disable-sdl3     : retroarch.yml installs libsdl2-dev, not SDL3, so CI
+#                          never compiles input/drivers_joypad/sdl3_joypad.c.
+#                          (openSUSE ships SDL3, and that upstream file is not
+#                          C89-clean.)
+C89_ALIGN=(--disable-pipewire --disable-sdl3)
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
     echo "local-CI.sh: not inside a git repository" >&2; exit 2; }
