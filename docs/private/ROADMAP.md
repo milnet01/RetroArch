@@ -13,8 +13,11 @@ Status markers:
 
 - 📋 pending
 
-- 🔄 deferred / waiting on upstream
-- ❌ won't-fix / verified-FP / resolved-stale (kept for audit-recurrence detection — the static analyser will re-report these every run)
+- 💭 deferred / waiting on upstream
+
+- 🚫 won't-fix / verified-FP / resolved-stale (kept for audit-recurrence detection — the static analyser will re-report these every run)
+
+Sub-points inside older entries use 🔄 for 💭 and ❌ for 🚫.
 
 Severity: **CRITICAL** > **HIGH** > **MEDIUM** > **LOW**.
 
@@ -200,8 +203,15 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   `ai/game_ai.c:153, 182-184`. _(Bundle 47 — fixed in `54fc62b5c5` on `local/fixes-2026-04`. Mechanical migration: strcpy → strlcpy(dst, src, sizeof(dst)) at the `game_ai_load` site; strcpy + 2× strcat → strlcpy + 2× strlcat at `game_ai_think`'s data_path build-up, each bounded against the 1024-byte stack buffer. File already includes `<compat/strl.h>`. Module is opt-in (`HAVE_GAME_AI=0` in default config); standalone compile clean with `-Wall -Wsign-compare`.)_
   Kind: implement.
 
-- 🔄 **LOW — `backend->compressed_file_read` derefs NULL backend.** `libretro-common/file/archive_file.c:555-557`. Vendored — patch upstream and re-vendor.
-- 🔄 **LOW — `(json + 1)` arithmetic before NULL check.** `libretro-common/formats/json/rjson.c:971-975`. Vendored.
+- 💭 [RETR-S0150] **LOW — `backend->compressed_file_read` derefs NULL backend.**
+  `libretro-common/file/archive_file.c:555-557`. Vendored — patch upstream and re-vendor.
+  **Layman:** A possible crash in borrowed archive-reading code; it has to be fixed in the original project, not here.
+  Kind: audit-fix.
+
+- 💭 [RETR-S0151] **LOW — `(json + 1)` arithmetic before NULL check.**
+  `libretro-common/formats/json/rjson.c:971-975`. Vendored.
+  **Layman:** A small unsafe step in borrowed JSON-reading code; it has to be fixed in the original project, not here.
+  Kind: audit-fix.
 
 ### Spec-needed
 
@@ -263,7 +273,10 @@ These look intentional but lack a documented contract. Each was a candidate for 
 
 - ✅ Re-run cppcheck letting `menu/drivers/materialui.c` finish (expect +10-15 items in the S2 pattern). _(Bundle 62 — `9ed75a3d51`. Re-ran with `--max-configs=1 --check-level=exhaustive` per the audit-config `known_issues` workaround; the file completes in ~10 s instead of timing out at default branch-budget. Predicted +10-15 S2-pattern hits did not materialise: the 4 `nullPointer*` raw findings on the audit-branch snapshot (lines 5916, 9659, 10037, 12045) were stale cite-points whose underlying derefs had already been guarded by Bundles 54 + 55 on the fixes branch. Only 3 unrelated actionable sites on the fixes-branch snapshot — fixed in Bundle 62. Pre-existing style/tidy noise surfaced by this run (style fields, integer-division, misleading-indent, unused-includes) tracked under the new ROADMAP entries below.)_
 
-- 🚧 Re-run semgrep with pinned parser (332 parse errors → expect FP-rate reduction on the double-free cluster).
+- 🚧 [RETR-S0149] **Re-run semgrep with pinned parser.**
+  332 parse errors → expect FP-rate reduction on the double-free cluster.
+  **Layman:** One code scanner failed to read hundreds of files; re-running it with a fixed version should remove many false alarms.
+  Kind: chore.
 
 ---
 
@@ -384,7 +397,9 @@ These are exploitable now and have concrete reproducers.
   `command.c:929-968` and `:1187-1195`. _(Fixed `8aedb937f1` — capped `nbytes <= COMMAND_READ_NBYTES_MAX` (16 KiB) before the multiplication can wrap, plus NULL-check on each malloc.)_
   Kind: implement.
 
-- ❌ **HIGH — Heap-buffer-overflow class in HTTP failure loggers.** _(Verified resolved-stale 2026-04-25 while triaging Bundle 16. Current `s3_log_http_failure` (s3.c:788-799) uses the safe `%.*s` length-bounded printf form, with an explicit comment documenting why `data->data[data->len]=0` is a one-byte heap overflow. The reviewer's reference to s3.c:1633-1640 is also safe in current code: the multipart-initiate path malloc's `data->len + 1`, memcpy's `data->len` bytes, and writes the terminator on the **newly-allocated** buffer (`response_xml[data->len] = '\0'`), not on `data->data`. A `net_http_data_to_cstring` helper would still be valuable defence-in-depth (the antipattern is easy to re-introduce) but no concrete site to fix today.)_
+- 🚫 [RETR-S0152] **HIGH — Heap-buffer-overflow class in HTTP failure loggers.**
+  _(Verified resolved-stale 2026-04-25 while triaging Bundle 16. Current `s3_log_http_failure` (s3.c:788-799) uses the safe `%.*s` length-bounded printf form, with an explicit comment documenting why `data->data[data->len]=0` is a one-byte heap overflow. The reviewer's reference to s3.c:1633-1640 is also safe in current code: the multipart-initiate path malloc's `data->len + 1`, memcpy's `data->len` bytes, and writes the terminator on the **newly-allocated** buffer (`response_xml[data->len] = '\0'`), not on `data->data`. A `net_http_data_to_cstring` helper would still be valuable defence-in-depth (the antipattern is easy to re-introduce) but no concrete site to fix today.)_
+  Kind: implement.
 
 ### 🛡 Tier 2 — hardening sweep (correctness, not exploitability)
 
@@ -400,7 +415,9 @@ These are exploitable now and have concrete reproducers.
   `game_ai_override_p1`, `game_ai_override_p2`, `game_ai_show_debug`. _(Fixed `9bf01aabdb` — added three `SETTING_BOOL` lines under the existing `#ifdef HAVE_GAME_AI` block. Toggling in the menu now persists across restart.)_
   Kind: implement.
 
-- ❌ **HIGH — Configuration save: no lock on settings_t while iterating.** _(Verified non-bug — investigated 2026-04-25 while preparing Bundle 12. The autoconfig worker thread (`input_autoconfigure_connect_handler`) only mutates the per-task `autoconfig_handle`; all settings_t writes (including `input_joypad_index[]`, `input_config_set_device_*`, and the `input_autoconf_binds` table) happen in `cb_input_autoconfigure_connect` — the **callback**, dispatched from `retro_task_internal_gather` on the main thread. `config_save_file` is also main-thread (called from menu/CLI). Both paths are serialized by the main loop; no race is possible. Roadmap entry stayed open from a previous static-analysis pattern match that didn't track callback-vs-handler dispatch.)_
+- 🚫 [RETR-S0153] **HIGH — Configuration save: no lock on settings_t while iterating.**
+  _(Verified non-bug — investigated 2026-04-25 while preparing Bundle 12. The autoconfig worker thread (`input_autoconfigure_connect_handler`) only mutates the per-task `autoconfig_handle`; all settings_t writes (including `input_joypad_index[]`, `input_config_set_device_*`, and the `input_autoconf_binds` table) happen in `cb_input_autoconfigure_connect` — the **callback**, dispatched from `retro_task_internal_gather` on the main thread. `config_save_file` is also main-thread (called from menu/CLI). Both paths are serialized by the main loop; no race is possible. Roadmap entry stayed open from a previous static-analysis pattern match that didn't track callback-vs-handler dispatch.)_
+  Kind: implement.
 
 - ✅ [RETR-S0042] **HIGH — `rgui_show_start_screen` triad mismatch.**
   _(Fixed `9bf01aabdb` — `SETTING_BOOL` line now uses `default_enable=true, default=DEFAULT_MENU_SHOW_START_SCREEN`. The bespoke "force-write in minimal mode" workaround at the saver site was deleted -- both load and save paths now agree without needing the override.)_
@@ -692,9 +709,20 @@ Re-run with `compile_commands.json` (generated via `bear -- make -j$(nproc)` aft
   _(Fixed `6423760b01` — the categories array was sized by `_len` (options count) but indexed by `cats_size` (categories count). Allocate by `cats_size` instead. Cores declaring more categories than options previously heap-wrote past the allocation.)_
   Kind: implement.
 
-- 🔄 **CRITICAL — `runahead.c:640, 662` Out-of-bound access preceding heap area.** Two sites in the input-state-list walk. clang-analyzer's preceding-heap warnings need a concrete reproducer to confirm vs FP — the loop iterates `i = 0` upward against `input_state_list->size` and the deref `data[i]` is bounded. Possible FP from path-sensitive analysis on platform-conditional branches. **Deferred** pending reproducer or deeper inter-procedural look.
-- 🔄 **CRITICAL — `retroarch.c:435, 1186, 2270` three sites Out-of-bound past `location_drivers[]`.** Likely **clang-analyzer FPs** — the array is NULL-terminated at definition (`{ ..., &location_null, NULL }`), the iteration `for (d = 0; location_drivers[d]; d++)` is correctly NULL-guarded, and `find_driver_nonempty` only returns indices 0..N-1. **Deferred** unless a reproducer surfaces.
-- 🔄 **CRITICAL — `tasks/task_translation.c:177` Out-of-bound past `translation_drivers[]`.** Same FP class as the location-drivers item above.
+- 💭 [RETR-S0154] **CRITICAL — `runahead.c:640, 662` Out-of-bound access preceding heap area.**
+  Two sites in the input-state-list walk. clang-analyzer's preceding-heap warnings need a concrete reproducer to confirm vs FP — the loop iterates `i = 0` upward against `input_state_list->size` and the deref `data[i]` is bounded. Possible FP from path-sensitive analysis on platform-conditional branches. **Deferred** pending reproducer or deeper inter-procedural look.
+  **Layman:** A scanner warns of a memory overrun in run-ahead, but the code looks safe; parked until someone can reproduce it.
+  Kind: investigate.
+
+- 💭 [RETR-S0155] **CRITICAL — `retroarch.c:435, 1186, 2270` three sites Out-of-bound past `location_drivers[]`.**
+  Likely **clang-analyzer FPs** — the array is NULL-terminated at definition (`{ ..., &location_null, NULL }`), the iteration `for (d = 0; location_drivers[d]; d++)` is correctly NULL-guarded, and `find_driver_nonempty` only returns indices 0..N-1. **Deferred** unless a reproducer surfaces.
+  **Layman:** A scanner warns of reading past a list of location drivers, but the list is properly ended; likely a false alarm.
+  Kind: investigate.
+
+- 💭 [RETR-S0156] **CRITICAL — `tasks/task_translation.c:177` Out-of-bound past `translation_drivers[]`.**
+  Same FP class as the location-drivers item above.
+  **Layman:** Same likely false alarm as the location-driver warning, in the translation feature.
+  Kind: investigate.
 
 - ✅ [RETR-S0081] **CRITICAL — `menu/menu_setting.c:2784` Out-of-bound access preceding `input_config_bind_order[]`.**
   _(Fixed `6423760b01` — the walk-and-shift loop in `setting_action_left_retropad_bind` and its right-hand twin did `[i ± step]` reads when the user was on the first/last entry, OOB-reading before/after the 24-entry array. Guard with `if (i ± step in range)`; the existing wraparound block below the loop handles the wrap case correctly.)_
@@ -722,7 +750,9 @@ Re-run with `compile_commands.json` (generated via `bear -- make -j$(nproc)` aft
   Vulkan render path. _(Fixed `e35479c146` Bundle 37 — the destroy-loop at lines 7979-7983 reads `vk->overlay.images[i]` *before* the post-loop `if (vk->overlay.images)` free-guard. If `count > 0` but `images == NULL` (resource init partially completed and then bailed), the loop crashes before reaching the existing NULL-check. Moved the NULL check to gate both the loop and the free; `memset` still runs unconditionally so `count`/`images` end consistent regardless. `vk->context->device` left unchecked — every other deref of `vk->context` in this file (1028, 1248, 1386, …) trusts the struct invariant that `context` is non-NULL once `vk` is initialised, and adding a check only here would be inconsistent.)_
   Kind: implement.
 
-- ❌ **HIGH — `gfx/video_driver.c:3633, 3745` NULL passed to nonnull-attributed param + NULL deref.** _(Verified-FP 2026-04-27 — both are clang-analyzer path-sensitivity false positives. At line 3633, `strcmp(video_ident, "glcore")` is unreachable for `video_ident == NULL` because line 3613 has `if (!video_ident) return GFX_CTX_NONE`. At line 3744, `video_driver_set_viewport_square_pixel(geom, rotation)` passes `geom = &video_st->av_info.geometry` where `video_st = &video_driver_st` (static-storage); the analyzer doesn't trace static-storage addresses as definitely-non-NULL. No code action.)_
+- 🚫 [RETR-S0157] **HIGH — `gfx/video_driver.c:3633, 3745` NULL passed to nonnull-attributed param + NULL deref.**
+  _(Verified-FP 2026-04-27 — both are clang-analyzer path-sensitivity false positives. At line 3633, `strcmp(video_ident, "glcore")` is unreachable for `video_ident == NULL` because line 3613 has `if (!video_ident) return GFX_CTX_NONE`. At line 3744, `video_driver_set_viewport_square_pixel(geom, rotation)` passes `geom = &video_st->av_info.geometry` where `video_st = &video_driver_st` (static-storage); the analyzer doesn't trace static-storage addresses as definitely-non-NULL. No code action.)_
+  Kind: implement.
 
 - ✅ [RETR-S0087] **HIGH — `gfx/video_shader_parse.c::video_shader_apply_shader` `current_video->set_shader` deref-without-NULL-check.**
   _(Fixed `349cc5644b` — added `video_st->current_video &&` guard before the `set_shader` field check on the synchronous fallback path. The deferred path eight lines above already used the explicit current_video NULL-check, but the sync path had drifted — same author-aware pattern as Bundle 5.)_
@@ -732,8 +762,13 @@ Re-run with `compile_commands.json` (generated via `bear -- make -j$(nproc)` aft
   _(Fixed `349cc5644b` — added `&& video_st->current_video` to the existing `&&`-chain on the menu-alive branch. The neighbouring `video_st->poke && video_st->poke->show_mouse` block was already correct.)_
   Kind: implement.
 
-- ❌ **HIGH — `runloop.c:5701` `current_video->focus` NULL deref.** _(Verified resolved-stale 2026-04-25 — current code at the corresponding site uses the ternary `video_st->current_video ? video_st->current_video->alive(video_st->data) : true;` which is correctly check-before-deref. clang-tidy's reported line drifted; no equivalent unguarded `current_video->focus` deref found by grep.)_
-- ❌ **HIGH — `input/input_driver.c:4501` `bind->key` NULL deref.** _(Verified resolved-stale 2026-04-25 — current code at `input_config_get_bind_string` derefs `bind->key` only inside `if (bind)` at the outer guard, and the prior `bind->joykey` / `bind->joyaxis` derefs all use `bind && ...` short-circuit. No unguarded `bind->key` site reachable.)_
+- 🚫 [RETR-S0158] **HIGH — `runloop.c:5701` `current_video->focus` NULL deref.**
+  _(Verified resolved-stale 2026-04-25 — current code at the corresponding site uses the ternary `video_st->current_video ? video_st->current_video->alive(video_st->data) : true;` which is correctly check-before-deref. clang-tidy's reported line drifted; no equivalent unguarded `current_video->focus` deref found by grep.)_
+  Kind: implement.
+
+- 🚫 [RETR-S0159] **HIGH — `input/input_driver.c:4501` `bind->key` NULL deref.**
+  _(Verified resolved-stale 2026-04-25 — current code at `input_config_get_bind_string` derefs `bind->key` only inside `if (bind)` at the outer guard, and the prior `bind->joykey` / `bind->joyaxis` derefs all use `bind && ...` short-circuit. No unguarded `bind->key` site reachable.)_
+  Kind: implement.
 
 - ✅ [RETR-S0089] **HIGH — `slang_process.cpp:967, 970, 974, 977` four sites: NULL C++ object pointer call.**
   _(Fixed `89b8adf690` — combined NULL-guard with the existing `!empty()` check on `vs/ps_resources.{uniform,push_constant}_buffers` at all four `set_decoration` sites. The function happened to be safe today because `dst_type==RARCH_SHADER_HLSL`-without-`HAVE_HLSL` leaves `vs/ps_resources` default-constructed (empty) and the `!empty()` short-circuits the call -- but that's a brittle coincidence; made the guard explicit so a future ShaderResources default-ctor change can't reintroduce the NULL-method-call.)_
@@ -776,7 +811,9 @@ Re-run with `compile_commands.json` (generated via `bear -- make -j$(nproc)` aft
   `menu/menu_displaylist.c:16166/16193/16243/16269/16317/16344` (DROPDOWN_LIST), `menu/menu_displaylist.c:16509/16536/16585/16611/16658/16685` (DROPDOWN_LIST_SPECIAL), `ui/drivers/ui_qt_widgets.cpp:518` (UIntComboBox::populate — missed by audit), `ui/drivers/ui_qt_widgets.cpp:713` (UIntRadioButtons). _(Bundle 41 — fixed in `9498278d7e` on `local/fixes-2026-04`. All sites convert `for (float i = min; i <= max; i += step)` → `for (int j = 0; j <= n_steps; j++)` with `n_steps = (int)((max - min) / step)` computed up front, then `i = min + (float)j * step` derived inside the loop body. Same iteration count as before in non-pathological cases, but loop control no longer depends on float-add drift. ST_FLOAT variants use `(max + half_step - min) / step` to preserve the original termination intent. Step==0 guard collapses to a single iteration. Cluster too narrow for AUDIT-POLICY.)_
   Kind: implement.
 
-- ❌ **MEDIUM — `bugprone-not-null-terminated-result` (5 sites) — verified FP.** `tasks/task_save.c:435`, `network/netplay/netplay_frontend.c:5097, 7773`, `gfx/drivers_shader/slang_cache.cpp:152, 154`. Triaged Bundle 40 (2026-04-27): all five clang-tidy false positives. `task_save.c` writes are binary headers (`"RASTATE"` magic, 4-byte block tags) into a serialization buffer that is never C-string-walked. `netplay_frontend.c` `memcpy(payload.nick, src, sizeof(payload.nick))` always copies a `strlcpy`-NUL-terminated source into a fixed-size NUL-padded wire field. `slang_cache.cpp:152, 154` build a binary hash input fed to `sha256_hash` — NUL termination would corrupt the hash. No code change.
+- 🚫 [RETR-S0160] **MEDIUM — `bugprone-not-null-terminated-result` (5 sites) — verified FP.**
+  `tasks/task_save.c:435`, `network/netplay/netplay_frontend.c:5097, 7773`, `gfx/drivers_shader/slang_cache.cpp:152, 154`. Triaged Bundle 40 (2026-04-27): all five clang-tidy false positives. `task_save.c` writes are binary headers (`"RASTATE"` magic, 4-byte block tags) into a serialization buffer that is never C-string-walked. `netplay_frontend.c` `memcpy(payload.nick, src, sizeof(payload.nick))` always copies a `strlcpy`-NUL-terminated source into a fixed-size NUL-padded wire field. `slang_cache.cpp:152, 154` build a binary hash input fed to `sha256_hash` — NUL termination would corrupt the hash. No code change.
+  Kind: implement.
 
 - ✅ [RETR-S0096] **MEDIUM — `bugprone-suspicious-string-compare` (10 cited sites).**
   _(Bundle 44 — fixed in `5e7692e5ce` on `local/fixes-2026-04`. Re-ran clang-tidy on the cited files post-compaction; authoritative current-snapshot lines are `core_info.c:1550`, `menu/menu_displaylist.c:2587/2695/2697`, `menu/menu_explore.c:534/564`, `network/netplay/netplay_frontend.c:3258/3299/6953`, `retroarch.c:799` — roadmap's earlier "3157, 3198, 6852" netplay cites and "1539" core_info cite were stale snapshots; the in-source `memcmp`/`strcmp`/`strcasecmp` calls without explicit zero comparison live at the listed lines today. All 10 verified correct-intent ("if differ from constant"): `_libretro` suffix detection, `ozone` driver name compare, `FILE_PATH_DETECT` placeholder, `.lpl` extension filter, db_name vs filename override, two netplay resim-needed signals, MITM session-id non-zero check, midi driver fallback writeback. No inverted-logic bugs found in this batch — the `if (memcmp(...))` shorthand is house style throughout the codebase, but the cited sites are the ones the linter calls out specifically. Mechanical close-out: append `!= 0` to each call. Re-ran clang-tidy: cluster cleared to zero. Build verified clean.)_
@@ -920,6 +957,19 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
 - ℹ️ **Already roadmapped (no new entry needed):** the go/no-go on the two big Tier-1 items — TLS remaining phases (consent dialog / BearSSL opt-out / upstream PR) and plaintext-credentials tiers 2–3 (secrets-file split / OS-keyring) — is tracked under Tier-1 above; both are 🚧 awaiting a decision to proceed or explicitly close. The libcheck CI-hook suggestion is ✅ closed (Bundle 78 orphan-gate).
 
 ---
+
+- 📋 [RETR-0001] **CI — wire `local-CI.sh` as the push gate on the fixes branch.**
+  `local-CI.sh` exists at the root of `local/fixes-2026-04`. It mirrors the
+  Linux jobs only and prints the console and other platform jobs as an explicit skip
+  list. No hook runs it: `ants.gate.command` is unset, so the machine-wide
+  pre-push hook never finds it (`~/.claude/standards/local-gate.md` §2 and
+  §6.2). Set `ants.gate.command` and `ants.gate.docsGlob` for this repo so
+  the hook runs it on source pushes. Leave upstream's console workflows
+  untouched (§3's inversion does not apply to a cross-build matrix).
+  The `/tmp/ra-fixes` worktree is gone; git lists it as prunable.
+  **Layman:** A script that repeats the Linux build checks locally already exists, but nothing runs it automatically before a push.
+  Kind: chore.
+  Source: peer-session claude-72 ci-gate sweep 2026-09-25.
 
 ### 📝 Cold-eyes 2026-07-04
 
