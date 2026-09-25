@@ -1172,7 +1172,7 @@ in the commit bodies, not in the documents — see each loop's commit.
   grants a per-project `CLAUDE.md`.
   Kind: implement.
 
-- 🚧 [RETR-S0145] **`docs/private/standards/documentation-standard.md` — gate in progress.**
+- ✅ [RETR-S0145] **`docs/private/standards/documentation-standard.md` — gate in progress.**
   Loop 1 complete and committed (`329f4b3cc0`): 4 verified, 4
   fixed — a feedback path that did not exist, a test-contract exemption
   keyed to a `tests/features/` directory this fork has never had, a record
@@ -1186,6 +1186,10 @@ in the commit bodies, not in the documents — see each loop's commit.
   a standard, so it is the last one. Two of loop 2's four findings landed
   on text loop 1 wrote, both of them new absolutes asserted beyond what a
   finding established.
+  Resolved 2026-09-25: a fresh run, armed by `4ba330bc59` + `38fb249c0a`
+  (roadmap store migration), replaced the owed loop 3. Three loops, 9
+  verified findings, all fixed, capped and shipped at `f046ef3e03`. The
+  log is `docs/private/reviews/documentation-standard-loop-log.md`.
   **Layman:** The fork's documentation rulebook is part-way through an independent review and needs its final round.
   Kind: doc.
 
