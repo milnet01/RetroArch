@@ -1304,6 +1304,31 @@ current upstream first, so the player is built on current code.
   launch contract is agreed with the RetroDB session (retrodb-10) before
   building. It binds code in both projects, so it needs a spec. Starts after
   the SYNC item.
+  Contract agreed in outline with retrodb-10 (2026-09-25), and the user answered its questions:
+  - Platforms: all three, Linux, Windows and macOS. Only Linux is testable here.
+  - BIOS: the player uses the user's existing RetroArch system dir.
+  - Specs: two. The shared launch contract lives in RetroDB `docs/specs/launcher.md` (Pass 59.64). A separate RetroDB-only spec covers core ranking and download.
+  Player-side clauses:
+  - argv `--config <player-cfg> -L <abs core> <abs content>`
+  - quiet stderr, with one plain fatal line
+  - exit 0 = OK
+  - closing content quits the process
+  - SIGTERM flushes SRAM within 5 s. The Windows equivalent is still to be designed.
+  - RetroDB owns the cores dir. The player owns config, saves, states, options, remaps and the RA login.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
+
+- 📋 [RETR-0005] **INVESTIGATE — core-updater worker may touch http_task after it is freed.**
+  The fork fix de0c6000c8 NULLed `http_task` in the completion callback to
+  close a use-after-free window. Upstream has since redesigned the
+  core-updater threading (70b606ea85, 2f9703049c). Callbacks now run on the
+  main thread and publish results with atomic release stores, and only the
+  worker writes status. Re-applying the fork fix there would race the worker,
+  so the sync kept upstream's code. The worker still calls
+  `task_get_flags(http_task)` before it checks `http_task_complete`, so the
+  window may remain. Confirm against the new ownership model, then fix with an
+  atomic pointer or a reorder. A candidate to report upstream.
+  **Layman:** A download helper might use a finished download's data after it has been cleaned up; check whether upstream's new design still allows it.
+  Kind: investigate.
+  Source: upstream-sync 2026-09-25 (RETR-0003), fork commit de0c6000c8.
