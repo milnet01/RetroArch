@@ -958,7 +958,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
 
 ---
 
-- 📋 [RETR-0001] **CI — wire `local-CI.sh` as the push gate on the fixes branch.**
+- ✅ [RETR-0001] **CI — wire `local-CI.sh` as the push gate on the fixes branch.**
   `local-CI.sh` exists at the root of `local/fixes-2026-04`. It mirrors the
   Linux jobs only and prints the console and other platform jobs as an explicit skip
   list. No hook runs it: `ants.gate.command` is unset, so the machine-wide
@@ -973,6 +973,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   "local/* pushes start no CI": the last 200 runs are all on master, but
   `Linux.yml` has no branch filter, so an unrecorded setting is what
   suppresses them. ci-gate now detects this branch's script by itself.
+  Resolved 2026-09-25 (`1c26bcaa56` on `local/fixes-2026-04`). The
+  machine-wide pre-push hook already auto-discovers `local-CI.sh` at the
+  repo root, so no `ants.gate.command` was needed. What made the gate
+  unsafe was the script: it built under `/tmp` (tmpfs, RAM) with every
+  core. It now builds under `~/.cache/local-ci` with `LOCAL_CI_JOBS`
+  (default 4), inside the i686 containers too. `ants.gate.docsGlob` is
+  set to `docs/*|*.md|COPYING`. Verified end to end: the push of
+  `1c26bcaa56` ran all five Linux jobs through the hook (c89,
+  samples-tasks, common-samples, linux-i686, headless-i686), all PASS.
+  On `local/audit-2026-04` the hook correctly finds no gate, since that
+  branch carries no source.
   **Layman:** A script that repeats the Linux build checks locally already exists, but nothing runs it automatically before a push.
   Kind: chore.
   Source: peer-session claude-72 ci-gate sweep 2026-09-25.
