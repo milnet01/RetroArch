@@ -79,7 +79,7 @@ style nit.
 ## 3. Hardening status (summary)
 
 Note on verification: the fix commits cited throughout this document live
-on `local/fixes-2026-04` (worked in the `/tmp/ra-fixes` worktree), not on
+on `local/fixes-2026-04` (worked in its own worktree), not on
 the `local/audit-2026-04` docs branch — a checkout of the audit branch may
 still show the pre-fix source. See `docs/private/ROADMAP.md` and the fork's
 two-branch model.

@@ -1,0 +1,9 @@
+# Review loop log — repo-root `CLAUDE.md`
+
+Review history for this repo's `CLAUDE.md`. It is kept outside the file
+because every session loads that file in full. `review-contract` writes one
+row per loop.
+
+| Loop | Date | Lanes | Q1 | Q2 | Q3 | Q4 | Outcome |
+|------|------|-------|----|----|----|----|---------|
+| 1 | 2026-09-25 | 3 | 4 | 0 | 2 | 0 | First gate on this file (RETR-S0147). The run is armed by `5a551008ed` and this session's edits (`4ba330bc59`, `aeb43c313d`, `3e12649c24`, `c07532ed27`). 3 lanes, every lane held every question. The lanes' harness-loaded copy of the file was stale, so the scrubbing steps were inert as expected; each lane disclosed it and reviewed the disk copy. 6 verified, 0 dismissed, 6 fixed. [Q1] `dynamic.c` no longer exists, and core loading is in `runloop.c` — found while building the packet, fixed in `4b2ac005de`. [Q1] "Linux/Windows builds pick a new source file up automatically" was false: `Makefile.common` lists every object by hand (A). [Q1] "every new setting needs three edits" was incomplete: an existing setting spans seven or more files. It is now an executable search for an existing setting's lower- and upper-case names (A). [Q1] the version lockstep list omitted the `pkg/` platform manifests. It is now defined by a search for the version string (A). [Q3] the fixes worktree had no path and did not exist. It is named `/mnt/Games/Scripts/Linux/ra-fixes` with its create command, and the stale `/tmp/ra-fixes` registration was pruned (A, B, C). [Q3] whether `write-spec` still writes specs under the location override was unstated. It does, with its output redirected (C). Collateral: `coding-standard.md` and `security-standard.md` dropped `/tmp/ra-fixes`, and `coding-standard.md` no longer guarantees that `local/*` pushes start no CI. `file-naming-standard.md` repeats three of these claims and is left to its own gate (RETR-S0146). Loop 2 dispatched. |

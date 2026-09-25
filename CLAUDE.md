@@ -21,7 +21,7 @@ Per-platform Makefiles live in the repo root: `Makefile.<platform>` (`Makefile.w
 `Makefile.local` is a per-developer override `-include`d by the main Makefile — use it for personal `CFLAGS`, never commit it.
 
 ### Griffin (unity build)
-Console targets (`Makefile.psp1`, `Makefile.ctr`, `Makefile.ps2`, `Makefile.wii`, `Makefile.wiiu`, ...) build via **`griffin/griffin.c`**, which `#include`s the .c sources directly (`-DHAVE_GRIFFIN=1`). When you add or rename a source file, Linux/Windows builds (which use `Makefile.common`) pick it up automatically, but **griffin builds will silently miss it** unless you also edit `griffin/griffin.c` (or `griffin_cpp.cpp` / `griffin_objc.m`). Verify any `.c` file you add appears in both lists.
+Console targets (`Makefile.psp1`, `Makefile.ctr`, `Makefile.ps2`, `Makefile.wii`, `Makefile.wiiu`, ...) build via **`griffin/griffin.c`**, which `#include`s the .c sources directly (`-DHAVE_GRIFFIN=1`). When you add or rename a source file, neither build picks it up on its own: add its `.o` to `Makefile.common` under the right `HAVE_*` block, and add it to `griffin/griffin.c` (or `griffin_cpp.cpp` / `griffin_objc.m`), or **griffin builds will silently miss it**. Verify any `.c` file you add appears in both lists.
 
 ### Other variants (one-liners)
 - **macOS bundle** — `make bundle` after `make` produces ad-hoc-signed `RetroArch.app`; min-OS derived from `-mmacosx-version-min`. `BUNDLE_*` overrides at the bottom of the root `Makefile`.
@@ -69,7 +69,7 @@ Each subsystem keeps a single file-static struct accessed via `<subsystem>_state
 - `menu/menu_setting.c` — the entire user-visible settings tree (label, range, callback) for the menu UI.
 - `intl/msg_hash_*.h` — translatable strings, keyed by enum. Translations come from Crowdin (`Fetch translations from Crowdin` commits); don't edit non-`us` files by hand.
 
-**Every new setting needs three edits**: an entry in `menu/menu_setting.c`, a default in `config.def.h`, and a load/save line in `configuration.c`.
+**A new setting spans many files**: at least an entry in `menu/menu_setting.c`, a default in `config.def.h`, a load/save line in `configuration.c`, and its `settings_t` field in `configuration.h`, plus its label enum and strings. To find the full set, pick an existing setting of the same type, search the tree for its name in lower case (`video_shader_delay`) and upper case (`VIDEO_SHADER_DELAY`, which finds its `MENU_LABEL(...)` enum and strings), and mirror every hit outside non-`us` translation files.
 
 ### Menu
 Four interchangeable menu drivers in `menu/drivers/`: **rgui** (low-spec text-grid), **ozone** (sidebar, default on desktop), **xmb** (PS3-style horizontal), **materialui** (touch). All read from the same `menu_displaylist`/`menu_entries`/`menu_setting` substrate. Cross-driver UI logic lives in `menu/`; driver-specific rendering lives in the driver file.
@@ -96,10 +96,7 @@ From `CODING-GUIDELINES`, `CONTRIBUTING.md`, and the C89/console-portability con
 
 ## Versioning & release notes
 
-- Version lives in `version.all` (a C/Make/shell polyglot). Lockstep update list — every file carrying the version string today:
-  - `version.all` (`PACKAGE_VERSION`)
-  - `version.dtd`
-  - `com.libretro.RetroArch.metainfo.xml` (`<release version="…" date="…">` block — newest entry)
+- Version lives in `version.all` (a C/Make/shell polyglot). The lockstep set is every file a search for the current version string finds outside `deps/`, `libretro-common/`, `intl/` and `docs/private/`: `version.all` (`PACKAGE_VERSION`), `version.dtd`, `com.libretro.RetroArch.metainfo.xml` (`<release version="…" date="…">` block — newest entry), and the platform manifests under `pkg/`.
   - `version.all`'s own top-of-file comment names `pkg/snap/snapcraft.yaml`, but that file does **not** exist in this tree (snap packaging lives elsewhere); ignore that line of the comment unless snap is re-introduced.
 - User-visible changes go to `CHANGES.md` under `# Future` until release.
 - Fork-only audit/refactor work goes to `docs/private/ROADMAP.md`, **not** `CHANGES.md` — `CHANGES.md` is user-visible, the private ROADMAP is engineering-internal.
@@ -115,7 +112,7 @@ Two fork-specific reasons:
 - This is a downstream fork of a tree we do not own and re-sync from. Every fork-authored document lives under `docs/private/` so a re-vendor never collides with upstream — and a top-level `docs/specs/` or `docs/plans/` is exactly such a collision.
 - The existing specs are named by date, and the roadmap and the fork's audit docs cite them by those names. The roadmap now carries ids (`docs/private/standards/documentation-standard.md` §2), but renaming the specs to `<ID>-<topic>` would break every existing citation, so new specs keep the date form for one naming scheme per directory.
 
-The override reaches spec and plan **locations and filenames** only. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
+The override reaches spec and plan **locations and filenames** only: `write-spec` is still how both are written, with its output redirected here. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
 
 ## Citation form (override of `/mnt/Games/CLAUDE.md`)
 
@@ -131,7 +128,7 @@ New text uses names, not line numbers.
 This checkout is a libretro/RetroArch fork carrying ongoing audit + refactor work. The fork is operated under a two-branch model that the upstream tree does not mirror:
 
 - **`local/audit-2026-04`** — roadmap + docs branch. `docs/private/ROADMAP.md`, `docs/private/AUDIT-POLICY.md`, `docs/private/specs/`, `docs/private/plans/`, and `docs/private/audit/` live here. All cold-eyes / indie-review / audit-fold-in commits land on this branch.
-- **`local/fixes-2026-04`** — source-fix branch, checked out in its own worktree on disk — not under `/tmp`, which is RAM on this machine. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
+- **`local/fixes-2026-04`** — source-fix branch. Its worktree is `/mnt/Games/Scripts/Linux/ra-fixes`; if `git worktree list` does not show it, create it with `git worktree add /mnt/Games/Scripts/Linux/ra-fixes local/fixes-2026-04`. Never under `/tmp`, which is RAM on this machine. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
 
 Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. When asked to "fold in" or "log a bundle", write it through `roadmap_log` on the audit branch — the roadmap store is the source of truth and the file is rendered from it; when asked to fix a finding, switch to the fixes-branch worktree.
 

@@ -79,8 +79,10 @@ desktop.
   `libretro-common` libcheck test can capture the symptom, write it first
   (see the root `CLAUDE.md` §Tests).
 - Before pushing `local/*` source branches, run `local-CI.sh` — it lives at
-  the root of the `local/fixes-2026-04` fixes worktree (e.g. `/tmp/ra-fixes`),
-  not on the audit branch. `local/*` branches do not trigger GitHub CI.
+  the root of the `local/fixes-2026-04` fixes worktree (the repo-root
+  `CLAUDE.md` § Fork workflow names its path), not on the audit branch.
+  `local/*` pushes have not triggered GitHub CI to date, but no workflow
+  filter guarantees that.
 
 ## 6. Griffin (console unity build) — the file-addition trap
 
