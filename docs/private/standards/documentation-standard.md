@@ -26,11 +26,12 @@ release notes only in the private roadmap.
   Cite an item by its id.
 - Emoji-status bullets, matching the legend at the head of
   `docs/private/ROADMAP.md`, which is authoritative for this vocabulary:
-  `📋 pending`, `🚧 in progress`, `✅ done`, `🔄 deferred / waiting on
-  upstream`, `❌ won't-fix / verified-FP / resolved-stale`. The last two
+  `📋 pending`, `🚧 in progress`, `✅ done`, `💭 deferred / waiting on
+  upstream`, `🚫 won't-fix / verified-FP / resolved-stale`. The last two
   are kept deliberately after closure — the analyser re-reports a
   suppressed false positive every run, and without its own mark a
   suppressed finding is indistinguishable from a live regression.
+  Older entries' sub-points write these two as `🔄` and `❌`.
 - An open item carries a `Layman:` summary. The store refuses a write
   that touches an open item without one.
 - A closed bullet cites its fix commit(s). The prevailing form is
@@ -97,6 +98,10 @@ is why it is not a citation form here.
 That governs prose. It does not reach a structured datum in a table cell,
 which is a field rather than a citation — §2's bundle-table `sites` count
 is the live case, and it stays.
+
+Nor does it reach a dated record: a closed roadmap entry, a commit body, a
+review loop log. Each was true on its date, and rewriting it damages the
+record. A line number in one stays as written; new text uses the form above.
 
 ## 7. Ants MCP feedback
 
