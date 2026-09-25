@@ -956,6 +956,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   fixes onto current upstream shows which ones upstream still lacks, and
   a PR must target current `master`. The candidate list goes to the user
   before any PR is opened, since PRs are public under `milnet01`.
+  User decisions 2026-09-26: send A–F as separate upstream PRs and file the G issue reports.
+  - Each PR body says it is AI-assisted (Claude Code), reviewed and build-tested on the fork.
+  - The user reviews each PR's title and body before it is opened.
+  - PRs: A `pr/tls-verify-by-default`, B `pr/netcmd-local-hardening`, C `pr/untrusted-file-checks`, D `pr/crash-safe-saving`, E `pr/crash-and-leak-fixes` (may split E1/E2), F `pr/cloud-sync-robustness`.
+  - Issues G: run-ahead predictable temp name (RETR-0006), core-updater worker race (RETR-0005), and two for libretro-common, linked_list NULL callback (RETR-0007) and atomic-write loss (RETR-0009).
+  - Branches are prepared from upstream/master in the worktree /mnt/Games/Scripts/Linux/ra-pr. Drafts are in /mnt/Games/Scripts/Linux/ra-pr-drafts/.
+  - Nothing is pushed or opened until the user approves the drafts.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1322,6 +1329,11 @@ current upstream first, so the player is built on current code.
   - closing content quits the process
   - SIGTERM flushes SRAM within 5 s. The Windows equivalent is still to be designed.
   - RetroDB owns the cores dir. The player owns config, saves, states, options, remaps and the RA login.
+  2026-09-26: retrodb-10 is drafting two specs.
+  - (a) RetroDB `docs/specs/launcher.md` (Pass 59.64) is the shared launch contract, covering all three platforms. Windows and macOS clauses are marked unverified. Shutdown is SIGTERM on POSIX; on Windows it is a graceful quit over RetroArch's network command interface, falling back to TerminateProcess.
+  - (b) A RetroDB-only spec for core ranking, per-game override and the downloader.
+  - RetroDB will send the path to (a) before gating it. This fork's job then is to check every player-side clause against `local/fixes-2026-09` behaviour: `--config`, `-L`, quit_on_close_content, SIGTERM SRAM flush, quiet stderr, exit codes, and the network-command quit.
+  - Player work starts only after (a) converges.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
