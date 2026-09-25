@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Project-specific guidance for Claude Code in this repository. Layers on top of `~/.claude/CLAUDE.md` (global rules). It adds RetroArch-specific institutional knowledge that isn't derivable from the code, and carries exactly one deliberate override, recorded under "Fork document locations" below.
+Project-specific guidance for Claude Code in this repository. Layers on top of `~/.claude/CLAUDE.md` (global rules). It adds RetroArch-specific institutional knowledge that isn't derivable from the code, and carries two deliberate overrides: one of global rule 14a, under "Fork document locations", and one of `/mnt/Games/CLAUDE.md`, under "Citation form".
 
 ## What this is
 
@@ -116,6 +116,15 @@ Two fork-specific reasons:
 - The existing specs are named by date, and the roadmap and the fork's audit docs cite them by those names. The roadmap now carries ids (`docs/private/standards/documentation-standard.md` §2), but renaming the specs to `<ID>-<topic>` would break every existing citation, so new specs keep the date form for one naming scheme per directory.
 
 The override reaches spec **locations and filenames** only. Rule 14's gate, its trigger, its cap and its records are not touched, and `docs/private/standards/README.md` § Precedence states that nothing in this directory displaces a global rule.
+
+## Citation form (override of `/mnt/Games/CLAUDE.md`)
+
+`/mnt/Games/CLAUDE.md` § Writing and Editing Documents binds here: no counts, line numbers or sizes. This deeper file narrows it in two places, by the global rule that the deeper `CLAUDE.md` wins where two conflict:
+
+- A structured datum in a table cell is a field, not prose. The `Sites` count in the ROADMAP's bundle table stays.
+- A dated record keeps its line numbers as written: a closed roadmap entry, a commit body, a review loop log. It was true on its date, and rewriting it damages the record.
+
+New text uses names, not line numbers.
 
 ## Fork workflow (private)
 

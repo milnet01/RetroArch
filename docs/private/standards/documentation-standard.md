@@ -27,14 +27,17 @@ release notes only in the private roadmap.
 - Emoji-status bullets, matching the legend at the head of
   `docs/private/ROADMAP.md`, which is authoritative for this vocabulary:
   `📋 pending`, `🚧 in progress`, `✅ done`, `💭 deferred / waiting on
-  upstream`, `🚫 won't-fix / verified-FP / resolved-stale`. The last two
-  are kept deliberately after closure — the analyser re-reports a
-  suppressed false positive every run, and without its own mark a
-  suppressed finding is indistinguishable from a live regression.
-  Older entries' sub-points write these two as `🔄` and `❌`.
-- An open item carries a `Layman:` summary. The store refuses a write
-  that touches an open item without one.
-- A closed bullet cites its fix commit(s). The prevailing form is
+  upstream`, `🚫 won't-fix / verified-FP / resolved-stale`. Older
+  entries' sub-points write the last two as `🔄` and `❌`.
+- Closed `✅` and `🚫` items stay in the file. `🚫` matters most: the
+  analyser re-reports a suppressed false positive every run, and without
+  its own mark a suppressed finding is indistinguishable from a live
+  regression.
+- An open item (`📋`, `🚧`, `💭`) carries a `Layman:` summary. The store
+  refuses a write that touches an open item without one.
+- A `🚫` bullet states why it was dropped and how that was verified, e.g.
+  `_(Verified resolved-stale <date> — <why>.)_`.
+- A `✅` bullet cites its fix commit(s). The prevailing form is
   `_(Fixed `<sha>` — <what/why>.)_`; fix-branch closures also use
   `_(Bundle N — fixed in `<sha>` on `local/fixes-2026-04`. <what/why>.)_`.
 - The **Bundle progress (running summary)** table at the top is the index:
@@ -53,7 +56,8 @@ release notes only in the private roadmap.
   why the code looks this way without the author.
 - Source fixes commit to `local/fixes-2026-04`; roadmap/docs commit to
   `local/audit-2026-04`. Bundle commits cross-reference each other by SHA.
-- End the message with the required `Co-Authored-By:` trailer.
+- A commit Claude Code writes ends with the `Co-Authored-By:` trailer its
+  attribution instruction specifies.
 
 ## 4. Specs and design docs
 
@@ -78,9 +82,11 @@ release notes only in the private roadmap.
 - Policies: `docs/private/<TOPIC>-POLICY.md`.
 - Standards: `docs/private/standards/<topic>-standard.md`, indexed by
   [`README.md`](README.md).
-- Each **consolidates and references** its authoritative source; it must
-  not duplicate upstream prose (`CODING-GUIDELINES`, `CONTRIBUTING.md`,
-  root `SECURITY.md`). Duplication drifts.
+- Each **consolidates and references** its authoritative source. It may
+  echo the few highest-cost upstream rules, naming their home, and never
+  restates upstream prose wholesale (`CODING-GUIDELINES`,
+  `CONTRIBUTING.md`, root `SECURITY.md`) — duplication drifts.
+  [`README.md`](README.md) states the same rule for the directory.
 
 ## 6. Every factual claim is verified
 
@@ -91,17 +97,10 @@ can't be verified on disk because it concerns intent or future direction,
 mark it as an open question rather than asserting it.
 
 Citation **form** is `/mnt/Games/CLAUDE.md`'s rule, which binds inside this
-repo: in prose, name the section, heading, filename or symbol — not a
-count, a line number or a size. A line number drifts by construction, which
-is why it is not a citation form here.
-
-That governs prose. It does not reach a structured datum in a table cell,
-which is a field rather than a citation — §2's bundle-table `sites` count
-is the live case, and it stays.
-
-Nor does it reach a dated record: a closed roadmap entry, a commit body, a
-review loop log. Each was true on its date, and rewriting it damages the
-record. A line number in one stays as written; new text uses the form above.
+repo: name the section, heading, filename or symbol — not a count, a line
+number or a size. A line number drifts by construction. The repo-root
+`CLAUDE.md` § Citation form narrows that rule for table cells and dated
+records.
 
 ## 7. Ants MCP feedback
 
