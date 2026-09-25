@@ -967,6 +967,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   the hook runs it on source pushes. Leave upstream's console workflows
   untouched (§3's inversion does not apply to a cross-build matrix).
   The `/tmp/ra-fixes` worktree is gone; git lists it as prunable.
+  Peer note (claude-72, 2026-09-25): have the script answer
+  `--docs-glob` and set `ants.gate.docsGlob` from it, so the docs
+  definition has one home. Do not justify the gate as optional on
+  "local/* pushes start no CI": the last 200 runs are all on master, but
+  `Linux.yml` has no branch filter, so an unrecorded setting is what
+  suppresses them. ci-gate now detects this branch's script by itself.
   **Layman:** A script that repeats the Linux build checks locally already exists, but nothing runs it automatically before a push.
   Kind: chore.
   Source: peer-session claude-72 ci-gate sweep 2026-09-25.
