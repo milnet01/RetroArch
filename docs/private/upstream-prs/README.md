@@ -44,6 +44,9 @@ not have. Port these back to the fork branch:
 - One cloud-sync framing helper replacing the duplicated Content-Length
   verifiers, which used non-portable `strcasecmp`, `strtoull` and `%zu`.
 
+All three were ported on 2026-09-26 in `d605dc0148`. The fork's helper
+keeps its body-length check, which PR F's presence-only check drops.
+
 ## Correction to the sync record
 
 The UPnP description-parser crash and the cloud-sync path traversal are

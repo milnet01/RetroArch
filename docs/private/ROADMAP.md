@@ -304,6 +304,12 @@ These are the highest-confidence findings — multiple reviewers coming at the c
   - 🔄 `libretro-common/file/config_file.c:1410-1432` (every cfg save) — vendored upstream, can't patch locally
   - ✅ `network/cloud_sync/{google_drive,webdav,s3}.c` (every downloaded synced file). _(Bundle 52 — fixed `b510d9d654` on `local/fixes-2026-04`. Same tmp+rename idiom as Bundle 2 applied to all three cloud-sync `read_cb` paths: open `<file>.tmp` in WRITE mode, write the body, close, then `filestream_delete(dest); filestream_rename(tmp, dest)`; on partial-write/open/rename failure `filestream_delete(tmp_path); success=false`. Reopen `dest` in READ mode for the caller's MD5-and-close cycle. Behavior change in failure paths: previously a partial write or failed local open silently returned `success=true, file=NULL` (the "remote-doesn't-have-file" contract), so the manifest skipped the file next sync; now those paths report `success=false`, causing a refetch on the next sync. Combined with the Content-Length verification already in place (line 219), this closes the cross-cutting "downloaded synced file gets silently truncated/corrupted" failure mode.)_
   - **The pattern applied:** open at `<path>.tmp`; on success `filestream_delete(dest); filestream_rename(tmp, dest)`; on failure `filestream_delete(tmp)`. POSIX `rename(2)` is atomic over an existing file on the same filesystem.
+  2026-09-26 (d605dc0148, local/fixes-2026-09): save.c
+  content_save_ram_file (SRAM, which this list never named) now writes via
+  <path>.tmp. The three task_save.c sites share content_replace_file, which
+  renames first and keeps the .tmp if the fallback rename fails; the old
+  delete-then-rename could lose both copies. Still open: bsvmovie.c replay
+  checkpoints and the vendored config_file.c save.
   **Layman:** Saving to disk can leave a half-written, corrupt file if the app crashes mid-save; writes should go to a temporary file and swap in.
   Kind: fix.
 
@@ -993,6 +999,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   RetroArch #19632 (RETR-0006), #19633 (RETR-0005); libretro-common #232
   (RETR-0007), #233 (RETR-0009). Still owed: port the three drafting
   improvements back to local/fixes-2026-09, and follow up on review.
+  2026-09-26: the three drafting improvements are ported to
+  local/fixes-2026-09 in d605dc0148: SRAM atomic write (save.c), shared
+  content_replace_file (task_save.c), and one cloud_sync_http_body_is_framed
+  for WebDAV, S3 and Google Drive. The fork keeps its stricter check (body
+  length must equal Content-Length), where PR F only checks the header is
+  present. Local gate: all five Linux jobs pass. The C89 build with
+  --enable-s3 found three older C89 errors in s3.c, fixed in 3656dc8510.
+  Still owed: follow up on upstream review of #19626-#19631.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
