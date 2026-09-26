@@ -33,7 +33,7 @@
  *      shape) was never reached.
  * The fix also NULL-guards serviceType->data / controlURL->data before strstr.
  *
- * Like samples/tasks/cloudsync and save_rastate, this test #includes the REAL
+ * Like samples/tasks/cloudsync, this test #includes the REAL
  * parser source (network/natt_desc.c) -- the walk was split out of natt.c into
  * its own translation unit so the shipped code and this test exercise the SAME
  * function. A re-sync or refactor that reverts the crash-guard or the recursion
