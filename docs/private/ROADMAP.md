@@ -1431,6 +1431,18 @@ current upstream first, so the player is built on current code.
   §4.6 SIGTERM once, UDP QUIT, and whether network_cmd_port is honoured
   from --appendconfig; §3 decision 11 and §8 (slim build deferred); §15
   unverified items. Reply to retrodb-e7 with findings by § number.
+  PASS-59-64 player-side check sent to retrodb-9b (2026-09-26), from
+  local/fixes-2026-09 source. A missing file in the --appendconfig list
+  is skipped, not fatal (config_append_file returns false; the loop in
+  config_load_file continues). Appended keys merge into the same conf
+  before the settings loops read it, so network_cmd_port and every
+  other key are honoured from --appendconfig; §8's stated reason is
+  wrong, the decision stands. RTC is written on quit with SRAM
+  (path_init_savefile_rtc, event_save_files). Network QUIT is the quit
+  hotkey, so confirm_quit must be false. Q2 answer: scan every
+  subdirectory of the profile's config dir instead of predicting
+  library_name. Unverified: QUIT while the menu is open or paused; the
+  macOS Xcode project's HAVE_NETWORK_CMD.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
