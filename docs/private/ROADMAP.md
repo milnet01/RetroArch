@@ -1410,6 +1410,27 @@ current upstream first, so the player is built on current code.
   options persist to RetroDB's core_options_path; other menu edits go to
   config/<core>/ override files. Open for the slim build: hide or
   redirect those saves.
+  Launch answers sent to retrodb-e7 (2026-09-26), from local/fixes-2026-09
+  source: quit_on_close_content = 2 (CLI), which covers -L launches.
+  Override files live in D/<library_name>/ as <game>.cfg,
+  <content dir>.cfg and <core>.cfg; D is rgui_config_directory, else the
+  --config file's folder. RetroDB absorbs and then deletes them; a missing
+  file means nothing to absorb. SIGTERM on Linux: send it once only, since
+  a second one exits without saving. macOS has no handler (RETR-0010), so
+  it uses network QUIT. network_cmd is loopback-only on the fork; enable
+  it only in the player's cfg. Unverified: whether QUIT honours
+  confirm_quit (set it false). Player base cfg sets config_save_on_exit,
+  auto_overrides_enable, game_specific_options and global_core_options
+  false. Next: when retrodb-e7 sends docs/specs/PASS-59-64-launcher.md,
+  check its player-side clauses against these findings.
+  2026-09-26: retrodb-e7 sent the draft for the player-side check,
+  /mnt/Games/Scripts/Linux/RetroDB/docs/specs/PASS-59-64-launcher.md at
+  RetroDB commit d986fd9. Asked: §4.4 base cfg keys, argv shape, and
+  whether a missing file in the --appendconfig '|' list errors or is
+  skipped; §4.5 override paths and the core, folder, game merge order;
+  §4.6 SIGTERM once, UDP QUIT, and whether network_cmd_port is honoured
+  from --appendconfig; §3 decision 11 and §8 (slim build deferred); §15
+  unverified items. Reply to retrodb-e7 with findings by § number.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
