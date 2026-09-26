@@ -12,6 +12,9 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <lists/string_list.h>
+#include <string/stdstring.h>
+
 #include "cloud_sync_driver.h"
 #include "../list_special.h"
 #include "../retroarch.h"
@@ -138,5 +141,44 @@ bool cloud_sync_free(const char *path,
    const cloud_sync_driver_t *driver = cloud_sync_state_get_ptr()->driver;
    if (driver && driver->cloud_sync_free)
       return driver->cloud_sync_free(path, cb, user_data);
+   return false;
+}
+
+bool cloud_sync_http_body_is_framed(const struct string_list *headers,
+      size_t body_len)
+{
+   size_t i;
+   if (!headers)
+      return false;
+   for (i = 0; i < headers->size; i++)
+   {
+      const char *h = headers->elems[i].data;
+      if (!h)
+         continue;
+      if (string_starts_with_case_insensitive(h, "Content-Length:"))
+      {
+         size_t cl     = 0;
+         bool digits   = false;
+         const char *p = h + (sizeof("Content-Length:") - 1);
+         while (*p == ' ' || *p == '\t')
+            p++;
+         for (; *p >= '0' && *p <= '9'; p++)
+         {
+            size_t d = (size_t)(*p - '0');
+            /* A length that does not fit cannot match the body. */
+            if (cl > ((size_t)-1 - d) / 10)
+               return false;
+            cl     = cl * 10 + d;
+            digits = true;
+         }
+         return digits && body_len == cl;
+      }
+      /* Chunked: net_http only leaves its chunk-length state on a
+       * complete zero-length chunk, so a mid-chunk drop fails the
+       * transfer before this is reached. The same test net_http uses
+       * to select chunked decoding. */
+      if (string_is_equal_case_insensitive(h, "Transfer-Encoding: chunked"))
+         return true;
+   }
    return false;
 }

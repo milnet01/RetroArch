@@ -407,6 +407,23 @@ static void undo_save_state_cb(retro_task_t *task,
    free(state);
 }
 
+bool content_replace_file(const char *tmp_path, const char *path)
+{
+   if (filestream_rename(tmp_path, path) == 0)
+      return true;
+
+   /* POSIX rename replaces the destination; the Win32 one refuses an
+    * existing destination, so it needs the target gone first. */
+   filestream_delete(path);
+   if (filestream_rename(tmp_path, path) == 0)
+      return true;
+
+   /* Keep the only complete copy if the destination is already gone. */
+   if (path_is_valid(path))
+      filestream_delete(tmp_path);
+   return false;
+}
+
 /**
  * task_save_handler_finished:
  * @task : the task to finish
@@ -437,27 +454,17 @@ static void task_save_handler_finished(retro_task_t *task,
 
    /* Atomic finalize: the file was written to "<path>.tmp" so a crash,
     * cancel, or short-write leaves the existing destination intact. On
-    * success: replace the destination via rename(2). On failure: delete
-    * the partial .tmp. */
+    * success: move it into place. On failure: delete the partial .tmp. */
    {
       char tmp_path[PATH_MAX_LENGTH];
       size_t _len = strlcpy(tmp_path, state->path, sizeof(tmp_path));
       strlcpy(tmp_path + _len, ".tmp", sizeof(tmp_path) - _len);
 
-      if (!task_get_error(task))
-      {
-         if (filestream_exists(state->path))
-            filestream_delete(state->path);
-         if (filestream_rename(tmp_path, state->path) != 0)
-         {
-            filestream_delete(tmp_path);
-            if (!task_get_error(task))
-               task_set_error(task,
-                     strdup("Failed to atomically replace save state"));
-         }
-      }
-      else
+      if (task_get_error(task))
          filestream_delete(tmp_path);
+      else if (!content_replace_file(tmp_path, state->path))
+         task_set_error(task,
+               strdup("Failed to atomically replace save state"));
    }
 
    task_data = (save_task_state_t*)calloc(1, sizeof(*task_data));
@@ -1979,13 +1986,8 @@ bool content_auto_save_state(const char *path)
    free(file);
 
    /* Replace the destination atomically. */
-   if (filestream_exists(path))
-      filestream_delete(path);
-   if (filestream_rename(tmp_path, path) != 0)
-   {
-      filestream_delete(tmp_path);
+   if (!content_replace_file(tmp_path, path))
       return false;
-   }
 
 #ifdef HAVE_SCREENSHOTS
    if (settings->bools.savestate_thumbnail_enable)
@@ -2460,12 +2462,8 @@ bool content_ram_state_to_file(const char *path)
          strlcpy(tmp_path + _len, ".tmp", sizeof(tmp_path) - _len);
          if (rzipstream_write_file(tmp_path,
                   ram_buf.state_buf.data, ram_buf.state_buf.size))
-         {
-            if (filestream_exists(path))
-               filestream_delete(path);
-            written = (filestream_rename(tmp_path, path) == 0);
-         }
-         if (!written)
+            written = content_replace_file(tmp_path, path);
+         else
             filestream_delete(tmp_path);
       }
       else

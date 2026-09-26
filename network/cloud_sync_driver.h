@@ -53,6 +53,15 @@ typedef struct
 
 cloud_sync_driver_state_t *cloud_sync_state_get_ptr(void);
 
+struct string_list;
+
+/* True when a response's headers frame its body and the body is
+ * complete: its length equals Content-Length, or it was sent chunked.
+ * A body delimited only by the connection closing cannot be told
+ * apart from one cut off mid-transfer, so it is rejected. */
+bool cloud_sync_http_body_is_framed(const struct string_list *headers,
+      size_t body_len);
+
 extern cloud_sync_driver_t cloud_sync_webdav;
 #ifdef HAVE_SSL
 extern cloud_sync_driver_t cloud_sync_google_drive;
