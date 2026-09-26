@@ -319,6 +319,14 @@ $(OBJDIR)/%.o: %.rc $(HEADERS)
 	@$(if $(Q), $(shell echo echo WINDRES $<),)
 	$(Q)$(WINDRES) $(DEFINES) -o $@ $<
 
+# "make save.o" names an object without its build directory. Make's
+# built-in rule would compile it without $(DEFINES), so -DHAVE_CONFIG_H
+# is missing and every HAVE_* gate reads as off. Build the real object
+# under $(OBJDIR) instead. A static pattern rule, because a plain
+# "%.o: $(OBJDIR)/%.o" moves a subdirectory in front of $(OBJDIR).
+$(OBJ): %.o: $(OBJDIR)/%.o
+	@echo "Built $<"
+
 install: $(TARGET)
 	mkdir -p $(DESTDIR)$(BIN_DIR) 2>/dev/null || /bin/true
 	mkdir -p $(DESTDIR)$(GLOBAL_CONFIG_DIR) 2>/dev/null || /bin/true
