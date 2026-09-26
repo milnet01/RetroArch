@@ -494,6 +494,19 @@ These are exploitable now and have concrete reproducers.
   _(Fixed `9bf01aabdb` — added `assert(count <= SETTINGS_*_COUNT_MAX)` at the exit of every `populate_settings_*` function (bool/int/uint/float/size/array/path). The 514th `SETTING_BOOL` now produces an immediate assert in debug builds; release builds compile out the check but the invariant is documented in code.)_
   Kind: implement.
 
+- 📋 [RETR-0012] **Run the Vulkan driver under Khronos synchronization validation.**
+  Run retroarch with the Vulkan video driver (gfx/drivers/vulkan.c and
+  gfx/common/vulkan_common.c) under the Khronos validation layer with
+  VK_VALIDATION_VALIDATE_SYNC=true, across menu, core run, shaders and
+  fast-forward. Measured on UT_Ants 2026-09-26: sync validation turned
+  50 of 52 device tests red on a real clear/layout race that default
+  validation never reported. It did NOT catch every barrier gap; that
+  project's missing compute barriers were found only by a cold read.
+  File each reported hazard as its own fix item.
+  **Layman:** A free switch in the graphics debugging tools finds timing bugs in the Vulkan video code that normal checks miss.
+  Kind: test.
+  Source: peer-tip ut-ants-c5 2026-09-26.
+
 ### 🏗 Tier 3 — structural / cleanup
 
 - ✅ [RETR-S0058] **MENU — ~30 unguarded `MENU_LIST_GET_SELECTION(...)->size` derefs.**
