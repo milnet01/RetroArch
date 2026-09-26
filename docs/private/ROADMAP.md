@@ -541,8 +541,18 @@ These are exploitable now and have concrete reproducers.
   **Layman:** Downloads wake up every millisecond to check for data instead of waiting properly, wasting CPU.
   Kind: perf.
 
-- 📋 [RETR-S0069] **BUILD — `make <path>.o` (without OBJDIR prefix) misses `-DHAVE_CONFIG_H`, causing per-file builds to fail on HAVE_*-gated struct members.**
+- ✅ [RETR-S0069] **BUILD — `make <path>.o` (without OBJDIR prefix) misses `-DHAVE_CONFIG_H`, causing per-file builds to fail on HAVE_*-gated struct members.**
   Discovered during Bundle 66 verification.  Invoking `make menu/drivers/xmb.o` from the repo root falls through to GNU make's implicit `.c → .o` pattern rule because the explicit Makefile rule at line 254 keys on `$(OBJDIR)/%.o: %.c config.h config.mk` — only the OBJDIR-prefixed path matches.  The implicit rule doesn't include `$(DEFINES)`, so `-DHAVE_CONFIG_H` is missing, the `#ifdef HAVE_CONFIG_H #include "../../config.h"` block in each source file is dead, every `HAVE_*` symbol evaluates undefined, and references to gated struct fields like `settings->ints.menu_xmb_title_margin` (declared in `configuration.h:154` inside `#ifdef HAVE_XMB`) and `menu_st->input_dialog_kb_label` surface as `'struct <anonymous>' has no member named '...'` compile errors that look like real source bugs.  Workaround: always use the OBJDIR-prefixed path, e.g. `make obj-unix/release/menu/drivers/xmb.o`.  **Fix options:** (a) add a thin shim rule `%.o: $(OBJDIR)/%.o ; @true` so the non-prefixed path delegates to the explicit rule; (b) globally export `CPPFLAGS += -DHAVE_CONFIG_H` so even the implicit rule picks it up; (c) drop the `#ifdef HAVE_CONFIG_H` guard from sources and unconditionally include `config.h` (configure always generates it).  Recommend (a) — smallest blast radius, makes the common developer mistake just work without changing the macro-gating contract anywhere else.  Surfaced when a Bundle-66 sanity build using the wrong path emitted confusing pre-existing-looking errors that took ~20 minutes to diagnose as a build-invocation problem rather than a source bug — the failure mode is hostile to new contributors.  Cluster too narrow for AUDIT-POLICY (one Makefile rule).
+  Resolved (2026-09-26): ec19787ee1 on local/fixes-2026-09. Option (a) as
+  written does not work: make prefers its built-in %.o: %.c (whose source
+  exists) over a rule needing a second step, and a slash-less pattern
+  turns menu/drivers/xmb.o into menu/drivers/obj-unix/release/xmb.o.
+  Option (b) is not enough either: HAVE_CLOUDSYNC and HAVE_S3 come from
+  Makefile.common's DEFINES, not config.h. Shipped instead: a static
+  pattern rule, $(OBJ): %.o: $(OBJDIR)/%.o. Checked in a configured
+  scratch tree: save.o and menu/drivers/xmb.o build under obj-unix/release
+  with -DHAVE_CONFIG_H; an unknown name still says "No rule"; make -n all
+  lists the same commands. Local gate green.
   **Layman:** Building a single file by its short name skips the project's settings header, so that build fails where the full build works.
   Kind: fix.
 
