@@ -1401,6 +1401,15 @@ current upstream first, so the player is built on current code.
   core_options_path with game_specific_options and global_core_options
   both false (runloop_init_core_options_path). Sent to retrodb-e7 for the
   PASS-59-64 spec.
+  Write-back check (2026-09-26), sent to retrodb-e7: config_save_on_exit
+  bakes appended values into the base cfg, because --appendconfig
+  (RARCH_PATH_CONFIG_APPEND) never sets RUNLOOP_FLAG_OVERRIDES_ACTIVE.
+  With auto_overrides_enable on, RetroArch's own override files layer over
+  RetroDB's settings. The player's base cfg sets both false, plus
+  game_specific_options and global_core_options false. Menu edits to core
+  options persist to RetroDB's core_options_path; other menu edits go to
+  config/<core>/ override files. Open for the slim build: hide or
+  redirect those saves.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
