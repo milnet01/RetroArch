@@ -1037,6 +1037,26 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   present. Local gate: all five Linux jobs pass. The C89 build with
   --enable-s3 found three older C89 errors in s3.c, fixed in 3656dc8510.
   Still owed: follow up on upstream review of #19626-#19631.
+  Upstream status 2026-09-26 (checked with gh): merged into master by
+  LibretroAdmin, no review comments: E #19630 (67c857e163, 14:18 UTC),
+  F #19631 (891d09385c, 15:18), C #19628 (4ee62a575f, 15:22).
+  B #19627 was closed unmerged. The maintainer re-implemented it as
+  separate commits: b5172edaa1 adds network_cmd_bind_address, default
+  empty (still all interfaces), so the loopback-by-default part was not
+  taken; fa49a43dc2 bounds READ/WRITE_CORE_RAM to the memory region with
+  a 16 KiB read cap; 788be8dbae is the rcheevos memmove fix. The config
+  chmod 0600 landed as e4ed924601 and was reverted in 6de51c466c, since
+  credentials now go to retroarch-keychain.cfg, which is already private.
+  A #19626 is open; CI PSVita and CI 3DS fail building network/tls_log.c:
+  net_socket_ssl.h uses ssize_t without a header that defines it there.
+  Needs a fix pushed to pr/tls-verify-by-default.
+  D #19629 is open; its one failure is msys2 UCRT64, which died
+  downloading packages (mirror timeout), not a code error. A re-run is
+  needed; only a maintainer can trigger it.
+  Issues #19632, #19633 and libretro-common #233 have no replies.
+  libretro-common #232 has a first-time contributor offering a PR.
+  Still owed: fix A's ssize_t build error; decide whether the fork keeps
+  its loopback bind or adopts upstream's setting at the next sync.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
