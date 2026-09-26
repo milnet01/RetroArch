@@ -1097,6 +1097,24 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   - LOW: the ".tmp" append is silently dropped at PATH_MAX_LENGTH-1.
   Fix: push commits to pr/crash-safe-saving. That is public, so it needs
   the user's go-ahead.
+  Decisions 2026-09-26 (user deferred items 2 and 3 to the session):
+  - A #19626 needs nothing from us. The maintainer fixed the console
+    build himself in b9119c03ff "net_socket_ssl.h: include net_compat.h
+    for ssize_t".
+  - D #19629: the cold-read fixes are pushed to pr/crash-safe-saving as
+    1c344c0def. A failed close now fails the save. The destination is
+    deleted before a retry only when the .tmp exists, and
+    filestream_write_file_atomic keeps the .tmp when the destination is
+    gone. A path too long for ".tmp" is refused (content_tmp_path).
+    Tested: full build, C89 for the touched files, and two SAVE_STATE
+    commands with the 2048 core. The same fix is cherry-picked onto
+    local/fixes-2026-09, whose d605dc0148 carried the same code.
+    Not addressed: the unverified shared-.auto.tmp race.
+  - Network command bind: at the next upstream sync, take upstream's
+    network_cmd_bind_address (b5172edaa1) in place of the fork's
+    hard-coded loopback bind, and set the fork's default to "127.0.0.1".
+    That keeps the fork's local-only behaviour through upstream's own
+    setting, so the only fork diff left is the default value.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
