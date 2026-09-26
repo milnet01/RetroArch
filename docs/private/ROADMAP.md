@@ -1358,6 +1358,17 @@ current upstream first, so the player is built on current code.
   - (b) A RetroDB-only spec for core ranking, per-game override and the downloader.
   - RetroDB will send the path to (a) before gating it. This fork's job then is to check every player-side clause against `local/fixes-2026-09` behaviour: `--config`, `-L`, quit_on_close_content, SIGTERM SRAM flush, quiet stderr, exit codes, and the network-command quit.
   - Player work starts only after (a) converges.
+  Distribution research (2026-09-26), to hand the RetroDB session: bundling
+  is fine under GPLv3 as an aggregate (the command-line launch keeps the
+  programs separate). Conditions: ship the GPL text; link the exact fork tag
+  from the download page and About box, and keep that tag forever; mark the
+  build modified and dated. "RetroArch" is a registered trademark (US/EU), so
+  ship under our own name, "based on RetroArch", without the logo. The FBNeo
+  licence forbids asking for donations on any project using it, so drop FBNeo
+  from RetroDB's core list or keep donations separate from the cores. Snes9x,
+  Genesis Plus GX, PicoDrive and old MAME are non-commercial only: no ads, no
+  paid features. Downloading cores at runtime is not shown to shift
+  responsibility. Not legal advice.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
