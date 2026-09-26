@@ -1057,6 +1057,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   libretro-common #232 has a first-time contributor offering a PR.
   Still owed: fix A's ssize_t build error; decide whether the fork keeps
   its loopback bind or adopts upstream's setting at the next sync.
+  Update 2026-09-26: A #19626 was merged at 16:36 UTC (ba4c8b0798) by
+  LibretroAdmin, despite the PSVita/3DS build failures on the PR. The
+  maintainer followed up with 8251314c43 (system-clock hint on certificate
+  date failures). On master, net_socket_ssl.h still includes only stdlib.h,
+  boolean.h and retro_common_api.h before declaring ssize_t, so the console
+  builds may now be broken upstream. The PSVita/3DS CI on master was pending
+  when checked. If it fails, the fix is a small follow-up PR adding the
+  ssize_t header, and it needs the user's go-ahead.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
