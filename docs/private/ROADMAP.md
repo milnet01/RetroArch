@@ -1659,7 +1659,7 @@ current upstream first, so the player is built on current code.
   Kind: fix.
   Source: in-session-2026-09-26 retrodb-e7 launch-spec question.
 
-- 📋 [RETR-0011] **GATE — local-CI.sh runs five Linux jobs and names neither run nor skip for most of the fork's Linux workflows.**
+- ✅ [RETR-0011] **GATE — local-CI.sh runs five Linux jobs and names neither run nor skip for most of the fork's Linux workflows.**
   Found 2026-09-26. After the 2026-09-25 upstream sync, local-CI.sh on
   local/fixes-2026-09 runs c89, samples-tasks, common-samples, linux-i686
   and headless-i686, and --list names the platform-only workflows as
@@ -1678,6 +1678,15 @@ current upstream first, so the player is built on current code.
   Fix: run the Linux workflows through act from local-CI.sh, or at least
   add every workflow to --list's skipped set so the gap is named, and
   re-derive the list after each upstream sync.
+  Resolved (2026-09-26): bdc7811fd4 on local/fixes-2026-09. Every
+  workflow now sits in one of three lists: run natively on every push,
+  run on request through act (--all, or act:<file>), or GitHub-only.
+  --list names any workflow in none of them and exits 1, and every run
+  warns about it, so a workflow added by an upstream sync is named
+  rather than silently uncovered. On request rather than per push was
+  the user's choice (2026-09-26): the sanitizer and Vulkan builds are
+  too slow and RAM-hungry for every push. Failures found by the first
+  full act run are filed as their own items.
   **Layman:** The pre-push check only runs a few of the fork's own Linux test jobs, so most of them never run anywhere, and nothing says so.
   Kind: test.
   Source: in-session-2026-09-26 (local-gate.md conformer pass for claude-fd).
