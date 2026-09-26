@@ -1443,6 +1443,13 @@ current upstream first, so the player is built on current code.
   subdirectory of the profile's config dir instead of predicting
   library_name. Unverified: QUIT while the menu is open or paused; the
   macOS Xcode project's HAVE_NETWORK_CMD.
+  retrodb-9b folded the findings in (RetroDB a9a93ac); the spec goes to
+  review-contract next. Follow-ups answered from source: Q5, the macOS
+  Xcode build defines HAVE_NETWORK_CMD (pkg/apple/BaseConfig.xcconfig).
+  Q4, QUIT is acted on with the menu open and while paused, except in the
+  few frames of input flushing after the menu opens or closes, when it is
+  dropped silently. Advised: resend QUIT once if the player is still
+  alive about a second later. Runtime-unverified.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
