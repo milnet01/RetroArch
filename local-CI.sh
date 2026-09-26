@@ -9,8 +9,10 @@
 #   whose SDKs/cross-toolchains are not present on a desktop Linux host, so they
 #   cannot be reproduced here. This script mirrors the five *Linux* jobs — the
 #   ones that actually gate this fork's Linux-desktop source work — as faithfully
-#   as a single Linux box allows, and prints the rest as an explicit skip list so
-#   nothing looks silently covered.
+#   as a single Linux box allows. The other Linux workflows run on request
+#   through act (--all). --list names every workflow in one of those sets or the
+#   GitHub-only skip list, and names any that is in none, so nothing looks
+#   silently covered.
 #
 # FIDELITY (what "matches the GitHub CI run" means here)
 #   Two of the five Linux jobs run inside a fixed container image on CI; those are
@@ -39,7 +41,10 @@
 #   ./local-CI.sh                 # run every runnable Linux job against HEAD
 #   ./local-CI.sh c89 linux-i686  # run only the named jobs
 #   ./local-CI.sh --worktree      # validate uncommitted (tracked) changes, not HEAD
-#   ./local-CI.sh --list          # list jobs + the GitHub-only (un-runnable) set
+#   ./local-CI.sh --all           # also run every on-request Linux workflow via act
+#   ./local-CI.sh act:Linux-asan-ubsan.yml  # run one workflow file via act
+#   ./local-CI.sh --list          # list jobs, the act set, the GitHub-only set, and
+#                                 # any workflow in none of them (exits 1 if so)
 #   ./local-CI.sh --pull          # force-refresh the i686 container image first
 #   ./local-CI.sh --no-container  # skip the podman jobs (native jobs only)
 #
@@ -89,10 +94,61 @@ GITHUB_ONLY=(
     "CI Wii (Wii.yml)"                         "CI Windows ARM64 (MSVC) (Windows-ARM64.yml)"
     "CI Windows i686 (MXE) (Windows-i686-MXE.yml)" "CI Windows x64 (MXE) (Windows-x64-MXE.yml)"
     "Source Release (SourceRelease.yml)"       "Crowdin sync (crowdin*.yml)"
+    "CI Apple (Apple.yml)"                     "CI macOS PPC cross (MacOS-PPC-Cross.yml)"
+    "CI Windows memmap area (Windows-memmap-area.yml)"
 )
 
 # Every runnable Linux job, in CI-cost order (native first, containers last).
 ALL_JOBS=(c89 samples-tasks common-samples linux-i686 headless-i686)
+
+# The workflow files ALL_JOBS mirror.
+NATIVE_WORKFLOWS=(retroarch.yml Linux-samples-tasks.yml Linux-libretro-common-samples.yml
+                  Linux.yml Linux-Headless.yml)
+
+# Linux workflows run through act rather than mirrored by hand: the workflows
+# are upstream's, so local-gate.md § 3's inversion is unavailable and act
+# running the real file is its fallback. Too slow and RAM-hungry for every
+# push (the sanitizer builds, the Vulkan checks), so they run on request:
+# `--all`, or by name as act:<file>. A workflow with a Windows or macOS job
+# as well runs its ubuntu jobs only; act skips the other platforms.
+ACT_WORKFLOWS=(
+    Compile-Matrix.yml Cross-libc-vfs-samples.yml Ctx-Presentable-Check.yml
+    Linux-asan-ubsan.yml Linux-audio-transport.yml Linux-autoconf-tests.yml
+    Linux-driver-vtables.yml Linux-filter-plugins.yml Linux-gl1-upload.yml
+    Linux-libretro-common-tests.yml Linux-libretro-db-samples.yml
+    Linux-menu-harness.yml Linux-no-pkg-config.yml Linux-overlay-on-screen.yml
+    Linux-pace-shadow.yml Linux-qt-companion.yml
+    Linux-samples-audio.yml Linux-samples-cores.yml Linux-samples-formats.yml
+    Linux-samples-gfx.yml Linux-samples-input.yml Linux-samples-network.yml
+    Linux-samples-record.yml Linux-samples-settings.yml Linux-samples-unclaimed.yml
+    Linux-state-runahead-tests.yml Linux-tsan-harness.yml Linux-tsan-threaded-video.yml
+    Linux-vulkan-validation.yml Msg-Hash-Packed-Check.yml Overlap-Copy-Check.yml
+    procbarrier-tiers.yml Removed-Member-Check.yml RGUI-Pixel-Format-Check.yml
+)
+ACT_BIN="${ACT_BIN:-$HOME/.local/bin/act}"
+# ubuntu-latest is 24.04; this is the image act's own picker offers for it.
+ACT_IMAGE="catthehacker/ubuntu:act-24.04"
+
+# unclassified_workflows : print every workflow file in none of the three
+# lists above. An upstream sync that adds a workflow shows up here instead of
+# being silently uncovered.
+unclassified_workflows() {
+    local f b g known
+    for f in "$ROOT"/.github/workflows/*.yml; do
+        b="${f##*/}"; known=0
+        for g in "${NATIVE_WORKFLOWS[@]}" "${ACT_WORKFLOWS[@]}"; do
+            [ "$b" = "$g" ] && { known=1; break; }
+        done
+        if [ "$known" -eq 0 ]; then
+            for g in "${GITHUB_ONLY[@]}"; do
+                g="${g##*(}"; g="${g%)}"
+                # shellcheck disable=SC2053  # $g may be a glob (crowdin*.yml)
+                [[ "$b" == $g ]] && { known=1; break; }
+            done
+        fi
+        [ "$known" -eq 0 ] && echo "$b"
+    done
+}
 
 # ---- arg parsing ----------------------------------------------------------
 
@@ -107,14 +163,25 @@ while [ $# -gt 0 ]; do
             echo "Runnable Linux jobs (this host):"
             for j in "${ALL_JOBS[@]}"; do echo "  $j"; done
             echo
+            echo "On-request Linux workflows (act; --all, or by name — not run by default):"
+            for a in "${ACT_WORKFLOWS[@]}"; do echo "  act:$a"; done
+            echo
             echo "GitHub-only jobs (SDK/toolchain not available locally — not run):"
             for g in "${GITHUB_ONLY[@]}"; do echo "  $g"; done
+            u="$(unclassified_workflows)"
+            if [ -n "$u" ]; then
+                echo
+                echo "UNCLASSIFIED workflows (in no list above — classify them in local-CI.sh):"
+                printf '  %s\n' $u
+                exit 1
+            fi
             exit 0 ;;
+        --all)        SELECTED+=("${ALL_JOBS[@]}"); for a in "${ACT_WORKFLOWS[@]}"; do SELECTED+=("act:$a"); done; shift ;;
         --worktree)   REF="worktree"; shift ;;
         --pull)       DO_PULL=1; shift ;;
         --no-container) NO_CONTAINER=1; shift ;;
         -h|--help)
-            sed -n '2,40p' "$0"; exit 0 ;;
+            sed -n '2,/^set -uo/p' "$0" | sed '$d'; exit 0 ;;
         --*) echo "local-CI.sh: unknown flag $1" >&2; exit 2 ;;
         *)   SELECTED+=("$1"); shift ;;
     esac
@@ -142,6 +209,8 @@ echo "ref:    $REF  ($(git -C "$ROOT" rev-parse --short "$ARCHIVE_REF" 2>/dev/nu
 echo "branch: $(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
 echo "logs:   $LOGDIR"
 echo "jobs:   ${SELECTED[*]}"
+UNCLASSIFIED="$(unclassified_workflows)"
+[ -n "$UNCLASSIFIED" ] && echo "WARN:   unclassified workflows, run nowhere:" $UNCLASSIFIED
 echo
 
 # ---- helpers --------------------------------------------------------------
@@ -304,6 +373,39 @@ job_headless_i686() {
                make -j"$JOBS"'
 }
 
+# act:<workflow>  (ubuntu-latest, the real workflow file through act)
+#   act needs a Docker API socket and a git checkout. A podman service is
+#   started for the run and stopped on exit; the checkout is a --shared clone
+#   of ARCHIVE_REF under $LOGDIR, made once and reused by every act job. Jobs
+#   inside one workflow run one at a time, to bound RAM.
+ACT_SRC=""
+ACT_SOCK=""
+ACT_PID=""
+act_setup() {
+    [ -n "$ACT_SRC" ] && return 0
+    [ -x "$ACT_BIN" ] || { echo "act not found at $ACT_BIN (set ACT_BIN)"; return 1; }
+    ACT_SOCK="$LOGDIR/podman.sock"
+    podman system service --time=0 "unix://$ACT_SOCK" >"$LOGDIR/podman-service.log" 2>&1 &
+    ACT_PID=$!
+    trap '[ -n "$ACT_PID" ] && kill "$ACT_PID" 2>/dev/null' EXIT
+    local _; for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$ACT_SOCK" ] && break; sleep 1; done
+    [ -S "$ACT_SOCK" ] || { echo "podman service did not start"; return 1; }
+    git clone -q --shared --no-checkout "$ROOT" "$LOGDIR/act-src" \
+      && git -C "$LOGDIR/act-src" checkout -q --detach "$(git -C "$ROOT" rev-parse "$ARCHIVE_REF")" \
+      || return 1
+    podman image exists "docker.io/$ACT_IMAGE" || podman pull "docker.io/$ACT_IMAGE" || return 1
+    ACT_SRC="$LOGDIR/act-src"
+}
+
+job_act() {
+    local wf="$1"
+    act_setup || return 1
+    [ -f "$ACT_SRC/.github/workflows/$wf" ] || { echo "no such workflow at this ref: $wf"; return 1; }
+    ( cd "$ACT_SRC" && DOCKER_HOST="unix://$ACT_SOCK" "$ACT_BIN" \
+        -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_IMAGE" \
+        --pull=false --container-daemon-socket - --concurrent-jobs 1 )
+}
+
 # ---- driver ---------------------------------------------------------------
 
 declare -A DISPATCH=(
@@ -318,16 +420,17 @@ declare -a RESULTS=()
 overall=0
 
 for job in "${SELECTED[@]}"; do
-    fn="${DISPATCH[$job]:-}"
+    fn="${DISPATCH[$job]:-}"; arg=""
+    [ "${job#act:}" != "$job" ] && { fn=job_act; arg="${job#act:}"; }
     if [ -z "$fn" ]; then
         echo "!! unknown job '$job' (see --list)"; overall=1; RESULTS+=("SKIP  $job (unknown)"); continue
     fi
-    if [ "$NO_CONTAINER" -eq 1 ] && { [ "$job" = "linux-i686" ] || [ "$job" = "headless-i686" ]; }; then
+    if [ "$NO_CONTAINER" -eq 1 ] && { [ "$job" = "linux-i686" ] || [ "$job" = "headless-i686" ] || [ -n "$arg" ]; }; then
         echo "-- $job: skipped (--no-container)"; RESULTS+=("SKIP  $job (--no-container)"); continue
     fi
-    log="$LOGDIR/$job.log"
+    log="$LOGDIR/${arg:-$job}.log"
     printf '>> %-14s ... ' "$job"
-    if "$fn" >"$log" 2>&1; then
+    if "$fn" $arg >"$log" 2>&1; then
         echo "PASS"; RESULTS+=("PASS  $job")
     else
         echo "FAIL  (see $log)"; RESULTS+=("FAIL  $job -> $log")
