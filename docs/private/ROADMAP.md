@@ -1580,3 +1580,27 @@ current upstream first, so the player is built on current code.
   **Layman:** On a Mac, when RetroDB closes a game the normal way, in-game saves may not be written first.
   Kind: fix.
   Source: in-session-2026-09-26 retrodb-e7 launch-spec question.
+
+- 📋 [RETR-0011] **GATE — local-CI.sh runs five Linux jobs and names neither run nor skip for most of the fork's Linux workflows.**
+  Found 2026-09-26. After the 2026-09-25 upstream sync, local-CI.sh on
+  local/fixes-2026-09 runs c89, samples-tasks, common-samples, linux-i686
+  and headless-i686, and --list names the platform-only workflows as
+  skipped. Most of the Linux workflows are in neither list, among them
+  Linux-libretro-common-tests (the libcheck suite), Linux-asan-ubsan,
+  Linux-tsan-harness, Linux-vulkan-validation, Linux-driver-vtables and
+  the Linux-samples-* set. GitHub Actions is disabled on the fork, so
+  none of them runs anywhere, and every "local gate green" since the sync
+  covered the named jobs only.
+  To see the gap: compare `ls .github/workflows` with the workflow file
+  names local-CI.sh mentions.
+  This is local-gate.md § 3's drifted mirror and a § 4 breach (uncovered
+  jobs not named). The workflows are upstream's, so § 3's inversion is
+  not available; its fallback is act, which is installed and lists these
+  jobs with -P ubuntu-latest=<image>.
+  Fix: run the Linux workflows through act from local-CI.sh, or at least
+  add every workflow to --list's skipped set so the gap is named, and
+  re-derive the list after each upstream sync.
+  **Layman:** The pre-push check only runs a few of the fork's own Linux test jobs, so most of them never run anywhere, and nothing says so.
+  Kind: test.
+  Source: in-session-2026-09-26 (local-gate.md conformer pass for claude-fd).
+  Lanes: build, ci.
