@@ -1380,6 +1380,17 @@ current upstream first, so the player is built on current code.
   download page and donation wording; this fork supplies the bundle kit
   (GPL text, modified-build notice, source tag link) once a release tag
   exists. The PASS-59-64 launcher spec follows RetroDB's backend fixes.
+  2026-09-26 (later): the user confirmed the normal fork build for now.
+  RetroDB's session relays that a slim build is the eventual goal, so the
+  normal build is step 1 and the slim build is later, unscoped work. Every
+  RetroDB release is free (Patreon is a tip jar), so Snes9x and Genesis
+  Plus GX stay as defaults; RetroDB's donation wording was checked and
+  approved. New user requirement via RetroDB: RetroDB applies the best
+  settings per system and game, and the user can override them. Mechanism
+  checked in local/fixes-2026-09: --appendconfig with a '|' list, plus
+  core_options_path with game_specific_options and global_core_options
+  both false (runloop_init_core_options_path). Sent to retrodb-e7 for the
+  PASS-59-64 spec.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
