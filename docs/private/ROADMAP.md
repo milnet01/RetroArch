@@ -1065,6 +1065,25 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   builds may now be broken upstream. The PSVita/3DS CI on master was pending
   when checked. If it fails, the fix is a small follow-up PR adding the
   ssize_t header, and it needs the user's go-ahead.
+  Cold read of D #19629 (head c08c575b2c), 2026-09-26, done by the
+  ants-projects-hub-website session. #1-#4 below were re-checked here
+  against the PR code.
+  - HIGH: task_save_handler_finished ignores intfstream_close's result,
+    then renames the .tmp over the good state. A close-time failure
+    (rzip's last chunk, a full disk) leaves a truncated state reported as
+    saved. content_auto_save_state has the same defect.
+  - MEDIUM: content_replace_file deletes the destination after ANY first
+    rename failure, on every platform. On POSIX, a rename that fails for
+    another reason deletes the good save and leaves only the .tmp, which
+    RetroArch never loads. Gate the delete on _WIN32.
+  - MEDIUM (pre-existing, libretro-common #233 / RETR-0009):
+    filestream_write_file_atomic deletes both files when the retry fails,
+    and #19629 moves uncompressed SRAM onto it.
+  - LOW, unverified: the unload auto-save and a manual Auto-slot save may
+    share the .auto.tmp path.
+  - LOW: the ".tmp" append is silently dropped at PATH_MAX_LENGTH-1.
+  Fix: push commits to pr/crash-safe-saving. That is public, so it needs
+  the user's go-ahead.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
