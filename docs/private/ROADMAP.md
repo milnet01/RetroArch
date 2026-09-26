@@ -980,6 +980,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   1. Run the checklist, then push and open.
   2. Port three drafting improvements back to `local/fixes-2026-09`: the save.c SRAM atomic write, `content_replace_file`, and the cloud-sync framing helper.
   3. Decide on a netcmd remote-access setting before opening B.
+  User decisions 2026-09-26 (later): open the six PRs and four issues
+  now, after the pre-open checklist. PR B goes as drafted; its body
+  already offers a LAN-access setting if maintainers prefer one.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1369,6 +1372,14 @@ current upstream first, so the player is built on current code.
   Genesis Plus GX, PicoDrive and old MAME are non-commercial only: no ads, no
   paid features. Downloading cores at runtime is not shown to shift
   responsibility. Not legal advice.
+  User decisions 2026-09-26: the bundled player ships under its own name,
+  "based on RetroArch", no RetroArch logo; exact name still open. RetroDB
+  never offers the FBNeo core; the Patreon link stays. Snes9x and Genesis
+  Plus GX stay as RetroDB defaults (no donation clause), with no ads or paid
+  features. Agreed with retrodb-e7: RetroDB does the packaging, About box,
+  download page and donation wording; this fork supplies the bundle kit
+  (GPL text, modified-build notice, source tag link) once a release tag
+  exists. The PASS-59-64 launcher spec follows RetroDB's backend fixes.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
