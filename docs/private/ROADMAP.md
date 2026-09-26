@@ -1576,7 +1576,7 @@ current upstream first, so the player is built on current code.
   Kind: feature.
   Source: user-request-2026-09-25.
 
-- 📋 [RETR-0005] **INVESTIGATE — core-updater worker may touch http_task after it is freed.**
+- 🚧 [RETR-0005] **INVESTIGATE — core-updater worker may touch http_task after it is freed.**
   The fork fix de0c6000c8 NULLed `http_task` in the completion callback to
   close a use-after-free window. Upstream has since redesigned the
   core-updater threading (70b606ea85, 2f9703049c). Callbacks now run on the
@@ -1586,6 +1586,16 @@ current upstream first, so the player is built on current code.
   `task_get_flags(http_task)` before it checks `http_task_complete`, so the
   window may remain. Confirm against the new ownership model, then fix with an
   atomic pointer or a reorder. A candidate to report upstream.
+  Progress (2026-09-26): confirmed. The core updater polled its child
+  tasks (HTTP, backup, decompress) by stored pointer from the worker,
+  while the main thread frees a finished child after its callback; the
+  backup poll had no completion flag at all. Fixed in 1bfadd67e2 on
+  local/fixes-2026-09, committed but NOT yet pushed: task_core_updater_poll
+  reads flags and progress inside a task_queue_find finder, and a child
+  no longer listed counts as finished. Verified: the object builds clean,
+  normally and with C89_BUILD=1; no runtime reproduction (race too
+  narrow). Remaining: push from ra-fixes (runs the gate), then close. A
+  candidate for the RETR-S0115 upstreaming batch.
   **Layman:** A download helper might use a finished download's data after it has been cleaned up; check whether upstream's new design still allows it.
   Kind: investigate.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit de0c6000c8.
@@ -1635,7 +1645,7 @@ current upstream first, so the player is built on current code.
   Kind: security.
   Source: sync review 2026-09-25 (network lane).
 
-- 📋 [RETR-0009] **UPSTREAM — filestream_write_file_atomic can lose both copies when the rename fails.**
+- ✅ [RETR-0009] **UPSTREAM — filestream_write_file_atomic can lose both copies when the rename fails.**
   In libretro-common `streams/file_stream.c`, when the first rename of the
   temp file fails, the helper deletes the destination and retries. If the
   retry also fails, it deletes the temp file too, so neither the old nor the
@@ -1643,6 +1653,12 @@ current upstream first, so the player is built on current code.
   saves. The helper is vendored, so the fix goes upstream: keep the temp
   file, or restore the destination, when the retry fails. A candidate for
   the RETR-S0115 upstreaming batch.
+  Resolved (2026-09-26): fork 02e196e1e7, upstream PR #19629
+  (1c344c0def on pr/crash-safe-saving). The destination is deleted before
+  the retry only when the temp file exists, and a failed retry keeps the
+  temp file whenever the destination is gone, so one complete copy always
+  survives. Checked against filestream_write_file_atomic on
+  local/fixes-2026-09. The upstream merge is tracked on RETR-S0115.
   **Layman:** A shared save helper meant to prevent half-written files can, in a rare failure, delete both the old file and the new one.
   Kind: fix.
   Source: sync review 2026-09-25 (core lane).
@@ -1690,4 +1706,29 @@ current upstream first, so the player is built on current code.
   **Layman:** The pre-push check only runs a few of the fork's own Linux test jobs, so most of them never run anywhere, and nothing says so.
   Kind: test.
   Source: in-session-2026-09-26 (local-gate.md conformer pass for claude-fd).
+  Lanes: build, ci.
+
+- 📋 [RETR-0013] **GATE — local-CI.sh's act runner can report PASS having run nothing, and misses .yaml workflows.**
+  Cold read of bdc7811fd4 (RETR-0011) by claude-2a, 2026-09-26. Fix in
+  local-CI.sh on local/fixes-2026-09, only when no local-CI.sh run is in
+  progress (bash reads a script as it runs, so an edit corrupts a live run).
+  - D1: act exits 0 when every job is skipped or if-gated off, and job_act
+    reports that as PASS. Fail, naming it, when act's log shows no
+    "Job succeeded" line.
+  - D2: unclassified_workflows globs *.yml only; a .yaml workflow is in no
+    list and never reported. Glob both.
+  - D3: the EXIT trap stops the podman service but leaves the act-src clone
+    and the socket in a kept log directory. Remove both in the trap.
+  - D4: an ACT_WORKFLOWS entry upstream deleted reports FAIL. Report SKIP
+    naming the stale entry (check with git cat-file at ARCHIVE_REF).
+  - D5: without nullglob an empty workflows directory lists a literal
+    *.yml as unclassified. Skip a non-existent glob result.
+  - D6: "$fn" $arg and the printf/echo of unclassified names are unquoted.
+    Quote the call as "$fn" ${arg:+"$arg"}.
+  - D7 (no fix planned): under --worktree the clone checks out a dangling
+    stash commit reached through alternates. git gc keeps unreachable
+    objects for two weeks by default, so a run cannot lose it.
+  **Layman:** The new option that runs the extra test jobs could say "passed" when it actually ran nothing, and it overlooks one spelling of workflow file names.
+  Kind: review-fix.
+  Source: peer-review claude-2a 2026-09-26 (bdc7811fd4).
   Lanes: build, ci.
