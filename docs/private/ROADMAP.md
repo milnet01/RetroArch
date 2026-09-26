@@ -1477,3 +1477,15 @@ current upstream first, so the player is built on current code.
   **Layman:** A shared save helper meant to prevent half-written files can, in a rare failure, delete both the old file and the new one.
   Kind: fix.
   Source: sync review 2026-09-25 (core lane).
+
+- 📋 [RETR-0010] **PLAYER — macOS build ignores SIGTERM's graceful path, so a closed game loses unsaved SRAM.**
+  platform_darwin.m leaves install_signal_handler and the sighandler
+  state hooks NULL, so SIGTERM takes the default action and ends the
+  process without the shutdown that saves SRAM. The Linux frontend
+  (frontend_unix_install_signal_handlers in platform_unix.c) turns the
+  first SIGTERM into a normal quit. Unverified at runtime. RetroDB's
+  launch spec uses the network QUIT command on macOS meanwhile. Fix: give
+  the Darwin frontend the same one-shot handler, and test on macOS.
+  **Layman:** On a Mac, when RetroDB closes a game the normal way, in-game saves may not be written first.
+  Kind: fix.
+  Source: in-session-2026-09-26 retrodb-e7 launch-spec question.
