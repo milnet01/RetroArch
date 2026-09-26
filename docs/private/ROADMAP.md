@@ -150,7 +150,7 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   `core_option_manager.c:721-727, 1006-1007`. _(Fixed `18b55ec71a` — `parse_variable` `goto error` on `value_hash == NULL` (function already has matching `error:` label freeing partial state); `parse_option` `return false` on `value_hash == NULL` (matches the function's existing return-false-on-failure pattern; caller `core_option_manager_new` frees the partial `opt` at its own `error:` label).)_
   Kind: implement.
 
-- 🚧 [RETR-S0006] **HIGH — Cluster sweep: ~30+ deref-before-NULL-check sites.**
+- ✅ [RETR-S0006] **HIGH — Cluster sweep: ~30+ deref-before-NULL-check sites.**
   _(Bundle 5 — 8 Linux-build sites fixed in `8eab27096d`; Bundle 18 — 3 follow-up sites in `349cc5644b`; Bundle 54 — 13 sites across the deferred larger files in `6dae6b6377`, all on `local/fixes-2026-04`.)_
   - ✅ `audio/drivers/oss.c::oss_init` error label
   - ✅ `gfx/drivers/gl3.c::gl3_raster_font_render_msg` (`gl->video_width`)
@@ -168,6 +168,10 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   - 📋 Win32-only sites (`wasapi.c`, `d3d10/d3d11/d3d9hlsl_gfx.c`) — not in Linux build, deferred.
   - 📋 Console-only sites (`vita2d`, `gx2`, `ctr`, `ps2`, `gdi`, `dispmanx_gfx.c`, `platform_orbis.c`) — out of personal-fork scope.
   - ❌ `gfx/gfx_thumbnail.c` — cppcheck FPs (`thumbnail_path` is a stack array). Won't fix.
+  Closed 2026-09-26: every Linux-build site is fixed. What remains is
+  Windows-only (wasapi.c, d3d10/d3d11/d3d9hlsl_gfx.c) and console-only
+  code this machine cannot build or test; reopen if a Windows or console
+  build joins the fork's scope.
   **Layman:** Many places use a value before checking it exists; the Linux ones are fixed, and Windows- and console-only ones remain.
   Kind: audit-fix.
 
@@ -804,7 +808,7 @@ Re-run with `compile_commands.json` (generated via `bear -- make -j$(nproc)` aft
   `menu/drivers/materialui.c:4727, 5566`, `menu/drivers/rgui.c:2473`, `menu/menu_setting.c:5773`. _(Bundle 43 — fixed in `dbb3f030c3` on `local/fixes-2026-04`. Triaged per-site rather than uniformly: materialui sites root-caused to `glyph_width` potentially rounding to 0 in `materialui_init_font` → added a `< 1` clamp immediately after the lroundf assignment, killing the class for 8+ similar `width / glyph_width` ticker divides in the same file (only 2 flagged, the rest are unflagged twins). rgui:2473 root-caused to `rgui_downscale_thumbnail` not guarding `max_width`/`max_height` (caller checks `image_src` dims but not the thumbnail size box) → top-of-function early-return matches the caller's existing failure path. menu_setting.c:5773 verified FP — `libretro_device_get_size` always seeds 2 entries (NONE + JOYPAD) before any conditional, so the mod-by-types at line 5785 cannot hit zero; clang-analyzer doesn't trace into the helper to learn the invariant.)_
   Kind: implement.
 
-- 🚧 [RETR-S0093] **MEDIUM — Memory-leak class (8 sites).**
+- ✅ [RETR-S0093] **MEDIUM — Memory-leak class (8 sites).**
   _(Bundle 28 — 7 of 8 fixed in `856758e6b8` on `local/fixes-2026-04`. Independent fix shapes per site, only theme is "the existing cleanup discipline missed one entry." Sites:)_
   - ✅ `core_backup.c:383` `backup_filename` — empty-string `strdup("")` returned non-NULL pointer; the early-out treated it as failure-without-cleanup.
   - ✅ `core_info.c:825/855` `core_info_cache_list` — `core_info_cache_list_free` only frees inner contents; outer struct needs separate `free()` (caller's responsibility, see canonical pairing in `core_info_cache_list_new`'s failure path). Both branches now match.
@@ -813,6 +817,9 @@ Re-run with `compile_commands.json` (generated via `bear -- make -j$(nproc)` aft
   - ✅ `menu/drivers/ozone.c:5170` `node` — `ozone_context_reset_horizontal_list` read `userdata` and allocated a fresh node when NULL. Only the `.lpl` branch later stored the node anywhere (RHMAP_SET_STR); the no-path early-continue and the `.lvw` branch leaked the freshly-allocated node. Hand ownership to the list immediately after `ozone_alloc_node` returns -- matches the canonical pattern at `ozone.c:13050-13064`.
   - ✅ `menu/menu_setting.c:2257-2258 + 2436-2437` — `config_uint_alt` and `config_string_alt` called `setting_*_setting` with `dont_use_enum_idx=true`; the constructor strdups internally on that path. Callers were ALSO strdup'ing each string before passing it in, so every alt-flavour setting allocated and immediately leaked one strdup of name and one of short_description (~16 calls each at startup, leak proportional to MAX_USERS). Stack-local snprintf buffers remain valid through the macro expansion; removing the caller-side strdup is safe.
   - ✅ `network/discord.c:851-859` `discord_json_next_strdup` — did `*out = strdup(s)` without freeing previous `*out`. A Discord IPC payload that repeats a key in the same object (well-formed JSON allows it) silently leaked the previous strdup. Helper now `free(*out)` before assigning. Callers pass `&local_var` initialised to NULL so the typical single-key path costs nothing (`free(NULL)` is a no-op).
+  Closed 2026-09-26: 7 of 8 fixed; the eighth
+  (core_updater_list.c entry.local_info_path) was traced as a clang-tidy
+  false positive. Reopen only with a reproducer showing the leak.
   **Layman:** A handful of places forget to release memory when something fails; most are fixed and one remains.
   Kind: audit-fix.
 
