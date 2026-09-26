@@ -949,7 +949,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** The most serious security fixes have no automated tests, so a future change could quietly undo them.
   Kind: test.
 
-- 📋 [RETR-S0115] **MEDIUM — Upstreaming backlog for the clear-cut fork fixes (branch-drift reduction).**
+- 🚧 [RETR-S0115] **MEDIUM — Upstreaming backlog for the clear-cut fork fixes (branch-drift reduction).**
   Many shipped fixes are plain `libretro/RetroArch` bugs, not fork-specific, yet they live only on `local/fixes-2026-04` — so they (a) help no other libretro user and (b) accrue merge debt as the fixes branch drifts from upstream `master` (already ~76/24 commits diverged at Bundle 67). The vendored-blocked items (`libretro-common/file/config_file.c` atomic write, `formats/json/rjson.c` `(json+1)`, `file/archive_file.c` NULL backend) are *only* fixable by upstreaming — they sit 🔄 today for exactly this reason. **Shape:** keep a tracked list of upstream-PR candidates (seed: the security fixes above + the `linked_list.c` NULL-guard flagged in Bundles 76/77 + the three vendored-common items) and PR them against upstream on a cadence; each merged PR lets the next re-vendor drop a local edit instead of clobbering it. Pairs with a periodic `local/fixes-2026-04` rebase-onto-`master` to bound drift. (Upstreaming is stated as policy in the header + per-item asides today, but there is no single tracked backlog — this is that tracker.)
   User request 2026-09-25: share worthwhile fixes with the RetroArch
   team. Sequenced after RETR-0003 (upstream sync). Replaying the 94 fork
@@ -983,6 +983,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   User decisions 2026-09-26 (later): open the six PRs and four issues
   now, after the pre-open checklist. PR B goes as drafted; its body
   already offers a LAN-access setting if maintainers prefer one.
+  Opened 2026-09-26, after the checklist: each branch is one commit and
+  merges cleanly into upstream/master ffa4ec336a; every changed .c file
+  builds with C89_BUILD=1, except files whose headers this machine lacks
+  (caca, sixel, DOS vga, emscripten audioworklet, mbedtls under C89_BUILD)
+  or whose generated Wayland headers are not C89; the mbedtls backend
+  builds normally and its diff was read for C89. PRs: A #19626, B #19627,
+  C #19628, D #19629, E #19630, F #19631 (libretro/RetroArch). Issues:
+  RetroArch #19632 (RETR-0006), #19633 (RETR-0005); libretro-common #232
+  (RETR-0007), #233 (RETR-0009). Still owed: port the three drafting
+  improvements back to local/fixes-2026-09, and follow up on review.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
