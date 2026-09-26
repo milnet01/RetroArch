@@ -1538,7 +1538,7 @@ current upstream first, so the player is built on current code.
   Kind: fix.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit 00e6d85.
 
-- 📋 [RETR-0008] **TLS — re-apply the verification mode after a config reload or override.**
+- ✅ [RETR-0008] **TLS — re-apply the verification mode after a config reload or override.**
   `ssl_socket_set_verify_mode` has two callers: startup in `retroarch.c` and
   the menu write handler in `menu/menu_setting.c`. A per-core or per-game
   override, or a config reload that changes `tls_verify_mode`, updates the
@@ -1546,6 +1546,13 @@ current upstream first, so the player is built on current code.
   previous mode, which may be looser than the new one. Fix: push the mode
   after `config_load_override` and `config_load`. Part of the TLS fix
   (RETR-S0030), fork branch `local/fixes-2026-09`.
+  Resolved (2026-09-26): 9552e7e2f0 on local/fixes-2026-09.
+  config_load_file now pushes tls_verify_mode to the SSL backend at its
+  end; startup, override load, override unload and the post-save reload
+  all go through it. The startup call in retroarch.c stays for the
+  no-config-file (defaults) start. Built by the local gate (normal, C89,
+  i686); not exercised at runtime, which would need a core, content, an
+  override file and a live HTTPS connect.
   **Layman:** If a game-specific settings file changes the secure-connection setting, the change is not applied until RetroArch restarts.
   Kind: security.
   Source: sync review 2026-09-25 (network lane).
