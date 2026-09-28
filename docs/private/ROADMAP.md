@@ -1124,6 +1124,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   make -j4 and C89; the salt helper also ran on the Windows test machine
   (ssh wintest). #19629 is still open with no activity since 2026-09-26.
   Owed: port the adapted netplay helper back to local/fixes-2026-09.
+  2026-09-28, #19629 Windows check: filestream_write_file_atomic from
+  pr/crash-safe-saving (1c344c0def), cross-compiled with mingw-w64 and
+  run on the Windows 10 22H2 test machine (ssh wintest). All four cases
+  pass: a new file is written; an existing file is replaced through the
+  delete-and-retry path with no .tmp left; a destination held open by
+  another handle, and a read-only one, both fail with the old contents
+  kept and no .tmp left. content_replace_file (task_save.c) was not
+  exercised. Posting the result on #19629 waits on the user.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
