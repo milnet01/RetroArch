@@ -1115,6 +1115,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
     hard-coded loopback bind, and set the fork's default to "127.0.0.1".
     That keeps the fork's local-only behaviour through upstream's own
     setting, so the only fork diff left is the default value.
+  2026-09-28, user-approved second batch, opened on upstream/master
+  41caa78885: #19648 re-applies tls_verify_mode on every settings load
+  (fork 9552e7e2f0, RETR-0008); #19649 takes the netplay salt from the
+  OS CSPRNG and compares the password hash in constant time (fork
+  c6d9f37dc7, adapted: CryptGenRandom for XP-era Windows toolchains,
+  BCryptGenRandom only on UWP, /dev/urandom on macOS). Both built with
+  make -j4 and C89; the salt helper also ran on the Windows test machine
+  (ssh wintest). #19629 is still open with no activity since 2026-09-26.
+  Owed: port the adapted netplay helper back to local/fixes-2026-09.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1596,6 +1605,11 @@ current upstream first, so the player is built on current code.
   normally and with C89_BUILD=1; no runtime reproduction (race too
   narrow). Remaining: push from ra-fixes (runs the gate), then close. A
   candidate for the RETR-S0115 upstreaming batch.
+  2026-09-28: the unpushed fork fix 1bfadd67e2 is dropped at the user's
+  choice, because upstream fixed the same race with a test (74f6867163,
+  b1365e86cd, f5503fb604; issue #19633 closed 2026-09-26). The commit is
+  kept locally as tag dropped/RETR-0005-1bfadd67e2 in ra-fixes. Take
+  upstream's fix at the next sync, then close this item.
   **Layman:** A download helper might use a finished download's data after it has been cleaned up; check whether upstream's new design still allows it.
   Kind: investigate.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit de0c6000c8.

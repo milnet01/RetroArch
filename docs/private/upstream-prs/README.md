@@ -20,6 +20,17 @@ worktree `/mnt/Games/Scripts/Linux/ra-pr`. Every branch passed a full
 | `pr/crash-and-leak-fixes` | `9bd122460d` | [pr-crash-and-leak-fixes.md](pr-crash-and-leak-fixes.md) |
 | `pr/cloud-sync-robustness` | `01b12d09f7` | [pr-cloud-sync-robustness.md](pr-cloud-sync-robustness.md) |
 
+Second batch, opened 2026-09-28 on upstream/master `41caa78885` with the
+user's approval:
+
+| Branch | Commit | PR | Draft |
+|---|---|---|---|
+| `pr/tls-verify-on-reload` | `976a8e46c4` | #19648 | [pr-tls-verify-on-reload.md](pr-tls-verify-on-reload.md) |
+| `pr/netplay-password-hardening` | `30ca182756` | #19649 | [pr-netplay-password-hardening.md](pr-netplay-password-hardening.md) |
+
+The netplay branch is adapted from the fork's `c6d9f37dc7`, and the fork
+should take the adapted version back (its draft says why).
+
 The four issue drafts are in [issues.md](issues.md). Two target
 libretro/RetroArch and two target libretro/libretro-common.
 
