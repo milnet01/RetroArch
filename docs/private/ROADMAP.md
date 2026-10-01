@@ -1335,7 +1335,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Fix: extension computed once, database list checked first. CPU time
   1.66-2.17 s before, 0.87-1.01 s after (four alternating runs, machine
   busy); playlists byte-identical. Branch pr/scan-core-match
-  (b39e072f63), not opened; draft pr-scan-core-match.md. What remains
+  (f79e1bf804; cold-read by the pressless session, nothing found), not opened; draft pr-scan-core-match.md. What remains
   is string_list_find_elem on databases_list, once per core; a cache
   would remove it but is a larger change. Playlist loading not yet
   profiled.
