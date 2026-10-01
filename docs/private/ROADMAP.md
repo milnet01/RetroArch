@@ -1228,6 +1228,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   to 0 with a four-category one-option test core). The rest of the
   survey is RETR-0019 and RETR-0020. Open upstream PRs now: #19629,
   #19660, #19661, #19664, #19666, #19667, #19668; libretro-common #234.
+  Checked 2026-10-01 (later): #19629, #19660, #19661, #19664, #19666,
+  #19667, #19668 and libretro-common #234 all open, no maintainer
+  comments or reviews. CI: #19660 and #19661 green; #19666-#19668
+  still running. #19664's one failure is CI webOS, a GitHub HTTP 500
+  downloading the webOS SDK, not the change.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
