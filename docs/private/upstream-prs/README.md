@@ -16,6 +16,7 @@ user's go-ahead. Checked 2026-10-01.
 | gl driver: upload per-draw coords with `GL_STREAM_DRAW` (performance) | RETR-0016 | Opened 2026-10-01 as RetroArch PR #19661. Measured ~15% less time a frame in the font upload pattern (RX 6600). Draft: [pr-gl-stream-draw.md](pr-gl-stream-draw.md). |
 | Unix signal handler: `_exit`, not `exit`, on the second quit signal, which otherwise can hang at shutdown | RETR-0017 | Same code in upstream master; no issue or PR found 2026-10-01. Fork fix `c2a527778c`. Opened 2026-10-01 as RetroArch PR #19664 (branch `pr/sighandler-safe-exit`, `4d77bf497d`). Draft: [pr-sighandler-safe-exit.md](pr-sighandler-safe-exit.md). |
 | `linked_list` remove-matching crashes on a NULL callback | RETR-0007 | Issue libretro-common #232; another contributor opened PR #234. Not ours to send. |
+| WebDAV digest login: a fresh cnonce per login instead of the fixed `"1a2b3c4f"` | RETR-S0115 | Upstream master still sends the fixed value (checked 2026-10-01 at the merge `3df84da461`). The fork's `webdav_create_cnonce` mixes time, clock and a stack address through MD5; upstream's new `crypto_random_bytes` would be the better source for a PR. Not drafted. |
 
 ## Branches
 

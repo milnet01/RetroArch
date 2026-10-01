@@ -1206,6 +1206,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   performance PR.
   2026-10-01: RETR-0017's fix opened upstream as #19664
   (pr/sighandler-safe-exit, 4d77bf497d).
+  2026-10-01: upstream PRs checked: #19629, #19660, #19661, #19664 and
+  libretro-common #234 all open, no new activity. The upstream merge
+  (3df84da461) brought in network_cmd_bind_address, and the fork's
+  default is now "127.0.0.1" through it, as decided 2026-09-26; it also
+  brought 280094a, so the fork now runs upstream's netplay salt instead
+  of c6d9f37dc7. New candidate: upstream WebDAV still sends a fixed
+  cnonce "1a2b3c4f"; the fork's per-login cnonce could go upstream,
+  ideally on upstream's new crypto_random_bytes.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1757,6 +1765,8 @@ current upstream first, so the player is built on current code.
   the fork's own fix was never pushed. It is kept in ra-fixes as tag
   dropped/RETR-0005-1bfadd67e2. Upstream's fix reaches the fork at the
   next upstream sync.
+  2026-10-01: upstream's fix (74f6867163) is now in the fork through
+  the merge 3df84da461.
   **Layman:** A download helper might use a finished download's data after it has been cleaned up; check whether upstream's new design still allows it.
   Kind: investigate.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit de0c6000c8.
@@ -1925,3 +1935,27 @@ current upstream first, so the player is built on current code.
   Kind: fix.
   Source: in-session-2026-10-01 (RETR-0016 perf runs).
   Lanes: frontend.
+
+- ✅ [RETR-0018] **SYNC — merge upstream master (6bf58823c6) into local/fixes-2026-09.**
+  The fork was 94 commits ahead and 403 behind upstream. User choice
+  2026-10-01: merge rather than replay, so nothing published is
+  rewritten. Merge commit 3df84da461 on local/fixes-2026-09; its body
+  lists how each of the 23 clashing files was settled.
+  - Upstream's own versions kept where it re-implemented a fork fix:
+    netplay salt (280094a), core RAM bounds (fa49a43dc2), mbedtls verify
+    mode (atomic), WebDAV digest parser, vulkan font measure.
+  - Kept from the fork: the stricter cloud-sync body check (length must
+    equal Content-Length), ported to upstream's header block
+    (dba5458fb5); the fresh per-login WebDAV cnonce (upstream still sends
+    a fixed "1a2b3c4f"); the HAVE_S3 build switch.
+  - Network commands now use upstream's network_cmd_bind_address with
+    the fork default "127.0.0.1" (user decision 2026-09-26, reconfirmed).
+  Verified: configure + make -j4, exit 0. Headless run: the command
+  socket binds 127.0.0.1. Pushed through the five-job local gate (all
+  PASS). The secret scan flagged 7 test fixtures in upstream's own
+  commits; ants.gate.publishedRemotes=upstream now skips commits already
+  public upstream (the hook's documented key).
+  Not done: fork master was not merged up; nothing depends on it.
+  **Layman:** Bring in the official project's latest week of changes without losing the fork's own fixes.
+  Kind: chore.
+  Source: user-request-2026-10-01.
