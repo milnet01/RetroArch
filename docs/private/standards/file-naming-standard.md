@@ -108,5 +108,7 @@ Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
   object with static storage duration: an `extern` variable, a file-scope
   `static`, or a function-local `static`. A new field on the subsystem's
   state struct, reached through its `*_state_get_ptr()`, satisfies this
-  rule. A driver keeps its own state in the instance data its `init`
-  returns instead.
+  rule. Driver-private state follows its sibling drivers instead: audio
+  and video drivers keep it in the instance data `init` returns; joypad
+  drivers keep it in file-scope `static`s, and their `init` returns a
+  placeholder (`udev_joypad_init` returns `(void*)-1`).
