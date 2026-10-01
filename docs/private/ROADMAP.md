@@ -1214,6 +1214,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   of c6d9f37dc7. New candidate: upstream WebDAV still sends a fixed
   cnonce "1a2b3c4f"; the fork's per-login cnonce could go upstream,
   ideally on upstream's new crypto_random_bytes.
+  2026-10-01: the WebDAV fixed-cnonce fix opened upstream as #19666
+  (pr/webdav-random-cnonce, c76212a34d), on upstream's
+  crypto_random_bytes. Tested against a local server that checks the
+  digest: master sends cnonce 1a2b3c4f, the branch a new one per run, and
+  both logins are accepted.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
