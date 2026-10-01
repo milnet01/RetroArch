@@ -1224,6 +1224,25 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: chore.
   Source: peer-session claude-72 ci-gate sweep 2026-09-25.
 
+- 📋 [RETR-0016] **PERF — measured performance pass, for upstream PRs.**
+  User request 2026-10-01: a performance pass, then PRs upstream for the
+  gains, done as token-cheaply as possible. Method:
+  1. Measure, don't read: run retroarch on real content (gambatte, a
+     heavier core, menu open and closed; null and real video) under
+     `perf record`, and rank functions by frontend self time. Cores'
+     own time is out of scope.
+  2. Read only the top frontend hot spots, with read_region on the
+     function, not whole files.
+  3. Change one hot spot at a time; keep it only if a repeat measurement
+     shows the gain.
+  4. Each kept gain becomes a candidate in
+     docs/private/upstream-prs/README.md; the user decides on opening.
+  Existing perf item RETR-S0068 (HTTP task busy-spin) is folded in.
+  **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
+  Kind: perf.
+  Source: user-request-2026-10-01.
+  Lanes: perf.
+
 ### 📝 Cold-eyes 2026-07-04
 
 Docs reviewed: 5 (new `docs/private/standards/` set — README index + coding /
@@ -1674,7 +1693,7 @@ current upstream first, so the player is built on current code.
   Kind: investigate.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit de0c6000c8.
 
-- 📋 [RETR-0006] **SECURITY — run-ahead's temporary core copy still uses a predictable name.**
+- ✅ [RETR-0006] **SECURITY — run-ahead's temporary core copy still uses a predictable name.**
   The fork's 92d8e97cd5 gave run-ahead's temp DLL a CSPRNG name and created
   it with O_EXCL/O_NOFOLLOW. Upstream has replaced the read-then-write copy
   with an async VFS copy task (`filestream_copy_begin`,
@@ -1684,6 +1703,15 @@ current upstream first, so the player is built on current code.
   vendored, so it goes upstream (libretro-common or RetroArch) rather than into
   a local patch. The sync kept upstream's code. A candidate for the RETR-S0115
   upstreaming batch.
+  Resolved (2026-10-01): fixed in runahead.c, not libretro-common, as
+  30b7dc942f on local/fixes-2026-09 (gate passed, pushed). The temp dir
+  is used only if it is a real directory owned by this user, tightened
+  to 0700 when others can reach it; otherwise run-ahead falls back to
+  one instance. Proven red then green in samples/runahead, against real
+  directories, and live with gambatte. Upstream PR branch
+  pr/runahead-private-tmpdir is built and tested (draft in
+  docs/private/upstream-prs/); the user approved opening it, and opening
+  waits on the user running it, since the session may not publish.
   **Layman:** A feature that copies the emulator core to a temporary file picks a guessable name, which another program on the machine could exploit.
   Kind: security.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit 92d8e97cd5.
