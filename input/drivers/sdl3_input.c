@@ -84,6 +84,27 @@ typedef struct sdl3_input
       float x;
       float y;
    } touches[SDL3_MAX_TOUCH];
+
+   /* Pen/stylus state, handled through SDL_EVENT_PEN_*. */
+   bool pen_in_proximity;
+   bool pen_down;
+   /* Barrel buttons, ORed into the right/middle mouse buttons. */
+   bool pen_b1;
+   bool pen_b2;
+   /* Last reported position in window coordinates (points). */
+   float pen_raw_x;
+   float pen_raw_y;
+   /* Position in output pixels, matching mouse_abs_*. */
+   float pen_abs_x;
+   float pen_abs_y;
+
+   /* The SDL_Window input is read against. */
+   SDL_Window *window;
+
+   /* Sensors. Used if the SDL3 joypad driver isn't active. */
+   SDL_Sensor *accel;
+   SDL_Sensor *gyro;
+   bool sensors_init;
 } sdl3_input_t;
 
 #ifdef WEBOS
@@ -435,7 +456,13 @@ static int16_t sdl3_input_state(
             int16_t pressed = 0;
 
             if (id == RETRO_DEVICE_ID_POINTER_COUNT)
-               return sdl->num_touches ? sdl->num_touches : (sdl->mouse_l ? 1 : 0);
+            {
+               if (sdl->num_touches)
+                  return sdl->num_touches;
+               if (sdl->pen_in_proximity)
+                  return sdl->pen_down ? 1 : 0;
+               return sdl->mouse_l ? 1 : 0;
+            }
 
             if (!video_driver_get_viewport_info(&vp))
                break;
@@ -451,6 +478,18 @@ static int16_t sdl3_input_state(
                abs_x = (int)(sdl->touches[idx].x * (float)VIDEO_SCALE_W(vp.full_dims));
                abs_y = (int)(sdl->touches[idx].y * (float)VIDEO_SCALE_H(vp.full_dims));
                pressed = 1;
+            }
+            else if (sdl->pen_in_proximity)
+            {
+               /* Reading the pen ahead of the mouse fallback dedups
+                * the mouse state SDL synthesizes from the pen; a real
+                * mouse click during pen hover is indistinguishable
+                * from that and reads as unpressed. */
+               if (idx != 0)
+                  return 0;
+               abs_x = (int)sdl->pen_abs_x;
+               abs_y = (int)sdl->pen_abs_y;
+               pressed = sdl->pen_down;
             }
             else
             {
@@ -601,6 +640,13 @@ static void sdl3_input_free(void *data)
    SDL_FlushEvents(SDL_EVENT_FINGER_DOWN,      SDL_EVENT_FINGER_CANCELED);
    SDL_FlushEvents(SDL_EVENT_PEN_PROXIMITY_IN, SDL_EVENT_PEN_AXIS);
 
+   if (sdl->accel)
+      SDL_CloseSensor(sdl->accel);
+   if (sdl->gyro)
+      SDL_CloseSensor(sdl->gyro);
+   if (sdl->sensors_init)
+      SDL_QuitSubSystem(SDL_INIT_SENSOR);
+
    /* Nothing polls after this point, so the flags would stay raised
     * across a runtime driver switch. */
    input_state_get_ptr()->flags &=
@@ -610,16 +656,75 @@ static void sdl3_input_free(void *data)
    free(sdl);
 }
 
+/* Opens the first sensor of the given type. */
+static SDL_Sensor *sdl3_open_sensor(SDL_SensorType type)
+{
+   int i;
+   int num_sensors = 0;
+   SDL_Sensor *sensor = NULL;
+   SDL_SensorID *sensors = SDL_GetSensors(&num_sensors);
+
+   if (!sensors)
+      return NULL;
+
+   for (i = 0; i < num_sensors; i++)
+   {
+      if (SDL_GetSensorTypeForID(sensors[i]) == type)
+      {
+         sensor = SDL_OpenSensor(sensors[i]);
+         break;
+      }
+   }
+
+   SDL_free(sensors);
+   return sensor;
+}
+
+/* Enables the accelerometer/gyroscope. */
 static bool sdl3_set_sensor_state(void *data, unsigned port,
       enum retro_sensor_action action, unsigned rate)
 {
-   /* Sensors are not exposed through the SDL3 keyboard/mouse driver.
-    * Gamepad gyro/accel are handled by the SDL3 joypad driver. */
+   sdl3_input_t *sdl = (sdl3_input_t*)data;
+
+   /* The host device's sensors only ever map to port 0. */
+   if (port != 0)
+      return false;
+
    switch (action)
    {
-      case RETRO_SENSOR_ILLUMINANCE_DISABLE:
-      case RETRO_SENSOR_GYROSCOPE_DISABLE:
+      case RETRO_SENSOR_ACCELEROMETER_ENABLE:
+      case RETRO_SENSOR_GYROSCOPE_ENABLE:
+         {
+            bool accelerometer = action == RETRO_SENSOR_ACCELEROMETER_ENABLE;
+            SDL_Sensor **sensor = accelerometer ? &sdl->accel : &sdl->gyro;
+
+            if (*sensor)
+               return true;
+
+            /* Make sure the Sensor subsystem is available. */
+            if (!sdl->sensors_init)
+            {
+               if (!SDL_InitSubSystem(SDL_INIT_SENSOR))
+                  return false;
+               sdl->sensors_init = true;
+            }
+
+            return (*sensor = sdl3_open_sensor(accelerometer ? SDL_SENSOR_ACCEL : SDL_SENSOR_GYRO)) != NULL;
+         }
       case RETRO_SENSOR_ACCELEROMETER_DISABLE:
+      case RETRO_SENSOR_GYROSCOPE_DISABLE:
+         {
+            SDL_Sensor **sensor = action == RETRO_SENSOR_ACCELEROMETER_DISABLE
+                  ? &sdl->accel : &sdl->gyro;
+
+            if (*sensor)
+            {
+               SDL_CloseSensor(*sensor);
+               *sensor = NULL;
+            }
+            return true;
+         }
+      case RETRO_SENSOR_ILLUMINANCE_DISABLE:
          /* Disabling an unsupported sensor shouldn't fail. */
          return true;
       default:
@@ -629,9 +734,50 @@ static bool sdl3_set_sensor_state(void *data, unsigned port,
    return false;
 }
 
+/* SDL reports mouse and pen coordinates in window coordinates,
+ * while the video driver's viewport metrics are in output
+ * pixels. */
+static float sdl3_window_pixel_density(sdl3_input_t *sdl)
+{
+   if (sdl->window)
+   {
+      float density = SDL_GetWindowPixelDensity(sdl->window);
+      if (density > 0.0f)
+         return density;
+   }
+
+   return 1.0f;
+}
+
+
+static float sdl3_get_sensor_input(void *data, unsigned port, unsigned id)
+{
+   sdl3_input_t *sdl = (sdl3_input_t*)data;
+   float v[3];
+
+   /* The host device's sensors only ever map to port 0. */
+   if (port != 0)
+      return 0.0f;
+
+   /* Acceleration is m/s^2, though libretro expects gravity. The
+    * gyroscope uses radians per second. */
+   if (id <= RETRO_SENSOR_ACCELEROMETER_Z)
+   {
+      if (sdl->accel && SDL_GetSensorData(sdl->accel, v, 3))
+         return v[id - RETRO_SENSOR_ACCELEROMETER_X] / SDL_STANDARD_GRAVITY;
+   }
+   else if (id >= RETRO_SENSOR_GYROSCOPE_X && id <= RETRO_SENSOR_GYROSCOPE_Z)
+   {
+      if (sdl->gyro && SDL_GetSensorData(sdl->gyro, v, 3))
+         return v[id - RETRO_SENSOR_GYROSCOPE_X];
+   }
+
+   return 0.0f;
+}
+
 static void sdl3_poll_mouse(sdl3_input_t *sdl)
 {
-   SDL_Window *win;
+   float density;
    float dx = 0.0f;
    float dy = 0.0f;
    SDL_MouseButtonFlags btn = SDL_GetMouseState(&sdl->mouse_abs_x, &sdl->mouse_abs_y);
@@ -653,20 +799,9 @@ static void sdl3_poll_mouse(sdl3_input_t *sdl)
    sdl->mouse_rel_x -= (float)sdl->mouse_x;
    sdl->mouse_rel_y -= (float)sdl->mouse_y;
 
-   /* SDL reports mouse coordinates in window coordinates (points),
-    * while the video driver's viewport metrics are in output pixels. */
-   if (!(win = sdl3_get_window()))
-      win = SDL_GetMouseFocus();
-
-   if (win)
-   {
-      float density = SDL_GetWindowPixelDensity(win);
-      if (density > 0.0f && density != 1.0f)
-      {
-         sdl->mouse_abs_x *= density;
-         sdl->mouse_abs_y *= density;
-      }
-   }
+   density = sdl3_window_pixel_density(sdl);
+   sdl->mouse_abs_x *= density;
+   sdl->mouse_abs_y *= density;
 
    sdl->mouse_l = (SDL_BUTTON_MASK(SDL_BUTTON_LEFT) & btn) != 0;
    sdl->mouse_r = (SDL_BUTTON_MASK(SDL_BUTTON_RIGHT) & btn) != 0;
@@ -708,6 +843,10 @@ static void sdl3_poll_touch(sdl3_input_t *sdl)
       int j, num_fingers = 0;
       SDL_Finger **fingers;
 
+      /* Pen events are read elsewhere. */
+      if (devices[i] == SDL_PEN_TOUCHID)
+         continue;
+
       /* Only SDL_TOUCH_DEVICE_DIRECT is a touchscreen. The two indirect
        * types are trackpads, whose fingers are device or cursor-relative. */
       if (SDL_GetTouchDeviceType(devices[i]) != SDL_TOUCH_DEVICE_DIRECT)
@@ -736,6 +875,64 @@ static void sdl3_poll_touch(sdl3_input_t *sdl)
    /* Count touchscreens only, so a machine whose sole touch device is
     * a trackpad still takes the cheap early-out above. */
    sdl->num_touch_devices = num_direct;
+}
+
+/* Polls the pen events. */
+static void sdl3_poll_pen(sdl3_input_t *sdl)
+{
+   SDL_Event event;
+   float density;
+
+   while (SDL_PeepEvents(&event, 1, SDL_GETEVENT,
+         SDL_EVENT_PEN_PROXIMITY_IN, SDL_EVENT_PEN_AXIS) > 0)
+   {
+      switch (event.type)
+      {
+         case SDL_EVENT_PEN_PROXIMITY_IN:
+            sdl->pen_in_proximity = true;
+            break;
+         case SDL_EVENT_PEN_PROXIMITY_OUT:
+            sdl->pen_in_proximity = false;
+            sdl->pen_down = false;
+            sdl->pen_b1 = false;
+            sdl->pen_b2 = false;
+            break;
+         case SDL_EVENT_PEN_DOWN:
+         case SDL_EVENT_PEN_UP:
+            sdl->pen_in_proximity = true;
+            sdl->pen_raw_x = event.ptouch.x;
+            sdl->pen_raw_y = event.ptouch.y;
+            sdl->pen_down = event.ptouch.down;
+            break;
+         case SDL_EVENT_PEN_MOTION:
+            sdl->pen_in_proximity = true;
+            sdl->pen_raw_x = event.pmotion.x;
+            sdl->pen_raw_y = event.pmotion.y;
+            break;
+         case SDL_EVENT_PEN_BUTTON_DOWN:
+         case SDL_EVENT_PEN_BUTTON_UP:
+            sdl->pen_in_proximity = true;
+            if (event.pbutton.button == 1)
+               sdl->pen_b1 = event.pbutton.down;
+            else if (event.pbutton.button == 2)
+               sdl->pen_b2 = event.pbutton.down;
+            break;
+      }
+   }
+
+   /* Barrel buttons act as the right/middle mouse buttons (the
+    * usual OS mapping). sdl3_poll_mouse has already run, so this
+    * ORs on top of the polled state. */
+   sdl->mouse_r |= sdl->pen_b1;
+   sdl->mouse_m |= sdl->pen_b2;
+
+   /* If the pen isn't in proximity, skip calculating its position. */
+   if (!sdl->pen_in_proximity)
+      return;
+
+   density = sdl3_window_pixel_density(sdl);
+   sdl->pen_abs_x = sdl->pen_raw_x * density;
+   sdl->pen_abs_y = sdl->pen_raw_y * density;
 }
 
 /* Translates an SDL_Keymod to a RETROKMOD. */
@@ -913,9 +1110,19 @@ static void sdl3_input_poll(void *data)
     * never updates. */
    SDL_PumpEvents();
 
+   /* Find the SDL window, so that window coordinates can be calculated
+    * properly. */
+   if (!(sdl->window = sdl3_get_window()))
+      sdl->window = SDL_GetMouseFocus();
+
    sdl3_manage_text_input();
+
    sdl3_poll_mouse(sdl);
    sdl3_poll_touch(sdl);
+
+   /* SDL_UpdateSensors works without a focused window. */
+   if (sdl->accel || sdl->gyro)
+      SDL_UpdateSensors();
 
    sdl->mouse_wu = false;
    sdl->mouse_wd = false;
@@ -1063,14 +1270,17 @@ static void sdl3_input_poll(void *data)
          sdl3_build_scancode_lut(sdl);
    }
 
-   /* Neither range is consumed anywhere: sdl3_poll_touch reads finger
-    * state by polling instead of by event, and pens aren't wired up at
-    * all. Both fire at device rate for as long as there's contact, so
-    * left in the queue they grow until SDL's queue fills and starts
-    * refusing pushes - at which point the events that do matter (quit,
-    * keys) get dropped along with them. */
-   SDL_FlushEvents(SDL_EVENT_FINGER_DOWN,      SDL_EVENT_FINGER_CANCELED);
-   SDL_FlushEvents(SDL_EVENT_PEN_PROXIMITY_IN, SDL_EVENT_PEN_AXIS);
+   /* Fingers are reported as pointer input from polled state
+    * (sdl3_poll_touch / SDL_GetTouchFingers), rather than these
+    * events, so flush the finger events. */
+   SDL_FlushEvents(SDL_EVENT_FINGER_DOWN, SDL_EVENT_FINGER_CANCELED);
+
+   sdl3_poll_pen(sdl);
+
+   /* Sensor updates arrive at device rate and are read by polling
+    * above (SDL_GetSensorData), so flush the events. */
+   if (sdl->sensors_init)
+      SDL_FlushEvent(SDL_EVENT_SENSOR_UPDATE);
 }
 
 static void sdl3_grab_mouse(void *data, bool state)
@@ -1102,7 +1312,7 @@ input_driver_t input_sdl3 = {
    sdl3_input_state,
    sdl3_input_free,
    sdl3_set_sensor_state,
-   NULL,                   /* get_sensor_input */
+   sdl3_get_sensor_input,
    sdl3_get_capabilities,
    "sdl3",
    sdl3_grab_mouse,

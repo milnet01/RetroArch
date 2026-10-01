@@ -621,6 +621,7 @@ static const struct
    char s_beaf53f1[21];
    char s_c3fd1e84[29];
    char s_0f2da3af[25];
+   char s_a89a965a[8];
    char s_f4875576[29];
    char s_6a07da9c[26];
    char s_df3def90[40];
@@ -1425,6 +1426,23 @@ static const struct
 #ifdef _3DS
    char s_4b1915d7[49];
 #endif
+#ifdef HAVE_NFSCLIENT
+   char s_2ab94c3e[33];
+   char s_3225c36e[25];
+   char s_eaf7de23[23];
+   char s_f11cbd53[31];
+   char s_46d3d8b1[11];
+   char s_51775f83[15];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   char s_9155967d[25];
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   char s_528fd575[19];
+   char s_d64e8d73[22];
+#endif
    char s_c3168ee5[7];
    char s_e2f5e678[7];
    char s_e53de5dd[70];
@@ -2026,8 +2044,10 @@ static const struct
    char s_b160f7a1[38];
    char s_cd5ff0f5[25];
    char s_8b92e740[24];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_e2415d78[30];
+#endif
 #endif
    char s_aeef8db2[25];
    char s_14d20957[34];
@@ -2056,21 +2076,43 @@ static const struct
    char s_01a73130[53];
    char s_44ebca0d[44];
    char s_608ac5a1[19];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_3839f91d[28];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_86b07599[33];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_8d5f85ee[22];
    char s_9b023eee[46];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_ccae82ba[17];
 #endif
    char s_35808dba[44];
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_ad6e88de[15];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_c7bc8298[23];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_e63b035a[30];
    char s_d21d875b[14];
    char s_ae86fed0[19];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_b12ae22e[22];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_b2d073c7[24];
    char s_1cbc2657[22];
 #endif
@@ -2215,6 +2257,10 @@ static const struct
    char s_db01e988[5];
    char s_e1c715da[5];
    char s_9a981aa0[25];
+   char s_b4d6cb93[28];
+   char s_ee1c318a[24];
+   char s_32b51618[32];
+   char s_a2906bd3[31];
    char s_e2f93e68[7];
    char s_47d26662[15];
    char s_0ca3b319[13];
@@ -2305,6 +2351,7 @@ static const struct
    char s_cf6bc52a[23];
    char s_05c5a263[24];
    char s_ed22c5f1[22];
+   char s_32c41d0e[36];
    char s_49f9815b[29];
    char s_ddc4f021[25];
    char s_ddc6b80f[27];
@@ -2339,9 +2386,11 @@ static const struct
    char s_8fc1e4da[6];
    char s_14ed14d0[12];
    char s_5c87e95b[16];
+   char s_fad361a0[30];
    char s_3ddc67cc[16];
    char s_bb929824[31];
    char s_f5df885e[38];
+   char s_fe2ec9bd[54];
    char s_5741c1d0[17];
    char s_a1a7717d[28];
    char s_e6ca3876[31];
@@ -3291,6 +3340,23 @@ static const struct
 #ifdef _3DS
    char s_0d834bc5[73];
 #endif
+#ifdef HAVE_NFSCLIENT
+   char s_0dc9bb2c[68];
+   char s_1536325c[215];
+   char s_ad621411[125];
+   char s_f6ec26c1[58];
+   char s_4f7fb41f[117];
+   char s_3487ce71[40];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   char s_7a3d78eb[63];
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   char s_35a04463[85];
+   char s_1b6cda21[65];
+#endif
    char s_d2ae640b[112];
    char s_8e5bac99[99];
    char s_28a346d2[77];
@@ -3565,8 +3631,10 @@ static const struct
    char s_bce9b94f[51];
    char s_d32f5a63[38];
    char s_9177176e[37];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_a1fdf4a6[54];
+#endif
 #endif
    char s_97d77020[38];
    char s_59f05605[47];
@@ -3582,17 +3650,39 @@ static const struct
    char s_4b009af3[42];
    char s_46c57dde[86];
    char s_7eb20ecf[65];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_3e1e294b[87];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_69c0e487[68];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_706ff4dc[361];
    char s_a0d1a85c[98];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_b5966528[261];
    char s_907ef7cc[40];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_b0a46506[53];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_04624c88[205];
    char s_91976dbe[80];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_f6492edc[61];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_9bb85635[275];
    char s_22a05685[97];
 #endif
@@ -3635,7 +3725,7 @@ static const struct
    char s_ffd591e0[45];
    char s_a51ab538[43];
    char s_55d6cc44[57];
-   char s_5a8f7fb9[280];
+   char s_5a8f7fb9[282];
    char s_f2963d2d[42];
    char s_4c592ae1[121];
    char s_52ac4fb9[136];
@@ -3647,6 +3737,8 @@ static const struct
    char s_f77f7a41[84];
 #endif
    char s_e7cb5685[69];
+   char s_bd82a701_0[500];
+   char s_bd82a701_1[21];
    char s_8bb367a2[167];
    char s_2beab583[36];
    char s_a1c071eb[99];
@@ -3700,6 +3792,8 @@ static const struct
    char s_e4aa2e10[70];
    char s_b853a798[136];
    char s_d60aa85f[83];
+   char s_38a84d3c_0[499];
+   char s_38a84d3c_1[82];
    char s_2d09f049[43];
    char s_e670cb8f[54];
    char s_e672937d[171];
@@ -3729,8 +3823,10 @@ static const struct
    char s_cfa51e8c_1[69];
    char s_b62c2f7e[409];
    char s_456fcbc9[357];
+   char s_ba8ff8ce[389];
    char s_82fab47a[41];
    char s_72e21512[241];
+   char s_9f6de46b[362];
    char s_66f2b57e[54];
    char s_a776daeb[71];
    char s_88095324[71];
@@ -5674,8 +5770,8 @@ static const struct
    "C\306\241 b\341\272\243n (L\306\260u/M\341\273\237)",
    "B\341\273\217 qua t\303\255nh n\304\203ng l\306\260u tr\341\272\241ng th\303\241i tr\303\254nh g"
    "i\341\272\243 l\341\272\255p",
-   "X\303\241c \304\221\341\273\213nh (L\306\260u / M\341\273\237, Tua l\303\271i, Tua t\341\273\233"
-   "i, Ch\306\241i qua m\341\272\241ng)",
+   "X\303\241c \304\221\341\273\213nh (L\306\260u / M\341\273\237, Tua l\303\271i, Tua nhanh, Ch\306"
+   "\241i qua m\341\272\241ng)",
    "Kh\303\264ng",
    "N\341\273\221i ti\341\272\277p (L\306\260u / M\341\273\237, Tua l\303\271i)",
    "H\341\273\227 tr\341\273\243 l\306\260u tr\341\272\241ng th\303\241i",
@@ -5739,6 +5835,7 @@ static const struct
    "T\341\272\247n s\341\273\221 t\341\273\221i \304\221a",
    "Ch\303\255nh s\303\241ch qu\341\272\243n l\303\275 Menu",
    "T\341\272\247n s\341\273\221 t\341\273\221i thi\341\273\203u",
+   "Lu\341\273\223ng",
    "T\341\272\241o Danh s\303\241ch ch\306\241i m\341\273\233i",
    "Ch\341\272\277 \304\221\341\273\231 CRT SwitchRes",
    "S\341\273\255 d\341\273\245ng Menu \304\221\341\273\231 ph\303\242n gi\341\272\243i cao",
@@ -6649,6 +6746,23 @@ static const struct
    "B\341\272\255t \304\220\341\273\223ng h\341\273\223 / B\341\273\231 nh\341\273\233 \304\221\341"
    "\273\207m L2 New3DS",
 #endif
+#ifdef HAVE_NFSCLIENT
+   "Duy\341\273\207t th\306\260 m\341\273\245c chia s\341\272\273 NFS",
+   "Th\306\260 m\341\273\245c chia s\341\272\273 NFS",
+   "C\341\273\225ng g\341\272\257n k\341\272\277t NFS",
+   "S\341\273\221 k\341\272\277t n\341\273\221i NFS t\341\273\221i \304\221a",
+   "C\341\273\225ng NFS",
+   "M\303\241y ch\341\273\247 NFS",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   "Thi\341\272\277t l\341\272\255p m\341\272\241ng NFS",
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   "Th\306\260 m\341\273\245c con NFS",
+   "Th\341\273\235i gian ch\341\273\235 NFS",
+#endif
    "Kh\303\264ng",
    "Kh\303\264ng",
    "Th\303\264ng b\303\241o k\341\272\277t n\341\273\221i thi\341\272\277t b\341\273\213 nh\341\272"
@@ -7376,8 +7490,10 @@ static const struct
    "\231",
    "Hi\341\273\203n th\341\273\213 \"Ghi h\303\254nh\"",
    "Hi\341\273\203n th\341\273\213 \342\200\230L\306\260u\342\200\231",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Hi\341\273\203n th\341\273\213 \342\200\234SMB Client\342\200\235",
+#endif
 #endif
    "Hi\341\273\203n th\341\273\213 \342\200\234Steam\342\200\235",
    "Hi\341\273\203n th\341\273\213 \342\200\230Ng\306\260\341\273\235i d\303\271ng\342\200\231",
@@ -7411,22 +7527,44 @@ static const struct
    "C\303\240i \304\221\341\272\267t tr\303\254nh gi\341\272\243 l\341\272\255p th\303\240nh c\303"
    "\264ng",
    "T\341\273\221c \304\221\341\273\231 Ch\341\272\255m",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Ch\341\272\277 \304\221\341\273\231 x\303\241c th\341\273\261c SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Duy\341\273\207t th\306\260 m\341\273\245c chia s\341\272\273 SMB",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "B\341\272\255t m\303\241y kh\303\241ch SMB",
    "S\341\273\221 l\306\260\341\273\243ng k\341\272\277t n\341\273\221i t\341\273\221i \304\221a c"
    "\341\273\247a SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "M\341\272\255t kh\341\272\251u SMB",
 #endif
    "KRB n\341\272\277u c\303\263, n\341\272\277u kh\303\264ng th\303\254 d\303\271ng NTLM",
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "M\303\241y ch\341\273\247 SMB",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "C\303\240i \304\221\341\272\267t m\341\272\241ng SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "T\303\252n th\306\260 m\341\273\245c chia s\341\272\273 SMB",
    "Chia s\341\272\273 SMB",
    "SMB Th\306\260 m\341\273\245c con",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Th\341\273\235i gian ch\341\273\235 SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "T\303\252n ng\306\260\341\273\235i d\303\271ng SMB",
    "Nh\303\263m l\303\240m vi\341\273\207c SMB",
 #endif
@@ -7585,6 +7723,10 @@ static const struct
    "n\304\203m",
    "n\304\203m",
    "\304\220\341\273\223ng b\341\273\231 th\341\273\235i gian",
+   "X\303\241c Minh Ch\341\273\251ng Ch\341\273\211 TLS",
+   "T\341\272\257t (Kh\303\264ng an to\303\240n)",
+   "T\303\271y ch\341\273\215n (Ch\341\273\211 c\341\272\243nh b\303\241o)",
+   "B\341\272\257t bu\341\273\231c (Khuy\341\272\277n ngh\341\273\213)",
    "\304\220\303\272ng",
    "N\341\273\255a chu k\341\273\263",
    "C\341\273\225 \304\221i\341\273\203n",
@@ -7694,6 +7836,7 @@ static const struct
    "B\341\272\255t b\341\273\231 l\341\273\215c video",
    "B\341\273\231 l\341\273\215c nh\341\272\245p nh\303\241y",
    "X\303\263a b\341\273\231 l\341\273\215c video",
+   "S\341\273\221 lu\341\273\223ng b\341\273\231 l\341\273\215c h\303\254nh \341\272\243nh",
    "Th\303\264ng b\303\241o tr\303\252n m\303\240n h\303\254nh",
    "Ph\303\264ng ch\341\273\257 th\303\264ng b\303\241o",
    "K\303\255ch th\306\260\341\273\233c th\303\264ng b\303\241o",
@@ -7730,9 +7873,12 @@ static const struct
    "T\341\272\257t",
    "\304\220\341\273\231 s\303\241ng",
    "\304\220\306\260\341\273\235ng qu\303\251t",
+   "G\341\273\255i \304\221\341\273\231 s\303\241ng khung h\303\254nh",
    "Ch\341\272\277 \304\221\341\273\231 HDR",
    "B\341\273\221 c\341\273\245c \304\221i\341\273\203m \341\272\243nh ph\341\273\245",
    "T\303\255n hi\341\273\207u RGB (\304\221\341\273\217\342\200\223l\341\273\245c\342\200\223lam)",
+   "S\341\273\255 d\341\273\245ng \304\221\341\273\231 s\303\241ng c\341\273\261c \304\221\341\272"
+   "\241i c\341\273\247a m\303\240n h\303\254nh",
    "B\341\273\221 c\341\273\245c Video",
    "\304\220\341\273\231 tr\341\273\205 khung t\341\273\221i \304\221a",
    "S\341\273\221 \341\272\243nh Swapchain t\341\273\221i \304\221a",
@@ -10288,6 +10434,38 @@ static const struct
    "B\341\272\255t t\341\273\221c \304\221\341\273\231 \304\221\341\273\223ng h\341\273\223 New3DS ("
    "804MHz) v\303\240 b\341\273\231 nh\341\273\233 \304\221\341\273\207m L2.",
 #endif
+#ifdef HAVE_NFSCLIENT
+   "Duy\341\273\207t n\341\273\231i dung trong th\306\260 m\341\273\245c chia s\341\272\273 NFS \304"
+   "\221\303\243 c\341\272\245u h\303\254nh.",
+   "\304\220\306\260\341\273\235ng d\341\272\253n th\306\260 m\341\273\245c \304\221\306\260\341\273"
+   "\243c m\303\241y ch\341\273\247 chia s\341\272\273, v\303\255 d\341\273\245: /export/roms. \304"
+   "\220\341\273\203 tr\341\273\221ng n\341\272\277u mu\341\273\221n s\341\273\255 d\341\273\245ng t"
+   "h\306\260 m\341\273\245c \304\221\306\260\341\273\243c ch\341\273\211 \304\221\341\273\213nh tro"
+   "ng \304\221\341\273\213a ch\341\273\211 d\306\260\341\273\233i d\341\272\241ng nfs://server/expo"
+   "rt/path.",
+   "C\341\273\225ng c\341\273\247a d\341\273\213ch v\341\273\245 G\341\272\256N K\341\272\276T. Nh"
+   "\341\272\255p 0 \304\221\341\273\203 y\303\252u c\341\272\247u tr\303\254nh qu\341\272\243n l"
+   "\303\275 c\341\273\225ng c\341\273\247a m\303\241y ch\341\273\247 cung c\341\272\245p c\341\273"
+   "\225ng.",
+   "S\341\273\221 k\341\272\277t n\341\273\221i \304\221\306\260\341\273\243c duy tr\303\254 m\341"
+   "\273\237 t\341\273\233i m\303\241y ch\341\273\247.",
+   "C\341\273\225ng c\341\273\247a d\341\273\213ch v\341\273\245 NFS. Nh\341\272\255p 0 \304\221\341"
+   "\273\203 y\303\252u c\341\272\247u tr\303\254nh qu\341\272\243n l\303\275 c\341\273\225ng c\341"
+   "\273\247a m\303\241y ch\341\273\247 cung c\341\272\245p c\341\273\225ng.",
+   "\304\220\341\273\213a ch\341\273\211 IP ho\341\272\267c t\303\252n m\303\241y ch\341\273\247.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   "C\341\272\245u h\303\254nh c\303\241c thi\341\272\277t l\341\272\255p c\341\273\247a th\306\260 "
+   "m\341\273\245c chia s\341\272\273 NFS.",
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   "\304\220\306\260\341\273\235ng d\341\272\253n th\306\260 m\341\273\245c con b\303\252n trong th"
+   "\306\260 m\341\273\245c chia s\341\272\273. Kh\303\264ng b\341\272\257t bu\341\273\231c.",
+   "S\341\273\221 gi\303\242y ch\341\273\235 m\303\241y ch\341\273\247 ph\341\272\243n h\341\273\223"
+   "i trong m\341\273\227i y\303\252u c\341\272\247u.",
+#endif
    "Hi\341\273\203n th\341\273\213 th\303\264ng b\303\241o tr\303\252n m\303\240n h\303\254nh khi k"
    "\341\272\277t n\341\273\221i ho\341\272\267c ng\341\272\257t k\341\272\277t n\341\273\221i thi"
    "\341\272\277t b\341\273\213 nh\341\272\255p li\341\273\207u.",
@@ -11113,9 +11291,11 @@ static const struct
    "Hi\341\273\203n th\341\273\213 c\303\240i \304\221\341\272\267t \"Ghi h\303\254nh\".",
    "Hi\341\273\203n th\341\273\213 c\303\240i \304\221\341\272\267t \342\200\230L\306\260u\342\200"
    "\231.",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Hi\341\273\203n th\341\273\213 c\303\241c c\303\240i \304\221\341\272\267t c\341\273\247a \342"
    "\200\234SMB Client\342\200\235.",
+#endif
 #endif
    "Hi\341\273\203n th\341\273\213 c\303\240i \304\221\341\272\267t \342\200\234Steam\342\200\235.",
    "Hi\341\273\203n th\341\273\213 c\303\240i \304\221\341\272\267t \342\200\234Ng\306\260\341\273"
@@ -11147,12 +11327,19 @@ static const struct
    "\221ng'.",
    "T\341\273\221c \304\221\341\273\231 ph\303\241t tr\303\262 ch\306\241i khi s\341\273\255 d\341"
    "\273\245ng ch\341\272\277 \304\221\341\273\231 ch\341\272\255m.",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Ch\341\273\215n ph\306\260\306\241ng th\341\273\251c x\303\241c th\341\273\261c ph\303\271 h\341"
    "\273\243p v\341\273\233i m\303\264i tr\306\260\341\273\235ng m\341\272\241ng c\341\273\247a b"
    "\341\272\241n.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Duy\341\273\207t c\303\241c t\341\273\207p trong th\306\260 m\341\273\245c chia s\341\272\273 SM"
    "B \304\221\303\243 c\341\272\245u h\303\254nh.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "B\341\272\255t quy\341\273\201n truy c\341\272\255p th\306\260 m\341\273\245c chia s\341\272\273"
    " m\341\272\241ng SMB. Khuy\341\272\277n ngh\341\273\213 s\341\273\255 d\341\273\245ng k\341\272"
    "\277t n\341\273\221i Ethernet thay v\303\254 Wi-Fi \304\221\341\273\203 c\303\263 k\341\272\277t"
@@ -11165,6 +11352,9 @@ static const struct
    "Ch\341\273\215n s\341\273\221 l\306\260\341\273\243ng k\341\272\277t n\341\273\221i t\341\273"
    "\221i \304\221a \304\221\306\260\341\273\243c s\341\273\255 d\341\273\245ng trong m\303\264i tr"
    "\306\260\341\273\235ng c\341\273\247a b\341\272\241n.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "M\341\272\255t kh\341\272\251u \304\221\341\273\203 x\303\241c th\341\273\261c. Kh\303\264ng b"
    "\341\272\257t bu\341\273\231c khi m\303\241y ch\341\273\247 cho ph\303\251p truy c\341\272\255p "
    "v\341\273\233i t\306\260 c\303\241ch kh\303\241ch. Windows 10 tr\341\273\237 l\303\252n: t\303"
@@ -11172,8 +11362,14 @@ static const struct
    "\273\213 t\341\272\257t theo m\341\272\267c \304\221\341\273\213nh, v\303\254 v\341\272\255y c"
    "\341\272\247n nh\341\272\255p m\341\272\255t kh\341\272\251u t\341\272\241i \304\221\303\242y.",
    "\304\220\341\273\213a ch\341\273\211 IP ho\341\272\267c t\303\252n m\303\241y ch\341\273\247.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "C\341\272\245u h\303\254nh c\303\241c thi\341\272\277t l\341\272\255p chia s\341\272\273 m\341"
    "\272\241ng SMB.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "T\303\252n c\341\273\247a th\306\260 m\341\273\245c chia s\341\272\273 m\341\272\241ng c\341\272"
    "\247n truy c\341\272\255p. \304\220\341\273\203 tr\341\273\221ng n\341\272\277u mu\341\273\221n "
    "li\341\273\207t k\303\252 t\341\272\245t c\341\272\243 c\303\241c th\306\260 m\341\273\245c chia"
@@ -11181,8 +11377,14 @@ static const struct
    " m\341\273\231t th\306\260 m\341\273\245c trong khi duy\341\273\207t.",
    "\304\220\306\260\341\273\235ng d\341\272\253n th\306\260 m\341\273\245c con tr\303\252n th\306"
    "\260 m\341\273\245c chia s\341\272\273. Kh\303\264ng b\341\272\257t bu\341\273\231c.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Ch\341\273\215n th\341\273\235i gian ch\341\273\235 m\341\272\267c \304\221\341\273\213nh (t\303"
    "\255nh b\341\272\261ng gi\303\242y).",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "T\303\252n ng\306\260\341\273\235i d\303\271ng \304\221\341\273\203 x\303\241c th\341\273\261c. "
    "Kh\303\264ng b\341\272\257t bu\341\273\231c khi m\303\241y ch\341\273\247 cho ph\303\251p truy c"
    "\341\272\255p v\341\273\233i t\306\260 c\303\241ch kh\303\241ch. Windows 10 tr\341\273\237 l\303"
@@ -11262,13 +11464,13 @@ static const struct
    "Ch\341\273\245p m\341\273\231t h\303\254nh \341\272\243nh c\341\273\247a m\303\240n h\303\254nh.",
    "Th\341\273\261c hi\341\273\207n c\303\241c t\303\241c v\341\273\245 tr\303\252n m\341\273\231t l"
    "u\341\273\223ng ri\303\252ng.",
-   "Gi\341\273\257 c\303\241c lu\341\273\223ng ch\303\255nh v\303\240 lu\341\273\223ng \303\242m tha"
-   "nh ch\341\272\241y tr\303\252n nh\341\273\257ng l\303\265i CPU nhanh nh\341\272\245t c\341\273"
-   "\247a b\341\273\231 x\341\273\255 l\303\275 c\303\263 c\303\241c l\303\265i kh\303\241c lo\341"
-   "\272\241i nhau. Kh\303\264ng c\303\263 t\303\241c d\341\273\245ng \304\221\341\273\221i v\341"
-   "\273\233i b\341\273\231 x\341\273\255 l\303\275 c\303\263 t\341\272\245t c\341\272\243 c\303\241"
-   "c l\303\265i gi\341\273\221ng nhau. C\303\263 hi\341\273\207u l\341\273\261c sau khi kh\341\273"
-   "\237i \304\221\341\273\231ng l\341\272\241i.",
+   "Gi\341\273\257 c\303\241c lu\341\273\223ng ch\303\255nh, h\303\254nh \341\272\243nh, \303\242m t"
+   "hanh v\303\240 t\303\241c v\341\273\245 tr\303\252n nh\341\273\257ng l\303\265i CPU nhanh nh\341"
+   "\272\245t c\341\273\247a b\341\273\231 x\341\273\255 l\303\275 c\303\263 c\303\241c lo\341\272"
+   "\241i l\303\265i kh\303\241c nhau. Kh\303\264ng c\303\263 t\303\241c d\341\273\245ng tr\303\252n"
+   " c\303\241c b\341\273\231 x\341\273\255 l\303\275 c\303\263 c\303\241c l\303\265i gi\341\273\221"
+   "ng h\341\273\207t nhau. C\303\263 hi\341\273\207u l\341\273\261c sau khi kh\341\273\237i \304"
+   "\221\341\273\231ng l\341\272\241i.",
    "Lo\341\272\241i h\303\254nh thu nh\341\273\217 s\341\272\275 hi\341\273\203n th\341\273\213.",
    "H\303\254nh b\303\254a game, \341\272\243nh ch\341\273\245p m\303\240n h\303\254nh v\303\240 h"
    "\303\254nh thu nh\341\273\217 m\303\240n h\303\254nh ti\303\252u \304\221\341\273\201 \304\221"
@@ -11295,6 +11497,19 @@ static const struct
 #endif
    "Hi\341\273\203n th\341\273\213 th\341\273\235i gian hi\341\273\207n t\341\272\241i theo \304\221"
    "\341\273\213nh d\341\272\241ng \306\260u ti\303\252n.",
+   "Ki\341\273\203m so\303\241t c\303\241ch ki\341\273\203m tra ch\341\273\251ng ch\341\273\211 m"
+   "\303\241y ch\341\273\247 khi k\341\272\277t n\341\273\221i b\341\272\243o m\341\272\255t (HTTPS)"
+   " \304\221\306\260\341\273\243c s\341\273\255 d\341\273\245ng b\341\273\237i \304\220\341\273\223"
+   "ng b\341\273\231 \304\220\303\241m m\303\242y, Th\303\240nh t\303\255ch Retro v\303\240 Tr\303"
+   "\254nh c\341\272\255p nh\341\272\255t tr\341\273\261c tuy\341\272\277n. \342\200\234B\341\272"
+   "\257t bu\341\273\231c\342\200\235 s\341\272\275 t\341\273\253 ch\341\273\221i c\303\241c ch\341"
+   "\273\251ng ch\341\273\211 kh\303\264ng \304\221\303\241ng tin c\341\272\255y v\303\240 b\341\272"
+   "\243o v\341\273\207 kh\341\273\217i c\303\241c cu\341\273\231c t\341\272\245n c\303\264ng xen gi"
+   "\341\273\257a. Ch\341\273\211 n\303\252n h\341\272\241 m\341\273\251c b\341\272\243o m\341\272"
+   "\255t n\303\240y khi b\341\272\241n k\341\272\277t n\341\273\221i th\303\264ng qua proxy c\341"
+   "\273\247a c\303\264ng ty ho\341\272\267c v\341\273\233i m\341\273\231t m\303\241y ch\341\273\247"
+   " s\341\273\255 d\341\273\245ng ch\341\273\251ng ch\341\273\211 t\341\273\261 k\303\275 m\303\240",
+   " b\341\272\241n tin t\306\260\341\273\237ng.",
    "Tr\303\254nh \304\221i\341\273\201u khi\341\273\203n giao di\341\273\207n \304\221i\341\273\201u"
    " khi\341\273\203n tr\303\252n m\303\241y t\303\255nh \304\221\341\273\203 b\303\240n \304\221"
    "\306\260\341\273\243c s\341\273\255 d\341\273\245ng khi b\341\272\255t Menu m\303\241y t\303\255"
@@ -11460,6 +11675,21 @@ static const struct
    "\207n theo.",
    "G\341\273\241 b\341\273\217 b\341\272\245t k\341\273\263 b\341\273\231 l\341\273\215c video n"
    "\303\240o \304\221ang ho\341\272\241t \304\221\341\273\231ng do CPU cung c\341\272\245p.",
+   "C\303\263 th\341\273\203 ch\341\272\241y b\341\273\231 l\341\273\215c h\303\254nh \341\272\243nh"
+   " b\341\272\261ng bao nhi\303\252u lu\341\273\223ng x\341\273\255 l\303\275 c\341\273\247a CPU. "
+   "\342\200\234T\341\273\261 \304\221\341\273\231ng\342\200\235 s\341\272\275 s\341\273\255 d\341"
+   "\273\245ng c\303\241c l\303\265i CPU c\303\262n tr\341\273\221ng sau khi c\303\241c lu\341\273"
+   "\223ng gi\341\272\243 l\341\272\255p, h\303\254nh \341\272\243nh, \303\242m thanh v\303\240 t"
+   "\303\241c v\341\273\245 \304\221\303\243 \304\221\306\260\341\273\243c ph\303\242n b\341\273\225"
+   ", t\341\273\221i \304\221a 8 lu\341\273\223ng; v\341\273\233i c\303\241c b\341\273\231 l\341\273"
+   "\215c nh\341\272\271, s\341\273\221 lu\341\273\223ng s\341\272\275 \303\255t h\306\241n v\303"
+   "\254 ch\341\272\241y tr\303\252n qu\303\241 nhi\341\273\201u lu\341\273\223ng c\303\263 th\341"
+   "\273\203 l\303\240m ch\341\272\255m t\341\273\221c \304\221\341\273\231 x\341\273\255 l\303\275."
+   " C\303\241c b\341\273\231 l\341\273\215c n\341\272\267ng nh\306\260 NTSC s\341\272\275 h\306\260"
+   "\341\273\237ng l\341\273\243i nhi\341\273\201u nh\341\272\245t khi s\341\273\255 d\341\273\245ng"
+   " nhi\341\273\201u lu",
+   "\341\273\223ng h\306\241n. B\341\273\231 l\341\273\215c \304\221ang ch\341\272\241y s\341\272"
+   "\275 \303\241p d\341\273\245ng thay \304\221\341\273\225i ngay l\341\272\255p t\341\273\251c.",
    "Hi\341\273\203n th\341\273\213 th\303\264ng b\303\241o tr\303\252n m\303\240n h\303\254nh.",
    "Ch\341\273\215n ph\303\264ng ch\341\273\257 cho th\303\264ng b\303\241o tr\303\252n m\303\240n h"
    "\303\254nh.",
@@ -11615,6 +11845,15 @@ static const struct
    "\247n nhi\341\273\201u t\303\271y ch\341\273\211nh scanlines h\306\241n, h\303\243y d\303\271ng "
    "b\341\273\231 \304\221\341\273\225 b\303\263ng t\303\271y bi\341\272\277n c\341\273\247a RetroAr"
    "ch.",
+   "Cho tr\303\254nh qu\341\272\243n l\303\275 hi\341\273\203n th\341\273\213 Wayland bi\341\272\277"
+   "t kho\341\272\243ng \304\221\341\273\231 s\303\241ng m\303\240 khung h\303\254nh ch\341\273\251a"
+   ", \304\221\341\273\203 n\341\273\231i dung HDR \304\221\306\260\341\273\243c chuy\341\273\203n "
+   "\304\221\341\273\225i d\341\273\261a tr\303\252n th\303\264ng tin th\341\273\261c t\341\272\277 "
+   "trong khung h\303\254nh thay v\303\254 d\341\273\261a tr\303\252n gi\341\272\243 \304\221\341"
+   "\273\213nh. Khi t\341\272\257t, khung h\303\254nh \304\221\306\260\341\273\243c x\303\241c \304"
+   "\221\341\273\213nh l\303\240 Windows-scRGB nh\306\260 tr\306\260\341\273\233c. C\303\263 hi\341"
+   "\273\207u l\341\273\261c khi tr\303\254nh \304\221i\341\273\201u khi\341\273\203n video \304\221"
+   "\306\260\341\273\243c kh\341\273\237i \304\221\341\273\231ng l\341\272\241i.",
    "Thay \304\221\341\273\225i c\303\240i \304\221\341\272\267t HDR c\341\273\247a video.",
    "Ch\341\273\215n b\341\273\221 c\341\273\245c subpixel c\341\273\247a m\303\240n h\303\254nh, m"
    "\341\273\245c n\303\240y ch\341\273\211 \341\272\243nh h\306\260\341\273\237ng \304\221\341\272"
@@ -11622,6 +11861,15 @@ static const struct
    "\341\273\221 c\341\273\245c subpixel c\341\273\247a m\303\240n h\303\254nh, h\303\243y xem tr"
    "\303\252n Rtings.com m\341\273\245c \342\200\234subpixel layout\342\200\235 c\341\273\247a m\341"
    "\272\253u m\303\240n h\303\254nh \304\221\303\263",
+   "S\341\273\255 d\341\273\245ng \304\221\341\273\231 s\303\241ng c\341\273\261c \304\221\341\272"
+   "\241i do m\303\240n h\303\254nh cung c\341\272\245p thay cho \304\221\341\273\231 s\303\241ng c"
+   "\341\273\261c \304\221\341\272\241i, n\341\272\277u m\303\240n h\303\254nh c\303\263 cung c\341"
+   "\272\245p th\303\264ng tin n\303\240y: \304\220\303\242y l\303\240 gi\303\241 tr\341\273\213 "
+   "\304\221\306\260\341\273\243c cung c\341\272\245p cho l\303\265i gi\341\272\243 l\341\272\255p v"
+   "\303\240 \304\221\306\260\341\273\243c ghi trong si\303\252u d\341\273\257 li\341\273\207u hdr g"
+   "\341\273\255i \304\221\341\272\277n m\303\240n h\303\254nh. Khi t\341\272\257t, s\341\273\255 d"
+   "\341\273\245ng \304\221\341\273\231 s\303\241ng c\341\273\261c \304\221\341\272\241i theo gi\303"
+   "\241 tr\341\273\213 \304\221\303\243 thi\341\272\277t l\341\272\255p.",
    "B\341\273\221 c\341\273\245c Video \304\221\306\260\341\273\243c l\306\260u trong th\306\260 m"
    "\341\273\245c n\303\240y.",
    "B\303\241o cho driver video s\341\273\255 d\341\273\245ng m\341\273\231t ch\341\272\277 \304\221"
@@ -12795,8 +13043,8 @@ static const struct
    "D\303\262ng th\341\273\235i gian sai; ghi \304\221\303\250 b\341\272\243n ghi",
    "Ho\303\240n t\341\272\245t tua",
    "Tua th\341\272\245t b\341\272\241i",
-   "Tua t\341\273\233i",
-   "Tua t\341\273\233i th\341\272\245t b\341\272\241i",
+   "Tua nhanh",
+   "Tua nhanh th\341\272\245t b\341\272\241i",
    "Quay l\341\272\241i",
    "Tua l\303\271i th\341\272\245t b\341\272\241i",
    "\303\224 ph\303\241t l\341\272\241i",
@@ -12967,7 +13215,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_vn_blob_check[
-      (sizeof(msg_hash_vn_blob) == (252102u
+      (sizeof(msg_hash_vn_blob) == (254200u
 #ifdef ANDROID
        + 373u
 #endif
@@ -13080,6 +13328,23 @@ typedef char msg_hash_vn_blob_check[
 #ifdef _3DS
        + 49u
 #endif
+#ifdef HAVE_NFSCLIENT
+       + 33u
+       + 25u
+       + 23u
+       + 31u
+       + 11u
+       + 15u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+       + 25u
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+       + 19u
+       + 22u
+#endif
 #ifdef HAVE_QT
        + 749u
 #endif
@@ -13094,19 +13359,41 @@ typedef char msg_hash_vn_blob_check[
 #ifdef HAVE_LAKKA
        + 18u
 #endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
        + 30u
        + 28u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 33u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 22u
        + 46u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 17u
        + 15u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 23u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 30u
        + 14u
        + 19u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 22u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 24u
        + 22u
 #endif
@@ -13281,6 +13568,23 @@ typedef char msg_hash_vn_blob_check[
 #ifdef _3DS
        + 73u
 #endif
+#ifdef HAVE_NFSCLIENT
+       + 68u
+       + 215u
+       + 125u
+       + 58u
+       + 117u
+       + 40u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+       + 63u
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+       + 85u
+       + 65u
+#endif
 #ifdef HAVE_GAME_AI
        + 36u
 #endif
@@ -13296,18 +13600,40 @@ typedef char msg_hash_vn_blob_check[
        + 56u
        + 49u
 #endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
        + 54u
        + 87u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 68u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 361u
        + 98u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 261u
        + 40u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 53u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 205u
        + 80u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 61u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 275u
        + 97u
 #endif
@@ -13991,6 +14317,7 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MAX_FREQ,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MENU_GOVERNOR,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MIN_FREQ,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_THREADS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CREATE_NEW_PLAYLIST,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CRT_SWITCHRES_SETTINGS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CRT_SWITCH_HIRES_MENU,
@@ -14795,6 +15122,23 @@ static const uint32_t msg_hash_vn_ids[] =
 #ifdef _3DS
    (uint32_t)MENU_ENUM_LABEL_VALUE_NEW3DS_SPEEDUP_ENABLE,
 #endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_BROWSE,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_EXPORT,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_MOUNT_PORT,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_NUM_CONTEXTS,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_PORT,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SETTINGS,
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SUBDIR,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_TIMEOUT,
+#endif
    (uint32_t)MENU_ENUM_LABEL_VALUE_NO,
    (uint32_t)MENU_ENUM_LABEL_VALUE_NONE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_AUTOCONFIG,
@@ -15395,8 +15739,10 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_POWER_MANAGEMENT,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_RECORDING,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_SAVING,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_SMB_CLIENT,
+#endif
 #endif
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_STEAM,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_USER,
@@ -15425,21 +15771,43 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_SIDELOAD_CORE_LIST,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SIDELOAD_CORE_SUCCESS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SLOWMOTION_RATIO,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_AUTH_MODE,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_BROWSE,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_NUM_CONTEXTS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_PASSWORD,
 #endif
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SEC_KRB_OR_NTLM,
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SETTINGS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SHARE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SMB_SHARE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SUBDIR,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_TIMEOUT,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_USERNAME,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_WORKGROUP,
 #endif
@@ -15584,6 +15952,10 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIME_UNIT_YEARS_PLURAL,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIME_UNIT_YEARS_SINGLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIMING_SETTINGS,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_DISABLED,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_OPTIONAL,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_REQUIRED,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TRUE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TURBO_DUTY_CYCLE_HALF,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TURBO_MODE_CLASSIC,
@@ -15674,6 +16046,7 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_FLICKER,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_REMOVE,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_THREADS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_PATH,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_SIZE,
@@ -15708,9 +16081,11 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_MODE_OFF,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_PAPER_WHITE_NITS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SCANLINES,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SEND_LUMINANCE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SETTINGS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SUBPIXEL_LAYOUT,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SUBPIXEL_LAYOUT_RGB,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_USE_DISPLAY_PEAK,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_LAYOUT_DIRECTORY,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_MAX_FRAME_LATENCY,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_MAX_SWAPCHAIN_IMAGES,
@@ -16646,6 +17021,23 @@ static const uint32_t msg_hash_vn_ids[] =
 #ifdef _3DS
    (uint32_t)MENU_ENUM_SUBLABEL_NEW3DS_SPEEDUP_ENABLE,
 #endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_BROWSE,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_EXPORT,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_MOUNT_PORT,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_NUM_CONTEXTS,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_PORT,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SETTINGS,
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SUBDIR,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_TIMEOUT,
+#endif
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_AUTOCONFIG,
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_AUTOCONFIG_FAILS,
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_CHEATS_APPLIED,
@@ -16918,8 +17310,10 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_POWER_MANAGEMENT,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_RECORDING,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_SAVING,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_SMB_CLIENT,
+#endif
 #endif
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_STEAM,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_USER,
@@ -16935,17 +17329,39 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_SHOW_WIMP,
    (uint32_t)MENU_ENUM_SUBLABEL_SIDELOAD_CORE_LIST,
    (uint32_t)MENU_ENUM_SUBLABEL_SLOWMOTION_RATIO,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_AUTH_MODE,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_BROWSE,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_NUM_CONTEXTS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_PASSWORD,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SETTINGS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SHARE,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SUBDIR,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_TIMEOUT,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_USERNAME,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_WORKGROUP,
 #endif
@@ -17000,6 +17416,7 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_TIMEZONE,
 #endif
    (uint32_t)MENU_ENUM_SUBLABEL_TIME_SHOW,
+   (uint32_t)MENU_ENUM_SUBLABEL_TLS_VERIFY_MODE,
    (uint32_t)MENU_ENUM_SUBLABEL_UI_COMPANION_DRIVER,
    (uint32_t)MENU_ENUM_SUBLABEL_UI_MENUBAR_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_UNDO_LOAD_STATE,
@@ -17053,6 +17470,7 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_DIR,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_REMOVE,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_THREADS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_PATH,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_SIZE,
@@ -17078,8 +17496,10 @@ static const uint32_t msg_hash_vn_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_MAX_NITS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_PAPER_WHITE_NITS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SCANLINES,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SEND_LUMINANCE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SETTINGS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SUBPIXEL_LAYOUT,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_USE_DISPLAY_PEAK,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_LAYOUT_DIRECTORY,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_MAX_FRAME_LATENCY,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_MAX_SWAPCHAIN_IMAGES,

@@ -186,6 +186,12 @@ struct runloop
    retro_time_t core_runtime_last;
    retro_time_t core_runtime_usec;
    retro_time_t core_run_time;
+   /* GPU device-loss recovery: when the driver may next be rebuilt,
+    * and how many losses have come in quick succession. A loss long
+    * after the previous one starts the count over. */
+   retro_time_t gpu_lost_retry_at;
+   retro_time_t gpu_lost_last;
+   unsigned     gpu_lost_count;
    retro_time_t frame_limit_minimum_time;
    /* The same period and anchor in nanoseconds, for the gap limiter's
     * schedule: a period rounded to whole microseconds is 21 ppm off
@@ -205,6 +211,12 @@ struct runloop
    retro_time_t pace_iter_last;
    retro_time_t pace_period_usec;
    unsigned     pace;                           /* enum runloop_pace_source bits */
+   /* Optional products with a per-frame hook in runloop_iterate().
+    * Each bit is raised when its product comes up and dropped when it
+    * goes down, so a build that has the product compiled in but not
+    * in use pays one bit test on this hot word - not a call into the
+    * product's own translation unit to find out it is idle. */
+   unsigned     frame_work;                     /* RUNLOOP_WORK_* bits */
    retro_usec_t frame_time_last;                /* int64_t alignment */
 
    /* Per-frame scalar state. Kept adjacent to the timing block above so the
@@ -229,6 +241,12 @@ struct runloop
    struct retro_core_t        current_core;     /* uint64_t alignment */
 #if defined(HAVE_RUNAHEAD)
    uint64_t runahead_last_frame_count;          /* uint64_t alignment */
+   /* Measured cost of one core step inside runahead_run() (a core
+    * run plus its share of the save/load), IIR-averaged in usec; 0
+    * until the first sample. runahead_count_used is the frame count
+    * actually run last frame after the budget gate clamped it. */
+   retro_time_t runahead_unit_usec;
+   int runahead_count_used;
 #if defined(HAVE_DYNAMIC) || defined(HAVE_DYLIB)
    struct retro_core_t secondary_core;          /* uint64_t alignment */
 #endif
@@ -353,22 +371,22 @@ struct runloop
    bool perfcnt_enable;
    bool paused_hotkey;
 
-   /* True from the moment closing content starts tearing the core
-    * down until the teardown is finished.
+   /* content_closing: true while the core is being torn down, from
+    * the first step of closing until the last.
     *
-    * Set and cleared around the existing synchronous teardown, so at
-    * present nothing can observe it as true: the main thread is
-    * inside that teardown for its whole duration and no frame runs.
-    * It is introduced separately, and deliberately inert, because
-    * the work that makes it observable - returning to the frame loop
-    * instead of blocking - is a lifecycle change, and this is the
-    * piece everything else will key off.
+    * content_switching: true while content is being replaced in
+    * stages from the frame loop (tasks/task_content.c): the old core
+    * is closed with the drivers left up, the new one is brought up
+    * behind them, and one driver reinit follows.  Core deinit keeps
+    * the drivers and a reinit the core asks for defers to that stage
+    * while this is set, and the frame loop presents instead of
+    * running a core.
     *
-    * A plain bool rather than a RUNLOOP_FLAG bit: bits 0-30 of that
+    * Plain bools rather than RUNLOOP_FLAG bits: bits 0-30 of that
     * word are taken and bit 31 was deliberately vacated to avoid a
-    * cross-thread race, so reusing it would undo that reasoning for
-    * no gain. This is main-thread only. */
+    * cross-thread race.  Both are main-thread only. */
    bool content_closing;
+   bool content_switching;
 };
 
 /* Frame pacing sources.
@@ -727,6 +745,24 @@ static INLINE unsigned runloop_pace_decide(runloop_pace_facts_t f)
 
 typedef struct runloop runloop_state_t;
 
+/* runloop_state_t::frame_work bits */
+enum runloop_frame_work
+{
+   RUNLOOP_WORK_DISCORD  = (1 << 0),  /* Discord RPC is up: pump it */
+   RUNLOOP_WORK_PRESENCE = (1 << 1),  /* a rich-presence sink is up */
+   RUNLOOP_WORK_CHEATS   = (1 << 2),  /* a cheat list is loaded */
+   RUNLOOP_WORK_CAMERA   = (1 << 3),  /* the core started the camera */
+   RUNLOOP_WORK_CHEEVOS  = (1 << 4)   /* achievements attached to content */
+};
+
+/* Raise or drop one frame_work bit from the product that owns it.
+ * MAIN THREAD ONLY: frame_work is a plain word read by the iterate
+ * with no acquire; every caller runs on the thread that runs
+ * runloop_iterate() (init/deinit, a command, a setting handler, a
+ * task's *main-thread* callback). A worker thread must not call
+ * this - post a command or a main-thread callback instead. */
+void runloop_frame_work_set(unsigned bit, bool on);
+
 /* Runs deferred off-main message pushes; the main thread, once per
  * iterate. */
 void runloop_msg_queue_drain_deferred(void);
@@ -904,10 +940,17 @@ runloop_state_t *runloop_state_get_ptr(void);
  * runloop_is_content_closing:
  *
  * True while content is being closed, i.e. while the core is being
- * torn down.  Currently only ever true inside the synchronous
- * teardown, where nothing else runs to ask.
+ * torn down.
  */
 bool runloop_is_content_closing(void);
+
+/**
+ * runloop_is_content_switching:
+ *
+ * True while a staged content load is in flight, from the close of
+ * the old core to the driver reinit that follows the new one.
+ */
+bool runloop_is_content_switching(void);
 
 RETRO_END_DECLS
 

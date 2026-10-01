@@ -199,6 +199,12 @@ struct vk_texture
    uint32_t memory_type;
    unsigned dims;                /* VIDEO_SCALE_PACK */
 
+   /* The link and countdown for a texture parked for destruction
+    * (vulkan_deferred_textures_push). In the texture itself so that
+    * parking one allocates nothing and cannot fail. */
+   struct vk_texture *park_next;
+   unsigned park_frames;
+
    VkImageLayout layout;         /* enum alignment */
    VkFormat format;              /* enum alignment */
    enum vk_texture_type type;
@@ -487,8 +493,11 @@ typedef struct vk
    /* Textures released through vulkan_unload_texture, kept alive
     * until enough frames have been submitted that neither the GPU
     * nor a concurrently recorded or observed reference can still
-    * touch them. See vulkan_deferred_textures_tick(). */
-   struct vk_deferred_texture *deferred_textures;
+    * touch them. See vulkan_deferred_textures_tick(). Any thread
+    * parks one by pushing it on deferred_textures_in; the list proper
+    * belongs to the thread that records frames. */
+   retro_atomic_ptr_t deferred_textures_in;
+   struct vk_texture *deferred_textures;
 
    /* One-shot staging command buffers submitted without a CPU wait
     * (texture and glyph atlas uploads), each released once its own
@@ -496,6 +505,11 @@ typedef struct vk
     * vulkan_deferred_cmds_tick(). */
    struct vk_deferred_cmd *deferred_cmds;
    struct vk_deferred_fence *deferred_fences;
+   /* The fence an upload is waited on when it has to be finished
+    * before returning (no node or no fence of its own to defer it
+    * with). One is enough: the wait is synchronous, on the thread that
+    * records frames. */
+   VkFence sync_fence;
    /* Textures updated in place (vulkan_update_texture): the staging
     * pair and fences each one streams through. Frame-recording thread
     * only, like the two lists above. */
@@ -1157,56 +1171,84 @@ static void vulkan_destroy_texture(
  * the unload returns). Keeping the texture alive for a full
  * swapchain cycle of subsequent submissions closes both windows.
  *
- * List discipline: mutations are serialised with queue_lock. The
- * enqueue normally runs on the thread that records frames (the
- * threaded wrapper marshals unloads there), but driver-reinit
- * fallbacks can enqueue from the main thread while a frame ticks the
- * list, so the lock is not optional. */
-struct vk_deferred_texture
-{
-   struct vk_deferred_texture *next;
-   struct vk_texture *texture;
-   unsigned frames_left;
-};
-
+ * List discipline: no lock. The enqueue normally runs on the thread
+ * that records frames (the threaded wrapper marshals unloads there),
+ * but driver-reinit fallbacks can enqueue from the main thread while a
+ * frame ticks the list. So parking a texture is a push onto
+ * deferred_textures_in, one atomic pointer, and the list the frames
+ * count down is private to the thread that records them: each tick
+ * takes everything pushed since the last with an exchange and then
+ * walks a list nobody else can reach. Nothing pops a single node off
+ * the shared pointer, so the push needs no more than a compare-and-swap
+ * loop. This used to borrow queue_lock, which made every parked
+ * texture wait behind whatever held the queue - a present, or a
+ * hardware core's submit.
+ *
+ * The link is in the texture (park_next, park_frames). It used to be
+ * a node allocated per unload, and when that allocation failed the
+ * texture was destroyed on the spot after waiting for the frames
+ * already submitted - which does nothing for a frame handed over but
+ * not yet recorded, or for the menu code still looking at the handle.
+ * Parking cannot fail now, so there is no such path. */
 static void vulkan_texture_retire(vk_t *vk, struct vk_texture *texture);
 
+/* Any thread. The list owns the texture from here. */
+static void vulkan_deferred_textures_push(vk_t *vk,
+      struct vk_texture *texture)
+{
+   void *head;
+   texture->park_frames = vk->context->num_swapchain_images + 1;
+   do
+   {
+      head               = retro_atomic_load_acquire_ptr(&vk->deferred_textures_in);
+      texture->park_next = (struct vk_texture*)head;
+   } while (!retro_atomic_cas_ptr(&vk->deferred_textures_in, head, texture));
+}
+
+/* The thread that records frames. Moves what was pushed since the
+ * last call onto the private list. */
+static void vulkan_deferred_textures_collect(vk_t *vk)
+{
+   struct vk_texture *texture = (struct vk_texture*)
+      retro_atomic_exchange_ptr(&vk->deferred_textures_in, NULL);
+   while (texture)
+   {
+      struct vk_texture *next = texture->park_next;
+      texture->park_next      = vk->deferred_textures;
+      vk->deferred_textures   = texture;
+      texture                 = next;
+   }
+}
+
 /* Retire textures whose deferral window has elapsed. Called once per
- * submitted frame. Nodes are detached under the lock and destroyed
- * outside it. */
+ * submitted frame. */
 static void vulkan_deferred_textures_tick(vk_t *vk)
 {
-   struct vk_deferred_texture **cur;
-   struct vk_deferred_texture *expired = NULL;
+   struct vk_texture **cur;
+   struct vk_texture *expired = NULL;
 
-#ifdef HAVE_THREADS
-   slock_lock(vk->context->queue_lock);
-#endif
+   vulkan_deferred_textures_collect(vk);
    cur = &vk->deferred_textures;
    while (*cur)
    {
-      struct vk_deferred_texture *node = *cur;
-      if (node->frames_left > 1)
+      struct vk_texture *texture = *cur;
+      if (texture->park_frames > 1)
       {
-         node->frames_left--;
-         cur           = &node->next;
+         texture->park_frames--;
+         cur                = &texture->park_next;
       }
       else
       {
-         *cur          = node->next;
-         node->next    = expired;
-         expired       = node;
+         *cur               = texture->park_next;
+         texture->park_next = expired;
+         expired            = texture;
       }
    }
-#ifdef HAVE_THREADS
-   slock_unlock(vk->context->queue_lock);
-#endif
 
    while (expired)
    {
-      struct vk_deferred_texture *next = expired->next;
-      vulkan_texture_retire(vk, expired->texture);
-      free(expired);
+      struct vk_texture *next = expired->park_next;
+      vulkan_texture_retire(vk, expired);
       expired = next;
    }
 }
@@ -1215,23 +1257,17 @@ static void vulkan_deferred_textures_tick(vk_t *vk)
  * the graphics queue is idle and no other thread is recording. */
 static void vulkan_deferred_textures_flush(vk_t *vk)
 {
-   struct vk_deferred_texture *node;
+   struct vk_texture *texture;
 
-#ifdef HAVE_THREADS
-   slock_lock(vk->context->queue_lock);
-#endif
-   node                  = vk->deferred_textures;
+   vulkan_deferred_textures_collect(vk);
+   texture               = vk->deferred_textures;
    vk->deferred_textures = NULL;
-#ifdef HAVE_THREADS
-   slock_unlock(vk->context->queue_lock);
-#endif
 
-   while (node)
+   while (texture)
    {
-      struct vk_deferred_texture *next = node->next;
-      vulkan_texture_retire(vk, node->texture);
-      free(node);
-      node = next;
+      struct vk_texture *next = texture->park_next;
+      vulkan_texture_retire(vk, texture);
+      texture = next;
    }
 }
 
@@ -1339,8 +1375,11 @@ static void vulkan_deferred_cmd_release(vk_t *vk,
  * buffer and of the optional staging texture / raw staging buffer
  * passes to the deferred list, which releases them once the upload's
  * fence has signalled. If a node or fence cannot be obtained the
- * submission is drained synchronously and everything is released
- * before returning. */
+ * upload is waited for here and everything is released before
+ * returning - on the upload's own fence, with nothing held. That wait
+ * used to be vkQueueWaitIdle under queue_lock: it drained whatever a
+ * hardware core had on the queue as well, and kept the core out of
+ * lock_queue for as long as that took. */
 static void vulkan_submit_deferred_cmd_fenced(vk_t *vk,
       VkCommandBuffer cmd,
       struct vk_texture *staging_tex,
@@ -1371,12 +1410,18 @@ static void vulkan_submit_deferred_cmd_fenced(vk_t *vk,
    submit_info.signalSemaphoreCount = 0;
    submit_info.pSignalSemaphores    = NULL;
 
+   /* Nothing to defer it with: the upload is waited on below, on the
+    * caller's fence if it gave one, else on the driver's. */
+   if (!node && fence == VK_NULL_HANDLE && vk->sync_fence != VK_NULL_HANDLE)
+   {
+      fence = vk->sync_fence;
+      vkResetFences(vk->context->device, 1, &fence);
+   }
+
 #ifdef HAVE_THREADS
    slock_lock(vk->context->queue_lock);
 #endif
    vkQueueSubmit(vk->context->queue, 1, &submit_info, fence);
-   if (!node)
-      vkQueueWaitIdle(vk->context->queue);
 #ifdef HAVE_THREADS
    slock_unlock(vk->context->queue_lock);
 #endif
@@ -1384,6 +1429,12 @@ static void vulkan_submit_deferred_cmd_fenced(vk_t *vk,
    if (!node)
    {
       VkDevice device = vk->context->device;
+      /* Not even the driver's fence (it could not be created): there
+       * is nothing to wait on, and freeing these under the GPU is
+       * worse than leaving them to the device teardown. */
+      if (fence == VK_NULL_HANDLE)
+         return;
+      vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
       vkFreeCommandBuffers(device, vk->staging_pool, 1, &cmd);
       if (staging_tex)
          vulkan_destroy_texture(device, staging_tex);
@@ -1541,36 +1592,20 @@ static void vulkan_deferred_fences_free(vk_t *vk)
 /* Park a heap-allocated texture on the deferred list, to be destroyed
  * once a full swapchain cycle of submissions has passed. The list
  * owns the pointer from here. Used by the sites that used to drain
- * the queue and destroy in place; parking costs nothing and the
- * frames in flight keep what they were recorded with. Without a node
- * the texture is destroyed after this driver's submissions retire. */
+ * the queue and destroy in place; parking costs nothing, cannot fail,
+ * and the frames in flight keep what they were recorded with. With no
+ * device there is nothing of the texture's left to destroy. */
 static void vulkan_wait_own_submissions(vk_t *vk);
 
 static void vulkan_texture_defer(vk_t *vk, struct vk_texture *texture)
 {
-   struct vk_deferred_texture *node;
    if (!texture)
       return;
-   if (vk->context && vk->context->device
-         && (node = (struct vk_deferred_texture*)malloc(sizeof(*node))))
+   if (vk->context && vk->context->device)
    {
-      node->texture     = texture;
-      node->frames_left = vk->context->num_swapchain_images + 1;
-#ifdef HAVE_THREADS
-      if (vk->context->queue_lock)
-         slock_lock(vk->context->queue_lock);
-#endif
-      node->next            = vk->deferred_textures;
-      vk->deferred_textures = node;
-#ifdef HAVE_THREADS
-      if (vk->context->queue_lock)
-         slock_unlock(vk->context->queue_lock);
-#endif
+      vulkan_deferred_textures_push(vk, texture);
       return;
    }
-   vulkan_wait_own_submissions(vk);
-   if (vk->context && vk->context->device)
-      vulkan_destroy_texture(vk->context->device, texture);
    free(texture);
 }
 
@@ -2246,14 +2281,20 @@ static struct vk_texture vulkan_create_texture(vk_t *vk,
 /* Dynamic texture type should be set to : VULKAN_TEXTURE_DYNAMIC
  * Staging texture type should be set to : VULKAN_TEXTURE_STAGING
  */
+/* Fill @dynamic from the staging buffer, starting @src_x, @src_y texels
+ * into it: (0, 0) for a frame that fills the buffer, the window's
+ * origin for a frame pushed as a window into a lent buffer. The
+ * staging buffer's row pitch is @staging->stride either way. */
 static void vulkan_copy_staging_to_dynamic(vk_t *vk, VkCommandBuffer cmd,
-      struct vk_texture *dynamic, struct vk_texture *staging)
+      struct vk_texture *dynamic, struct vk_texture *staging,
+      unsigned src_x, unsigned src_y)
 {
    bool compute_upload = dynamic->format != staging->format;
+   unsigned bpp        = vulkan_format_to_bpp(staging->format);
 
    if (compute_upload)
    {
-      uint32_t ubo[3];
+      uint32_t ubo[4];
       VkWriteDescriptorSet write;
       VkDescriptorBufferInfo buffer_info;
       VkDescriptorImageInfo image_info;
@@ -2263,6 +2304,10 @@ static void vulkan_copy_staging_to_dynamic(vk_t *vk, VkCommandBuffer cmd,
       ubo[0] = VIDEO_SCALE_W(dynamic->dims);
       ubo[1] = VIDEO_SCALE_H(dynamic->dims);
       ubo[2] = (uint32_t)(staging->stride / 4); /* in terms of u32 words */
+      /* The shader converts pixel pairs, one word each, so the window
+       * has to start on a pair: vulkan_frame_window() only reports a
+       * window whose byte origin is word-aligned. */
+      ubo[3] = (uint32_t)((src_y * staging->stride + (size_t)src_x * bpp) / 4);
 
       VULKAN_IMAGE_LAYOUT_TRANSITION(
             cmd,
@@ -2352,8 +2397,12 @@ static void vulkan_copy_staging_to_dynamic(vk_t *vk, VkCommandBuffer cmd,
             VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT);
-      region.bufferOffset                    = 0;
-      region.bufferRowLength                 = 0;
+      region.bufferOffset                    =
+         src_y * staging->stride + (size_t)src_x * bpp;
+      /* The buffer's row pitch in texels. 0 means tightly packed at
+       * the image width, which a window into a wider buffer is not. */
+      region.bufferRowLength                 =
+         (uint32_t)(staging->stride / bpp);
       region.bufferImageHeight               = 0;
       region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
       region.imageSubresource.mipLevel       = 0;
@@ -2383,6 +2432,103 @@ static void vulkan_copy_staging_to_dynamic(vk_t *vk, VkCommandBuffer cmd,
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
    }
    dynamic->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+/* Fill @dynamic from a window into the streamed (linear, host-mapped)
+ * image @linear, starting @src_x, @src_y texels in. Both are images of
+ * the same format, so this is a plain transfer; the host's writes to
+ * the loan were made before this submission, and queue submission
+ * makes them visible to it. */
+static void vulkan_copy_linear_to_dynamic(vk_t *vk, VkCommandBuffer cmd,
+      struct vk_texture *dynamic, struct vk_texture *linear,
+      unsigned src_x, unsigned src_y)
+{
+   VkImageCopy region;
+
+   /* A streamed image is sampled in GENERAL, and is read as a
+    * transfer source in GENERAL as well. */
+   vulkan_transition_texture(vk, cmd, linear);
+
+   VULKAN_IMAGE_LAYOUT_TRANSITION(
+         cmd,
+         dynamic->image,
+         VK_IMAGE_LAYOUT_UNDEFINED,
+         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         0,
+         VK_ACCESS_TRANSFER_WRITE_BIT,
+         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+         VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+   region.srcSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+   region.srcSubresource.mipLevel       = 0;
+   region.srcSubresource.baseArrayLayer = 0;
+   region.srcSubresource.layerCount     = 1;
+   region.srcOffset.x                   = (int32_t)src_x;
+   region.srcOffset.y                   = (int32_t)src_y;
+   region.srcOffset.z                   = 0;
+   region.dstSubresource                = region.srcSubresource;
+   region.dstOffset.x                   = 0;
+   region.dstOffset.y                   = 0;
+   region.dstOffset.z                   = 0;
+   region.extent.width                  = VIDEO_SCALE_W(dynamic->dims);
+   region.extent.height                 = VIDEO_SCALE_H(dynamic->dims);
+   region.extent.depth                  = 1;
+   vkCmdCopyImage(cmd,
+         linear->image,  VK_IMAGE_LAYOUT_GENERAL,
+         dynamic->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         1, &region);
+
+   VULKAN_IMAGE_LAYOUT_TRANSITION(
+         cmd,
+         dynamic->image,
+         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+         VK_ACCESS_TRANSFER_WRITE_BIT,
+         VK_ACCESS_SHADER_READ_BIT,
+         VK_PIPELINE_STAGE_TRANSFER_BIT,
+         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+   dynamic->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+/* Where a pushed frame lies in a lent texture.
+ *
+ * A core that renders into the buffer GET_CURRENT_SOFTWARE_FRAMEBUFFER
+ * lent it may push back a pointer partway into that buffer, at the
+ * buffer's pitch, with the size of the window it wants shown: that is
+ * how an overscan crop is done by offset (beetle-psx renders its
+ * whole 700x480 scanout surface into the loan and pushes the visible
+ * part). The threaded wrapper accepts that as a lend since
+ * 9ed0db58c3; this is the same test for the driver's own loan.
+ *
+ * True, with the window's texel origin, when @frame at @pitch with
+ * the size @dims is such a window into @tex: inside its mapping, on
+ * the mapping's pitch, whole, and starting on a word so the RGB565
+ * compute upload can address it. Anything else is a frame of the
+ * core's own, or of another texture, and is uploaded by copying. */
+static bool vulkan_frame_window(const struct vk_texture *tex,
+      const void *frame, unsigned dims, size_t pitch,
+      unsigned *x, unsigned *y)
+{
+   uintptr_t base   = (uintptr_t)tex->mapped;
+   uintptr_t p      = (uintptr_t)frame;
+   size_t off, row;
+   unsigned bpp;
+
+   if (!tex->mapped || !tex->stride || p < base || p - base >= tex->size)
+      return false;
+   if (pitch != tex->stride)
+      return false;
+   bpp = vulkan_format_to_bpp(tex->format);
+   off = (size_t)(p - base);
+   row = off % tex->stride;
+   if ((row % bpp) || (off & 3))
+      return false;
+   *y  = (unsigned)(off / tex->stride);
+   *x  = (unsigned)(row / bpp);
+   if (     *x + VIDEO_SCALE_W(dims) > VIDEO_SCALE_W(tex->dims)
+         || *y + VIDEO_SCALE_H(dims) > VIDEO_SCALE_H(tex->dims))
+      return false;
+   return true;
 }
 
 /**
@@ -3090,12 +3236,11 @@ error:
 static int vulkan_font_get_message_width(void *data, const char *msg,
       size_t msg_len, float scale)
 {
-   const struct font_glyph* glyph_q = NULL;
-   vulkan_raster_t *font = (vulkan_raster_t*)data;
-   const char* msg_end   = msg + msg_len;
-   int delta_x           = 0;
    const struct font_glyph* (*get_glyph)(void*, uint32_t);
+   const struct font_glyph* glyph_q;
    void *font_data;
+   vulkan_raster_t *font = (vulkan_raster_t*)data;
+   int width             = 0;
 
    /* Guard the font / font_driver / font_data derefs below; the
     * earlier code read font->font_driver->get_glyph and font->font_data
@@ -3108,37 +3253,25 @@ static int vulkan_font_get_message_width(void *data, const char *msg,
    get_glyph = font->font_driver->get_glyph;
    font_data = font->font_data;
    glyph_q   = get_glyph(font_data, '?');
-   /* The fallback glyph can itself have just been rasterized (it is
-    * evicted like any other slot under atlas pressure); without this
-    * pairing its cell would be stranded once an unrelated glyph's
-    * update clears the dirty flag. */
-   if (glyph_q && font->atlas->dirty)
-   {
-      vulkan_font_update_glyph(font, glyph_q);
-      font->atlas->dirty = false;
-      font->needs_update = true;
-   }
-
-   while (msg < msg_end)
-   {
-      const struct font_glyph *glyph;
-      uint32_t code                  = utf8_walk(&msg);
-
-      /* Do something smarter here ... */
-      if (!(glyph = get_glyph(font_data, code)))
-         if (!(glyph = glyph_q))
-            continue;
-
-      if (font->atlas->dirty)
-      {
-         vulkan_font_update_glyph(font, glyph);
-         font->atlas->dirty = false;
-         font->needs_update = true;
-      }
-      delta_x += glyph->advance_x;
-   }
-
-   return delta_x * scale;
+   /* Every lookup, the fallback glyph's included (it is evicted like
+    * any other slot under atlas pressure), is paired with an upload of
+    * its cell, so no cell is stranded once an unrelated glyph's update
+    * clears the dirty flag. */
+#define FONT_MEASURE_DIRTY(glyph) \
+   do \
+   { \
+      if (font->atlas->dirty) \
+      { \
+         vulkan_font_update_glyph(font, (glyph)); \
+         font->atlas->dirty = false; \
+         font->needs_update = true; \
+      } \
+   } while (0)
+   if (glyph_q)
+      FONT_MEASURE_DIRTY(glyph_q);
+#define FONT_MEASURE_SUM width
+#include "../font_measure.h"
+   return (int)(width * scale);
 }
 
 /* Uploads the atlas rectangle dirtied since the last upload, on a
@@ -3486,8 +3619,7 @@ static void vulkan_font_render_msg(
    {
       uint64_t vk_color, vk_color_dark = 0;
       float fg_base_x, sh_base_x, sh_y_origin;
-      int line_num;
-      const char *m;
+      float fg_x = 0.0f, fg_y = 0.0f, sh_x = 0.0f, sh_y = 0.0f;
 
       vk_color         = rgba16_pack(color);
 
@@ -3509,144 +3641,72 @@ static void vulkan_font_render_msg(
          sh_y_origin     = y + scale * drop_y * inv_win_height;
       }
 
-      /* Single pass over the string: for each line, emit interleaved
-       * shadow + foreground quads from one glyph lookup.  This halves
-       * cache/TLB pressure on the glyph table compared to two separate
-       * passes, and shares tex-coord and glyph-size computations. */
-      m        = msg;
-      line_num = 0;
-
-      for (;;)
-      {
-         const char *delim       = m;
-         const char *line_start;
-         size_t line_len;
-         float align_ndc, fg_y, fg_x, sh_y, sh_x;
-         int delta_x, delta_y;
-
-         while (*delim != '\n' && *delim != '\0')
-            delim++;
-         line_start = m;
-         line_len   = (size_t)(delim - m);
-
-         /* Alignment: skip the width pre-scan for TEXT_ALIGN_LEFT,
-          * which is the overwhelmingly common case (OSD, notifications). */
-         align_ndc = 0.0f;
-         if (needs_align)
-         {
-            int width_accum  = 0;
-            const char *scan = line_start;
-            const char *scan_end = scan + line_len;
-            while (scan < scan_end)
-            {
-               const struct font_glyph *glyph;
-               uint32_t code = utf8_walk(&scan);
-               if (!(glyph = get_glyph(font_data, code)))
-                  if (!(glyph = glyph_q))
-                     continue;
-
-               if (font->atlas->dirty)
-               {
-                  vulkan_font_update_glyph(font, glyph);
-                  font->atlas->dirty = false;
-                  font->needs_update = true;
-               }
-
-               width_accum += glyph->advance_x;
-            }
-            {
-               float total = width_accum * scale_iww;
-               align_ndc   = (text_align == TEXT_ALIGN_RIGHT)
-                  ? total : total * 0.5f;
-            }
-         }
-
-         /* Per-line Y in NDC (pixel-snapped), X adjusted for alignment. */
-         {
-            float fg_pos_y = y - (float)line_num * line_height;
-            fg_y = roundf((1.0f - fg_pos_y) * VIDEO_SCALE_H(vk->vp.dims))
-               * inv_win_height;
-            fg_x = fg_base_x - align_ndc;
-         }
-
-         sh_y = 0.0f;
-         sh_x = 0.0f;
-         if (has_drop)
-         {
-            float sh_pos_y = sh_y_origin - (float)line_num * line_height;
-            sh_y = roundf((1.0f - sh_pos_y) * VIDEO_SCALE_H(vk->vp.dims))
-               * inv_win_height;
-            sh_x = sh_base_x - align_ndc;
-         }
-
-         /* Emit glyphs: 1 lookup → shadow quad + foreground quad.
-          * Tex coords and glyph dimensions are computed once and
-          * shared between both quads. */
-         delta_x = 0;
-         delta_y = 0;
-         {
-            const char *gm  = line_start;
-            const char *gme = gm + line_len;
-
-            while (gm < gme)
-            {
-               const struct font_glyph *glyph;
-               uint32_t code = utf8_walk(&gm);
-
-               if (!(glyph = get_glyph(font_data, code)))
-                  if (!(glyph = glyph_q))
-                     continue;
-
-               if (font->atlas->dirty)
-               {
-                  vulkan_font_update_glyph(font, glyph);
-                  font->atlas->dirty = false;
-                  font->needs_update = true;
-               }
-
-               {
-                  /* Texture coordinates — shared between shadow and fg. */
-                  float ftx = glyph->atlas_offset_x * inv_tex_size_x;
-                  float fty = glyph->atlas_offset_y * inv_tex_size_y;
-                  float ftw = glyph->width  * inv_tex_size_x;
-                  float fth = glyph->height * inv_tex_size_y;
-
-                  /* Pre-scaled glyph size and per-glyph offset. */
-                  float fw  = glyph->width  * scale_iww;
-                  float fh  = glyph->height * scale_iwh;
-                  float gox = (glyph->draw_offset_x + delta_x) * scale_iww;
-                  float goy = (glyph->draw_offset_y + delta_y) * scale_iwh;
-
-                  if (has_drop)
-                  {
-                     struct vk_vertex *pv = font->pv + font->vertices;
-                     VULKAN_WRITE_QUAD_VBO(pv,
-                           sh_x + gox, sh_y + goy,
-                           fw, fh, ftx, fty, ftw, fth,
-                           vk_color_dark);
-                     font->vertices += 4;
-                  }
-
-                  {
-                     struct vk_vertex *pv = font->pv + font->vertices;
-                     VULKAN_WRITE_QUAD_VBO(pv,
-                           fg_x + gox, fg_y + goy,
-                           fw, fh, ftx, fty, ftw, fth,
-                           vk_color);
-                     font->vertices += 4;
-                  }
-               }
-
-               delta_x += glyph->advance_x;
-               delta_y += glyph->advance_y;
-            }
-         }
-
-         if (*delim == '\0')
-            break;
-         m = delim + 1;
-         line_num++;
-      }
+      /* One pass over the string: each glyph is looked up once and
+       * emits its shadow quad and its foreground quad, sharing the
+       * texture coordinates and the glyph size between them. */
+#define FONT_LAYOUT_ALIGNED needs_align
+#define FONT_LAYOUT_DIRTY(glyph) \
+      do \
+      { \
+         if (font->atlas->dirty) \
+         { \
+            vulkan_font_update_glyph(font, (glyph)); \
+            font->atlas->dirty = false; \
+            font->needs_update = true; \
+         } \
+      } while (0)
+#define FONT_LAYOUT_LINE(line, width, count, bytes) \
+      do \
+      { \
+         (void)(count); \
+         /* Per-line Y in NDC (pixel-snapped), X adjusted for \
+          * alignment */ \
+         float align_ndc = 0.0f; \
+         if (needs_align) \
+         { \
+            float total = (width) * scale_iww; \
+            align_ndc   = (text_align == TEXT_ALIGN_RIGHT) \
+               ? total : total * 0.5f; \
+         } \
+         fg_y = roundf((1.0f - (y - (float)(line) * line_height)) \
+               * VIDEO_SCALE_H(vk->vp.dims)) * inv_win_height; \
+         fg_x = fg_base_x - align_ndc; \
+         if (has_drop) \
+         { \
+            sh_y = roundf((1.0f - (sh_y_origin \
+                        - (float)(line) * line_height)) \
+                  * VIDEO_SCALE_H(vk->vp.dims)) * inv_win_height; \
+            sh_x = sh_base_x - align_ndc; \
+         } \
+      } while (0)
+#define FONT_LAYOUT_GLYPH(glyph, pen_x, pen_y) \
+      do \
+      { \
+         /* Texture coordinates - shared between shadow and fg */ \
+         float ftx = (glyph)->atlas_offset_x * inv_tex_size_x; \
+         float fty = (glyph)->atlas_offset_y * inv_tex_size_y; \
+         float ftw = (glyph)->width  * inv_tex_size_x; \
+         float fth = (glyph)->height * inv_tex_size_y; \
+         /* Pre-scaled glyph size and per-glyph offset */ \
+         float fw  = (glyph)->width  * scale_iww; \
+         float fh  = (glyph)->height * scale_iwh; \
+         float gox = ((glyph)->draw_offset_x + (pen_x)) * scale_iww; \
+         float goy = ((glyph)->draw_offset_y + (pen_y)) * scale_iwh; \
+         if (has_drop) \
+         { \
+            struct vk_vertex *pv = font->pv + font->vertices; \
+            VULKAN_WRITE_QUAD_VBO(pv, sh_x + gox, sh_y + goy, \
+                  fw, fh, ftx, fty, ftw, fth, vk_color_dark); \
+            font->vertices += 4; \
+         } \
+         { \
+            struct vk_vertex *pv = font->pv + font->vertices; \
+            VULKAN_WRITE_QUAD_VBO(pv, fg_x + gox, fg_y + goy, \
+                  fw, fh, ftx, fty, ftw, fth, vk_color); \
+            font->vertices += 4; \
+         } \
+      } while (0)
+#include "../font_layout.h"
    }
 
    /* ── Flush: atlas upload + draw ─────────────────────────────────
@@ -5622,6 +5682,15 @@ static void vulkan_init_static_resources(vk_t *vk)
    vkCreateCommandPool(vk->context->device,
          &pool_info, NULL, &vk->staging_pool);
 
+   {
+      VkFenceCreateInfo fence_info;
+      fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+      fence_info.pNext = NULL;
+      fence_info.flags = 0;
+      vkCreateFence(vk->context->device, &fence_info, NULL,
+            &vk->sync_fence);
+   }
+
    for (i = 0; i < 4 * 4; i++)
       blank[i] = -1u;
 
@@ -5647,6 +5716,9 @@ static void vulkan_deinit_static_resources(vk_t *vk)
    vulkan_deinit_ribbon_vbo(vk);
 
    vulkan_deferred_fences_free(vk);
+   if (vk->sync_fence != VK_NULL_HANDLE)
+      vkDestroyFence(vk->context->device, vk->sync_fence, NULL);
+   vk->sync_fence = VK_NULL_HANDLE;
    vkDestroyCommandPool(vk->context->device,
          vk->staging_pool, NULL);
    free(vk->hw.cmd);
@@ -7345,6 +7417,12 @@ static bool vulkan_hw_ring_install(void *data, const void *image,
    return true;
 }
 
+/* The ring's fences. The wrapper hands each one between the video
+ * thread and the core's thread so that only one of them holds it at a
+ * time, signals it only while it is idle and waits it only once it has
+ * been signalled (video_thread_hw_fence.h) - which is what a VkFence
+ * needs: it may not be submitted while signalled or pending, nor reset
+ * under the other thread. Nothing here needs a lock of its own. */
 static bool vulkan_hw_ring_fence_new(void *data, void **fence)
 {
    VkFenceCreateInfo info;
@@ -7384,8 +7462,8 @@ static void vulkan_hw_ring_fence_signal(void *data, void *fence)
 #endif
 }
 
-/* Fences need no queue and no lock: waiting and resetting one is safe
- * from any thread, and the wrapper is the only user of these. */
+/* Waits the fence and resets it, ready to be signalled again. Needs no
+ * queue; the caller is the only holder of the fence. */
 static bool vulkan_hw_ring_fence_wait(void *data, void *fence, unsigned timeout_us)
 {
    VkFence f;
@@ -8141,12 +8219,36 @@ static bool vulkan_frame(void *data, const void *frame,
       unsigned y;
       unsigned frame_width  = VIDEO_SCALE_W(dims);
       unsigned frame_height = VIDEO_SCALE_H(dims);
-      uint8_t *dst        = NULL;
-      const uint8_t *src  = (const uint8_t*)frame;
-      unsigned bpp        = vk->video.rgb32 ? 4 : 2;
+      unsigned win_x        = 0;
+      unsigned win_y        = 0;
+      uint8_t *dst          = NULL;
+      const uint8_t *src    = (const uint8_t*)frame;
+      unsigned bpp          = vk->video.rgb32 ? 4 : 2;
+      bool retire_cached    = false;
+      /* A window into this texture's own loan: the pixels are already
+       * where the GPU reads them, and the texture keeps the loan's
+       * size for the next lend. The window is cut out on the GPU into
+       * texture_optimal, which is what gets sampled. Nothing is
+       * recreated per frame, and the mapping the cached frame points
+       * into stays mapped. */
+      bool window           = vulkan_frame_window(&chain->texture,
+            frame, dims, pitch, &win_x, &win_y);
 
-      if (chain->texture.dims != dims)
+      if (!window && chain->texture.dims != dims)
       {
+         /* A frame inside this texture's mapping that is not a window
+          * into it (another pitch, or it would not fit) is copied out
+          * below before the mapping goes, but the mapping goes only
+          * frames later, off the deferred list, and the cached frame
+          * still names it until then: a paused redraw would read it
+          * after its release. Retire the cached frame once the copy
+          * is done. */
+         {
+            uintptr_t base = (uintptr_t)chain->texture.mapped;
+            uintptr_t p    = (uintptr_t)frame;
+            retire_cached  = base && p >= base && p - base < chain->texture.size;
+         }
+         GFX_INSTR_INC(GFX_INSTR_FRAME_TEX_CREATE);
          chain->texture = vulkan_create_texture(vk, &chain->texture,
                frame_width, frame_height, chain->texture.format, NULL, NULL,
                chain->texture_optimal.memory
@@ -8158,30 +8260,74 @@ static bool vulkan_frame(void *data, const void *frame,
          }
 
          if (chain->texture.type == VULKAN_TEXTURE_STAGING)
+         {
+            GFX_INSTR_INC(GFX_INSTR_FRAME_TEX_CREATE);
             chain->texture_optimal = vulkan_create_texture(
                   vk,
                   &chain->texture_optimal,
                   frame_width, frame_height,
                   chain->texture.format, /* Ensure we use the original format and not any remapped format. */
                   NULL, NULL, VULKAN_TEXTURE_DYNAMIC);
+         }
       }
 
-      if (frame != chain->texture.mapped)
+      if (window)
       {
-         dst = (uint8_t*)chain->texture.mapped;
-         if (chain->texture.stride == pitch)
-            /* Stride matches pitch — single contiguous copy regardless
-             * of whether pitch == frame_width * bpp (there may be
-             * trailing padding per row, but the layout is identical). */
-            memcpy(dst, src, (size_t)chain->texture.stride * frame_height);
-         else
+         GFX_INSTR_INC(GFX_INSTR_FRAME_LENT_WINDOW);
+         if (     chain->texture_optimal.memory == VK_NULL_HANDLE
+               || chain->texture_optimal.dims   != dims)
          {
-            /* Stride and pitch differ — copy each row.
-             * Use the tight pixel width to avoid copying garbage. */
-            unsigned row_bytes = frame_width * bpp;
-            for (y = 0; y < frame_height; y++,
-                  dst += chain->texture.stride, src += pitch)
-               memcpy(dst, src, row_bytes);
+            GFX_INSTR_INC(GFX_INSTR_FRAME_TEX_CREATE);
+            chain->texture_optimal = vulkan_create_texture(
+                  vk,
+                  &chain->texture_optimal,
+                  frame_width, frame_height,
+                  chain->texture.format,
+                  NULL, NULL, VULKAN_TEXTURE_DYNAMIC);
+         }
+      }
+      else
+      {
+         if (frame != chain->texture.mapped)
+         {
+            GFX_INSTR_INC(GFX_INSTR_FRAME_COPY_HOST);
+            dst = (uint8_t*)chain->texture.mapped;
+            if (chain->texture.stride == pitch)
+               /* Stride matches pitch — single contiguous copy regardless
+                * of whether pitch == frame_width * bpp (there may be
+                * trailing padding per row, but the layout is identical). */
+               memcpy(dst, src, (size_t)chain->texture.stride * frame_height);
+            else
+            {
+               /* Stride and pitch differ — copy each row.
+                * Use the tight pixel width to avoid copying garbage. */
+               unsigned row_bytes = frame_width * bpp;
+               for (y = 0; y < frame_height; y++,
+                     dst += chain->texture.stride, src += pitch)
+                  memcpy(dst, src, row_bytes);
+            }
+         }
+
+         /* texture_optimal is sampled whenever it exists, so it has
+          * to be this frame's size. A window earlier left it at the
+          * window's: a staging texture is copied into it and gets one
+          * at the frame's size, a streamed texture is sampled itself
+          * and has no use for it. */
+         if (     chain->texture_optimal.memory != VK_NULL_HANDLE
+               && chain->texture_optimal.dims   != dims)
+         {
+            if (chain->texture.type == VULKAN_TEXTURE_STAGING)
+            {
+               GFX_INSTR_INC(GFX_INSTR_FRAME_TEX_CREATE);
+               chain->texture_optimal = vulkan_create_texture(
+                     vk,
+                     &chain->texture_optimal,
+                     frame_width, frame_height,
+                     chain->texture.format,
+                     NULL, NULL, VULKAN_TEXTURE_DYNAMIC);
+            }
+            else
+               vulkan_texture_defer_copy(vk, &chain->texture_optimal);
          }
       }
 
@@ -8200,9 +8346,17 @@ static bool vulkan_frame(void *data, const void *frame,
       if (chain->texture_optimal.memory != VK_NULL_HANDLE)
       {
          struct vk_texture *dynamic = &chain->texture_optimal;
-         struct vk_texture *staging = &chain->texture;
-         vulkan_copy_staging_to_dynamic(vk, vk->cmd, dynamic, staging);
+         struct vk_texture *source  = &chain->texture;
+         if (source->type == VULKAN_TEXTURE_STAGING)
+            vulkan_copy_staging_to_dynamic(vk, vk->cmd, dynamic, source,
+                  win_x, win_y);
+         else
+            vulkan_copy_linear_to_dynamic(vk, vk->cmd, dynamic, source,
+                  win_x, win_y);
       }
+
+      if (retire_cached)
+         video_driver_cached_frame_retire();
 
       vk->last_valid_index = frame_index;
    }
@@ -8388,7 +8542,7 @@ static bool vulkan_frame(void *data, const void *frame,
                      vkFlushMappedMemoryRanges(vk->context->device, 1, &range);
                   }
                   vulkan_copy_staging_to_dynamic(vk, vk->cmd,
-                        dynamic, staging);
+                        dynamic, staging, 0, 0);
                   vk->menu.dirty[vk->menu.last_index] = false;
                }
            }
@@ -9423,37 +9577,14 @@ typedef struct
  * queue-idle flush point (swapchain recreation, driver teardown). */
 static void vulkan_unload_texture_internal(vk_t *vk, uintptr_t handle)
 {
-   struct vk_deferred_texture *node;
    struct vk_texture *texture = (struct vk_texture*)handle;
    if (!texture || !vk || !vk->context)
       return;
 
+   /* Parked, never destroyed here: see the deferred list. With no
+    * device the texture's GPU objects went with it. */
    if (vk->context->device)
-   {
-      node = (struct vk_deferred_texture*)malloc(sizeof(*node));
-      if (node)
-      {
-         node->texture     = texture;
-         node->frames_left = vk->context->num_swapchain_images + 1;
-#ifdef HAVE_THREADS
-         if (vk->context->queue_lock)
-            slock_lock(vk->context->queue_lock);
-#endif
-         node->next            = vk->deferred_textures;
-         vk->deferred_textures = node;
-#ifdef HAVE_THREADS
-         if (vk->context->queue_lock)
-            slock_unlock(vk->context->queue_lock);
-#endif
-         return;
-      }
-   }
-
-   /* Out of memory (or no device): fall back to synchronous
-    * destruction once this driver's submissions have retired. */
-   vulkan_wait_own_submissions(vk);
-   if (vk->context->device)
-      vulkan_texture_retire(vk, texture);
+      vulkan_deferred_textures_push(vk, texture);
    else
       free(texture);
 }
@@ -9477,14 +9608,11 @@ static void vulkan_unload_texture(void *data,
       return;
 
 #ifdef HAVE_THREADS
-   /* When threaded video is active, dispatch the Release to
-    * the video thread so it is serialised with command buffer
-    * recording.  The queue_lock + vkQueueWaitIdle in the inner
-    * function only waits for submitted work -- it does not
-    * cover command buffers currently being recorded by the
-    * video thread, which may still reference this texture.
-    * Dispatching ensures the video thread completes its
-    * current recording before the texture is destroyed. */
+   /* When threaded video is active, dispatch the release to the
+    * video thread, as the load and the update are. The inner function
+    * only parks the texture, which any thread may do; this keeps the
+    * unload in order with the uploads the same caller dispatched
+    * before it. */
    if (threaded)
    {
       vulkan_texture_cmd_t cmd;

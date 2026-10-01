@@ -191,7 +191,7 @@ static const struct
    char s_ad397cb2[80];
    char s_7354d146[181];
    char s_e18c0fd3[50];
-   char s_2d9d0a50[315];
+   char s_2d9d0a50[305];
    char s_0e7699a6[296];
    char s_16721de3[254];
    char s_abab74fb[187];
@@ -608,6 +608,7 @@ static const struct
    char s_beaf53f1[20];
    char s_c3fd1e84[19];
    char s_0f2da3af[20];
+   char s_a89a965a[18];
    char s_f4875576[37];
    char s_6a07da9c[38];
    char s_df3def90[35];
@@ -1405,6 +1406,23 @@ static const struct
 #ifdef _3DS
    char s_4b1915d7[52];
 #endif
+#ifdef HAVE_NFSCLIENT
+   char s_2ab94c3e[23];
+   char s_3225c36e[11];
+   char s_eaf7de23[20];
+   char s_f11cbd53[25];
+   char s_46d3d8b1[9];
+   char s_51775f83[12];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   char s_9155967d[27];
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   char s_528fd575[17];
+   char s_d64e8d73[21];
+#endif
    char s_c3168ee5[4];
    char s_e2f5e678[9];
    char s_e53de5dd[87];
@@ -2005,8 +2023,10 @@ static const struct
    char s_b160f7a1[37];
    char s_cd5ff0f5[26];
    char s_8b92e740[22];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_e2415d78[22];
+#endif
 #endif
    char s_aeef8db2[17];
    char s_14d20957[23];
@@ -2033,21 +2053,43 @@ static const struct
    char s_01a73130[32];
    char s_44ebca0d[31];
    char s_608ac5a1[32];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_3839f91d[28];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_86b07599[25];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_8d5f85ee[22];
    char s_9b023eee[25];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_ccae82ba[17];
 #endif
    char s_35808dba[30];
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_ad6e88de[12];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_c7bc8298[27];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_e63b035a[19];
    char s_d21d875b[12];
    char s_ae86fed0[17];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_b12ae22e[21];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_b2d073c7[22];
    char s_1cbc2657[22];
 #endif
@@ -2182,6 +2224,10 @@ static const struct
    char s_db01e988[4];
    char s_e1c715da[3];
    char s_9a981aa0[9];
+   char s_b4d6cb93[32];
+   char s_ee1c318a[30];
+   char s_32b51618[33];
+   char s_a2906bd3[22];
    char s_e2f93e68[5];
    char s_47d26662[14];
    char s_0ca3b319[10];
@@ -2273,6 +2319,7 @@ static const struct
    char s_cf6bc52a[22];
    char s_05c5a263[26];
    char s_ed22c5f1[25];
+   char s_32c41d0e[37];
    char s_49f9815b[26];
    char s_ddc4f021[26];
    char s_ddc6b80f[26];
@@ -2306,10 +2353,12 @@ static const struct
    char s_88157cb0[6];
    char s_14ed14d0[12];
    char s_5c87e95b[19];
+   char s_fad361a0[32];
    char s_bb929824[23];
    char s_f5df445e[4];
    char s_f5df87be[4];
    char s_f5df885e[4];
+   char s_fe2ec9bd[45];
    char s_5741c1d0[26];
    char s_a1a7717d[28];
    char s_e6ca3876[40];
@@ -3246,6 +3295,23 @@ static const struct
 #ifdef _3DS
    char s_0d834bc5[76];
 #endif
+#ifdef HAVE_NFSCLIENT
+   char s_0dc9bb2c[49];
+   char s_1536325c[158];
+   char s_ad621411[80];
+   char s_f6ec26c1[48];
+   char s_4f7fb41f[78];
+   char s_3487ce71[38];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   char s_7a3d78eb[42];
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   char s_35a04463[49];
+   char s_1b6cda21[52];
+#endif
    char s_d2ae640b[97];
    char s_8e5bac99[102];
    char s_28a346d2[76];
@@ -3519,8 +3585,10 @@ static const struct
    char s_bce9b94f[57];
    char s_d32f5a63[46];
    char s_9177176e[42];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_a1fdf4a6[42];
+#endif
 #endif
    char s_97d77020[37];
    char s_59f05605[43];
@@ -3536,17 +3604,39 @@ static const struct
    char s_4b009af3[45];
    char s_46c57dde[72];
    char s_7eb20ecf[69];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_3e1e294b[69];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_69c0e487[54];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_706ff4dc[334];
    char s_a0d1a85c[81];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_b5966528[229];
    char s_907ef7cc[38];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_b0a46506[54];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_04624c88[163];
    char s_91976dbe[50];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_f6492edc[76];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_9bb85635[244];
    char s_22a05685[82];
 #endif
@@ -3589,7 +3679,7 @@ static const struct
    char s_ffd591e0[50];
    char s_a51ab538[32];
    char s_55d6cc44[55];
-   char s_5a8f7fb9[241];
+   char s_5a8f7fb9[259];
    char s_f2963d2d[32];
    char s_4c592ae1[114];
    char s_52ac4fb9[135];
@@ -3601,6 +3691,7 @@ static const struct
    char s_f77f7a41[89];
 #endif
    char s_e7cb5685[52];
+   char s_bd82a701[473];
    char s_8bb367a2[117];
    char s_2beab583[44];
    char s_a1c071eb[102];
@@ -3654,6 +3745,8 @@ static const struct
    char s_e4aa2e10[79];
    char s_b853a798[107];
    char s_d60aa85f[62];
+   char s_38a84d3c_0[500];
+   char s_38a84d3c_1[100];
    char s_2d09f049[34];
    char s_e670cb8f[60];
    char s_e672937d[155];
@@ -3682,8 +3775,10 @@ static const struct
    char s_cfa51e8c_1[4];
    char s_b62c2f7e[396];
    char s_456fcbc9[401];
+   char s_ba8ff8ce[363];
    char s_82fab47a[45];
    char s_72e21512[248];
+   char s_9f6de46b[377];
    char s_66f2b57e[63];
    char s_a776daeb[97];
    char s_88095324[97];
@@ -4742,11 +4837,10 @@ static const struct
    "urs \303\240 rendu logiciel. Version minimale requise : Vulkan 1.0. Supporte les shaders HDR et "
    "Slang.",
    "Pilote Wii U. Prends en charge les shaders Slang.",
-   "Applique un filtre vid\303\251o produit par le processeur graphique. Peut avoir un co\303\273t "
-   "\303\251lev\303\251 en performances. Certains filtres vid\303\251o ne peuvent fonctionner qu'ave"
-   "c les c\305\223urs utilisant les modes de couleurs 32-bits ou 16-bits. Des biblioth\303\250ques "
-   "de filtres vid\303\251o li\303\251es dynamiquement peuvent \303\252tre s\303\251lectionn\303\251"
-   "es.",
+   "Applique un filtre vid\303\251o produit par le processeur. Peut avoir un co\303\273t \303\251lev"
+   "\303\251 en performances. Certains filtres vid\303\251o ne peuvent fonctionner qu'avec les c\305"
+   "\223urs utilisant les modes de couleurs 32-bits ou 16-bits. Des biblioth\303\250ques de filtres "
+   "vid\303\251o li\303\251es dynamiquement peuvent \303\252tre s\303\251lectionn\303\251es.",
    "Applique un filtre vid\303\251o produit par le processeur. Peut avoir un co\303\273t \303\251lev"
    "\303\251 en performances. Certains filtres vid\303\251o ne peuvent fonctionner qu'avec les c\305"
    "\223urs utilisant les modes de couleurs 32-bits ou 16-bits. Des biblioth\303\250ques de filtres "
@@ -5223,6 +5317,7 @@ static const struct
    "Fr\303\251quence maximale",
    "Gouverneur du menu",
    "Fr\303\251quence minimale",
+   "fils d'ex\303\251cution",
    "Cr\303\251er une nouvelle liste de lecture",
    "R\303\251solution adapt\303\251e aux \303\251crans CRT ",
    "Utiliser le menu haute r\303\251solution",
@@ -6026,6 +6121,23 @@ static const struct
 #ifdef _3DS
    "Activer l'horloge/le cache de niveau 2 de la New3DS",
 #endif
+#ifdef HAVE_NFSCLIENT
+   "Parcourir l'export NFS",
+   "Export NFS",
+   "Port de montage NFS",
+   "Connexions NFS maximales",
+   "Port NFS",
+   "Serveur NFS",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   "Param\303\250tres de r\303\251seau NFS",
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   "Sous-dossier NFS",
+   "D\303\251lai d'attente NFS",
+#endif
    "Non",
    "Aucun(e)",
    "Notifications \303\240 la connexion de p\303\251riph\303\251riques d'entr\303\251e (configuratio"
@@ -6638,8 +6750,10 @@ static const struct
    "Afficher 'Gestion de l'alimentation'",
    "Afficher 'Enregistrement'",
    "Afficher 'Sauvegarde'",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Afficher 'Client SMB'",
+#endif
 #endif
    "Afficher 'Steam'",
    "Afficher 'Utilisateur'",
@@ -6666,21 +6780,43 @@ static const struct
    "Installer ou restaurer un c\305\223ur",
    "Installation du c\305\223ur r\303\251ussie",
    "Taux de ralentissement maximal ",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Mode d'authentification SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Parcourir le partage SMB",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Activer le client SMB",
    "Connexions SMB maximales",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Mot de passe SMB",
 #endif
    "KRB si disponible, NTLM sinon",
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Serveur SMB",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Param\303\250tres de r\303\251seau SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Nom du partage SMB",
    "Partage SMB",
    "Sous-dossier SMB",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "D\303\251lai d'attente SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Nom d'utilisateur SMB",
    "Groupe de travail SMB",
 #endif
@@ -6815,6 +6951,10 @@ static const struct
    "ans",
    "an",
    "Minutage",
+   "V\303\251rification du certificat TLS",
+   "D\303\251sactiv\303\251e (non s\303\251curis\303\251)",
+   "Optionnelle (avertir uniquement)",
+   "Requise (recommand\303\251)",
    "Vrai",
    "Demi-p\303\251riode",
    "Classique",
@@ -6908,6 +7048,7 @@ static const struct
    "Filtre vid\303\251o activ\303\251",
    "Filtre anti-scintillement",
    "Retirer le filtre vid\303\251o",
+   "Fils d'ex\303\251cution des filtres vid\303\251o",
    "Notifications \303\240 l'\303\251cran",
    "Police des notifications ",
    "Taille des notifications ",
@@ -6941,10 +7082,12 @@ static const struct
    "scRVB",
    "Luminosit\303\251",
    "Lignes de balayage",
+   "Envoyer la luminance de l'image",
    "Disposition sous-pixel",
    "BVR",
    "RBV",
    "RVB",
+   "Utiliser la luminosit\303\251 maximale de l'\303\251cran",
    "Dispositions d'affichage ",
    "Latence maximale des images",
    "Nombre d'images max en m\303\251moire tampon ",
@@ -8444,6 +8587,24 @@ static const struct
 #ifdef _3DS
    "Activer la vitesse d'horloge de la New3DS (804MHz) et le cache de niveau 2.",
 #endif
+#ifdef HAVE_NFSCLIENT
+   "Parcourir le contenu de l'export NFS configur\303\251.",
+   "Chemin export\303\251 par le serveur, /export/roms par exemple. Laisser vide pour que l'export s"
+   "oit indiqu\303\251 dans l'adresse sous la forme nfs://server/export/path.",
+   "Port du service MOUNT. 0 interroge le mappeur de ports (portmapper) du serveur.",
+   "Connexions maintenues ouvertes vers le serveur.",
+   "Port du service NFS. 0 interroge le mappeur de ports (portmapper) du serveur.",
+   "Adresse IP ou nom d'h\303\264te du serveur.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   "Configurer les r\303\251glages de l'export NFS.",
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   "Chemin du sous-dossier sous l'export. Optionnel.",
+   "Secondes d'attente du serveur pour chaque requ\303\252te.",
+#endif
    "Afficher un message \303\240 l'\303\251cran lors de la connexion/d\303\251connexion de p\303\251"
    "riph\303\251riques d'entr\303\251es.",
    "Afficher un message \303\240 l'\303\251cran lorsque des p\303\251riph\303\251riques d'entr\303"
@@ -8924,8 +9085,10 @@ static const struct
    "Afficher les r\303\251glages pour 'Gestion de l'alimentation'.",
    "Afficher les r\303\251glages pour 'Enregistrement'.",
    "Afficher les r\303\251glages pour 'Sauvegarde'.",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Afficher les r\303\251glages pour 'Client SMB'.",
+#endif
 #endif
    "Afficher les r\303\251glages pour 'Steam'.",
    "Afficher les r\303\251glages pour 'Utilisateur'.",
@@ -8943,23 +9106,45 @@ static const struct
    "Ouvrir l'interface de bureau traditionnelle.",
    "Installer ou restaurer un c\305\223ur depuis le dossier de t\303\251l\303\251chargements.",
    "Taux de ralentissement auquel le contenu sera jou\303\251 en mode ralenti.",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "S\303\251lectionnez l'authentification utilis\303\251e dans votre environnement.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Parcourir les fichiers sur le partage SMB configur\303\251.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Activer l'acc\303\250s aux partages r\303\251seau SMB. Une connexion Ethernet est vivement recom"
    "mand\303\251e par rapport au Wi-Fi pour une liaison plus fiable. Remarque : les modifications pr"
    "ennent effet lors de la prochaine consultation d'un partage, tandis que le contenu d\303\251j"
    "\303\240 en cours de lecture depuis un partage conserve sa connexion actuelle.",
    "S\303\251lectionnez le nombre de connexions maximal utilis\303\251 dans votre environnement.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Mot de passe d'authentification. Ce champ est facultatif lorsque l'acc\303\250s invit\303\251 es"
    "t activ\303\251 sur le serveur. Windows 10 et versions ult\303\251rieures : l'acc\303\250s invit"
    "\303\251 \303\251tant d\303\251sactiv\303\251 par d\303\251faut, un mot de passe est requis ici.",
    "Adresse IP ou nom d'h\303\264te du serveur.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Configurer les param\303\250tres de partage en r\303\251seau SMB.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Nom du partage r\303\251seau auquel acc\303\251der. Laissez ce champ vide pour lister tous les p"
    "artages export\303\251s par le serveur et en s\303\251lectionner un lors de la navigation.",
    "Chemin du sous-dossier sur le partage. Optionnel.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "S\303\251lectionnez le d\303\251lai d'attente avant expiration par d\303\251faut en secondes.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Nom d'utilisateur pour l'authentification. Ce champ est facultatif lorsque l'acc\303\250s invit"
    "\303\251 est activ\303\251 sur le serveur. Windows 10 et versions ult\303\251rieures : l'acc\303"
    "\250s invit\303\251 \303\251tant d\303\251sactiv\303\251 par d\303\251faut, un nom d'utilisateur"
@@ -9012,9 +9197,10 @@ static const struct
    "Voir les informations sp\303\251cifiques \303\240 l'appareil.",
    "Capturer une image de l'\303\251cran.",
    "Effectue des t\303\242ches sur un fil d'ex\303\251cution distinct.",
-   "Maintenir les fils d'ex\303\251cution principal et audio sur les c\305\223urs de processeur les "
-   "plus rapides d'un processeur \303\240 architecture hybride. N'a aucun effet sur les processeurs "
-   "dont tous les c\305\223urs sont identiques. Prend effet au red\303\251marrage.",
+   "Maintenir le fil d'ex\303\251cution principal, vid\303\251o, audio et de t\303\242ches sur les c"
+   "\305\223urs de processeur les plus rapides d'un processeur \303\240 architecture hybride. N'a au"
+   "cun effet sur les processeurs dont tous les c\305\223urs sont identiques. Prend effet au red\303"
+   "\251marrage.",
    "Type de miniatures \303\240 afficher.",
    "Les images de pochettes, de capture d'\303\251cran et de miniatures d'\303\251cran de titre sont"
    " conserv\303\251es dans ce dossier.",
@@ -9031,6 +9217,12 @@ static const struct
    "ent.",
 #endif
    "Affiche l'heure courante dans le format pr\303\251f\303\251r\303\251.",
+   "Contr\303\264le la fa\303\247on dont les certificats de serveur sont v\303\251rifi\303\251s sur "
+   "les connexions s\303\251curis\303\251es (HTTPS) utilis\303\251es par la synchronisation avec le "
+   "Cloud, les RetroSucc\303\250s (RetroAchievements) et la mise \303\240 jour en ligne. 'Requise' r"
+   "ejette les certificats non fiables et prot\303\250ge contre les attaques de l'homme du milieu (m"
+   "an-in-the-middle). R\303\251duisez ceci uniquement si vous vous connectez via un proxy d'entrepr"
+   "ise ou \303\240 un h\303\264te auto-sign\303\251 en qui vous avez confiance.",
    "Pilote d'interface compagnon de bureau \303\240 utiliser lorsque l'interface de bureau est activ"
    "\303\251e. (Red\303\251marrage requis)",
    "Afficher la barre des menus de la fen\303\252tre.",
@@ -9129,6 +9321,15 @@ static const struct
    "Applique le filtre vid\303\251o. C'est une requ\303\252te qui n'est pas n\303\251cessairement ho"
    "nor\303\251e par le pilote vid\303\251o.",
    "D\303\251charge tout filtre vid\303\251o produit par le processeur actif.",
+   "D\303\251finit le nombre de fils d'ex\303\251cution qu'un filtre vid\303\251o produit par le pro"
+   "cesseur peut utiliser. 'Automatique' utilise les c\305\223urs restants une fois que les fils d'e"
+   "x\303\251cution d'\303\251mulation, vid\303\251o, audio et de t\303\242ches ont \303\251t\303"
+   "\251 servis, jusqu'\303\240 8 c\305\223urs au maximum, ou moins pour les filtres l\303\251gers d"
+   "ont les performances diminuent lorsqu'ils sont r\303\251partis sur trop de c\305\223urs. Les fil"
+   "tres exigeants comme le filtre NTSC sont ceux qui tirent le meilleur parti d'un nombre de fils d"
+   "'ex\303\251cution plus ",
+   "\303\251lev\303\251. Toute modification est prise en compte imm\303\251diatement par un filtre e"
+   "n cours d'ex\303\251cution.",
    "Affiche les messages \303\240 l'\303\251cran.",
    "S\303\251lectionner la police pour les notifications \303\240 l'\303\251cran.",
    "Sp\303\251cifie la taille de la police en points. Lorsque des widgets sont utilis\303\251s, cett"
@@ -9205,10 +9406,21 @@ static const struct
    " \303\251teint la plupart de l'\303\251cran et HDR r\303\251cup\303\250re une partie de cette pe"
    "rte de luminosit\303\251. Si vous avez besoin de plus de contr\303\264le sur vos lignes de balay"
    "age, consultez les shaders personnalis\303\251s fournis par RetroArch.",
+   "Indiquer \303\240 un compositeur Wayland la plage de luminosit\303\251 de l'image, afin qu'il ma"
+   "ppe le contenu HDR en fonction des donn\303\251es r\303\251elles de l'image plut\303\264t que su"
+   "r la base d'une hypoth\303\250se. Si cette option est d\303\251sactiv\303\251e, l'image est d"
+   "\303\251crite comme \303\251tant au format Windows-scRGB, comme auparavant. La modification pren"
+   "d effet au red\303\251marrage du pilote vid\303\251o.",
    "Modifier les r\303\251glages de sortie vid\303\251o HDR.",
    "S\303\251lectionner les dispositions sous-pixel de vos affichages, cela n'affecte que les lignes"
    " de balayage. Si vous n'avez aucune id\303\251e de votre disposition sous-pixel, elle est affich"
    "\303\251e sur Rtings.com pour la 'Disposition sous-pixel' de votre \303\251cran",
+   "Utiliser la luminosit\303\251 maximale signal\303\251e par l'\303\251cran plut\303\264t que le r"
+   "\303\251glage 'Luminosit\303\251 maximale', lorsque l'\303\251cran fournit cette information : c"
+   "'est la valeur transmise au syst\303\250me et celle contenue dans les m\303\251tadonn\303\251es "
+   "HDR envoy\303\251es \303\240 l'\303\251cran. Si cette option est d\303\251sactiv\303\251e, c'est"
+   " la valeur de 'Luminosit\303\251 maximale' d\303\251finie par l'utilisateur qui est utilis\303"
+   "\251e.",
    "Les dispositions d'affichage sont conserv\303\251es dans ce dossier.",
    "Indique au pilote vid\303\251o d'utiliser explicitement le mode de mise en m\303\251moire tampon"
    " sp\303\251cifi\303\251.",
@@ -10073,7 +10285,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_fr_blob_check[
-      (sizeof(msg_hash_fr_blob) == (236643u
+      (sizeof(msg_hash_fr_blob) == (238713u
 #ifdef ANDROID
        + 373u
 #endif
@@ -10186,6 +10398,23 @@ typedef char msg_hash_fr_blob_check[
 #ifdef _3DS
        + 52u
 #endif
+#ifdef HAVE_NFSCLIENT
+       + 23u
+       + 11u
+       + 20u
+       + 25u
+       + 9u
+       + 12u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+       + 27u
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+       + 17u
+       + 21u
+#endif
 #ifdef HAVE_QT
        + 719u
 #endif
@@ -10197,19 +10426,41 @@ typedef char msg_hash_fr_blob_check[
        + 77u
 #endif
 #endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
        + 22u
        + 28u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 25u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 22u
        + 25u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 17u
        + 12u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 27u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 19u
        + 12u
        + 17u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 21u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 22u
        + 22u
 #endif
@@ -10380,6 +10631,23 @@ typedef char msg_hash_fr_blob_check[
 #ifdef _3DS
        + 76u
 #endif
+#ifdef HAVE_NFSCLIENT
+       + 49u
+       + 158u
+       + 80u
+       + 48u
+       + 78u
+       + 38u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+       + 42u
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+       + 49u
+       + 52u
+#endif
 #ifdef HAVE_GAME_AI
        + 31u
 #endif
@@ -10395,18 +10663,40 @@ typedef char msg_hash_fr_blob_check[
        + 51u
        + 58u
 #endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
        + 42u
        + 69u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 54u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 334u
        + 81u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 229u
        + 38u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 54u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 163u
        + 50u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 76u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 244u
        + 82u
 #endif
@@ -11081,6 +11371,7 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MAX_FREQ,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MENU_GOVERNOR,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MIN_FREQ,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_THREADS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CREATE_NEW_PLAYLIST,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CRT_SWITCHRES_SETTINGS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CRT_SWITCH_HIRES_MENU,
@@ -11878,6 +12169,23 @@ static const uint32_t msg_hash_fr_ids[] =
 #ifdef _3DS
    (uint32_t)MENU_ENUM_LABEL_VALUE_NEW3DS_SPEEDUP_ENABLE,
 #endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_BROWSE,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_EXPORT,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_MOUNT_PORT,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_NUM_CONTEXTS,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_PORT,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SETTINGS,
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SUBDIR,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_NFS_CLIENT_TIMEOUT,
+#endif
    (uint32_t)MENU_ENUM_LABEL_VALUE_NO,
    (uint32_t)MENU_ENUM_LABEL_VALUE_NONE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_AUTOCONFIG,
@@ -12477,8 +12785,10 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_POWER_MANAGEMENT,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_RECORDING,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_SAVING,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_SMB_CLIENT,
+#endif
 #endif
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_STEAM,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_USER,
@@ -12505,21 +12815,43 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_SIDELOAD_CORE_LIST,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SIDELOAD_CORE_SUCCESS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SLOWMOTION_RATIO,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_AUTH_MODE,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_BROWSE,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_NUM_CONTEXTS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_PASSWORD,
 #endif
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SEC_KRB_OR_NTLM,
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SETTINGS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SHARE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SMB_SHARE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SUBDIR,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_TIMEOUT,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_USERNAME,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_WORKGROUP,
 #endif
@@ -12654,6 +12986,10 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIME_UNIT_YEARS_PLURAL,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIME_UNIT_YEARS_SINGLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIMING_SETTINGS,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_DISABLED,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_OPTIONAL,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_REQUIRED,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TRUE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TURBO_DUTY_CYCLE_HALF,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TURBO_MODE_CLASSIC,
@@ -12745,6 +13081,7 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_FLICKER,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_REMOVE,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_THREADS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_PATH,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_SIZE,
@@ -12778,10 +13115,12 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_MODE_SCRGB,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_PAPER_WHITE_NITS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SCANLINES,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SEND_LUMINANCE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SUBPIXEL_LAYOUT,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SUBPIXEL_LAYOUT_BGR,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SUBPIXEL_LAYOUT_RBG,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SUBPIXEL_LAYOUT_RGB,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_USE_DISPLAY_PEAK,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_LAYOUT_DIRECTORY,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_MAX_FRAME_LATENCY,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_MAX_SWAPCHAIN_IMAGES,
@@ -13706,6 +14045,23 @@ static const uint32_t msg_hash_fr_ids[] =
 #ifdef _3DS
    (uint32_t)MENU_ENUM_SUBLABEL_NEW3DS_SPEEDUP_ENABLE,
 #endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_BROWSE,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_EXPORT,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_MOUNT_PORT,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_NUM_CONTEXTS,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_PORT,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SETTINGS,
+#endif
+#endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SUBDIR,
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_TIMEOUT,
+#endif
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_AUTOCONFIG,
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_AUTOCONFIG_FAILS,
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_CHEATS_APPLIED,
@@ -13978,8 +14334,10 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_POWER_MANAGEMENT,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_RECORDING,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_SAVING,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_SMB_CLIENT,
+#endif
 #endif
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_STEAM,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_USER,
@@ -13995,17 +14353,39 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_SHOW_WIMP,
    (uint32_t)MENU_ENUM_SUBLABEL_SIDELOAD_CORE_LIST,
    (uint32_t)MENU_ENUM_SUBLABEL_SLOWMOTION_RATIO,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_AUTH_MODE,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_BROWSE,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_NUM_CONTEXTS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_PASSWORD,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SETTINGS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SHARE,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SUBDIR,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_TIMEOUT,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_USERNAME,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_WORKGROUP,
 #endif
@@ -14060,6 +14440,7 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_TIMEZONE,
 #endif
    (uint32_t)MENU_ENUM_SUBLABEL_TIME_SHOW,
+   (uint32_t)MENU_ENUM_SUBLABEL_TLS_VERIFY_MODE,
    (uint32_t)MENU_ENUM_SUBLABEL_UI_COMPANION_DRIVER,
    (uint32_t)MENU_ENUM_SUBLABEL_UI_MENUBAR_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_UNDO_LOAD_STATE,
@@ -14113,6 +14494,7 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_DIR,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_REMOVE,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_THREADS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_PATH,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_SIZE,
@@ -14138,8 +14520,10 @@ static const uint32_t msg_hash_fr_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_MAX_NITS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_PAPER_WHITE_NITS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SCANLINES,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SEND_LUMINANCE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SETTINGS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SUBPIXEL_LAYOUT,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_USE_DISPLAY_PEAK,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_LAYOUT_DIRECTORY,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_MAX_FRAME_LATENCY,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_MAX_SWAPCHAIN_IMAGES,

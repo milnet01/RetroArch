@@ -33,11 +33,11 @@ jobs:
 
     steps:
       - name: Install dependencies
-        timeout-minutes: 8
+        timeout-minutes: 20
         run: |
           # ffmpeg: tools/companion_thumbs_test.sh builds its video-hover
           # fixture (a 2 KB Baseline MP4) with it.
-          pkgs="build-essential check pkg-config zlib1g-dev lcov gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 wine wine64 ffmpeg"
+          pkgs="build-essential check pkg-config zlib1g-dev lcov gcc-mingw-w64-x86-64 gcc-mingw-w64-i686 wine wine64 ffmpeg gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-mipsel-linux-gnu qemu-user"
           if dpkg -s $pkgs >/dev/null 2>&1; then
             echo "All packages already present on runner image; skipping apt."
             exit 0
@@ -47,6 +47,23 @@ jobs:
               -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
             echo "apt-get update failed (attempt $i); retrying in 10s"
             sleep 10
+          done
+          # Fetch first, under a bound: a download is safe to stop and
+          # resumes, an install is not. A mirror that stalls is left for
+          # the main archive on the next attempt.
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get install -y --download-only \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+              $pkgs && break
+            [ $i = 3 ] && exit 1
+            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+              [ -f "$f" ] || continue
+              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
+            done
+            sudo timeout 90 apt-get update -y \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
           done
           sudo apt-get install -y \
             -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
@@ -107,6 +124,15 @@ jobs:
              LIBCHECK_CFLAGS="$(pkg-config --cflags check)" \
              CFLAGS="$(pkg-config --cflags check)"
           echo "[pass] libretro-common unit test suites"
+          # The ARMv8 AES + PMULL path executes only on ARM; this
+          # runs the crypto suite under qemu-aarch64 in both the
+          # dispatched and the baseline-crypto shape.
+          make -f Makefile.test crypto-aarch64-check
+          make -f Makefile.test crypto-arm-check
+          make -f Makefile.test crypto-mips-check
+          # every lazily set up table or CPU check, first used by
+          # eight threads at once under TSan
+          make -f Makefile.test crypto-tsan-check
 
       - name: Check VFS backend symbol parity
         shell: bash
@@ -122,6 +148,16 @@ jobs:
           # branch broken.  This is the same check at source level, for
           # free, on Linux.
           python3 tools/vfs_backend_parity.py
+
+      - name: Check every command describes itself
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -eu
+          # HELP prints command.h's tables, and interfaces that hand the
+          # commands to a client are generated from them: a command
+          # added without a description reaches all of those blank.
+          python3 tools/command_table_check.py
 
       - name: Check no video driver deletes overlay textures it was lent
         shell: bash

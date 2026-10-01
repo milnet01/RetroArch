@@ -96,6 +96,13 @@
 
 #include "../ai/game_ai.h"
 #include <compat/strl.h>
+#ifdef HAVE_MCP
+#include "../network/mcp_server.h"
+#endif
+#ifdef HAVE_CRYPTO
+#include <crypto/crypto.h>
+#include <crypto/kdf.h>
+#endif
 #ifdef __MACH__
 #include <TargetConditionals.h>
 #endif
@@ -668,22 +675,30 @@ bool input_driver_set_sensor(
          enum retro_sensor_action action, unsigned rate)
 {
    const input_driver_t *current_driver;
-   bool enabled = false;
+   bool enabled    = false;
+   bool is_disable =
+         (action == RETRO_SENSOR_ACCELEROMETER_DISABLE)
+      || (action == RETRO_SENSOR_GYROSCOPE_DISABLE)
+      || (action == RETRO_SENSOR_ILLUMINANCE_DISABLE);
 
    if (!input_driver_st.current_data)
       return false;
    /* If sensors are disabled, inhibit any enable
     * actions (but always allow disable actions) */
-   if (!sensors_enable
-        && ((action == RETRO_SENSOR_ACCELEROMETER_ENABLE)
-        ||  (action == RETRO_SENSOR_GYROSCOPE_ENABLE)
-        ||  (action == RETRO_SENSOR_ILLUMINANCE_ENABLE)))
+   if (!sensors_enable && !is_disable)
       return false;
 
    if (input_driver_st.primary_joypad && input_driver_st.primary_joypad->set_sensor_state)
       enabled = input_driver_st.primary_joypad->set_sensor_state(port, action, rate);
 
-   if (   !enabled
+   /* An enable stops at the first driver that takes it, so a sensor
+    * is only ever held by one of them. A disable has to reach both:
+    * a joypad driver that reports the disable of a sensor it never
+    * had as a success (as they are documented to) would otherwise
+    * hide the disable from the input driver that is actually
+    * holding the host sensor open, leaving it enabled and still
+    * feeding the core after it asked for it to stop. */
+   if (   (!enabled || is_disable)
        && (current_driver = input_driver_st.current_driver)
        &&  current_driver->set_sensor_state)
    {
@@ -6465,9 +6480,41 @@ void input_driver_init_command(input_driver_state_t *input_st,
       if (input_network_cmd_enable)
       {
          unsigned network_cmd_port  = settings->uints.network_cmd_port;
-         if (!(input_st->command[1] = command_network_new(network_cmd_port)))
+         if (!(input_st->command[1] = command_network_new(network_cmd_port,
+                     settings->arrays.network_cmd_bind_address)))
             RARCH_ERR("Failed to initialize the network command interface.\n");
       }
+   }
+#endif
+
+#ifdef HAVE_MCP
+   /* The MCP server. A token is required; the first start makes one,
+    * kept in the configuration (sealed by the keychain) for the user
+    * to give the client. Without a random source it must be set by
+    * hand. */
+   if (settings->bools.mcp_server_enable)
+   {
+      char *token = settings->arrays.mcp_server_token;
+#ifdef HAVE_CRYPTO
+      if (!*token)
+      {
+         uint8_t  raw[24];
+         unsigned i;
+         if (crypto_random_bytes(raw, sizeof(raw)) == 0)
+         {
+            for (i = 0; i < sizeof(raw); i++)
+               snprintf(token + 2 * i, 3, "%02x", raw[i]);
+            settings->flags |= SETTINGS_FLG_MODIFIED;
+         }
+         crypto_memzero(raw, sizeof(raw));
+      }
+#endif
+      if (!*token)
+         RARCH_ERR("[MCP] Set mcp_server_token to start the MCP server.\n");
+      else if (!(input_st->command[3] = command_mcp_new(
+                  (uint16_t)settings->uints.mcp_server_port,
+                  settings->arrays.mcp_server_bind_address, token)))
+         RARCH_ERR("[MCP] Failed to start the MCP server.\n");
    }
 #endif
 
@@ -8271,6 +8318,7 @@ void input_driver_poll(void)
             input_st->command[i]);
       }
    }
+   command_owed_reply_poll();
 #endif
 
 #ifdef HAVE_NETWORKGAMEPAD

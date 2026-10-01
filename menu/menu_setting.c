@@ -118,6 +118,9 @@ void android_app_set_window_settings(bool notch_write_over,
 #include "../network/cloud_sync_driver.h"
 #include "../record/record_driver.h"
 #include "../tasks/tasks_internal.h"
+#if defined(HAVE_KEYCHAIN) && defined(HAVE_CRYPTO) && defined(HAVE_CONFIGFILE)
+#include <file/keychain.h>
+#endif
 #include "../accessibility.h"
 #include "../config.def.h"
 #include "../ui/ui_companion_driver.h"
@@ -427,6 +430,9 @@ enum settings_list_type
 #endif
 #ifdef HAVE_SMBCLIENT
    SETTINGS_LIST_SMBCLIENT,
+#endif
+#ifdef HAVE_NFSCLIENT
+   SETTINGS_LIST_NFSCLIENT,
 #endif
    SETTINGS_LIST_MANUAL_CONTENT_SCAN
 };
@@ -7087,6 +7093,18 @@ static size_t setting_get_string_representation_video_swap_interval(rarch_settin
    return snprintf(s, len, "%u", *setting->value.target.unsigned_integer);
 }
 
+#ifdef HAVE_VIDEO_FILTER
+static size_t setting_get_string_representation_uint_video_filter_threads(
+      rarch_setting_t *setting, char *s, size_t len)
+{
+   if (!setting)
+      return 0;
+   if (*setting->value.target.unsigned_integer == 0)
+      return strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_AUTO), len);
+   return snprintf(s, len, "%u", *setting->value.target.unsigned_integer);
+}
+#endif
+
 static size_t setting_get_string_representation_black_frame_insertion(rarch_setting_t *setting,
       char *s, size_t len)
 {
@@ -8356,6 +8374,9 @@ static const enum settings_list_type settings_list_build_order[] =
 #endif
 #ifdef HAVE_SMBCLIENT
       SETTINGS_LIST_SMBCLIENT,
+#endif
+#ifdef HAVE_NFSCLIENT
+      SETTINGS_LIST_NFSCLIENT,
 #endif
       SETTINGS_LIST_MANUAL_CONTENT_SCAN
    };
@@ -9720,6 +9741,14 @@ static void general_write_handler(rarch_setting_t *setting)
                   log_dir);
          }
          break;
+#ifdef HAVE_VIDEO_FILTER
+      case MENU_ENUM_LABEL_VIDEO_FILTER_THREADS:
+         /* Rebuild a running filter on the new worker count; with no
+          * filter loaded the value is picked up at the next load. */
+         if (video_state_get_ptr()->state_filter)
+            command_event(CMD_EVENT_VIDEO_FILTER_INIT, NULL);
+         break;
+#endif
       case MENU_ENUM_LABEL_VIDEO_SMOOTH:
       case MENU_ENUM_LABEL_VIDEO_CTX_SCALING:
 #if defined(DINGUX)
@@ -10171,14 +10200,8 @@ static void general_write_handler(rarch_setting_t *setting)
 #ifdef HAVE_XMB
       case MENU_ENUM_LABEL_XMB_ENTRY_ICONS:
 #endif
-         {
-            /* Reset wallpaper by menu context reset */
-            struct menu_state *menu_st = menu_state_get_ptr();
-
-            if (menu_st->driver_ctx && menu_st->driver_ctx->context_reset)
-               menu_st->driver_ctx->context_reset(menu_st->userdata,
-                     video_driver_is_threaded());
-         }
+         /* Reset wallpaper by menu context rebuild */
+         menu_driver_context_rebuild();
          break;
 #if HAVE_CLOUDSYNC
       case MENU_ENUM_LABEL_CLOUD_SYNC_DRIVER:
@@ -13109,7 +13132,7 @@ static const setting_desc_t core_updater_desc_2[] = {
 #endif
 #endif
 
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 static const setting_desc_t np_desc_0[] = {
 /* GENERATED: rows come from settings_def_netplay_action.h in order. */
 #include "../settings/settings_def_netplay_action.h"
@@ -13190,6 +13213,33 @@ static const setting_desc_t np_desc_8[] = {
 /* GENERATED: rows come from settings_def_network_ondemand_thumbnails.h in order. */
 #include "../settings/settings_def_network_ondemand_thumbnails.h"
 };
+#endif
+
+#if defined(HAVE_KEYCHAIN) && defined(HAVE_CRYPTO) && defined(HAVE_CONFIGFILE)
+static void menu_input_st_string_cb_keychain_passphrase(void *userdata,
+      const char *str)
+{
+   /* Enter only: a cancelled dialog does not call back. An empty
+    * entry removes the passphrase (or does nothing while locked). */
+   task_push_keychain_passphrase(str ? str : "");
+   menu_input_dialog_end();
+}
+
+static int setting_action_keychain_passphrase(
+      rarch_setting_t *setting, size_t idx, bool wraparound)
+{
+   menu_input_ctx_line_t line;
+   line.label         = msg_hash_to_str(keychain_is_locked()
+         ? MSG_INPUT_KEYCHAIN_PASSPHRASE : MSG_INPUT_KEYCHAIN_PASSPHRASE_NEW);
+   line.label_setting = setting ? setting->name : NULL;
+   line.type          = 0;
+   line.idx           = 0;
+   line.text_type     = MENU_INPUT_DIALOG_KB_TYPE_PASSWORD;
+   line.cb            = menu_input_st_string_cb_keychain_passphrase;
+   if (!menu_input_dialog_start(&line))
+      return -1;
+   return 0;
+}
 #endif
 
 static const setting_desc_t user_desc_0[] = {
@@ -17875,6 +17925,54 @@ static void settings_build_smbclient(
 }
 #endif
 
+#ifdef HAVE_NFSCLIENT
+#define NFS_STRING(field, T)                                             \
+   CONFIG_STRING(list, list_info, settings->arrays.field,                \
+         sizeof(settings->arrays.field), MENU_ENUM_LABEL_##T,            \
+         MENU_ENUM_LABEL_VALUE_##T, "", &group_info, &subgroup_info,     \
+         parent_group, NULL, NULL);                                      \
+   SETTINGS_DATA_LIST_CURRENT_ADD_FLAGS(list, list_info, SD_FLAG_ALLOW_INPUT)
+#define NFS_UINT(field, T, def, mn, mx)                                  \
+   CONFIG_UINT(list, list_info, &settings->uints.field,                  \
+         MENU_ENUM_LABEL_##T, MENU_ENUM_LABEL_VALUE_##T, def,            \
+         &group_info, &subgroup_info, parent_group, general_write_handler, \
+         general_read_handler);                                          \
+   SETTINGS_ACTION_SET(ok, &(*list)[list_info->index - 1], &setting_action_ok_uint) \
+   menu_settings_list_current_add_range(list, list_info, mn, mx, 1, true, true)
+
+/* Descriptor holdouts: the strings take free input, the uints are
+ * plain ranges. */
+static void settings_build_nfsclient(
+      settings_t *settings, global_t *global,
+      rarch_setting_t **list, rarch_setting_info_t *list_info,
+      const char *parent_group)
+{
+   rarch_setting_group_info_t group_info;
+   rarch_setting_group_info_t subgroup_info;
+   group_info.name    = NULL;
+   subgroup_info.name = NULL;
+   (void)global;
+   {
+      GROUP_STATE(MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SETTINGS, MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS);
+      NFS_STRING(nfs_server, NFS_CLIENT_SERVER);
+      NFS_STRING(nfs_export, NFS_CLIENT_EXPORT);
+      NFS_STRING(nfs_subdir, NFS_CLIENT_SUBDIR);
+      NFS_UINT(nfs_timeout,      NFS_CLIENT_TIMEOUT,      DEFAULT_NFS_TIMEOUT,      1, 60);
+      NFS_UINT(nfs_num_contexts, NFS_CLIENT_NUM_CONTEXTS, DEFAULT_NFS_NUM_CONTEXTS, 1, 16);
+      NFS_UINT(nfs_port,         NFS_CLIENT_PORT,         DEFAULT_NFS_PORT,         0, 65535);
+      NFS_UINT(nfs_mount_port,   NFS_CLIENT_MOUNT_PORT,   DEFAULT_NFS_MOUNT_PORT,   0, 65535);
+      NFS_UINT(nfs_version,      NFS_CLIENT_VERSION,      DEFAULT_NFS_VERSION,      3, 4);
+      NFS_UINT(nfs_readahead,    NFS_CLIENT_READAHEAD,    DEFAULT_NFS_READAHEAD,    0, DEFAULT_NFS_MAX_READAHEAD);
+      /* in 64 KiB steps, as SMB's: 0 (off), 64, 128 ... */
+      menu_settings_list_current_add_range(list, list_info,
+            0, DEFAULT_NFS_MAX_READAHEAD, 64, true, true);
+      GROUP_END();
+   }
+}
+#undef NFS_STRING
+#undef NFS_UINT
+#endif
+
 typedef struct settings_build_entry
 {
    enum settings_list_type type;
@@ -18040,6 +18138,9 @@ static const settings_build_entry_t settings_build_registry[] = {
 #endif
 #ifdef HAVE_SMBCLIENT
    { SETTINGS_LIST_SMBCLIENT, settings_build_smbclient, NULL, 0, MSG_UNKNOWN, MSG_UNKNOWN, MSG_UNKNOWN },
+#endif
+#ifdef HAVE_NFSCLIENT
+   { SETTINGS_LIST_NFSCLIENT, settings_build_nfsclient, NULL, 0, MSG_UNKNOWN, MSG_UNKNOWN, MSG_UNKNOWN },
 #endif
 };
 

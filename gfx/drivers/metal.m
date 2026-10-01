@@ -37,6 +37,8 @@
 #include <retro_miscellaneous.h>
 #include <retro_math.h>
 #include <retro_assert.h>
+#include <retro_atomic.h>
+#include <features/features_cpu.h>
 #include <libretro.h>
 
 #ifdef HAVE_CONFIG_H
@@ -52,6 +54,7 @@
 
 #include "../font_driver.h"
 #include "../video_driver.h"
+#include "../gfx_instrument.h"
 #ifdef HAVE_THREADS
 #include "../video_thread_wrapper.h"
 #endif
@@ -92,6 +95,26 @@
  * called from earlier @implementations. */
 static MTLPixelFormat glslang_format_to_metal(glslang_format fmt);
 static MTLPixelFormat SelectOptimalPixelFormat(MTLPixelFormat fmt);
+
+/* When a drawable reached the display (macOS 10.15.4, iOS/tvOS 10.3).
+ * Declared here rather than taken from the SDK, so the driver builds
+ * against any SDK and decides at runtime whether to ask. */
+@protocol MetalPresentedDrawable
+- (void)addPresentedHandler:(void (^)(id<MTLDrawable> drawable))block;
+- (CFTimeInterval)presentedTime;
+@end
+
+#ifdef RETRO_ATOMIC_HAS_64
+/* When the last presented drawable reached the display, on the
+ * cpu_features_get_time_usec() clock, 0 for not known. Written by the
+ * presented handler on whatever thread Metal runs it, read on the video
+ * thread. File scope rather than on the Context, so the handler holds
+ * no reference to it: a Context torn down with a present in flight is
+ * still released on the thread that owns it. One layer presents at a
+ * time; a late report from a previous one is still a vblank of the same
+ * display. */
+static retro_atomic_64_t metal_presented_at;
+#endif
 
 #pragma mark - Pixel Formats
 
@@ -199,6 +222,14 @@ typedef NS_ENUM(NSUInteger, ViewportResetMode) {
 /*! @brief swapBuffers acquires the next drawable, blocking if needed for vsync.
  *  This should be called after end to match Vulkan's swap_buffers timing. */
 - (void)swapBuffers;
+
+/*! @brief Lets go of the drawable just presented without taking the next
+ *  one: the next frame acquires its own when it first draws. */
+- (void)releaseDrawable;
+
+/*! @brief When the last presented drawable reached the display, on the
+ *  cpu_features_get_time_usec() clock; 0 when the OS cannot say. */
+- (retro_time_t)lastPresentTime;
 
 - (void)setRotation:(unsigned)rotation;
 - (bool)readBackBuffer:(uint8_t *)buffer;
@@ -388,6 +419,9 @@ typedef NS_ENUM(NSInteger, ViewDrawState)
 - (BOOL)setShaderFromPath:(NSString *)path;
 - (void)clearShader;
 - (void)updateFrame:(void const *)src pitch:(NSUInteger)pitch;
+/* GET_CURRENT_SOFTWARE_FRAMEBUFFER: lend the core a buffer the GPU
+ * reads directly. See lendFramebuffer: in the implementation. */
+- (bool)lendFramebuffer:(struct retro_framebuffer *)fb;
 - (bool)readViewport:(uint8_t *)buffer isIdle:(bool)isIdle;
 - (bool)readViewportHDR:(uint16_t *)buffer
                  isIdle:(bool)isIdle
@@ -929,6 +963,9 @@ static void buffer_chain_discard(buffer_chain_t *chain);
 
       _device                    = RARCH_RETAIN(d);
       _layer                     = RARCH_RETAIN(layer);
+#ifdef RETRO_ATOMIC_HAS_64
+      retro_atomic_store_release_64(&metal_presented_at, 0);
+#endif
 #if TARGET_OS_OSX
       _layer.framebufferOnly     = NO;
       _layer.displaySyncEnabled  = YES;
@@ -2732,6 +2769,27 @@ static float metal_hdr_pq_to_nits(float pq)
 
    if (drawable)
    {
+#ifdef RETRO_ATOMIC_HAS_64
+      /* When it reached the display, for the threaded presenter to lay
+       * its vblank grid on: presentedTime is on the host clock, bridged
+       * to the frontend's by one paired read, since CLOCK_MONOTONIC
+       * counts sleep and the host clock does not. 0 means the drawable
+       * was never shown. */
+      if (apple_runtime_available(APPLE_RUNTIME_VER(10, 15, 4),
+               APPLE_RUNTIME_VER(10, 3, 0), APPLE_RUNTIME_VER(10, 3, 0)))
+         [(id<MetalPresentedDrawable>)drawable addPresentedHandler:
+            ^(id<MTLDrawable> _Nonnull shown) {
+               CFTimeInterval at = [(id<MetalPresentedDrawable>)shown presentedTime];
+               if (at > 0.0)
+               {
+                  retro_time_t   now = cpu_features_get_time_usec();
+                  CFTimeInterval age = CACurrentMediaTime() - at;
+                  if (age >= 0.0)
+                     retro_atomic_store_release_64(&metal_presented_at,
+                           (int64_t)(now - (retro_time_t)(age * 1000000.0)));
+               }
+            }];
+#endif
       /* Use addScheduledHandler to present, following Apple's recommendation.
        * According to Apple (and used by MoltenVK), it is more performant to call
        * [drawable present] from within a scheduled-handler than to use
@@ -2760,6 +2818,20 @@ static float metal_hdr_pq_to_nits(float pq)
     * This blocking behavior is intentional for proper frame pacing. */
    RARCH_RELEASE_NIL(_drawable);
    RARCH_ASSIGN(_drawable, _layer.nextDrawable);
+}
+
+- (void)releaseDrawable
+{
+   RARCH_RELEASE_NIL(_drawable);
+}
+
+- (retro_time_t)lastPresentTime
+{
+#ifdef RETRO_ATOMIC_HAS_64
+   return (retro_time_t)retro_atomic_load_acquire_64(&metal_presented_at);
+#else
+   return 0;
+#endif
 }
 
 - (bool)allocRange:(BufferRange *)range length:(NSUInteger)length
@@ -2966,7 +3038,17 @@ static bool buffer_chain_alloc_range(buffer_chain_t *chain,
 + (instancetype)newFilterWithFunctionName:(NSString *)name device:(id<MTLDevice>)device library:(id<MTLLibrary>)library error:(NSError **)error
 {
    id<MTLFunction> function = RARCH_AUTORELEASE_R([library newFunctionWithName:name]);
-   id<MTLComputePipelineState> kernel = RARCH_AUTORELEASE_R([device newComputePipelineStateWithFunction:function error:error]);
+   id<MTLComputePipelineState> kernel;
+   if (!function)
+   {
+      /* newComputePipelineStateWithFunction asserts (rather than errors)
+       * on a nil function, so guard it: return nil and let the caller
+       * degrade gracefully instead of aborting the process. */
+      RARCH_ERR("[Metal] Compute function \"%s\" not found (library %s).\n",
+            name.UTF8String, library ? "loaded" : "is NIL");
+      return nil;
+   }
+   kernel = RARCH_AUTORELEASE_R([device newComputePipelineStateWithFunction:function error:error]);
    if (*error != nil)
       return nil;
 
@@ -3760,40 +3842,30 @@ static void gfx_display_metal_scissor_end(void *data, unsigned video_dims)
 
 - (int)getWidthForMessage:(const char *)msg length:(NSUInteger)length scale:(float)scale
 {
-   const char *walk     = msg;
-   const char *walk_end = msg + length;
-   int delta_x          = 0;
+   const struct font_glyph* (*get_glyph)(void*, uint32_t);
    const struct font_glyph* glyph_q;
+   void *font_data;
+   size_t msg_len = length;
+   int width      = 0;
 
    /* Validate font data before use - can become invalid during
     * video context reset or if font was freed while in use */
    if (!_font_driver || !_font_data)
       return 0;
 
-   glyph_q = _font_driver->get_glyph(_font_data, '?');
-   /* The fallback glyph can itself have just been rasterized after
-    * eviction; pair its lookup with an update like every other
-    * lookup so its cell is not stranded when an unrelated glyph
-    * clears the dirty flag. */
+   get_glyph = _font_driver->get_glyph;
+   font_data = _font_data;
+   glyph_q   = get_glyph(font_data, '?');
+   /* Every lookup, the fallback glyph's included (it can itself have
+    * just been rasterized after eviction), is paired with an update of
+    * its cell, so no cell is stranded when an unrelated glyph clears
+    * the dirty flag. */
    if (glyph_q)
       [self updateGlyph:glyph_q];
-
-   /* Decode UTF-8 exactly like the render path does; walking bytes
-    * here made the measured width of multi-byte text disagree with
-    * what is actually drawn, skewing right/center alignment. */
-   while (walk < walk_end)
-   {
-      const struct font_glyph *glyph;
-      uint32_t code = utf8_walk(&walk);
-      if (!(glyph = _font_driver->get_glyph(_font_data, code)))
-         if (!(glyph = glyph_q))
-            continue;
-
-      [self updateGlyph:glyph];
-      delta_x += glyph->advance_x;
-   }
-
-   return (int)(delta_x * scale);
+#define FONT_MEASURE_DIRTY(glyph) [self updateGlyph:(glyph)]
+#define FONT_MEASURE_SUM width
+#include "../font_measure.h"
+   return (int)(width * scale);
 }
 
 - (const struct font_glyph *)getGlyph:(uint32_t)code
@@ -3844,106 +3916,6 @@ static INLINE void write_quad6(SpriteVertex *pv,
    }
 }
 
-- (void)_renderLine:(const char *)msg
-             length:(NSUInteger)length
-              scale:(float)scale
-              color:(vector_float4)color
-               posX:(float)posX
-               posY:(float)posY
-            aligned:(unsigned)aligned
-{
-   const struct font_glyph* glyph_q;
-   const char  *msg_end;
-   int                x;
-   int                y;
-   int          delta_x;
-   int          delta_y;
-   float inv_tex_size_x;
-   float inv_tex_size_y;
-   float inv_win_width;
-   float inv_win_height;
-   float rgba[4];
-   uint64_t packed;
-
-   if (!_font_driver || !_font_data)
-      return;
-
-   rgba[0]          = color.x;
-   rgba[1]          = color.y;
-   rgba[2]          = color.z;
-   rgba[3]          = color.w;
-   packed           = rgba16_pack(rgba);
-   msg_end          = msg + length;
-   x                = (int)roundf(posX * VIDEO_SCALE_W(_driver.viewport->full_dims));
-   y                = (int)roundf((1.0f - posY) * VIDEO_SCALE_H(_driver.viewport->full_dims));
-   delta_x          = 0;
-   delta_y          = 0;
-   inv_tex_size_x   = 1.0f / _texture.width;
-   inv_tex_size_y   = 1.0f / _texture.height;
-   inv_win_width    = 1.0f / VIDEO_SCALE_W(_driver.viewport->full_dims);
-   inv_win_height   = 1.0f / VIDEO_SCALE_H(_driver.viewport->full_dims);
-
-   switch (aligned)
-   {
-      case TEXT_ALIGN_RIGHT:
-         x -= [self getWidthForMessage:msg length:length scale:scale];
-         break;
-
-      case TEXT_ALIGN_CENTER:
-         x -= [self getWidthForMessage:msg length:length scale:scale] / 2;
-         break;
-
-      default:
-         break;
-   }
-
-   SpriteVertex *v = (SpriteVertex *)_range.data;
-   v              += _vertices;
-   glyph_q         = _font_driver->get_glyph(_font_data, '?');
-   /* Pair the fallback-glyph lookup with an update like every other
-    * lookup, in case '?' was just (re)rasterized after eviction. */
-   if (glyph_q)
-      [self updateGlyph:glyph_q];
-
-   while (msg < msg_end)
-   {
-      int off_x, off_y, tex_x, tex_y, width, height;
-      const struct font_glyph *glyph;
-      unsigned code = utf8_walk(&msg);
-
-      /* Do something smarter here .. */
-      if (!(glyph = _font_driver->get_glyph(_font_data, code)))
-         if (!(glyph = glyph_q))
-            continue;
-
-      [self updateGlyph:glyph];
-
-      off_x  = glyph->draw_offset_x;
-      off_y  = glyph->draw_offset_y;
-      tex_x  = glyph->atlas_offset_x;
-      tex_y  = glyph->atlas_offset_y;
-      width  = glyph->width;
-      height = glyph->height;
-
-      write_quad6(v,
-            (x + (off_x + delta_x) * scale) * inv_win_width,
-            (y + (off_y + delta_y) * scale) * inv_win_height,
-            width * scale * inv_win_width,
-            height * scale * inv_win_height,
-            tex_x * inv_tex_size_x,
-            tex_y * inv_tex_size_y,
-            width * inv_tex_size_x,
-            height * inv_tex_size_y,
-            packed);
-
-      _vertices += 6;
-      v         += 6;
-
-      delta_x   += glyph->advance_x;
-      delta_y   += glyph->advance_y;
-   }
-}
-
 - (void)_flush
 {
    if (_vertices == 0)
@@ -3964,7 +3936,12 @@ static INLINE void write_quad6(SpriteVertex *pv,
    _vertices = 0;
 }
 
+/* Lays a message out through gfx/font_layout.h, appending its glyph
+ * quads to the vertex range; every glyph lookup, the '?' stand-in's
+ * included, is paired with an update of that glyph's atlas cell, so a
+ * cell is never stranded when a later lookup clears the dirty flag. */
 - (void)renderMessage:(const char *)msg
+               length:(NSUInteger)msg_len
                height:(unsigned)height
                 scale:(float)scale
                 color:(vector_float4)color
@@ -3972,35 +3949,93 @@ static INLINE void write_quad6(SpriteVertex *pv,
                  posY:(float)posY
               aligned:(unsigned)aligned
 {
-   int lines = 0;
    float line_height;
+   float inv_tex_size_x;
+   float inv_tex_size_y;
+   float inv_win_width;
+   float inv_win_height;
+   float rgba[4];
+   uint64_t packed;
+   unsigned full_w;
+   unsigned full_h;
+   SpriteVertex *v;
    struct font_line_metrics *line_metrics = NULL;
+   const struct font_glyph *glyph_q       = NULL;
+   const struct font_glyph* (*get_glyph)(void*, uint32_t);
+   void *font_data;
+   int x                                  = 0;
+   int y                                  = 0;
+
+   /* Validate font data before use - can become invalid during
+    * video context reset or if font was freed while in use */
    if (!_font_driver || !_font_data)
       return;
+
+   get_glyph        = _font_driver->get_glyph;
+   font_data        = _font_data;
    _font_driver->get_line_metrics(_font_data, &line_metrics);
-   line_height = line_metrics->height * scale / height;
-   for (;;)
-   {
-      const char *delim = msg;
-      while (*delim && *delim != '\n')
-         delim++;
-      size_t msg_len = (size_t)(delim - msg);
-      /* Draw the line */
-      [self _renderLine:msg
-                 length:msg_len
-                  scale:scale
-                  color:color
-                   posX:posX
-                   posY:posY - (float)lines * line_height
-                aligned:aligned];
-      if (!*delim)
-         break;
-      msg += msg_len + 1;
-      lines++;
-   }
+   line_height      = line_metrics->height * scale / height;
+
+   rgba[0]          = color.x;
+   rgba[1]          = color.y;
+   rgba[2]          = color.z;
+   rgba[3]          = color.w;
+   packed           = rgba16_pack(rgba);
+   full_w           = VIDEO_SCALE_W(_driver.viewport->full_dims);
+   full_h           = VIDEO_SCALE_H(_driver.viewport->full_dims);
+   inv_tex_size_x   = 1.0f / _texture.width;
+   inv_tex_size_y   = 1.0f / _texture.height;
+   inv_win_width    = 1.0f / full_w;
+   inv_win_height   = 1.0f / full_h;
+
+   glyph_q          = get_glyph(font_data, '?');
+   if (glyph_q)
+      [self updateGlyph:glyph_q];
+
+   v                = (SpriteVertex *)_range.data + _vertices;
+
+#define FONT_LAYOUT_ALIGNED (aligned == TEXT_ALIGN_RIGHT \
+      || aligned == TEXT_ALIGN_CENTER)
+#define FONT_LAYOUT_DIRTY(glyph) [self updateGlyph:(glyph)]
+#define FONT_LAYOUT_LINE(line, line_width, count, bytes) \
+   do \
+   { \
+      (void)(count); \
+      x = (int)roundf(posX * full_w); \
+      y = (int)roundf((1.0f - (posY - (float)(line) * line_height)) \
+            * full_h); \
+      if (aligned == TEXT_ALIGN_RIGHT) \
+         x -= (int)((line_width) * scale); \
+      else if (aligned == TEXT_ALIGN_CENTER) \
+         x -= (int)((line_width) * scale) / 2; \
+   } while (0)
+#define FONT_LAYOUT_GLYPH(glyph, pen_x, pen_y) \
+   do \
+   { \
+      int off_x  = (glyph)->draw_offset_x; \
+      int off_y  = (glyph)->draw_offset_y; \
+      int tex_x  = (glyph)->atlas_offset_x; \
+      int tex_y  = (glyph)->atlas_offset_y; \
+      int g_w    = (glyph)->width; \
+      int g_h    = (glyph)->height; \
+      write_quad6(v, \
+            (x + (off_x + (pen_x)) * scale) * inv_win_width, \
+            (y + (off_y + (pen_y)) * scale) * inv_win_height, \
+            g_w * scale * inv_win_width, \
+            g_h * scale * inv_win_height, \
+            tex_x * inv_tex_size_x, \
+            tex_y * inv_tex_size_y, \
+            g_w * inv_tex_size_x, \
+            g_h * inv_tex_size_y, \
+            packed); \
+      _vertices += 6; \
+      v         += 6; \
+   } while (0)
+#include "../font_layout.h"
 }
 
 - (void)renderMessage:(const char *)msg
+               length:(NSUInteger)msg_len
                 width:(unsigned)width
                height:(unsigned)height
                params:(const struct font_params *)params
@@ -4082,6 +4117,7 @@ static INLINE void write_quad6(SpriteVertex *pv,
          color_dark.w = color.w * drop_alpha;
 
          [self renderMessage:msg
+                      length:msg_len
                       height:height
                        scale:scale
                        color:color_dark
@@ -4091,6 +4127,7 @@ static INLINE void write_quad6(SpriteVertex *pv,
       }
 
       [self renderMessage:msg
+                   length:msg_len
                    height:height
                     scale:scale
                     color:color
@@ -4147,7 +4184,8 @@ static void metal_raster_font_render_msg(
    video_viewport_t *vp = [d viewport];
    unsigned width       = VIDEO_SCALE_W(vp->full_dims);
    unsigned height      = VIDEO_SCALE_H(vp->full_dims);
-   [r renderMessage:msg width:width height:height params:params];
+   [r renderMessage:msg length:msg_len width:width height:height
+             params:params];
 }
 
 static const struct font_glyph *metal_raster_font_get_glyph(
@@ -4343,6 +4381,11 @@ static void metal_pull_cached_frame_cb(void *userdata,
                         name ? name : "Unknown", attr);
                }
             }
+
+            /* The device the index was chosen as, wherever the list
+             * now puts it */
+            gpu_index = video_driver_gpu_index_resolve(GFX_CTX_METAL_API,
+                  gpu_index, _gpu_list);
 
             if (count > 0 && gpu_index >= 0 && gpu_index < (int)count)
             {
@@ -4582,6 +4625,29 @@ static void metal_pull_cached_frame_cb(void *userdata,
 - (bool)_initMetal
 {
    _library = [_device newDefaultLibrary];
+   if (!_library)
+   {
+      /* newDefaultLibrary only resolves the metallib from inside a .app
+       * bundle's resources.  For a bare executable (CLI builds, non-.app
+       * installs, a dev build run in place) it returns nil, so fall back
+       * to loading default.metallib explicitly from the executable's own
+       * directory (where `make install` places it). */
+      NSString *exe = [[NSBundle mainBundle] executablePath];
+      if (exe)
+      {
+         NSString *path = [[exe stringByDeletingLastPathComponent]
+               stringByAppendingPathComponent:@"default.metallib"];
+         NSError  *lerr = nil;
+         _library       = [_device newLibraryWithURL:[NSURL fileURLWithPath:path]
+                                               error:&lerr];
+         if (_library)
+            RARCH_LOG("[Metal] Loaded shader library from \"%s\".\n",
+                  path.UTF8String);
+         else
+            RARCH_ERR("[Metal] Could not load \"%s\": %s.\n", path.UTF8String,
+                  lerr ? lerr.localizedDescription.UTF8String : "unknown error");
+      }
+   }
    _context = [[Context alloc] initWithDevice:_device
                                         layer:_layer
                                       library:_library];
@@ -5038,6 +5104,20 @@ typedef struct MTLALIGN(16)
    id<MTLTexture> _src; /* source texture */
    bool _srcDirty;
 
+   /* The framebuffer lent to the core (GET_CURRENT_SOFTWARE_FRAMEBUFFER):
+    * a shared-storage buffer the core renders into, seen by the GPU as
+    * a linear texture in the frame's source format. A frame pushed from
+    * it - the whole loan, or a window into it at the loan's pitch - is
+    * blitted out of it, with no host copy. _loanReader is the command
+    * buffer of the last such blit: the next lend waits for it before
+    * the core writes over what it read. */
+   id<MTLBuffer>        _loan;
+   id<MTLTexture>       _loanTex;
+   id<MTLCommandBuffer> _loanReader;
+   NSUInteger           _loanStride;
+   NSUInteger           _loanWidth;
+   NSUInteger           _loanHeight;
+
    id<MTLSamplerState> _samplers[RARCH_FILTER_MAX][RARCH_WRAP_MAX][2];
    struct video_shader *_shader;
 
@@ -5130,6 +5210,13 @@ typedef struct MTLALIGN(16)
 {
    int i;
 
+   /* The cached frame may point into the lent framebuffer, which
+    * goes with this view: retire it, and wait out any reader, before
+    * the buffer does. (The GPU's own reads hold the buffer through
+    * the command buffer.) */
+   if (_loan)
+      video_driver_cached_frame_retire();
+
    /* The engine's unretained slots each own one reference placed there
     * by RARCH_STRUCT_ASSIGN; they must be dropped explicitly in both modes.
     * _freeVideoShader clears the per-pass slots and the LUTs and frees
@@ -5157,6 +5244,9 @@ typedef struct MTLALIGN(16)
    [_context release];
    [(id)_texture release];
    [(id)_src release];
+   [(id)_loan release];
+   [(id)_loanTex release];
+   [(id)_loanReader release];
    RARCH_SUPER_DEALLOC();
 #endif
 }
@@ -5442,22 +5532,190 @@ typedef struct MTLALIGN(16)
 
    [self _updateHistory];
 
-   if (   _format == RPixelFormatBGRA8Unorm
-       || _format == RPixelFormatBGRX8Unorm
-       || _format == RPixelFormatBGR10A2Unorm)
    {
-      id<MTLTexture> tex = _engine.frame.texture[0].view;
-      [tex replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)_size.width, (NSUInteger)_size.height)
-             mipmapLevel:0 withBytes:src
-             bytesPerRow:pitch];
+      NSUInteger win_x, win_y;
+      bool       window = [self _frameWindow:src pitch:pitch x:&win_x y:&win_y];
+      bool       direct = (   _format == RPixelFormatBGRA8Unorm
+                           || _format == RPixelFormatBGRX8Unorm
+                           || _format == RPixelFormatBGR10A2Unorm);
+      /* The whole loan, or a window into it: already where the GPU
+       * reads it. Blit the window into the texture the frame is
+       * sampled from (or converted from), on the blit command buffer
+       * the format conversion also uses, which the context commits
+       * ahead of the frame's own. */
+      if (window)
+      {
+         id<MTLTexture> dst = direct ? _engine.frame.texture[0].view : _src;
+         id<MTLCommandBuffer> cb = _context.blitCommandBuffer;
+         id<MTLBlitCommandEncoder> bce = [cb blitCommandEncoder];
+         GFX_INSTR_INC(GFX_INSTR_FRAME_LENT_WINDOW);
+         [bce copyFromTexture:_loanTex
+                  sourceSlice:0
+                  sourceLevel:0
+                 sourceOrigin:MTLOriginMake(win_x, win_y, 0)
+                   sourceSize:MTLSizeMake((NSUInteger)_size.width, (NSUInteger)_size.height, 1)
+                    toTexture:dst
+             destinationSlice:0
+             destinationLevel:0
+            destinationOrigin:MTLOriginMake(0, 0, 0)];
+         [bce endEncoding];
+         RARCH_ASSIGN(_loanReader, cb);
+         if (!direct)
+            _srcDirty = YES;
+      }
+      else if (direct)
+      {
+         id<MTLTexture> tex = _engine.frame.texture[0].view;
+         GFX_INSTR_INC(GFX_INSTR_FRAME_COPY_HOST);
+         [tex replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)_size.width, (NSUInteger)_size.height)
+                mipmapLevel:0 withBytes:src
+                bytesPerRow:pitch];
+      }
+      else
+      {
+         GFX_INSTR_INC(GFX_INSTR_FRAME_COPY_HOST);
+         [_src replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)_size.width, (NSUInteger)_size.height)
+                 mipmapLevel:0 withBytes:src
+                 bytesPerRow:(NSUInteger)(pitch)];
+         _srcDirty = YES;
+      }
    }
-   else
+}
+
+/* Where a pushed frame lies in the lent framebuffer.
+ *
+ * A core that renders into the loan may push back a pointer partway
+ * into it, at the loan's pitch, with the size of the window it wants
+ * shown (an overscan crop by offset; beetle-psx does this). True, with
+ * the window's texel origin, when @src at @pitch with the view's size
+ * is inside the loan, on its pitch and whole: the same test the Vulkan
+ * and D3D12 drivers and the threaded wrapper make. */
+- (bool)_frameWindow:(const void *)src pitch:(NSUInteger)pitch
+                   x:(NSUInteger *)x y:(NSUInteger *)y
+{
+   uintptr_t base, p;
+   size_t off, row;
+   NSUInteger bpp;
+
+   if (!_loan || !_loanTex)
+      return false;
+   base = (uintptr_t)_loan.contents;
+   p    = (uintptr_t)src;
+   if (p < base || p - base >= _loan.length || pitch != _loanStride)
+      return false;
+   bpp  = RPixelFormatToBPP(_format);
+   off  = (size_t)(p - base);
+   row  = off % _loanStride;
+   if (row % bpp)
+      return false;
+   *y   = (NSUInteger)(off / _loanStride);
+   *x   = (NSUInteger)(row / bpp);
+   if (     *x + (NSUInteger)_size.width  > _loanWidth
+         || *y + (NSUInteger)_size.height > _loanHeight)
+      return false;
+   return true;
+}
+
+/* Lend the core a framebuffer of the size it asks for, in the frame's
+ * pixel format, at a row pitch the GPU can read as a linear texture.
+ * The buffer is shared storage, so on Apple silicon the core writes
+ * the memory the GPU samples; the texture over it is in the source
+ * format (BGRA8, or R16Uint for RGB565 as _src is) so a frame pushed
+ * from it needs one blit and no host copy (updateFrame:pitch:).
+ *
+ * Declined when the frame format has no such texture (a 10-bit
+ * source), or when the row pitch the GPU needs is wider than
+ * width * bpp: cores that ignore fb.pitch and write at the tight
+ * pitch would shear, so, as the Vulkan and D3D12 lends do, this one
+ * only goes out at the tight pitch and the core keeps its own buffer
+ * otherwise.
+ *
+ * Before the core writes, the GPU must be done reading the previous
+ * frame out of it: the blit that read it is waited for here (usually
+ * long complete - it was committed ahead of the previous frame's
+ * render). A resize retires the cached frame first, as the pointer
+ * it holds is into the buffer about to go. */
+- (bool)lendFramebuffer:(struct retro_framebuffer *)fb
+{
+   NSUInteger bpp, tight, align, stride;
+   MTLPixelFormat mtlFmt;
+
+   if (!fb->width || !fb->height)
+      return false;
+   switch (_format)
    {
-      [_src replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)_size.width, (NSUInteger)_size.height)
-              mipmapLevel:0 withBytes:src
-              bytesPerRow:(NSUInteger)(pitch)];
-      _srcDirty = YES;
+      case RPixelFormatBGRA8Unorm:
+      case RPixelFormatBGRX8Unorm:
+         mtlFmt = MTLPixelFormatBGRA8Unorm;
+         break;
+      case RPixelFormatB5G6R5Unorm:
+         mtlFmt = MTLPixelFormatR16Uint;
+         break;
+      default:
+         return false;
    }
+   bpp    = RPixelFormatToBPP(_format);
+   tight  = (NSUInteger)fb->width * bpp;
+   align  = [_context.device minimumLinearTextureAlignmentForPixelFormat:mtlFmt];
+   if (align < 16)
+      align = 16;
+   stride = (tight + align - 1) & ~(align - 1);
+   if (stride != tight)
+      return false;
+
+   if (     !_loan
+         || _loanWidth  != fb->width
+         || _loanHeight != fb->height
+         || _loanStride != stride)
+   {
+      MTLTextureDescriptor *td;
+      /* The cached frame may point into the buffer about to go. */
+      video_driver_cached_frame_retire();
+      if (_loanReader)
+      {
+         [_loanReader waitUntilCompleted];
+         RARCH_RELEASE_NIL(_loanReader);
+      }
+      RARCH_RELEASE_NIL(_loanTex);
+      RARCH_RELEASE_NIL(_loan);
+      GFX_INSTR_INC(GFX_INSTR_FRAME_TEX_CREATE);
+      RARCH_ASSIGN(_loan, RARCH_AUTORELEASE_R([_context.device
+            newBufferWithLength:stride * fb->height
+                        options:MTLResourceStorageModeShared]));
+      if (!_loan)
+         return false;
+      td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:mtlFmt
+                                                              width:fb->width
+                                                             height:fb->height
+                                                          mipmapped:NO];
+      td.storageMode = MTLStorageModeShared;
+      td.usage       = MTLTextureUsageShaderRead;
+      RARCH_ASSIGN(_loanTex, RARCH_AUTORELEASE_R([_loan
+            newTextureWithDescriptor:td offset:0 bytesPerRow:stride]));
+      if (!_loanTex)
+      {
+         RARCH_RELEASE_NIL(_loan);
+         return false;
+      }
+      _loanWidth  = fb->width;
+      _loanHeight = fb->height;
+      _loanStride = stride;
+   }
+   else if (_loanReader)
+   {
+      /* The GPU read the previous frame out of this buffer; the core
+       * is about to write the next one over it. */
+      [_loanReader waitUntilCompleted];
+      RARCH_RELEASE_NIL(_loanReader);
+   }
+
+   fb->data         = _loan.contents;
+   fb->pitch        = stride;
+   fb->format       = (_format == RPixelFormatB5G6R5Unorm)
+      ? RETRO_PIXEL_FORMAT_RGB565 : RETRO_PIXEL_FORMAT_XRGB8888;
+   /* Shared storage is host-cached memory: the core may read it back. */
+   fb->memory_flags = RETRO_MEMORY_TYPE_CACHED;
+   return true;
 }
 
 - (void)_initTexture:(texture_t *)t withDescriptor:(MTLTextureDescriptor *)td
@@ -6518,8 +6776,22 @@ static bool metal_frame(void *data, const void *frame,
 
    /* Call swap_buffers to acquire next drawable. This moves the blocking
     * acquisition to AFTER presenting (like Vulkan), instead of BEFORE
-    * rendering. This is critical for proper 120Hz on ProMotion displays. */
-   metal_ctx_swap_buffers(NULL);
+    * rendering. This is critical for proper 120Hz on ProMotion displays.
+    * Under the threaded display pacer the push is already timed to the
+    * display, so the next drawable is taken when the next frame draws:
+    * held from here it would sit idle for a period, leave one drawable
+    * on screen and one queued, and block this thread until the next
+    * vblank on every frame - which the pacer reads as a frame queued
+    * behind another. */
+   if (video_info->threaded_display_pacing)
+   {
+      @autoreleasepool
+      {
+         [md.context releaseDrawable];
+      }
+   }
+   else
+      metal_ctx_swap_buffers(NULL);
 
    /* Frame duping for shader_subframes - present multiple times per core frame
     * to match high refresh rate displays (e.g., 60fps core on 120Hz display).
@@ -7025,6 +7297,15 @@ static void metal_show_mouse(void *data, bool state)
          state ? (void*)1 : NULL);
 }
 
+static bool metal_get_current_sw_framebuffer(void *data,
+      struct retro_framebuffer *framebuffer)
+{
+   MetalDriver *md = (__bridge MetalDriver *)data;
+   if (!md)
+      return false;
+   return [md.frameView lendFramebuffer:framebuffer];
+}
+
 static struct video_shader *metal_get_current_shader(void *data)
 {
    MetalDriver *md = (__bridge MetalDriver *)data;
@@ -7107,6 +7388,12 @@ static void metal_set_hdr_subpixel_layout(void *data, unsigned subpixel_layout)
       [md.context setHDRSubpixelLayout:subpixel_layout];
 }
 
+static retro_time_t metal_get_last_present_time(void *data)
+{
+   MetalDriver *md = (__bridge MetalDriver *)data;
+   return md ? [md.context lastPresentTime] : 0;
+}
+
 static bool metal_supports_texture_format(void *video_data,
       enum texture_gpu_format fmt)
 {
@@ -7182,7 +7469,7 @@ static const video_poke_interface_t metal_poke_interface = {
    metal_show_mouse,
    NULL, /* grab_mouse_toggle */
    metal_get_current_shader,
-   NULL, /* get_current_software_framebuffer */
+   metal_get_current_sw_framebuffer,
    NULL, /* get_hw_render_interface */
    metal_set_hdr_menu_nits,
    metal_set_hdr_paper_white_nits,
@@ -7192,7 +7479,7 @@ static const video_poke_interface_t metal_poke_interface = {
    metal_supports_texture_format,
    metal_load_texture_compressed,
    NULL, /* present_last */
-   NULL, /* get_last_present_time */
+   metal_get_last_present_time,
    NULL, /* hw_ring_install */
    NULL, /* hw_ring_fence_new */
    NULL, /* hw_ring_fence_free */

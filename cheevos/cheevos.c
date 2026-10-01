@@ -70,6 +70,7 @@
 #include "../performance_counters.h"
 #include "../msg_hash.h"
 #include "../retroarch.h"
+#include "../runloop.h"
 #include "../runtime_file.h"
 #include "../core.h"
 #include "../core_option_manager.h"
@@ -207,6 +208,18 @@ uint8_t* rcheevos_patch_address(unsigned address)
    if (rcheevos_locals.memory.count == 0)
       rcheevos_init_memory(&rcheevos_locals);
    return rc_libretro_memory_find(&rcheevos_locals.memory, address);
+}
+
+uint8_t* rcheevos_patch_address_avail(unsigned address, unsigned *avail)
+{
+   uint32_t n = 0;
+   uint8_t *p;
+   if (rcheevos_locals.memory.count == 0)
+      rcheevos_init_memory(&rcheevos_locals);
+   p = rc_libretro_memory_find_avail(&rcheevos_locals.memory, address, &n);
+   if (avail)
+      *avail = p ? (unsigned)n : 0;
+   return p;
 }
 
 static bool rcheevos_is_game_loaded(void)
@@ -841,6 +854,8 @@ void rcheevos_pause_hardcore(void)
 bool rcheevos_unload(void)
 {
    const bool was_loaded = rcheevos_is_game_loaded();
+
+   runloop_frame_work_set(RUNLOOP_WORK_CHEEVOS, false);
 
 #ifdef HAVE_THREADS
    /* Bump the load generation FIRST, before any other state
@@ -1915,6 +1930,10 @@ bool rcheevos_load(const void *data)
    rcheevos_get_user_agent(&rcheevos_locals,
       rcheevos_locals.user_agent_core,
       sizeof(rcheevos_locals.user_agent_core));
+
+   /* From here the client is live for this content: the iterate
+    * ticks rcheevos_test() until rcheevos_unload() drops the bit. */
+   runloop_frame_work_set(RUNLOOP_WORK_CHEEVOS, true);
 
    if (rcheevos_locals.client)
       rc_client_unload_game(rcheevos_locals.client);

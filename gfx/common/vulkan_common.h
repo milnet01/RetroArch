@@ -38,6 +38,8 @@
 #include <retro_inline.h>
 #include <retro_common_api.h>
 #include <retro_miscellaneous.h>
+#include <retro_atomic.h>
+#include <rthreads/retro_eventcount.h>
 
 #include <libretro.h>
 #include <libretro_vulkan.h>
@@ -178,14 +180,6 @@ enum vulkan_context_flags
    VK_CTX_FLAG_HDR_SCRGB                    = (1 << 6)
 };
 
-enum vulkan_emulated_mailbox_flags
-{
-   VK_MAILBOX_FLAG_ACQUIRED            = (1 << 0),
-   VK_MAILBOX_FLAG_REQUEST_ACQUIRE     = (1 << 1),
-   VK_MAILBOX_FLAG_DEAD                = (1 << 2),
-   VK_MAILBOX_FLAG_HAS_PENDING_REQUEST = (1 << 3)
-};
-
 enum gfx_ctx_vulkan_data_flags
 {
    /* If set, prefer a path where we use
@@ -228,6 +222,12 @@ typedef struct vulkan_context
     * array above is rewritten by the thread that draws, while the main
     * thread is the one asking. */
    retro_atomic_int_t supports_adaptive_vsync;
+   /* Swapchains made and thrown away without a frame ever reaching the
+    * display: says the chosen GPU cannot present here, which no Vulkan
+    * query reports in advance. */
+   unsigned swapchain_never_presented;
+   /* The device in use, as the GPU list numbers it */
+   int gpu_index;
    VkImage swapchain_images[VULKAN_MAX_SWAPCHAIN_IMAGES];
    VkFence swapchain_fences[VULKAN_MAX_SWAPCHAIN_IMAGES];
    VkFormat swapchain_format;
@@ -289,20 +289,38 @@ typedef struct vulkan_context
    bool present_pending;
 } vulkan_context_t;
 
+/* The acquire thread behind emulated mailbox, and the thread that
+ * presents. There is no lock between them: three words, each written
+ * by one side and taken by the other, and an eventcount each way.
+ *
+ *   request   the presenting thread wants an image; the acquire
+ *             thread takes it (exchange) and acquires
+ *   acquired  the acquire thread has an answer; result and index were
+ *             written before it was raised, and are not written again
+ *             until the presenting thread has lowered it and asked
+ *             again
+ *   dead      teardown
+ */
 struct vulkan_emulated_mailbox
 {
    sthread_t *thread;
-   slock_t *lock;
-   scond_t *cond;
    VkDevice device;              /* ptr alignment */
    VkSwapchainKHR swapchain;     /* ptr alignment */
    /* Every wait this object makes, from the display's rate; sampled at
     * init so the thread never reads video state. */
    int64_t timeout_us;
 
+   retro_eventcount_t work;      /* the acquire thread sleeps: request, dead */
+   retro_eventcount_t answered;  /* the presenting thread sleeps: acquired */
+   retro_atomic_int_t request;
+   retro_atomic_int_t acquired;
+   retro_atomic_int_t dead;
+
    unsigned index;
    VkResult result;              /* enum alignment */
-   uint8_t flags;
+   /* The presenting thread only: a request is out and its answer has
+    * not been taken yet. */
+   bool has_pending_request;
 };
 
 typedef struct gfx_ctx_vulkan_data

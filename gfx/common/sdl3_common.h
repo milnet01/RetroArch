@@ -27,9 +27,12 @@
 
 enum sdl3_flags
 {
-   SDL3_FLAG_QUITTING       = (1 << 0),
-   SDL3_FLAG_SHOULD_RESIZE  = (1 << 1),
-   SDL3_FLAG_ADAPTIVE_VSYNC = (1 << 2)
+   SDL3_FLAG_QUITTING         = (1 << 0),
+   SDL3_FLAG_SHOULD_RESIZE    = (1 << 1),
+   SDL3_FLAG_ADAPTIVE_VSYNC   = (1 << 2),
+   /* The overlay textures are the overlay pack's (load_textures),
+    * not this driver's to destroy. */
+   SDL3_FLAG_OVERLAY_BORROWED = (1 << 3)
 };
 
 typedef struct sdl3_tex
@@ -41,6 +44,18 @@ typedef struct sdl3_tex
    bool active;
    bool rgb32;
 } sdl3_tex_t;
+
+#ifdef HAVE_OVERLAY
+/* On-screen overlay for SDL3. */
+struct sdl3_overlay
+{
+   SDL_Texture *tex;
+   SDL_FRect tex_coords; /* Normalized 0..1 for the source. */
+   SDL_FRect vert_coords; /* Normalized 0..1 within the base area. */
+   float alpha_mod;
+   bool fullscreen;
+};
+#endif
 
 typedef struct _sdl3_video
 {
@@ -55,6 +70,12 @@ typedef struct _sdl3_video
    sdl3_tex_t menu;  /* ptr alignment */
 
    SDL_Renderer *renderer;
+
+#ifdef HAVE_OVERLAY
+   struct sdl3_overlay *overlays;
+   unsigned overlays_size;
+   bool overlays_enabled;
+#endif
 
    uint8_t flags;
 } sdl3_video_t;

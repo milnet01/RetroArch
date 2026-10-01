@@ -23,6 +23,7 @@
 #include "video_driver.h"
 #include "video_thread_wrapper.h"
 #include "video_thread_hw.h"
+#include "video_thread_hw_fence.h"
 #include "../configuration.h"
 #include "../verbosity.h"
 
@@ -86,10 +87,10 @@ typedef struct
     * slot holds a reference from publish until it is handed over again. */
    ID3D11Texture2D *d3d11_direct;
 #endif
-   void            *fence;
-   /* The video thread has driven the driver with this slot and its
-    * fence is armed; the next user of the slot waits it first. */
-   bool             in_flight;
+   /* Armed by the video thread after every frame it drives the driver
+    * with from this slot; the next user of the slot waits it first.
+    * Handed between the two threads lock-free: video_thread_hw_fence.h. */
+   hw_fence_t       fence;
 } hw_slot_t;
 
 enum hw_api
@@ -136,6 +137,11 @@ typedef struct
    /* The core's current sync index: the slot it is rendering into.
     * Main thread only between pushes; the push moves it. */
    unsigned  index;
+   /* The slot the video thread last drew a real frame from, or -1. A
+    * dupe (video_refresh(NULL)) draws it again, so it is what a dupe
+    * fences. Written by the video thread when it claims a frame; read
+    * by the push. */
+   retro_atomic_int_t last_presented;
    enum hw_api api;
    thread_video_t *thr;
 } hw_ring_t;
@@ -158,18 +164,16 @@ static void hw_wait_slot(hw_ring_t *ring, unsigned i)
 {
    hw_slot_t *s        = &ring->slot[i];
    thread_video_t *thr = ring->thr;
-   if (!s->in_flight)
+   if (!thr->poke || !thr->poke->hw_ring_fence_wait)
       return;
-   if (thr->poke && thr->poke->hw_ring_fence_wait)
-   {
 #ifdef __APPLE__
-      while (!thr->poke->hw_ring_fence_wait(thr->driver_data, s->fence, 2000))
-         video_thread_main_pump();
+   while (!hw_fence_wait(&s->fence, thr->poke->hw_ring_fence_wait,
+            thr->driver_data, 2000))
+      video_thread_main_pump();
 #else
-      thr->poke->hw_ring_fence_wait(thr->driver_data, s->fence, HW_RING_WAIT_FOREVER);
+   hw_fence_wait(&s->fence, thr->poke->hw_ring_fence_wait,
+         thr->driver_data, HW_RING_WAIT_FOREVER);
 #endif
-   }
-   s->in_flight = false;
 }
 
 /* --- Vulkan: the core's side, main thread ----------------------------- */
@@ -210,7 +214,17 @@ static void hw_set_image(void *handle,
       s->has_image = true;
    }
    else
+   {
       s->has_image = false;
+      /* A core that withdraws its image means every frame after this
+       * one, dupes included - that is what the call does without the
+       * wrapper, where it writes the driver's state directly. Here it
+       * only reached the slot the core fills next, which is not the
+       * one a dupe re-reads: the ring went on handing the driver the
+       * last presented image, and a core that withdraws it to destroy
+       * it had it drawn from afterwards. */
+      video_thread_invalidate_hw_render_cache(ring->thr);
+   }
    if (num_semaphores > s->cap_semaphores)
    {
       VkSemaphore *grown = (VkSemaphore*)realloc(s->semaphores,
@@ -296,40 +310,54 @@ static void hw_set_signal_semaphore(void *handle, VkSemaphore semaphore)
  * libretro_d3d12.h version 2 and libretro_d3d11.h version 3: nothing is
  * copied into the slot, the driver reads the core's texture itself. */
 
-/* Under thr->lock: whether a frame the video thread is drawing, or has
- * yet to claim, names ring slot i. The pending frame is tail, both are
- * pending at two, and the one being drawn is tail ^ 1. */
-static bool hw_slot_queued(const thread_video_t *thr, unsigned i)
+/* Whether a frame the video thread is drawing, or has yet to claim,
+ * names ring slot i, given the ring word 'st'. The pending frame is
+ * tail, both are pending at two, and the one being drawn is tail ^ 1.
+ * The slots' hw_slot fields are this thread's own writes. */
+static bool hw_slot_queued(const thread_video_t *thr, unsigned i, int st)
 {
    unsigned w;
+   unsigned tail    = VIDEO_THREAD_RING_TAIL_OF(st);
+   unsigned pending = VIDEO_THREAD_RING_PENDING_OF(st);
+   bool busy        = VIDEO_THREAD_RING_BUSY_OF(st);
    for (w = 0; w < 2; w++)
    {
       if (thr->frame.slot[w].hw_slot != (int)i)
          continue;
-      if (     thr->frame.pending == 2
-            || (thr->frame.pending == 1 && w == thr->frame.tail)
-            || (thr->frame.busy && w == (thr->frame.tail ^ 1)))
+      if (     pending == 2
+            || (pending == 1 && w == tail)
+            || (busy && w == (tail ^ 1)))
          return true;
    }
    return false;
 }
 
-/* The wait itself, for any slot that is the core's own texture. */
-static void hw_wait_queued(hw_ring_t *ring, unsigned i, bool locked)
+/* The wait itself, for any slot that is the core's own texture: parks
+ * on the ring until the word has moved and the slot is no longer
+ * named. */
+static void hw_wait_queued(hw_ring_t *ring, unsigned i)
 {
    thread_video_t *thr = ring->thr;
-   if (!locked)
-      slock_lock(thr->lock);
-   while (hw_slot_queued(thr, i))
-      scond_wait(thr->cond_ring, thr->lock);
-   if (!locked)
-      slock_unlock(thr->lock);
+   for (;;)
+   {
+      int st  = retro_atomic_load_acquire_int(&thr->frame.state);
+      int key;
+      if (!hw_slot_queued(thr, i, st))
+         return;
+      key = retro_eventcount_prepare_wait(&thr->frame.ring);
+      if (retro_atomic_load_acquire_int(&thr->frame.state) != st)
+      {
+         retro_eventcount_cancel_wait(&thr->frame.ring);
+         continue;
+      }
+      retro_eventcount_commit_wait(&thr->frame.ring, key);
+   }
 }
 #endif
 
 #ifdef HAVE_D3D12
 static void hw_d3d12_slot_release_v2(hw_slot_t *s);
-static void hw_d3d12_wait_queued(hw_ring_t *ring, unsigned i, bool locked);
+static void hw_d3d12_wait_queued(hw_ring_t *ring, unsigned i);
 
 static void hw_d3d12_set_texture(void *handle, ID3D12Resource *texture,
       DXGI_FORMAT format)
@@ -344,7 +372,7 @@ static void hw_d3d12_set_texture(void *handle, ID3D12Resource *texture,
    /* A version 1 handoff, whatever the slot carried before. */
    if (s->v2)
    {
-      hw_d3d12_wait_queued(ring, ring->index, false);
+      hw_d3d12_wait_queued(ring, ring->index);
       hw_wait_slot(ring, ring->index);
       hw_d3d12_slot_release_v2(s);
    }
@@ -362,14 +390,13 @@ static void hw_d3d12_set_texture(void *handle, ID3D12Resource *texture,
  * core's texture, and a core let back in during that window draws into
  * a texture the frame about to be recorded will read. So for version 2
  * the wait covers the window too: until no queued frame names the slot.
- * The video thread broadcasts cond_ring when it claims a frame and when
+ * The video thread notifies the ring when it claims a frame and when
  * it finishes one. */
-static void hw_d3d12_wait_queued(hw_ring_t *ring, unsigned i, bool locked)
+static void hw_d3d12_wait_queued(hw_ring_t *ring, unsigned i)
 {
-   thread_video_t *thr = ring->thr;
    if (!ring->slot[i].v2)
       return;
-   hw_wait_queued(ring, i, locked);
+   hw_wait_queued(ring, i);
 }
 
 
@@ -402,7 +429,7 @@ static void hw_d3d12_wait_sync_index(void *handle)
    hw_ring_t *ring = hw_ring_of(handle);
    if (!ring)
       return;
-   hw_d3d12_wait_queued(ring, ring->index, false);
+   hw_d3d12_wait_queued(ring, ring->index);
    hw_wait_slot(ring, ring->index);
 }
 
@@ -417,7 +444,7 @@ static void hw_d3d12_set_texture_fenced(void *handle, ID3D12Resource *texture,
    if (!ring)
       return;
    s = &ring->slot[ring->index];
-   hw_d3d12_wait_queued(ring, ring->index, false);
+   hw_d3d12_wait_queued(ring, ring->index);
    hw_wait_slot(ring, ring->index);
    hw_d3d12_slot_release_v2(s);
    if (!texture)
@@ -495,7 +522,7 @@ static void hw_d3d11_wait_sync_index(void *handle)
    hw_ring_t *ring = hw_ring_of(handle);
    if (!ring)
       return;
-   hw_wait_queued(ring, ring->index, false);
+   hw_wait_queued(ring, ring->index);
    hw_wait_slot(ring, ring->index);
 }
 #endif /* HAVE_D3D11 */
@@ -513,14 +540,19 @@ static bool hw_ring_setup(thread_video_t *thr, hw_ring_t **out)
    }
    if (!(ring = (hw_ring_t*)calloc(1, sizeof(*ring))))
       return false;
-   ring->thr = thr;
+   ring->thr            = thr;
+   retro_atomic_int_init(&ring->last_presented, -1);
    for (i = 0; i < VIDEO_THREAD_HW_RING; i++)
+      hw_fence_init(&ring->slot[i].fence);
+   for (i = 0; i < VIDEO_THREAD_HW_RING * HW_FENCE_CELLS; i++)
    {
-      if (!thr->poke->hw_ring_fence_new(thr->driver_data, &ring->slot[i].fence))
+      if (!thr->poke->hw_ring_fence_new(thr->driver_data,
+               &ring->slot[i / HW_FENCE_CELLS].fence.cell[i % HW_FENCE_CELLS]))
       {
          unsigned j;
          for (j = 0; j < i; j++)
-            thr->poke->hw_ring_fence_free(thr->driver_data, ring->slot[j].fence);
+            thr->poke->hw_ring_fence_free(thr->driver_data,
+                  ring->slot[j / HW_FENCE_CELLS].fence.cell[j % HW_FENCE_CELLS]);
          free(ring);
          return false;
       }
@@ -733,6 +765,37 @@ uintptr_t video_thread_hw_get_current_framebuffer(void *data)
    return thr->poke->hw_ring_framebuffer(thr->driver_data, ring->index);
 }
 
+#define HW_RING_DUPE_WAIT_US 32000
+
+/* True while a dupe sits in the frame ring or is the frame being drawn,
+ * given the ring word: pending slots are tail (and tail ^ 1 when two
+ * are pending); the busy one is tail ^ 1. The slots' dupe flags are
+ * this thread's own writes. */
+static bool hw_dupe_queued(thread_video_t *thr, int st)
+{
+   unsigned tail    = VIDEO_THREAD_RING_TAIL_OF(st);
+   unsigned pending = VIDEO_THREAD_RING_PENDING_OF(st);
+   if (pending >= 1 && thr->frame.slot[tail].dupe)
+      return true;
+   if ((pending == 2 || VIDEO_THREAD_RING_BUSY_OF(st))
+         && thr->frame.slot[tail ^ 1].dupe)
+      return true;
+   return false;
+}
+
+void video_thread_hw_note_claim(thread_video_t *thr, int hw_slot)
+{
+   hw_ring_t *ring = (hw_ring_t*)thr->frame.hw_ring;
+   if (ring && hw_slot >= 0 && hw_slot < VIDEO_THREAD_HW_RING)
+      retro_atomic_store_release_int(&ring->last_presented, hw_slot);
+}
+
+int video_thread_hw_dupe_slot(thread_video_t *thr)
+{
+   hw_ring_t *ring = (hw_ring_t*)thr->frame.hw_ring;
+   return ring ? retro_atomic_load_acquire_int(&ring->last_presented) : -1;
+}
+
 int video_thread_hw_publish(thread_video_t *thr)
 {
    hw_ring_t *ring = (hw_ring_t*)thr->frame.hw_ring;
@@ -795,16 +858,35 @@ int video_thread_hw_publish(thread_video_t *thr)
    }
 #endif
    ring->index = (ring->index + 1) % VIDEO_THREAD_HW_RING;
+   /* A dupe still queued in the frame ring, or being drawn, re-reads
+    * the slot last presented. If that is the slot the core takes next,
+    * its fence does not cover the dupe's read yet (the video thread
+    * re-signals it only once the dupe is drawn), so wait for the dupe
+    * to clear the ring first. Bounded: on a stalled presenter the core
+    * proceeds as it did before this wait existed. */
+   {
+      int st = retro_atomic_load_acquire_int(&thr->frame.state);
+      if (     (int)ring->index
+            == retro_atomic_load_acquire_int(&ring->last_presented)
+            && hw_dupe_queued(thr, st))
+      {
+         int key = retro_eventcount_prepare_wait(&thr->frame.ring);
+         if (retro_atomic_load_acquire_int(&thr->frame.state) != st)
+            retro_eventcount_cancel_wait(&thr->frame.ring);
+         else
+            retro_eventcount_commit_wait_timeout(&thr->frame.ring, key,
+                  HW_RING_DUPE_WAIT_US);
+      }
+   }
    /* The slot the core fills next was last driven two frames ago;
     * normally long done, and if not this is where the core waits. */
 #ifdef HAVE_D3D12
-   /* Called from video_thread_frame() with thr->lock held. */
    if (ring->api == HW_API_D3D12)
-      hw_d3d12_wait_queued(ring, ring->index, true);
+      hw_d3d12_wait_queued(ring, ring->index);
 #endif
 #ifdef HAVE_D3D11
    if (ring->api == HW_API_D3D11 && ring->d3d11_v2)
-      hw_wait_queued(ring, ring->index, true);
+      hw_wait_queued(ring, ring->index);
 #endif
    hw_wait_slot(ring, ring->index);
    return (int)published;
@@ -867,10 +949,54 @@ void video_thread_hw_after_frame(thread_video_t *thr, int hw_slot)
    if (!ring || hw_slot < 0 || hw_slot >= VIDEO_THREAD_HW_RING)
       return;
    s = &ring->slot[hw_slot];
-   /* Signalled after the submission the frame call just made; the fence
-    * was reset by whoever waited it last, or is fresh. */
-   thr->poke->hw_ring_fence_signal(thr->driver_data, s->fence);
-   s->in_flight = true;
+   /* Signalled after the submission the frame call just made, on a
+    * fence nobody else holds: a dupe arms a slot that is armed already. */
+   hw_fence_arm(&s->fence, thr->poke->hw_ring_fence_signal,
+         thr->poke->hw_ring_fence_wait, thr->driver_data,
+         HW_RING_WAIT_FOREVER);
+}
+
+bool video_thread_hw_holds_frame(thread_video_t *thr)
+{
+#ifdef HAVE_VULKAN
+   hw_ring_t *ring = (hw_ring_t*)thr->frame.hw_ring;
+   unsigned i;
+   if (!ring || ring->api != HW_API_VULKAN)
+      return false;
+   if (retro_atomic_load_acquire_int(&ring->last_presented) >= 0)
+      return true;
+   for (i = 0; i < VIDEO_THREAD_HW_RING; i++)
+   {
+      if (ring->slot[i].has_image)
+         return true;
+   }
+#else
+   (void)thr;
+#endif
+   return false;
+}
+
+void video_thread_hw_forget(thread_video_t *thr)
+{
+#ifdef HAVE_VULKAN
+   hw_ring_t *ring = (hw_ring_t*)thr->frame.hw_ring;
+   unsigned i;
+   if (!ring || ring->api != HW_API_VULKAN)
+      return;
+   for (i = 0; i < VIDEO_THREAD_HW_RING; i++)
+   {
+      hw_slot_t *s      = &ring->slot[i];
+      /* The empty submission behind the slot's last frame. */
+      hw_wait_slot(ring, i);
+      s->has_image      = false;
+      s->num_semaphores = 0;
+      s->num_cmd        = 0;
+   }
+   /* A dupe has no slot to re-read until the core presents again. */
+   retro_atomic_store_release_int(&ring->last_presented, -1);
+#else
+   (void)thr;
+#endif
 }
 
 static void hw_context_free_cb(void *data)
@@ -893,7 +1019,11 @@ void video_thread_hw_free(thread_video_t *thr)
       /* Wait anything in flight before its fence goes. */
       hw_wait_slot(ring, i);
       if (thr->poke && thr->poke->hw_ring_fence_free)
-         thr->poke->hw_ring_fence_free(thr->driver_data, s->fence);
+      {
+         unsigned c;
+         for (c = 0; c < HW_FENCE_CELLS; c++)
+            thr->poke->hw_ring_fence_free(thr->driver_data, s->fence.cell[c]);
+      }
 #ifdef HAVE_VULKAN
       free(s->semaphores);
       free(s->cmd);
@@ -978,12 +1108,16 @@ bool video_thread_get_hw_render_interface(void *data,
    return false;
 }
 int  video_thread_hw_publish(thread_video_t *thr) { (void)thr; return -1; }
+void video_thread_hw_note_claim(thread_video_t *thr, int hw_slot) { (void)thr; (void)hw_slot; }
+int  video_thread_hw_dupe_slot(thread_video_t *thr) { (void)thr; return -1; }
 void video_thread_hw_before_frame(thread_video_t *thr, int hw_slot) { (void)thr; (void)hw_slot; }
 void video_thread_hw_after_frame(thread_video_t *thr, int hw_slot)  { (void)thr; (void)hw_slot; }
 void video_thread_hw_free(thread_video_t *thr) { (void)thr; }
 bool video_thread_hw_allowed(void) { return false; }
 bool video_thread_hw_bind_core_context(void *data) { (void)data; return false; }
 uintptr_t video_thread_hw_get_current_framebuffer(void *data) { (void)data; return 0; }
+bool video_thread_hw_holds_frame(thread_video_t *thr) { (void)thr; return false; }
+void video_thread_hw_forget(thread_video_t *thr) { (void)thr; }
 
 #endif /* VIDEO_THREAD_HW_ANY */
 

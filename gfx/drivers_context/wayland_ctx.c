@@ -31,6 +31,7 @@
 #endif
 
 #include "../common/wayland_common.h"
+#include "../common/wayland_resize.h"
 #include "../gfx/video_driver.h"
 #include "../../frontend/frontend_driver.h"
 #include "../../input/common/wayland_common.h"
@@ -132,10 +133,8 @@ static bool gfx_ctx_wl_set_resize(void *data, unsigned dims)
    gfx_ctx_wayland_data_t *wl    = (gfx_ctx_wayland_data_t*)data;
    wl->last_buffer_scale         = wl->buffer_scale;
    wl->last_fractional_scale_num = wl->fractional_scale_num;
-   if (!wl->fractional_scale &&
-       wl_compositor_get_version(wl->compositor) >=
-       WL_SURFACE_SET_BUFFER_SCALE_SINCE_VERSION)
-      wl->ignore_configuration = false;
+   wl_surface_resized(wl->surface, wl->fractional_scale != NULL,
+         wl->buffer_scale, &wl->ignore_configuration);
 #ifdef HAVE_EGL
    wl_egl_window_resize(wl->win, VIDEO_SCALE_W(dims), VIDEO_SCALE_H(dims), 0, 0);
 #endif
@@ -232,6 +231,11 @@ static bool gfx_ctx_wl_egl_init_context(gfx_ctx_wayland_data_t *wl)
       if (wl->gl_gpu_list)
          string_list_free(wl->gl_gpu_list);
       wl->gl_gpu_list = egl_gpu_list_new();
+      /* The device the index was chosen as, wherever the list now
+       * puts it */
+      if (wl->gl_gpu_list && settings)
+         settings->ints.gl_gpu_index = video_driver_gpu_index_resolve(
+               wl_api, settings->ints.gl_gpu_index, wl->gl_gpu_list);
       if (wl->gl_gpu_list && settings && settings->ints.gl_gpu_index > 0)
       {
          if ((device = egl_gpu_device_at(settings->ints.gl_gpu_index)))

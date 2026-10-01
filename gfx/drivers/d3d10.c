@@ -914,43 +914,14 @@ static void d3d10_font_free(void* data, bool is_threaded)
    free(font);
 }
 
-static int d3d10_font_get_message_width(void* data,
-      const char* msg, size_t msg_len, float scale)
+static int d3d10_font_get_message_width(void *data, const char *msg,
+      size_t msg_len, float scale)
 {
-   size_t i;
-   int      delta_x                 = 0;
-   const struct font_glyph* glyph_q = NULL;
-   d3d10_font_t* font               = (d3d10_font_t*)data;
-   const struct font_glyph* (*get_glyph)(void*, uint32_t);
-   void *font_data;
-
+   d3d10_font_t *font = (d3d10_font_t*)data;
    if (!font)
       return 0;
-
-   get_glyph = font->font_driver->get_glyph;
-   font_data = font->font_data;
-
-   glyph_q = get_glyph(font_data, '?');
-
-   for (i = 0; i < msg_len; i++)
-   {
-      const struct font_glyph *glyph;
-      const char* msg_tmp = &msg[i];
-      unsigned    code    = utf8_walk(&msg_tmp);
-      unsigned    skip    = msg_tmp - &msg[i];
-
-      if (skip > 1)
-         i += skip - 1;
-
-      /* Do something smarter here ... */
-      if (!(glyph = get_glyph(font_data, code)))
-         if (!(glyph = glyph_q))
-            continue;
-
-      delta_x += glyph->advance_x;
-   }
-
-   return delta_x * scale;
+   return font_renderer_get_message_width(font->font_driver,
+         font->font_data, msg, msg_len, scale);
 }
 
 /* Update only the atlas dirty rectangle of the A8 font texture:
@@ -1119,152 +1090,95 @@ static void d3d10_font_render_msg(
    v_begin  = (d3d10_sprite_t*)mapped_vbo + d3d10->sprites.offset;
    v        = v_begin;
 
-   /* Unified line loop: emit drop shadow + main glyphs per line
-    * in a single pass with one VBO map/unmap. */
+   /* One pass per line: each glyph is looked up once and written as
+    * its shadow and its foreground sprite. A line with a shadow is
+    * measured first so its shadows can go ahead of its glyphs - shadow
+    * k at v_line + k, glyph k at v_line + n + k - and draw behind them. */
    {
-      int lines       = 0;
-      const char *m   = msg;
+      d3d10_sprite_t *v_line = v;
+      unsigned n             = 0;
+      unsigned k             = 0;
+      bool line_ok           = false;
+      int fx                 = 0;
+      int fy                 = 0;
+      int sx                 = 0;
+      int sy                 = 0;
+      bool need_align        = (text_align == TEXT_ALIGN_RIGHT
+                                 || text_align == TEXT_ALIGN_CENTER);
 
-      for (;;)
-      {
-         unsigned i;
-         const char *end = m;
-         size_t msg_len;
-         while (*end && *end != '\n')
-            end++;
-         msg_len = (size_t)(end - m);
+#define D3D10_FONT_SPRITE(dst, px, py, glyph, col) \
+      do \
+      { \
+         (dst)->pos.x           = ((px) + ((glyph)->draw_offset_x * scale)) * inv_viewport_w; \
+         (dst)->pos.y           = ((py) + ((glyph)->draw_offset_y * scale)) * inv_viewport_h; \
+         (dst)->pos.w           = (glyph)->width  * scale * inv_viewport_w; \
+         (dst)->pos.h           = (glyph)->height * scale * inv_viewport_h; \
+         (dst)->coords.u        = (glyph)->atlas_offset_x * inv_tex_w; \
+         (dst)->coords.v        = (glyph)->atlas_offset_y * inv_tex_h; \
+         (dst)->coords.w        = (glyph)->width  * inv_tex_w; \
+         (dst)->coords.h        = (glyph)->height * inv_tex_h; \
+         (dst)->params.scaling  = 1; \
+         (dst)->params.rotation = 0; \
+         (dst)->colors[0]       = (col); \
+         (dst)->colors[1]       = (col); \
+         (dst)->colors[2]       = (col); \
+         (dst)->colors[3]       = (col); \
+      } while (0)
 
-         if (msg_len <= (unsigned)d3d10->sprites.capacity)
-         {
-            /* Drop shadow pass for this line */
-            if (has_drop)
-            {
-               int lx = drop_pre_x;
-               int ly = roundf((1.0 - (drop_pos_y - (float)lines * line_height)) * height);
-
-               if (text_align == TEXT_ALIGN_RIGHT
-                     || text_align == TEXT_ALIGN_CENTER)
-               {
-                  int width_accum    = 0;
-                  const char *scan   = m;
-                  const char *scan_e = end;
-                  while (scan < scan_e)
-                  {
-                     const struct font_glyph *glyph;
-                     uint32_t code    = utf8_walk(&scan);
-                     if (!(glyph = get_glyph(font_data, code)))
-                        if (!(glyph = glyph_q))
-                           continue;
-                     width_accum += glyph->advance_x;
-                  }
-                  if (text_align == TEXT_ALIGN_RIGHT)
-                     lx -= (int)(width_accum * scale);
-                  else
-                     lx -= (int)(width_accum * scale) / 2;
-               }
-
-               for (i = 0; i < msg_len; i++)
-               {
-                  const struct font_glyph *glyph;
-                  const char *msg_tmp = &m[i];
-                  unsigned   code     = utf8_walk(&msg_tmp);
-                  unsigned   skip     = msg_tmp - &m[i];
-
-                  if (skip > 1)
-                     i += skip - 1;
-
-                  if (!(glyph = get_glyph(font_data, code)))
-                     if (!(glyph = glyph_q))
-                        continue;
-
-                  v->pos.x           = (lx + (glyph->draw_offset_x * scale)) * inv_viewport_w;
-                  v->pos.y           = (ly + (glyph->draw_offset_y * scale)) * inv_viewport_h;
-                  v->pos.w           = glyph->width  * scale * inv_viewport_w;
-                  v->pos.h           = glyph->height * scale * inv_viewport_h;
-                  v->coords.u        = glyph->atlas_offset_x * inv_tex_w;
-                  v->coords.v        = glyph->atlas_offset_y * inv_tex_h;
-                  v->coords.w        = glyph->width  * inv_tex_w;
-                  v->coords.h        = glyph->height * inv_tex_h;
-                  v->params.scaling  = 1;
-                  v->params.rotation = 0;
-                  v->colors[0]       = color_dark;
-                  v->colors[1]       = color_dark;
-                  v->colors[2]       = color_dark;
-                  v->colors[3]       = color_dark;
-                  v++;
-
-                  lx                += glyph->advance_x * scale;
-                  ly                += glyph->advance_y * scale;
-               }
-            }
-
-            /* Main text pass for this line */
-            {
-               int lx = pre_x;
-               int ly = roundf((1.0 - (y - (float)lines * line_height)) * height);
-
-               if (text_align == TEXT_ALIGN_RIGHT
-                     || text_align == TEXT_ALIGN_CENTER)
-               {
-                  int width_accum    = 0;
-                  const char *scan   = m;
-                  const char *scan_e = end;
-                  while (scan < scan_e)
-                  {
-                     const struct font_glyph *glyph;
-                     uint32_t code    = utf8_walk(&scan);
-                     if (!(glyph = get_glyph(font_data, code)))
-                        if (!(glyph = glyph_q))
-                           continue;
-                     width_accum += glyph->advance_x;
-                  }
-                  if (text_align == TEXT_ALIGN_RIGHT)
-                     lx -= (int)(width_accum * scale);
-                  else
-                     lx -= (int)(width_accum * scale) / 2;
-               }
-
-               for (i = 0; i < msg_len; i++)
-               {
-                  const struct font_glyph *glyph;
-                  const char *msg_tmp = &m[i];
-                  unsigned   code     = utf8_walk(&msg_tmp);
-                  unsigned   skip     = msg_tmp - &m[i];
-
-                  if (skip > 1)
-                     i += skip - 1;
-
-                  if (!(glyph = get_glyph(font_data, code)))
-                     if (!(glyph = glyph_q))
-                        continue;
-
-                  v->pos.x           = (lx + (glyph->draw_offset_x * scale)) * inv_viewport_w;
-                  v->pos.y           = (ly + (glyph->draw_offset_y * scale)) * inv_viewport_h;
-                  v->pos.w           = glyph->width  * scale * inv_viewport_w;
-                  v->pos.h           = glyph->height * scale * inv_viewport_h;
-                  v->coords.u        = glyph->atlas_offset_x * inv_tex_w;
-                  v->coords.v        = glyph->atlas_offset_y * inv_tex_h;
-                  v->coords.w        = glyph->width  * inv_tex_w;
-                  v->coords.h        = glyph->height * inv_tex_h;
-                  v->params.scaling  = 1;
-                  v->params.rotation = 0;
-                  v->colors[0]       = color;
-                  v->colors[1]       = color;
-                  v->colors[2]       = color;
-                  v->colors[3]       = color;
-                  v++;
-
-                  lx                += glyph->advance_x * scale;
-                  ly                += glyph->advance_y * scale;
-               }
-            }
-         }
-
-         if (*end != '\n')
-            break;
-         m = end + 1;
-         lines++;
-      }
+#define FONT_LAYOUT_ALIGNED (need_align || has_drop)
+      /* A line too long for the sprite buffer is not looked up either */
+#define FONT_LAYOUT_SKIP(line, bytes) \
+      ((bytes) > (unsigned)d3d10->sprites.capacity)
+#define FONT_LAYOUT_LINE(line, width, count, bytes) \
+      do \
+      { \
+         int align_px = 0; \
+         if (text_align == TEXT_ALIGN_RIGHT) \
+            align_px = (int)((width) * scale); \
+         else if (text_align == TEXT_ALIGN_CENTER) \
+            align_px = (int)((width) * scale) / 2; \
+         line_ok = ((bytes) <= (unsigned)d3d10->sprites.capacity); \
+         fx      = pre_x - align_px; \
+         fy      = roundf((1.0 - (y - (float)(line) * line_height)) * height); \
+         if (has_drop) \
+         { \
+            sx   = drop_pre_x - align_px; \
+            sy   = roundf((1.0 - (drop_pos_y \
+                        - (float)(line) * line_height)) * height); \
+         } \
+         v_line  = v; \
+         n       = (count); \
+         k       = 0; \
+      } while (0)
+#define FONT_LAYOUT_GLYPH(glyph, pen_x, pen_y) \
+      do \
+      { \
+         /* This driver keeps its own truncating pens */ \
+         (void)(pen_x); \
+         (void)(pen_y); \
+         if (!line_ok) \
+            break; \
+         if (has_drop) \
+         { \
+            D3D10_FONT_SPRITE(v_line + k, sx, sy, glyph, color_dark); \
+            D3D10_FONT_SPRITE(v_line + n + k, fx, fy, glyph, color); \
+            sx += (glyph)->advance_x * scale; \
+            sy += (glyph)->advance_y * scale; \
+         } \
+         else \
+            D3D10_FONT_SPRITE(v_line + k, fx, fy, glyph, color); \
+         k++; \
+         fx += (glyph)->advance_x * scale; \
+         fy += (glyph)->advance_y * scale; \
+      } while (0)
+#define FONT_LAYOUT_LINE_END() \
+      do \
+      { \
+         if (line_ok) \
+            v = v_line + (has_drop ? n + k : k); \
+      } while (0)
+#include "../font_layout.h"
+#undef D3D10_FONT_SPRITE
    }
 
    count = v - v_begin;
@@ -2775,6 +2689,11 @@ static void *d3d10_gfx_init(const video_info_t* video,
       }
 
       video_driver_set_gpu_api_devices(GFX_CTX_DIRECT3D10_API, d3d10->gpu_list);
+
+      /* The device the index was chosen as, wherever the list now
+       * puts it */
+      gpu_index = video_driver_gpu_index_resolve(GFX_CTX_DIRECT3D10_API,
+            gpu_index, d3d10->gpu_list);
 
       if (0 <= gpu_index && gpu_index <= i && (gpu_index < D3D10_MAX_GPU_COUNT))
       {

@@ -243,6 +243,7 @@ typedef struct settings
       unsigned savestate_max_keep;
       unsigned save_compression_codec;
       unsigned network_cmd_port;
+      unsigned mcp_server_port;
       unsigned network_remote_base_port;
       unsigned keymapper_port;
       unsigned cloud_sync_sync_mode;
@@ -258,6 +259,7 @@ typedef struct settings
       unsigned video_scale_integer_axis;
       unsigned video_scale_integer_scaling;
       unsigned video_max_swapchain_images;
+      unsigned video_filter_threads;
       unsigned video_swap_interval;
       unsigned video_hard_sync_frames;
       unsigned video_frame_delay;
@@ -432,6 +434,15 @@ typedef struct settings
       unsigned smb_client_auth_mode;
       unsigned smb_client_num_contexts;
       unsigned smb_client_timeout;
+      unsigned smb_client_readahead;
+#endif
+#ifdef HAVE_NFSCLIENT
+      unsigned nfs_timeout;
+      unsigned nfs_num_contexts;
+      unsigned nfs_port;
+      unsigned nfs_mount_port;
+      unsigned nfs_version;
+      unsigned nfs_readahead;
 #endif
       unsigned input_sensor_orientation;
    } uints;
@@ -1032,6 +1043,7 @@ typedef struct settings
       bool save_file_compression;
       bool savestate_file_compression;
       bool network_cmd_enable;
+      bool mcp_server_enable;
       bool stdin_cmd_enable;
       bool keymapper_enable;
       bool network_remote_enable;
@@ -1223,6 +1235,12 @@ typedef struct settings
        * desktop_menu_save_geometry is on. */
       char desktop_menu_options_window[48];
       char camera_device[NAME_MAX_LENGTH];
+      /* Address the network command interface binds to. Empty means
+       * every interface (the historical behaviour); 127.0.0.1 limits
+       * it to this machine. */
+      char network_cmd_bind_address[NAME_MAX_LENGTH];
+      char mcp_server_bind_address[NAME_MAX_LENGTH];
+      char mcp_server_token[NAME_MAX_LENGTH];
       char netplay_mitm_server[NAME_MAX_LENGTH];
 #ifdef HAVE_NETWORKING
 #ifdef HAVE_CLOUDSYNC
@@ -1245,6 +1263,15 @@ typedef struct settings
       char twitch_stream_key[PATH_MAX_LENGTH];
       char facebook_stream_key[PATH_MAX_LENGTH];
       char kick_stream_key[PATH_MAX_LENGTH];
+      /* The device each GPU index named when it was chosen, so a list
+       * that has changed order since is noticed rather than silently
+       * selecting another GPU. */
+      char video_gpu_name_vulkan[NAME_MAX_LENGTH];
+      char video_gpu_name_gl[NAME_MAX_LENGTH];
+      char video_gpu_name_d3d10[NAME_MAX_LENGTH];
+      char video_gpu_name_d3d11[NAME_MAX_LENGTH];
+      char video_gpu_name_d3d12[NAME_MAX_LENGTH];
+      char video_gpu_name_metal[NAME_MAX_LENGTH];
       char discord_app_id[PATH_MAX_LENGTH];
       char ai_service_url[PATH_MAX_LENGTH];
 
@@ -1256,6 +1283,13 @@ typedef struct settings
       char smb_client_username[128];
       char smb_client_password[128];
       char smb_client_workgroup[64];
+      char smb_client_realm[128];
+      char smb_client_kdc[256];
+#endif
+#ifdef HAVE_NFSCLIENT
+      char nfs_server[256];
+      char nfs_export[PATH_MAX_LENGTH];
+      char nfs_subdir[PATH_MAX_LENGTH];
 #endif
 } arrays;
 
@@ -1526,6 +1560,12 @@ bool config_save_autoconf_profile(const char *device_name, unsigned user);
  * Returns: true (1) on success, otherwise returns false (0).
  **/
 bool config_save_file(const char *path);
+
+#if defined(HAVE_KEYCHAIN) && defined(HAVE_CRYPTO) && defined(HAVE_CONFIGFILE)
+/* After a keychain unlock: open the credentials sealed on another
+ * machine and put them into the running settings. Returns how many. */
+unsigned config_keychain_reapply(void);
+#endif
 
 /**
  * config_save_overrides:

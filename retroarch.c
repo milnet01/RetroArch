@@ -78,6 +78,9 @@
 #ifdef HAVE_SMBCLIENT
 #include "libretro-common/vfs/vfs_implementation_smb.h"
 #endif
+#ifdef HAVE_NFSCLIENT
+#include "libretro-common/vfs/vfs_implementation_nfs.h"
+#endif
 
 #include <features/features_cpu.h>
 
@@ -398,11 +401,36 @@ void retroarch_smb_init(void)
    smb_global_cfg.password = settings->arrays.smb_client_password;
    smb_global_cfg.workgroup = settings->arrays.smb_client_workgroup;
    smb_global_cfg.timeout = settings->uints.smb_client_timeout;
+   smb_global_cfg.readahead = settings->uints.smb_client_readahead;
    smb_global_cfg.num_contexts = settings->uints.smb_client_num_contexts;
    smb_global_cfg.auth_mode = settings->uints.smb_client_auth_mode;
    smb_global_cfg.subdir = settings->arrays.smb_client_subdir;
+   smb_global_cfg.realm = settings->arrays.smb_client_realm;
+   smb_global_cfg.kdc = settings->arrays.smb_client_kdc;
 
    smb_init_cfg(&smb_global_cfg);
+}
+#endif
+
+#ifdef HAVE_NFSCLIENT
+static struct nfs_settings nfs_global_cfg;
+
+/* Settings for nfs://; a URL with its own export needs none of them. */
+void retroarch_nfs_init(void)
+{
+   settings_t *settings = config_get_ptr();
+
+   nfs_global_cfg.server_address = settings->arrays.nfs_server;
+   nfs_global_cfg.export_path    = settings->arrays.nfs_export;
+   nfs_global_cfg.subdir         = settings->arrays.nfs_subdir;
+   nfs_global_cfg.timeout        = settings->uints.nfs_timeout;
+   nfs_global_cfg.num_contexts   = settings->uints.nfs_num_contexts;
+   nfs_global_cfg.nfs_port       = settings->uints.nfs_port;
+   nfs_global_cfg.mount_port     = settings->uints.nfs_mount_port;
+   nfs_global_cfg.version        = settings->uints.nfs_version;
+   nfs_global_cfg.readahead      = settings->uints.nfs_readahead;
+
+   nfs_init_cfg(&nfs_global_cfg);
 }
 #endif
 
@@ -583,6 +611,8 @@ static midi_event_t rarch_midi_drv_output_event; /* ptr alignment */
 static bool rarch_midi_drv_input_enabled;
 static bool rarch_midi_drv_output_enabled;
 static bool rarch_midi_drv_output_pending;
+static bool rarch_midi_drv_inited;
+static bool rarch_midi_drv_requested;
 
 static void null_midi_free(void *p) { }
 static void *null_midi_init(const char *input, const char *output) { return (void*)-1; }
@@ -645,13 +675,46 @@ static const void *midi_driver_find_handle(int index)
    return midi_drivers[index];
 }
 
+/* Not done at driver init: the first WinMM MIDI call after boot
+ * can block for seconds while Windows starts its MIDI service. */
+static bool midi_driver_enum_devices(void)
+{
+   union string_list_elem_attr attr = {0};
+
+   if (!rarch_midi_drv_inited)
+      return false;
+   if (rarch_midi_drv_inputs)
+      return true;
+
+   rarch_midi_drv_inputs  = string_list_new();
+   rarch_midi_drv_outputs = string_list_new();
+
+   if (     rarch_midi_drv_inputs
+         && rarch_midi_drv_outputs
+         && string_list_append_n(rarch_midi_drv_inputs, MIDI_DRIVER_OFF, STRLEN_CONST(MIDI_DRIVER_OFF), attr)
+         && string_list_append_n(rarch_midi_drv_outputs, MIDI_DRIVER_OFF, STRLEN_CONST(MIDI_DRIVER_OFF), attr)
+         && midi_drv->get_avail_inputs(rarch_midi_drv_inputs)
+         && midi_drv->get_avail_outputs(rarch_midi_drv_outputs))
+      return true;
+
+   if (rarch_midi_drv_inputs)
+      string_list_free(rarch_midi_drv_inputs);
+   if (rarch_midi_drv_outputs)
+      string_list_free(rarch_midi_drv_outputs);
+   rarch_midi_drv_inputs  = NULL;
+   rarch_midi_drv_outputs = NULL;
+   return false;
+}
+
 struct string_list *midi_driver_get_avail_inputs(void)
 {
+   midi_driver_enum_devices();
    return rarch_midi_drv_inputs;
 }
 
 struct string_list *midi_driver_get_avail_outputs(void)
 {
+   midi_driver_enum_devices();
    return rarch_midi_drv_outputs;
 }
 
@@ -756,24 +819,15 @@ bool midi_driver_render_audio(float *out, size_t frames, unsigned rate)
    return midi_drv->render(rarch_midi_drv_data, out, frames, rate);
 }
 
-static void midi_driver_free(void)
+/* Closes the device and its I/O buffers. The driver stays selected
+ * and the device lists stay valid, so the menu can still offer
+ * another device and the next GET_MIDI_INTERFACE can retry. */
+static void midi_driver_close(void)
 {
    if (rarch_midi_drv_data)
    {
       midi_drv->free(rarch_midi_drv_data);
       rarch_midi_drv_data = NULL;
-   }
-
-   if (rarch_midi_drv_inputs)
-   {
-      string_list_free(rarch_midi_drv_inputs);
-      rarch_midi_drv_inputs = NULL;
-   }
-
-   if (rarch_midi_drv_outputs)
-   {
-      string_list_free(rarch_midi_drv_outputs);
-      rarch_midi_drv_outputs = NULL;
    }
 
    if (rarch_midi_drv_input_buffer)
@@ -792,87 +846,84 @@ static void midi_driver_free(void)
    rarch_midi_drv_output_enabled = false;
 }
 
-static bool midi_driver_init(void *data)
+static void midi_driver_free(void)
 {
-   union string_list_elem_attr
-      attr                        = {0};
-   bool ret                       = true;
-   settings_t *settings           = (settings_t*)data;
+   midi_driver_close();
 
-   rarch_midi_drv_inputs          = string_list_new();
-   rarch_midi_drv_outputs         = string_list_new();
+   if (rarch_midi_drv_inputs)
+   {
+      string_list_free(rarch_midi_drv_inputs);
+      rarch_midi_drv_inputs = NULL;
+   }
 
-   if (!rarch_midi_drv_inputs || !rarch_midi_drv_outputs)
-      ret = false;
-   else if (!string_list_append_n(rarch_midi_drv_inputs, MIDI_DRIVER_OFF, STRLEN_CONST(MIDI_DRIVER_OFF), attr) ||
-            !string_list_append_n(rarch_midi_drv_outputs, MIDI_DRIVER_OFF, STRLEN_CONST(MIDI_DRIVER_OFF), attr))
+   if (rarch_midi_drv_outputs)
+   {
+      string_list_free(rarch_midi_drv_outputs);
+      rarch_midi_drv_outputs = NULL;
+   }
+
+   rarch_midi_drv_inited         = false;
+}
+
+static bool midi_driver_open(settings_t *settings)
+{
+   bool ret = true;
+
+   if (rarch_midi_drv_data)
+      return true;
+
+   if (!midi_driver_enum_devices())
       ret = false;
    else
    {
       char * input  = NULL;
       char * output = NULL;
 
-      midi_drv      = midi_driver_find_driver(
-            settings->arrays.midi_driver);
-
-      if (strcmp(midi_drv->ident, settings->arrays.midi_driver) != 0)
+      if (string_is_not_equal(settings->arrays.midi_input, MIDI_DRIVER_OFF))
       {
-         configuration_set_string(settings,
-               settings->arrays.midi_driver, midi_drv->ident);
+         if (string_list_find_elem(rarch_midi_drv_inputs, settings->arrays.midi_input))
+            input = settings->arrays.midi_input;
+         else
+         {
+            RARCH_WARN("[MIDI] Input device \"%s\" unavailable.\n",
+                  settings->arrays.midi_input);
+            configuration_set_string(settings,
+                  settings->arrays.midi_input, MIDI_DRIVER_OFF);
+         }
       }
 
-      if (!midi_drv->get_avail_inputs(rarch_midi_drv_inputs))
-         ret = false;
-      else if (!midi_drv->get_avail_outputs(rarch_midi_drv_outputs))
+      if (string_is_not_equal(settings->arrays.midi_output, MIDI_DRIVER_OFF))
+      {
+         if (string_list_find_elem(rarch_midi_drv_outputs, settings->arrays.midi_output))
+            output = settings->arrays.midi_output;
+         else
+         {
+            RARCH_WARN("[MIDI] Output device \"%s\" unavailable.\n",
+                  settings->arrays.midi_output);
+            configuration_set_string(settings,
+                  settings->arrays.midi_output, MIDI_DRIVER_OFF);
+         }
+      }
+
+      rarch_midi_drv_data = midi_drv->init(input, output);
+      if (!rarch_midi_drv_data)
          ret = false;
       else
       {
-         if (string_is_not_equal(settings->arrays.midi_input, MIDI_DRIVER_OFF))
-         {
-            if (string_list_find_elem(rarch_midi_drv_inputs, settings->arrays.midi_input))
-               input = settings->arrays.midi_input;
-            else
-            {
-               RARCH_WARN("[MIDI] Input device \"%s\" unavailable.\n",
-                     settings->arrays.midi_input);
-               configuration_set_string(settings,
-                     settings->arrays.midi_input, MIDI_DRIVER_OFF);
-            }
-         }
+         rarch_midi_drv_input_enabled  = (input  != NULL);
+         rarch_midi_drv_output_enabled = (output != NULL);
 
-         if (string_is_not_equal(settings->arrays.midi_output, MIDI_DRIVER_OFF))
-         {
-            if (string_list_find_elem(rarch_midi_drv_outputs, settings->arrays.midi_output))
-               output = settings->arrays.midi_output;
-            else
-            {
-               RARCH_WARN("[MIDI] Output device \"%s\" unavailable.\n",
-                     settings->arrays.midi_output);
-               configuration_set_string(settings,
-                     settings->arrays.midi_output, MIDI_DRIVER_OFF);
-            }
-         }
-
-         rarch_midi_drv_data = midi_drv->init(input, output);
-         if (!rarch_midi_drv_data)
+         if (!midi_driver_init_io_buffers())
             ret = false;
          else
          {
-            rarch_midi_drv_input_enabled  = (input  != NULL);
-            rarch_midi_drv_output_enabled = (output != NULL);
+            if (input)
+               RARCH_LOG("[MIDI] Input device: \"%s\".\n", input);
 
-            if (!midi_driver_init_io_buffers())
-               ret = false;
-            else
+            if (output)
             {
-               if (input)
-                  RARCH_LOG("[MIDI] Input device: \"%s\".\n", input);
-
-               if (output)
-               {
-                  RARCH_LOG("[MIDI] Output device: \"%s\".\n", output);
-                  midi_driver_set_volume(settings->uints.midi_volume);
-               }
+               RARCH_LOG("[MIDI] Output device: \"%s\".\n", output);
+               midi_driver_set_volume(settings->uints.midi_volume);
             }
          }
       }
@@ -880,22 +931,46 @@ static bool midi_driver_init(void *data)
 
    if (!ret)
    {
-      midi_driver_free();
+      midi_driver_close();
       RARCH_ERR("[MIDI] Initialization failed.\n");
       return false;
    }
    return true;
 }
 
+static bool midi_driver_init(void *data)
+{
+   settings_t *settings = (settings_t*)data;
+
+   midi_drv             = midi_driver_find_driver(
+         settings->arrays.midi_driver);
+
+   if (strcmp(midi_drv->ident, settings->arrays.midi_driver))
+   {
+      configuration_set_string(settings,
+            settings->arrays.midi_driver, midi_drv->ident);
+   }
+
+   rarch_midi_drv_inited = true;
+
+   if (rarch_midi_drv_requested)
+      return midi_driver_open(settings);
+   return true;
+}
+
+void midi_driver_request(void)
+{
+   rarch_midi_drv_requested = true;
+   if (rarch_midi_drv_inited)
+      midi_driver_open(config_get_ptr());
+}
+
 bool midi_driver_set_input(const char *input)
 {
+   /* Not open yet: the setting is read when a core requests
+    * the interface, so there is nothing to apply now. */
    if (!rarch_midi_drv_data)
-   {
-#ifdef DEBUG
-      RARCH_ERR("[MIDI] midi_driver_set_input called on uninitialized driver.\n");
-#endif
-      return false;
-   }
+      return true;
 
    if (string_is_equal(input, MIDI_DRIVER_OFF))
       input = NULL;
@@ -921,13 +996,10 @@ bool midi_driver_set_input(const char *input)
 
 bool midi_driver_set_output(void *settings_data, const char *output)
 {
+   /* Not open yet: the setting is read when a core requests
+    * the interface, so there is nothing to apply now. */
    if (!rarch_midi_drv_data)
-   {
-#ifdef DEBUG
-      RARCH_ERR("[MIDI] midi_driver_set_output called on uninitialized driver.\n");
-#endif
-      return false;
-   }
+      return true;
 
    if (string_is_equal(output, MIDI_DRIVER_OFF))
       output = NULL;
@@ -1951,6 +2023,7 @@ void driver_uninit(int flags, enum driver_lifetime_flags lifetime_flags)
       }
 
       camera_st->data = NULL;
+      runloop_frame_work_set(RUNLOOP_WORK_CAMERA, false);
    }
 
 #ifdef HAVE_BLUETOOTH
@@ -1998,7 +2071,12 @@ void driver_uninit(int flags, enum driver_lifetime_flags lifetime_flags)
 #endif
 
    if (flags & DRIVER_MIDI_MASK)
+   {
       midi_driver_free();
+      /* Reopen after a reinit, not after the core is unloaded */
+      if (!(lifetime_flags & DRIVER_LIFETIME_RESET))
+         rarch_midi_drv_requested = false;
+   }
 
 #ifdef HAVE_LAKKA
    cpu_scaling_driver_free();
@@ -3274,6 +3352,108 @@ bool is_accessibility_enabled(bool accessibility_enable, bool accessibility_enab
  *
  * Every local is re-derived from its accessor rather than passed in,
  * so it carries no dependency on the caller's frame. */
+/* Closing content, in two halves around the wait for a save or load
+ * state task still inside the core: CMD_EVENT_CORE_DEINIT waits
+ * between them, a staged content load returns to the frame loop
+ * between them and asks core_deinit_pending() each frame. */
+static void command_event_core_deinit_begin(void)
+{
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   settings_t *settings        = config_get_ptr();
+
+   /* Persist core options before anything below calls
+    * back into the core (auto save-state, unload, deinit),
+    * so a crash there cannot lose them. */
+   runloop_core_options_save();
+
+   /* Restore unpaused state. The recursive command_event call
+    * here re-enters the dispatcher; the UNPAUSE branch is
+    * deliberately small (clears flags, resumes audio) and
+    * does not touch core state, so the self-call is safe.
+    * Any future addition to the UNPAUSE handler that would
+    * touch core state must consider that we're mid-deinit. */
+   runloop_st->paused_hotkey = false;
+   command_event(CMD_EVENT_UNPAUSE, NULL);
+
+   /* The platform that uses ram_state_save calls it when the content
+    * ends and writes it to a file */
+   ram_state_to_file();
+
+   /* Save auto state */
+   if (     (runloop_st->flags & RUNLOOP_FLAG_CORE_RUNNING)
+         && !(runloop_st->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED)
+         && settings->bools.savestate_auto_save)
+      command_event_save_auto_state();
+
+   /* Closing content starts here: retro_run() is not entered again
+    * (core_run's guard), whatever the frame loop does meanwhile. */
+   runloop_st->content_closing = true;
+
+   /* Say what a wait is for: an unexplained frozen frame and a frame
+    * that says "saving state" are very different experiences, and on
+    * slow storage this is seconds.  Only when there is something to
+    * wait for - a close with no save in flight shows nothing. */
+   if (content_save_state_in_progress(NULL))
+   {
+      const char *_msg = msg_hash_to_str(MSG_SAVING_STATE);
+      runloop_msg_queue_push(_msg, strlen(_msg), 1, 180, true,
+            NULL, MESSAGE_QUEUE_ICON_DEFAULT,
+            MESSAGE_QUEUE_CATEGORY_INFO);
+      video_driver_cached_frame();
+   }
+}
+
+/* A save or load state task still runs inside the core: both call
+ * into core function pointers (retro_serialize via
+ * content_get_serialized_data, retro_unserialize via core_unserialize)
+ * from the task worker, and the deinit below unloads the library they
+ * live in.  The auto-save just pushed is covered too: it runs against
+ * the same condition. */
+static bool command_event_core_deinit_pending(void)
+{
+   return content_save_state_in_progress(NULL)
+       || content_load_state_in_progress(NULL);
+}
+
+static void command_event_finish_content_deinit(void);
+
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+/* How much of what the content read over the network read-ahead had
+ * ready, so a user can tell whether a window size helps: logged once
+ * the core has closed its files, and only while read-ahead is on. */
+static void command_event_log_readahead(const char *proto,
+      unsigned window_kib, unsigned direct_kib)
+{
+   unsigned total = window_kib + direct_kib;
+   if (!total)
+      return;
+   RARCH_LOG("[%s] Read-ahead: %u of %u KiB read came from its window (%u%%).\n",
+         proto, window_kib, total,
+         (unsigned)(((uint64_t)window_kib * 100 + total / 2) / total));
+}
+#endif
+
+static void command_event_core_deinit_finish(void)
+{
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   command_event_finish_content_deinit();
+#ifdef HAVE_SMBCLIENT
+   {
+      unsigned w, d;
+      smb_take_readahead_stats(&w, &d);
+      command_event_log_readahead("SMB", w, d);
+   }
+#endif
+#ifdef HAVE_NFSCLIENT
+   {
+      unsigned w, d;
+      nfs_take_readahead_stats(&w, &d);
+      command_event_log_readahead("NFS", w, d);
+   }
+#endif
+   runloop_st->content_closing = false;
+}
+
 static void command_event_finish_content_deinit(void)
 {
    runloop_state_t *runloop_st          = runloop_state_get_ptr();
@@ -4703,93 +4883,17 @@ bool command_event(enum event_command cmd, void *data)
          }
          break;
       case CMD_EVENT_CORE_DEINIT:
-         {
-            /* Persist core options before anything below calls
-             * back into the core (auto save-state, unload, deinit),
-             * so a crash there cannot lose them. */
-            runloop_core_options_save();
-
-            /* Restore unpaused state. The recursive command_event call
-             * here re-enters this dispatcher; the UNPAUSE branch is
-             * deliberately small (clears flags, resumes audio) and
-             * does not touch core state, so the self-call is safe.
-             * Any future addition to the UNPAUSE handler that would
-             * touch core state must consider that we're mid-deinit. */
-            runloop_st->paused_hotkey = false;
-            command_event(CMD_EVENT_UNPAUSE, NULL);
-
-            /* The platform that uses ram_state_save calls it when the content
-             * ends and writes it to a file */
-            ram_state_to_file();
-
-            /* Save auto state */
-            if (     runloop_st
-                  && (runloop_st->flags & RUNLOOP_FLAG_CORE_RUNNING)
-                  && !(runloop_st->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED)
-                  && settings->bools.savestate_auto_save)
-               command_event_save_auto_state();
-
-            /* Wait for any in-flight save / load state tasks before
-             * tearing down the core. Both task_save_handler and
-             * task_load_handler run on the threaded task worker and
-             * call into core function pointers (retro_serialize via
-             * content_get_serialized_data, retro_unserialize via
-             * core_unserialize). If a worker is mid-call when
-             * runloop_event_deinit_core runs uninit_libretro_symbols,
-             * the worker dispatches into a closed dylib.
-             *
-             * This covers the auto-state save conditionally kicked
-             * off just above as well: it runs unconditionally,
-             * against the same condition, with nothing in between
-             * that can push a task, so the auto-save path needs no
-             * wait of its own. It also covers what that one could
-             * not - a manually triggered save (menu / hotkey /
-             * netplay) already in flight when the user closed
-             * content with savestate_auto_save disabled. */
-            /* Say what the pause is for before blocking on it.
-             *
-             * This does not shorten the wait - the invariant above
-             * means it cannot be skipped - but an unexplained frozen
-             * frame and a frame that says "saving state" are very
-             * different experiences, and on slow storage this is
-             * seconds.  The message is pushed and one frame forced
-             * out first, because nothing draws once the wait starts.
-             *
-             * Only when there is actually something to wait for:
-             * content_save_state_in_progress() is the same condition
-             * the wait uses, so a close with no save in flight - the
-             * common case - is untouched and shows nothing. */
-            /* Closing content starts here.
-             *
-             * Set around the whole teardown, including the waits
-             * below: they are part of closing, and once the wait
-             * stops blocking they are the part that will still be
-             * running when the frame loop resumes. Nothing observes
-             * this yet - the main thread does not leave this block -
-             * which is the point of introducing it on its own. */
-            runloop_st->content_closing = true;
-
-            if (content_save_state_in_progress(NULL))
-            {
-               const char *_msg = msg_hash_to_str(MSG_SAVING_STATE);
-               runloop_msg_queue_push(_msg, strlen(_msg), 1, 180, true,
-                     NULL, MESSAGE_QUEUE_ICON_DEFAULT,
-                     MESSAGE_QUEUE_CATEGORY_INFO);
-               video_driver_cached_frame();
-            }
-
-            content_wait_for_save_state_task();
-            content_wait_for_load_state_task();
-
-            command_event_finish_content_deinit();
-
-            /* Closing content is finished.  One clear covers the
-             * whole block: it has a single exit, with no early
-             * return or goto between the set above and here. */
-            runloop_st->content_closing = false;
-
-            break;
-         }
+         command_event_core_deinit_begin();
+         /* A state task calls into the core this unloads.  Reached
+          * when an init fails, and from a staged load's core stage -
+          * after its close has waited the state tasks out from the
+          * frame loop, so there is nothing left to wait for.  The
+          * interactive close goes through retroarch_main_deinit_begin /
+          * _pending / _finish instead. */
+         content_wait_for_save_state_task();
+         content_wait_for_load_state_task();
+         command_event_core_deinit_finish();
+         break;
       case CMD_EVENT_CORE_INIT:
          {
             enum rarch_core_type *type     = (enum rarch_core_type*)data;
@@ -5362,6 +5466,12 @@ bool command_event(enum event_command cmd, void *data)
             char *netplay_server  = NULL;
             char *netplay_session = NULL;
             unsigned netplay_port = 0;
+
+            /* Hosting through a relay whose address is still being
+             * asked for: set up once the answer is in, from the frame
+             * loop, rather than waiting for it here. */
+            if (netplay_host_setup_defer())
+               break;
 
             command_event(CMD_EVENT_NETPLAY_DEINIT, NULL);
 
@@ -5988,6 +6098,13 @@ bool command_event(enum event_command cmd, void *data)
                      settings,
                      &runloop_st->fastmotion_override.current));
          }
+         break;
+      case CMD_EVENT_CAMERA_ALLOW_APPLY:
+         /* Allowing again does nothing by itself: the core has to call
+          * start() for the camera to come up, and that start raises
+          * the bit. Disallowing stops a camera that is running. */
+         if (!settings->bools.camera_allow)
+            driver_camera_stop();
          break;
       case CMD_EVENT_DISCORD_INIT:
 #ifdef HAVE_DISCORD
@@ -6668,6 +6785,9 @@ int rarch_main(int argc, char *argv[], void *data)
 
 #ifdef HAVE_SMBCLIENT
    retroarch_smb_init();
+#endif
+#ifdef HAVE_NFSCLIENT
+   retroarch_nfs_init();
 #endif
 
    if (frontend_state_get_ptr()->current_frontend_ctx)
@@ -7930,6 +8050,15 @@ static bool retroarch_parse_input_and_config(
       config_load_file_salamander();
 #endif
       config_load(global_get_ptr());
+      /* The network clients took their settings before the file was
+       * read (the string fields point at the live buffers, the numeric
+       * ones were copied); hand them the loaded values. */
+#ifdef HAVE_SMBCLIENT
+      retroarch_smb_init();
+#endif
+#ifdef HAVE_NFSCLIENT
+      retroarch_nfs_init();
+#endif
 
       /* Remember the startup config path so "Save Main
        * Configuration" can find it after config_replace()
@@ -8334,6 +8463,9 @@ static bool retroarch_parse_input_and_config(
 
                   if (!explicit_menu)
                   {
+                     /* Command-line scan with no menu: the scan is
+                      * the whole run, so run the queue dry and exit.
+                      * Nothing is drawn meanwhile. */
                      task_queue_wait(NULL, NULL);
                      driver_uninit(DRIVERS_CMD_ALL, (enum driver_lifetime_flags)0);
                      exit(0);
@@ -8485,7 +8617,99 @@ static bool retroarch_core_info_savestate_probe(void)
          && core_serialize_size() > 0;
 }
 
-bool retroarch_main_init(int argc, char *argv[])
+/* What a failed phase leaves behind: no core, no session, and the
+ * jmp_buf retroarch_fail() would land in dead. */
+static bool retroarch_main_init_fail(global_t *global)
+{
+   command_event(CMD_EVENT_CORE_DEINIT, NULL);
+   runloop_is_inited_clear();
+   global->flags &= ~GLOB_FLG_INIT_IN_PROGRESS;
+   return false;
+}
+
+/* Picks the driver of every kind from the configuration; the video,
+ * input and menu ones are required.  Reports through retroarch_fail(),
+ * so it runs under a live error_sjlj_context. */
+static void retroarch_find_drivers(settings_t *settings,
+      bool verbosity_enabled)
+{
+#ifdef HAVE_MENU
+   struct menu_state *menu_st    = menu_state_get_ptr();
+#endif
+   if (!(audio_driver_find_driver(settings->arrays.audio_driver,
+         "audio driver", verbosity_enabled)))
+      retroarch_fail(1, "audio_driver_find()");
+   if (!video_driver_find_driver(settings,
+         "video driver", verbosity_enabled))
+      retroarch_fail(1, "video_driver_find_driver()");
+   if (!input_driver_find_driver(settings,
+         "input driver", verbosity_enabled))
+      retroarch_fail(1, "input_driver_find_driver()");
+
+   if (!camera_driver_find_driver("camera driver", verbosity_enabled))
+      retroarch_fail(1, "find_camera_driver()");
+
+#ifdef HAVE_BLUETOOTH
+   bluetooth_driver_ctl(RARCH_BLUETOOTH_CTL_FIND_DRIVER, NULL);
+#endif
+#ifdef HAVE_WIFI
+   wifi_driver_ctl(RARCH_WIFI_CTL_FIND_DRIVER, NULL);
+#endif
+#ifdef HAVE_CLOUDSYNC
+   cloud_sync_find_driver(settings->arrays.cloud_sync_driver,
+         "cloud sync driver", verbosity_enabled);
+#endif
+   location_driver_find_driver(settings->arrays.location_driver,
+         &location_driver_st,
+         "location driver", verbosity_enabled);
+#ifdef HAVE_MENU
+   {
+      const menu_ctx_driver_t *menu_ctx_new = menu_driver_find_driver(
+            settings, "menu driver", verbosity_enabled);
+      if (!menu_ctx_new)
+         retroarch_fail(1, "menu_driver_find_driver()");
+
+      /* If a menu driver instance is already allocated and the
+       * selected menu driver has changed since that instance was
+       * created - e.g. a configuration file specifying a different
+       * 'menu_driver' has just been loaded at runtime - the stale
+       * instance must be torn down here, while menu_st->driver_ctx
+       * still references the *old* driver (so that the correct
+       * free()/context_destroy() handlers are invoked on the old
+       * handle).
+       *
+       * Otherwise menu_driver_init() would skip (re)initialisation
+       * - because driver_data is non-NULL - and invoke the new
+       * driver's context_reset() on the old driver's handle,
+       * dereferencing it as the wrong type (crash). */
+      if (     menu_st->driver_data
+            &&  menu_st->driver_ctx
+            && (menu_st->driver_ctx != menu_ctx_new))
+      {
+         uint16_t menu_data_own = (menu_st->flags & MENU_ST_FLAG_DATA_OWN);
+#ifdef HAVE_THREADS
+         /* Same barrier as driver_uninit(): RARCH_MENU_CTL_DEINIT runs
+          * the old driver's context_destroy(), which frees the textures
+          * and fonts an in-flight threaded frame is still drawing with.
+          *
+          * No-op when threaded video is not active. */
+         video_driver_state_t *video_st = video_state_get_ptr();
+         if (     VIDEO_DRIVER_IS_THREADED_INTERNAL(video_st)
+               && video_st->thread_wrapper_active)
+            video_thread_wait_idle();
+#endif
+         menu_st->flags        &= ~MENU_ST_FLAG_DATA_OWN;
+         menu_driver_ctl(RARCH_MENU_CTL_DEINIT, NULL);
+         menu_st->flags        |= menu_data_own;
+      }
+
+      menu_st->driver_ctx = menu_ctx_new;
+   }
+#endif
+}
+
+bool retroarch_main_init_core(int argc, char *argv[],
+      bool find_drivers, bool *verbosity)
 {
 #if defined(DEBUG) && defined(HAVE_DRMINGW)
    char log_file_name[128];
@@ -8497,7 +8721,6 @@ bool retroarch_main_init(int argc, char *argv[])
    input_driver_state_t
       *input_st                  = input_state_get_ptr();
    settings_t *settings          = config_get_ptr();
-   recording_state_t *rec_st     = recording_state_get_ptr();
    global_t            *global   = global_get_ptr();
 #ifdef HAVE_ACCESSIBILITY
    access_state_t *access_st     = access_state_get_ptr();
@@ -8511,15 +8734,23 @@ bool retroarch_main_init(int argc, char *argv[])
    core_info_set_savestate_probe(retroarch_core_info_savestate_probe);
 
    input_st->osk_idx             = OSK_LOWERCASE_LATIN;
-   video_state_get_ptr()->main_flags |=  VIDEO_FLAG_ACTIVE;
-   AUDIO_FLAGS_SET(audio_state_get_ptr(), AUDIO_FLAG_ACTIVE);
+   /* The active bits answer the core's GET_AV_ENABLE during its init.
+    * Staged, the previous session's drivers are still up and present
+    * between stages, so the bits keep saying what those drivers can
+    * do (an audio driver that failed to start has none); the driver
+    * phase raises them for the new session. */
+   if (find_drivers)
+   {
+      video_state_get_ptr()->main_flags |=  VIDEO_FLAG_ACTIVE;
+      AUDIO_FLAGS_SET(audio_state_get_ptr(), AUDIO_FLAG_ACTIVE);
+   }
 
    if (setjmp(global->error_sjlj_context) > 0)
    {
       RARCH_ERR("%s: \"%s\"\n",
             msg_hash_to_str(MSG_FATAL_ERROR_RECEIVED_IN),
             global_get_ptr()->error_string);
-      goto error;
+      return retroarch_main_init_fail(global);
    }
 
    /* Mark error_sjlj_context as live. retroarch_fail checks this
@@ -8536,7 +8767,7 @@ bool retroarch_main_init(int argc, char *argv[])
    verbosity_enabled = retroarch_parse_input_and_config(p_rarch,
          global_get_ptr(), argc, argv);
 
-#ifdef HAVE_SSL
+#if defined(HAVE_SSL) && defined(HAVE_NETWORKING)
    /* Apply the persisted TLS certificate-verification policy to the active
     * SSL backend before any HTTPS task (cloud sync, cheevos, updater) runs. */
    ssl_socket_set_verify_mode(settings->uints.tls_verify_mode);
@@ -8702,7 +8933,12 @@ bool retroarch_main_init(int argc, char *argv[])
 #endif
 
    retroarch_validate_cpu_features();
-   retroarch_init_task_queue();
+   /* Startup builds the queue; a load onto a running session keeps
+    * it - and every task in flight - and applies the configuration. */
+   if (find_drivers)
+      retroarch_init_task_queue();
+   else
+      retroarch_task_queue_configure();
 
    {
       const char    *fullpath  = p_rarch->path_content;
@@ -8753,80 +8989,12 @@ bool retroarch_main_init(int argc, char *argv[])
       }
    }
 
-   /* Pre-initialize all drivers
-    * Attempts to find a default driver for
-    * all driver types.
-    */
-   if (!(audio_driver_find_driver(settings->arrays.audio_driver,
-         "audio driver", verbosity_enabled)))
-      retroarch_fail(1, "audio_driver_find()");
-   if (!video_driver_find_driver(settings,
-         "video driver", verbosity_enabled))
-      retroarch_fail(1, "video_driver_find_driver()");
-   if (!input_driver_find_driver(settings,
-         "input driver", verbosity_enabled))
-      retroarch_fail(1, "input_driver_find_driver()");
+   /* Pre-initialize all drivers: find a driver of every kind.  The
+    * staged load has the previous session's drivers up at this point
+    * and finds after freeing them, in retroarch_main_init_drivers(). */
+   if (find_drivers)
+      retroarch_find_drivers(settings, verbosity_enabled);
 
-   if (!camera_driver_find_driver("camera driver", verbosity_enabled))
-      retroarch_fail(1, "find_camera_driver()");
-
-#ifdef HAVE_BLUETOOTH
-   bluetooth_driver_ctl(RARCH_BLUETOOTH_CTL_FIND_DRIVER, NULL);
-#endif
-#ifdef HAVE_WIFI
-   wifi_driver_ctl(RARCH_WIFI_CTL_FIND_DRIVER, NULL);
-#endif
-#ifdef HAVE_CLOUDSYNC
-   cloud_sync_find_driver(settings->arrays.cloud_sync_driver,
-         "cloud sync driver", verbosity_enabled);
-#endif
-   location_driver_find_driver(settings->arrays.location_driver,
-         &location_driver_st,
-         "location driver", verbosity_enabled);
-#ifdef HAVE_MENU
-   {
-      const menu_ctx_driver_t *menu_ctx_new = menu_driver_find_driver(
-            settings, "menu driver", verbosity_enabled);
-      if (!menu_ctx_new)
-         retroarch_fail(1, "menu_driver_find_driver()");
-
-      /* If a menu driver instance is already allocated and the
-       * selected menu driver has changed since that instance was
-       * created - e.g. a configuration file specifying a different
-       * 'menu_driver' has just been loaded at runtime - the stale
-       * instance must be torn down here, while menu_st->driver_ctx
-       * still references the *old* driver (so that the correct
-       * free()/context_destroy() handlers are invoked on the old
-       * handle).
-       *
-       * Otherwise menu_driver_init() would skip (re)initialisation
-       * - because driver_data is non-NULL - and invoke the new
-       * driver's context_reset() on the old driver's handle,
-       * dereferencing it as the wrong type (crash). */
-      if (     menu_st->driver_data
-            &&  menu_st->driver_ctx
-            && (menu_st->driver_ctx != menu_ctx_new))
-      {
-         uint16_t menu_data_own = (menu_st->flags & MENU_ST_FLAG_DATA_OWN);
-#ifdef HAVE_THREADS
-         /* Same barrier as driver_uninit(): RARCH_MENU_CTL_DEINIT runs
-          * the old driver's context_destroy(), which frees the textures
-          * and fonts an in-flight threaded frame is still drawing with.
-          *
-          * No-op when threaded video is not active. */
-         video_driver_state_t *video_st = video_state_get_ptr();
-         if (     VIDEO_DRIVER_IS_THREADED_INTERNAL(video_st)
-               && video_st->thread_wrapper_active)
-            video_thread_wait_idle();
-#endif
-         menu_st->flags        &= ~MENU_ST_FLAG_DATA_OWN;
-         menu_driver_ctl(RARCH_MENU_CTL_DEINIT, NULL);
-         menu_st->flags        |= menu_data_own;
-      }
-
-      menu_st->driver_ctx = menu_ctx_new;
-   }
-#endif
    /* Enforce stored brightness if needed */
    if (frontend_driver_can_set_screen_brightness())
       frontend_driver_set_screen_brightness(settings->uints.screen_brightness);
@@ -8888,11 +9056,11 @@ bool retroarch_main_init(int argc, char *argv[])
          /* Attempt initializing dummy core */
          runloop_st->current_core_type = CORE_TYPE_DUMMY;
          if (!command_event(CMD_EVENT_CORE_INIT, &runloop_st->current_core_type))
-            goto error;
+            return retroarch_main_init_fail(global);
       }
 #ifdef HAVE_DYNAMIC
       else /* Fall back to regular error handling */
-         goto error;
+         return retroarch_main_init_fail(global);
 #endif
    }
 
@@ -8908,6 +9076,48 @@ bool retroarch_main_init(int argc, char *argv[])
 #endif
          );
 #endif
+   /* The jmp_buf dies with this frame; the next phase arms its own. */
+   global->flags &= ~GLOB_FLG_INIT_IN_PROGRESS;
+   *verbosity     = verbosity_enabled;
+   return true;
+}
+
+bool retroarch_main_init_drivers(bool staged,
+      bool verbosity_enabled)
+{
+   runloop_state_t *runloop_st   = runloop_state_get_ptr();
+   input_driver_state_t
+      *input_st                  = input_state_get_ptr();
+   settings_t *settings          = config_get_ptr();
+   recording_state_t *rec_st     = recording_state_get_ptr();
+   global_t            *global   = global_get_ptr();
+
+   if (setjmp(global->error_sjlj_context) > 0)
+   {
+      RARCH_ERR("%s: \"%s\"\n",
+            msg_hash_to_str(MSG_FATAL_ERROR_RECEIVED_IN),
+            global_get_ptr()->error_string);
+      return retroarch_main_init_fail(global);
+   }
+   global->flags |= GLOB_FLG_INIT_IN_PROGRESS;
+
+   if (staged)
+   {
+      /* The previous session's drivers go here, and the new core's
+       * hardware-render request goes around them: the request is for
+       * a context these drivers never built, so the teardown must
+       * not destroy it, and drivers_init builds it from the request
+       * once it is back. */
+      struct video_hw_request hw_request;
+      video_driver_hw_request_take(&hw_request);
+      driver_uninit(DRIVERS_CMD_ALL, (enum driver_lifetime_flags)0);
+      video_driver_hw_request_restore(&hw_request);
+
+      video_state_get_ptr()->main_flags |=  VIDEO_FLAG_ACTIVE;
+      AUDIO_FLAGS_SET(audio_state_get_ptr(), AUDIO_FLAG_ACTIVE);
+      retroarch_find_drivers(settings, verbosity_enabled);
+   }
+
    drivers_init(settings, DRIVERS_CMD_ALL, (enum driver_lifetime_flags)0, verbosity_enabled);
 #ifdef HAVE_COMMAND
    input_driver_deinit_command(input_st);
@@ -8943,7 +9153,10 @@ bool retroarch_main_init(int argc, char *argv[])
       discord_state_t *discord_st = discord_state_get_ptr();
 
       if (command_event(CMD_EVENT_DISCORD_INIT, NULL))
-         discord_st->inited = true;
+      {
+         discord_st->inited       = true;
+         runloop_st->frame_work  |= RUNLOOP_WORK_DISCORD | RUNLOOP_WORK_PRESENCE;
+      }
    }
 #endif
 
@@ -8975,13 +9188,13 @@ bool retroarch_main_init(int argc, char *argv[])
 
    global->flags &= ~GLOB_FLG_INIT_IN_PROGRESS;
    return true;
+}
 
-error:
-   command_event(CMD_EVENT_CORE_DEINIT, NULL);
-   runloop_is_inited_clear();
-   global->flags &= ~GLOB_FLG_INIT_IN_PROGRESS;
-
-   return false;
+bool retroarch_main_init(int argc, char *argv[])
+{
+   bool verbosity_enabled = false;
+   return retroarch_main_init_core(argc, argv, true, &verbosity_enabled)
+       && retroarch_main_init_drivers(false, verbosity_enabled);
 }
 
 #ifdef DEBUG
@@ -8999,6 +9212,12 @@ static void runloop_task_slow_handler(retro_task_t *task,
    static unsigned suppressed;
 
    if (!task)
+      return;
+
+   /* A content load's stages run the core's own load, unload and
+    * the driver rebuild: work the core and the drivers do, not task
+    * or list work, and no slicing can shorten retro_load_game. */
+   if (task_content_is_load_stage(task))
       return;
 
    if (task->handler == last_handler)
@@ -9022,6 +9241,65 @@ static void runloop_task_slow_handler(retro_task_t *task,
 }
 #endif
 
+/* Everything the queue takes from the configuration.  A session that
+ * comes up on the running queue - a content load - applies the
+ * settings here and leaves the queue itself alone: a change of
+ * Threaded Tasks takes effect at the next task_queue_check(), between
+ * frames, where the swap can join the worker without holding up a
+ * load. */
+void retroarch_task_queue_configure(void)
+{
+#ifdef HAVE_THREADS
+   settings_t *settings        = config_get_ptr();
+   bool threaded_enable        = settings->bools.threaded_data_runloop_enable;
+
+   if (threaded_enable)
+      task_queue_set_threaded();
+   else
+      task_queue_unset_threaded();
+   task_queue_set_prefer_fast_cores(settings->bools.thread_prefer_fast_cores);
+   /* The main thread runs the emulation loop; on a mixed-core part
+    * keep it off the slow cluster when asked. The task worker does the
+    * same for itself at start (task_queue_set_prefer_fast_cores above),
+    * the audio thread does in audio_thread_wrapper, the video thread
+    * in video_driver.c before video_init_thread(). */
+   if (settings->bools.thread_prefer_fast_cores)
+      sthread_prefer_fast_cores();
+#else
+   bool threaded_enable        = false;
+#endif
+
+#ifdef DEBUG
+   /* Handlers that run on the thread that also drives the frame loop -
+    * every one with Threaded Tasks off, the main-thread ones with it
+    * on - are a visible stall when they do not return promptly, and
+    * the queue is the only place that can attribute one to a specific
+    * task rather than to "something in the frame".  Debug builds
+    * only: this exists to catch a regression during development, not
+    * to police release builds, and with no callback registered the
+    * queue reads no clock at all.
+    *
+    * The budget is a whole frame at 60Hz.  Handlers designed to be
+    * sliced (the budgeted directory walks, playlist parse and scan)
+    * aim far below it and consult the shared per-frame I/O window;
+    * anything crossing a full frame in one call is either
+    * unsliced work or a slice that has stopped honouring its
+    * budget. */
+   task_queue_set_slow_handler_cb(runloop_task_slow_handler, 16000);
+   (void)threaded_enable;
+#endif
+
+   /* What one task_queue_check() may spend of the frame it runs in.
+    * Retirement: a burst of completions (a thumbnail scan, a bulk
+    * download) retires over several frames instead of one - at most
+    * 32 callbacks or 2 ms per check, whichever comes first. Handlers
+    * (unthreaded queue): 4 ms of handler time per check, the rest of
+    * the running list waits its turn. Both leave most of a 16.7 ms
+    * frame to the core; a blocking task_queue_wait() still loops
+    * until its condition holds. */
+   task_queue_set_budget(2000, 32, 4000);
+}
+
 void retroarch_init_task_queue(void)
 {
 #ifdef HAVE_THREADS
@@ -9040,39 +9318,99 @@ void retroarch_init_task_queue(void)
     * can each create one and then lock different objects. */
    net_http_init();
 #endif
+#ifdef HAVE_THREADS
+   task_queue_set_prefer_fast_cores(settings->bools.thread_prefer_fast_cores);
+#endif
    task_queue_init(threaded_enable, runloop_task_msg_queue_push);
 #ifdef HAVE_THREADS
    /* The queue falls back to running tasks on the caller's thread when
     * its worker or synchronisation primitives could not be created. */
    if (threaded_enable && !task_queue_is_threaded())
       RARCH_ERR("[Task] Threaded tasks were requested but could not be started; running tasks inline.\n");
-   /* The main thread runs the emulation loop; on a mixed-core part
-    * keep it off the slow cluster when asked. */
-   if (settings->bools.thread_prefer_fast_cores)
-      sthread_prefer_fast_cores();
+#endif
+   retroarch_task_queue_configure();
+}
+
+bool retroarch_main_deinit_begin(void)
+{
+   runloop_state_t     *runloop_st = runloop_state_get_ptr();
+   input_driver_state_t *input_st  = input_state_get_ptr();
+   if (!runloop_is_inited())
+   return false;
+   command_event(CMD_EVENT_NETPLAY_DEINIT, NULL);
+#ifdef HAVE_NETWORKING
+   /* Free netplay lobby state at shutdown. room_list and
+    * rooms_data are populated when browsing the netplay lobby
+    * and recycled on each refresh, but nothing frees them at
+    * exit, so the last-populated allocation leaks. This is the
+    * one-time teardown point: deinit_netplay() above runs on
+    * every session start/stop and must not free the lobby list
+    * (the menu may still be reading room_list to join a room). */
+   {
+      net_driver_state_t *net_st = networking_state_get_ptr();
+      netplay_rooms_free();
+      if (net_st->room_list)
+      {
+         free(net_st->room_list);
+         net_st->room_list  = NULL;
+      }
+      net_st->room_count = 0;
+#ifdef HAVE_NETPLAYDISCOVERY
+      /* Same story for the LAN discovery list, which is grown
+       * by the scan task and only ever truncated between
+       * scans. */
+      netplay_discovery_free_hosts();
+#endif
+   }
+#endif
+#ifdef HAVE_COMMAND
+   input_driver_deinit_command(input_st);
+#endif
+#ifdef HAVE_NETWORKGAMEPAD
+   if (input_st->remote)
+      input_remote_free(input_st->remote,
+            config_get_ptr()->uints.input_max_users);
+   input_st->remote = NULL;
+#endif
+   input_mapper_reset(&input_st->mapper);
+
+#ifdef HAVE_THREADS
+   if (runloop_st->flags & RUNLOOP_FLAG_USE_SRAM)
+      autosave_deinit();
 #endif
 
-#ifdef DEBUG
-   /* With Threaded Tasks off, task handlers run on the thread that
-    * also drives the frame loop, so a handler that does not return
-    * promptly is a visible stall - and the queue is the only place
-    * that can attribute one to a specific task rather than to
-    * "something in the frame".  Debug builds only: this exists to
-    * catch a regression during development, not to police release
-    * builds, and with no callback registered the queue reads no
-    * clock at all.
-    *
-    * The budget is a whole frame at 60Hz.  Handlers designed to be
-    * sliced (the budgeted directory walks, playlist parse and scan)
-    * aim far below it and consult the shared per-frame I/O window;
-    * anything crossing a full frame in one call is either
-    * unsliced work or a slice that has stopped honouring its
-    * budget. */
-   if (!threaded_enable)
-      task_queue_set_slow_handler_cb(runloop_task_slow_handler, 16000);
-   else
-      task_queue_set_slow_handler_cb(NULL, 0);
+   command_event(CMD_EVENT_RECORD_DEINIT, NULL);
+
+   command_event(CMD_EVENT_SAVE_FILES, NULL);
+
+#ifdef HAVE_REWIND
+   command_event(CMD_EVENT_REWIND_DEINIT, NULL);
 #endif
+#ifdef HAVE_CHEATS
+   cheat_manager_state_free();
+#endif
+#ifdef HAVE_BSV_MOVIE
+   movie_stop(input_st);
+#endif
+   command_event_core_deinit_begin();
+   return true;
+}
+
+bool retroarch_main_deinit_pending(void)
+{
+   return command_event_core_deinit_pending();
+}
+
+void retroarch_main_deinit_finish(void)
+{
+   command_event_core_deinit_finish();
+
+   content_deinit();
+
+   runloop_path_deinit_subsystem();
+   path_deinit_savefile();
+
+   runloop_is_inited_clear();
 }
 
 bool retroarch_ctl(enum rarch_ctl_state state, void *data)
@@ -9149,75 +9487,14 @@ bool retroarch_ctl(enum rarch_ctl_state state, void *data)
                &&  (runloop_st->secondary_lib_handle != NULL);
 #endif
       case RARCH_CTL_MAIN_DEINIT:
-         {
-            input_driver_state_t *input_st = input_state_get_ptr();
-            if (!runloop_is_inited())
-               return false;
-            command_event(CMD_EVENT_NETPLAY_DEINIT, NULL);
-#ifdef HAVE_NETWORKING
-            /* Free netplay lobby state at shutdown. room_list and
-             * rooms_data are populated when browsing the netplay lobby
-             * and recycled on each refresh, but nothing frees them at
-             * exit, so the last-populated allocation leaks. This is the
-             * one-time teardown point: deinit_netplay() above runs on
-             * every session start/stop and must not free the lobby list
-             * (the menu may still be reading room_list to join a room). */
-            {
-               net_driver_state_t *net_st = networking_state_get_ptr();
-               netplay_rooms_free();
-               if (net_st->room_list)
-               {
-                  free(net_st->room_list);
-                  net_st->room_list  = NULL;
-               }
-               net_st->room_count = 0;
-#ifdef HAVE_NETPLAYDISCOVERY
-               /* Same story for the LAN discovery list, which is grown
-                * by the scan task and only ever truncated between
-                * scans. */
-               netplay_discovery_free_hosts();
-#endif
-            }
-#endif
-#ifdef HAVE_COMMAND
-            input_driver_deinit_command(input_st);
-#endif
-#ifdef HAVE_NETWORKGAMEPAD
-            if (input_st->remote)
-               input_remote_free(input_st->remote,
-                     config_get_ptr()->uints.input_max_users);
-            input_st->remote = NULL;
-#endif
-            input_mapper_reset(&input_st->mapper);
-
-#ifdef HAVE_THREADS
-            if (runloop_st->flags & RUNLOOP_FLAG_USE_SRAM)
-               autosave_deinit();
-#endif
-
-            command_event(CMD_EVENT_RECORD_DEINIT, NULL);
-
-            command_event(CMD_EVENT_SAVE_FILES, NULL);
-
-#ifdef HAVE_REWIND
-            command_event(CMD_EVENT_REWIND_DEINIT, NULL);
-#endif
-#ifdef HAVE_CHEATS
-            cheat_manager_state_free();
-#endif
-#ifdef HAVE_BSV_MOVIE
-            movie_stop(input_st);
-#endif
-            command_event(CMD_EVENT_CORE_DEINIT, NULL);
-
-            content_deinit();
-
-            runloop_path_deinit_subsystem();
-            path_deinit_savefile();
-
-            runloop_is_inited_clear();
-
-         }
+         if (!retroarch_main_deinit_begin())
+            return false;
+         /* In one go: reached on exit and from the load at startup,
+          * before the first frame.  A load from the menu waits these
+          * out a frame at a time (task_content.c). */
+         content_wait_for_save_state_task();
+         content_wait_for_load_state_task();
+         retroarch_main_deinit_finish();
          break;
 #ifdef HAVE_CONFIGFILE
       case RARCH_CTL_SET_BLOCK_CONFIG_READ:
@@ -9622,6 +9899,10 @@ bool retroarch_main_quit(void)
          discord_st->ready       = false;
       }
       discord_st->inited         = false;
+      runloop_st->frame_work    &= ~RUNLOOP_WORK_DISCORD;
+#ifndef HAVE_MIST
+      runloop_st->frame_work    &= ~RUNLOOP_WORK_PRESENCE;
+#endif
    }
 #endif
 
@@ -9703,6 +9984,9 @@ bool retroarch_main_quit(void)
 
 #ifdef HAVE_SMBCLIENT
    smb_shutdown();
+#endif
+#ifdef HAVE_NFSCLIENT
+   nfs_shutdown();
 #endif
 
    return true;

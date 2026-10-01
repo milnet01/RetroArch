@@ -12,8 +12,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <lists/string_list.h>
 #include <string/stdstring.h>
+#include <net/net_http.h>
 
 #include "cloud_sync_driver.h"
 #include "../list_special.h"
@@ -144,41 +144,26 @@ bool cloud_sync_free(const char *path,
    return false;
 }
 
-bool cloud_sync_http_body_is_framed(const struct string_list *headers,
-      size_t body_len)
+bool cloud_sync_http_body_is_framed(const char *headers, size_t body_len)
 {
-   size_t i;
+   size_t cl     = 0;
+   bool digits   = false;
+   const char *p;
    if (!headers)
       return false;
-   for (i = 0; i < headers->size; i++)
+   /* Chunked: net_http only leaves its chunk-length state on a
+    * complete zero-length chunk, so a mid-chunk drop fails the
+    * transfer before this is reached. */
+   if (!(p = net_http_header_value(headers, "Content-Length")))
+      return net_http_body_is_framed(headers);
+   for (; *p >= '0' && *p <= '9'; p++)
    {
-      const char *h = headers->elems[i].data;
-      if (!h)
-         continue;
-      if (string_starts_with_case_insensitive(h, "Content-Length:"))
-      {
-         size_t cl     = 0;
-         bool digits   = false;
-         const char *p = h + (sizeof("Content-Length:") - 1);
-         while (*p == ' ' || *p == '\t')
-            p++;
-         for (; *p >= '0' && *p <= '9'; p++)
-         {
-            size_t d = (size_t)(*p - '0');
-            /* A length that does not fit cannot match the body. */
-            if (cl > ((size_t)-1 - d) / 10)
-               return false;
-            cl     = cl * 10 + d;
-            digits = true;
-         }
-         return digits && body_len == cl;
-      }
-      /* Chunked: net_http only leaves its chunk-length state on a
-       * complete zero-length chunk, so a mid-chunk drop fails the
-       * transfer before this is reached. The same test net_http uses
-       * to select chunked decoding. */
-      if (string_is_equal_case_insensitive(h, "Transfer-Encoding: chunked"))
-         return true;
+      size_t d = (size_t)(*p - '0');
+      /* A length that does not fit cannot match the body. */
+      if (cl > ((size_t)-1 - d) / 10)
+         return false;
+      cl     = cl * 10 + d;
+      digits = true;
    }
-   return false;
+   return digits && body_len == cl;
 }

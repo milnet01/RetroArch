@@ -1,3 +1,4 @@
+#include <stdio.h>
 /* Minimal stand-ins for the layers below font_driver.c. */
 #include <stdlib.h>
 #include <string.h>
@@ -22,8 +23,36 @@ bool path_is_valid(const char *path) { (void)path; return true; }
 
 const char *last_read_path = NULL;
 
+/* Set by the fallback test, which reads a real font from disk */
+int read_real_files = 0;
+
 bool filestream_read_file(const char *path, void **buf, int64_t *len)
 {
+   /* The real reads come from more than one thread; only the junk
+    * reads the lifecycle tests make are recorded */
+   if (read_real_files)
+   {
+      FILE *f = fopen(path, "rb");
+      long  n;
+      *buf    = NULL;
+      if (!f)
+         return false;
+      fseek(f, 0, SEEK_END);
+      n = ftell(f);
+      fseek(f, 0, SEEK_SET);
+      if (n <= 0 || !(*buf = malloc((size_t)n))
+            || fread(*buf, 1, (size_t)n, f) != (size_t)n)
+      {
+         free(*buf);
+         *buf = NULL;
+         fclose(f);
+         return false;
+      }
+      fclose(f);
+      if (len)
+         *len = n;
+      return true;
+   }
    last_read_path = path;
    if (read_should_fail)
    {
@@ -56,7 +85,7 @@ video_driver_state_t *video_state_get_ptr(void) { return &vst; }
  * stb renderer, so font_driver.c's reference to it needs satisfying.
  * The create test links stb.c itself and defines it for real. */
 #ifndef FONT_TEST_REAL_STB
-font_renderer_driver_t stb_font_renderer;
+const font_rasterizer_t stb_font_rasterizer;
 #endif
 
 #ifdef HAVE_THREADS
@@ -131,6 +160,7 @@ bool video_thread_font_init(const void **font_driver, void **font_handle,
    return job.ret;
 }
 
+#ifndef FONT_TEST_REAL_THREADS
 /* font_driver.c's shared-bytes bookkeeping takes a lock under
  * HAVE_THREADS. A real mutex, so a sanitizer can see the ordering it
  * establishes. */
@@ -154,6 +184,12 @@ void slock_free(slock_t *l)
 }
 void slock_lock(slock_t *l)   { pthread_mutex_lock((pthread_mutex_t*)l); }
 void slock_unlock(slock_t *l) { pthread_mutex_unlock((pthread_mutex_t*)l); }
+/* No fallback font is read here: a thread that cannot be made leaves
+ * font_driver.c drawing the missing-glyph mark, as without fallbacks. */
+sthread_t *sthread_create(void (*fn)(void*), void *userdata)
+{ (void)fn; (void)userdata; return NULL; }
+int sthread_detach(sthread_t *thread) { (void)thread; return 0; }
+#endif
 #endif
 
 /* font_driver.c sends gfx_display's batch out before it draws text,

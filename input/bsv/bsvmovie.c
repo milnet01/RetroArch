@@ -332,6 +332,15 @@ bool bsv_movie_reset_playback(bsv_movie_t *handle)
       if (!bsv_movie_load_checkpoint(handle, compression, encoding, REPLAY_CPBEHAVIOR_DESERIALIZE))
          return false;
    }
+   /* A recording halted before its first frame is a header and a
+    * checkpoint with no frame after it.  That is what the recorder
+    * writes, so it is a valid replay of zero frames, not a short
+    * read: leave the checkpoint pending (the first frame restores it
+    * and then hits the end of the file, which ends playback the way
+    * every replay ends) instead of failing here with MOVIE_END raised
+    * for a handle that will never be installed. */
+   if (intfstream_tell(handle->file) >= intfstream_get_size(handle->file))
+      return true;
    return bsv_movie_read_next_events(handle, REPLAY_CPBEHAVIOR_DESERIALIZE, true);
 }
 
@@ -1024,8 +1033,8 @@ void bsv_movie_scan_from_start(bsv_movie_t *movie, int32_t len)
 
 void bsv_movie_next_frame(input_driver_state_t *input_st)
 {
-   unsigned checkpoint_interval   = config_get_ptr()->uints.replay_checkpoint_interval;
-   unsigned checkpoint_deserialize= config_get_ptr()->bools.replay_checkpoint_deserialize;
+   unsigned checkpoint_interval;
+   unsigned checkpoint_deserialize;
    /* If bsv_movie_state_next_handle is not NULL, deinit and set
       bsv_movie_state_handle to bsv_movie_state_next_handle and clear
       next_handle */
@@ -1033,6 +1042,8 @@ void bsv_movie_next_frame(input_driver_state_t *input_st)
 
    if (!handle)
       return;
+   checkpoint_interval    = config_get_ptr()->uints.replay_checkpoint_interval;
+   checkpoint_deserialize = config_get_ptr()->bools.replay_checkpoint_deserialize;
 #ifdef HAVE_REWIND
    if (state_manager_frame_is_reversed())
    {

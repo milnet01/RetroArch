@@ -496,6 +496,14 @@ struct menu_state
 {
    /* Timers */
    retro_time_t current_time_us;
+   /* Time of the input poll whose state menu_event() reads this
+    * frame, and of the poll taken for the next frame. The menu
+    * collects its input before polling, so the state it acts on is
+    * one poll old; navigation auto-repeat measures a hold between
+    * polls so that a stall after the last poll is not counted as
+    * time the button was held. */
+   retro_time_t input_time_us;
+   retro_time_t input_poll_time_us;
    retro_time_t powerstate_last_time_us;
    retro_time_t datetime_last_time_us;
    retro_time_t input_last_time_us;
@@ -644,6 +652,26 @@ typedef struct
 #if defined(HAVE_LIBRETRODB)
 explore_state_t *menu_explore_build_list(const char *directory_playlist,
       const char *directory_database);
+
+/* The explore index built in resumable steps.  begin() opens the
+ * playlist directory; step() advances the build, consulting @within
+ * between work items when non-NULL (a playlist entry, an RDB item, a
+ * category sort) - returns 1 when complete, 0 when the budget ran out
+ * (call again), -1 on failure; end() returns the finished state and
+ * frees the handle; abort() abandons a build at any point.
+ * menu_explore_build_list() is begin + one unbudgeted step + end. */
+typedef struct explore_build explore_build_t;
+explore_build_t *menu_explore_build_begin(const char *directory_playlist,
+      const char *directory_database);
+int menu_explore_build_step(explore_build_t *b,
+      bool (*within)(void*), void *ud);
+explore_state_t *menu_explore_build_end(explore_build_t *b);
+void menu_explore_build_abort(explore_build_t *b);
+/* The index's identity for verification: the same collection built in
+ * one go and in steps hashes the same (NULL: the installed index); and
+ * its size (NULL: the installed index too). */
+uint32_t menu_explore_state_hash(const explore_state_t *state);
+size_t menu_explore_state_entry_count(const explore_state_t *state);
 uintptr_t menu_explore_get_entry_icon(unsigned type);
 ssize_t menu_explore_get_entry_playlist_index(unsigned type,
       playlist_t **playlist, const struct playlist_entry **entry,
@@ -667,6 +695,10 @@ void menu_driver_frame(bool menu_is_alive, video_frame_info_t *video_info);
 int menu_driver_deferred_push_content_list(file_list_t *list);
 
 bool menu_driver_init(bool video_is_threaded);
+
+/* Rebuilds the menu driver's GPU-side context (textures, fonts) against
+ * the running video driver, releasing the old one first. */
+void menu_driver_context_rebuild(void);
 
 retro_time_t menu_driver_get_current_time(void);
 

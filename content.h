@@ -64,7 +64,7 @@ bool content_load_state(const char* path, bool load_to_backup_buffer, bool autol
 bool content_save_state(const char *path, bool save_to_disk);
 
 /* Automatically save a state if the interval has elapsed. */
-bool content_save_state_automatic(void);
+bool content_save_state_automatic(retro_time_t now_us);
 
 /* Save an automatic savestate to disk. */
 bool content_auto_save_state(const char *path);
@@ -92,6 +92,10 @@ bool content_save_state_in_progress(void* data);
 void content_wait_for_save_state_task(void);
 /* Waits for any in-progress load state tasks to finish */
 void content_wait_for_load_state_task(void);
+
+/* True from the moment a load state task is pushed until its
+ * main-thread callback has applied the state. */
+bool content_load_state_in_progress(void* data);
 
 /* Copy a save state. */
 bool content_rename_state(const char *origin, const char *dest);

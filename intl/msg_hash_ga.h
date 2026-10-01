@@ -616,6 +616,7 @@ static const struct
    char s_beaf53f1[18];
    char s_c3fd1e84[24];
    char s_0f2da3af[19];
+   char s_a89a965a[13];
    char s_f4875576[26];
    char s_6a07da9c[21];
    char s_df3def90[33];
@@ -2021,8 +2022,10 @@ static const struct
    char s_b160f7a1[37];
    char s_cd5ff0f5[24];
    char s_8b92e740[26];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_e2415d78[24];
+#endif
 #endif
    char s_aeef8db2[19];
    char s_14d20957[25];
@@ -2051,21 +2054,43 @@ static const struct
    char s_01a73130[33];
    char s_44ebca0d[28];
    char s_608ac5a1[24];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_3839f91d[26];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_86b07599[25];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_8d5f85ee[21];
    char s_9b023eee[20];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_ccae82ba[14];
 #endif
    char s_35808dba[43];
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_ad6e88de[16];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_c7bc8298[22];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_e63b035a[22];
    char s_d21d875b[14];
    char s_ae86fed0[15];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_b12ae22e[17];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_b2d073c7[24];
    char s_1cbc2657[17];
 #endif
@@ -2206,6 +2231,10 @@ static const struct
    char s_db01e988[8];
    char s_e1c715da[7];
    char s_9a981aa0[5];
+   char s_b4d6cb93[21];
+   char s_ee1c318a[29];
+   char s_32b51618[27];
+   char s_a2906bd3[20];
    char s_e2f93e68[6];
    char s_47d26662[16];
    char s_0ca3b319[12];
@@ -2296,6 +2325,7 @@ static const struct
    char s_cf6bc52a[29];
    char s_05c5a263[19];
    char s_ed22c5f1[20];
+   char s_32c41d0e[28];
    char s_49f9815b[26];
    char s_ddc4f021[12];
    char s_ddc6b80f[17];
@@ -2330,7 +2360,9 @@ static const struct
    char s_8fc1e4da[3];
    char s_14ed14d0[5];
    char s_5c87e95b[11];
+   char s_fad361a0[26];
    char s_bb929824[28];
+   char s_fe2ec9bd[35];
    char s_5741c1d0[23];
    char s_a1a7717d[24];
    char s_e6ca3876[27];
@@ -3270,6 +3302,9 @@ static const struct
 #ifdef _3DS
    char s_0d834bc5[53];
 #endif
+#ifdef HAVE_NFSCLIENT
+   char s_3487ce71[45];
+#endif
    char s_d2ae640b[97];
    char s_8e5bac99[97];
    char s_28a346d2[90];
@@ -3541,8 +3576,10 @@ static const struct
    char s_bce9b94f[48];
    char s_d32f5a63[35];
    char s_9177176e[34];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_a1fdf4a6[35];
+#endif
 #endif
    char s_97d77020[30];
    char s_59f05605[36];
@@ -3558,17 +3595,39 @@ static const struct
    char s_4b009af3[43];
    char s_46c57dde[64];
    char s_7eb20ecf[67];
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    char s_3e1e294b[63];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_69c0e487[52];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_706ff4dc[271];
    char s_a0d1a85c[65];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_b5966528[252];
    char s_907ef7cc[45];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_b0a46506[44];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_04624c88[182];
    char s_91976dbe[47];
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    char s_f6492edc[54];
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    char s_9bb85635[266];
    char s_22a05685[61];
 #endif
@@ -3611,7 +3670,7 @@ static const struct
    char s_ffd591e0[62];
    char s_a51ab538[29];
    char s_55d6cc44[42];
-   char s_5a8f7fb9[248];
+   char s_5a8f7fb9[253];
    char s_f2963d2d[36];
    char s_4c592ae1[114];
    char s_52ac4fb9[121];
@@ -3623,6 +3682,7 @@ static const struct
    char s_f77f7a41[87];
 #endif
    char s_e7cb5685[55];
+   char s_bd82a701[461];
    char s_8bb367a2[127];
    char s_2beab583[44];
    char s_a1c071eb[97];
@@ -3676,6 +3736,7 @@ static const struct
    char s_e4aa2e10[66];
    char s_b853a798[84];
    char s_d60aa85f[67];
+   char s_38a84d3c[475];
    char s_2d09f049[47];
    char s_e670cb8f[57];
    char s_e672937d[173];
@@ -3702,8 +3763,10 @@ static const struct
    char s_cfa51e8c_1[18];
    char s_b62c2f7e[364];
    char s_456fcbc9[361];
+   char s_ba8ff8ce[392];
    char s_82fab47a[30];
    char s_72e21512[263];
+   char s_9f6de46b[305];
    char s_66f2b57e[54];
    char s_a776daeb[87];
    char s_88095324[87];
@@ -3734,6 +3797,7 @@ static const struct
    char s_eec252b5[125];
    char s_f4e4e921[257];
    char s_7968f59d[40];
+   char s_8cee3615[285];
    char s_58c80718[334];
    char s_894ecb9a[411];
    char s_67d549fd[34];
@@ -5315,6 +5379,7 @@ static const struct
    "Minic\303\255ocht Uasta",
    "Gobharn\303\263ir Roghchl\303\241ir",
    "Minic\303\255ocht \303\215osta",
+   "sn\303\241itheanna",
    "Cruthaigh Seinmliosta Nua",
    "Athr\303\272 Athraithe CRT",
    "\303\232s\303\241id an Roghchl\303\241r Ardtaifigh",
@@ -6740,8 +6805,10 @@ static const struct
    "Taispe\303\241in 'Bainist\303\255ocht Cumhachta'",
    "Taispe\303\241in 'Taifeadadh'",
    "Taispe\303\241in 'Ag S\303\241bh\303\241il'",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Taispe\303\241in 'Cliant SMB'",
+#endif
 #endif
    "Taispe\303\241in 'Steam'",
    "Taispe\303\241in '\303\232s\303\241ideoir'",
@@ -6770,21 +6837,43 @@ static const struct
    "Suite\303\241il n\303\263 Athch\303\263irigh Cro\303\255",
    "Suite\303\241il l\303\241rnach rath\303\272il",
    "R\303\241ta Gluaiseachta Mall",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "M\303\263d F\303\255ordheimhnithe SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Brabhs\303\241il Comhroinn SMB",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Cumasaigh Cliant SMB",
    "Uasmh\303\251id naisc SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Pasfhocal SMB",
 #endif
    "KRB m\303\241 t\303\241 s\303\251 ar f\303\241il, NTLM mura bhfuil",
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Freastala\303\255 SMB",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Socruithe L\303\255onra SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Ainm an Comhroinn SMB",
    "Comhroinn SMB",
    "Fo-eolaire SMB",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Am Teorann\303\272 SMB",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Ainm an \303\232s\303\241ideora SMB",
    "Gr\303\272pa Oibre SMB",
 #endif
@@ -6930,6 +7019,10 @@ static const struct
    "blianta",
    "bliain",
    "Am\303\272",
+   "F\303\255or\303\272 Teastais TLS",
+   "D\303\255chumasaithe (Neamhshl\303\241n)",
+   "Roghnach (Rabhadh Amh\303\241in)",
+   "Riachtanach (Molta)",
    "F\303\255or",
    "Leaththr\303\251imhse",
    "Clasaiceach",
@@ -7022,6 +7115,7 @@ static const struct
    "Cumasaigh Scagaire F\303\255se\303\241in",
    "Scagaire caocha\303\255l",
    "Bain Scagaire F\303\255se",
+   "Sn\303\241itheanna Scagaire F\303\255se",
    "F\303\263gra\303\255 ar an Sc\303\241ile\303\241n",
    "Cl\303\263 F\303\263gra",
    "M\303\251id an Fh\303\263gra",
@@ -7056,7 +7150,9 @@ static const struct
    "As",
    "Gile",
    "Scanl\303\255nte",
+   "Seol Luminance an Fhr\303\241ma",
    "Leagan Amach Fo-phicteil\303\255n",
+   "\303\232s\303\241id an Buaicphointe Taispe\303\241na",
    "Leagan Amach F\303\255se\303\241in",
    "Uasmh\303\251id Moille Fr\303\241ma",
    "Uasta \303\215omh\303\241nna Swapchain",
@@ -8710,6 +8806,9 @@ static const struct
 #ifdef _3DS
    "Cumasaigh luas cloig New3DS (804MHz) agus taisce L2.",
 #endif
+#ifdef HAVE_NFSCLIENT
+   "Seoladh IP n\303\263 ainm \303\263stach an fhreastala\303\255.",
+#endif
    "Taispe\303\241in teachtaireacht ar an sc\303\241ile\303\241n agus gl\303\251asanna ionchuir \303"
    "\241 gceangal/\303\241 nd\303\255cheangal.",
    "Taispe\303\241in teachtaireacht ar an sc\303\241ile\303\241n nuair nach bhf\303\251adfa\303\255 "
@@ -9226,8 +9325,10 @@ static const struct
    "Taispe\303\241in socruithe 'Bainist\303\255ocht Cumhachta'.",
    "Taispe\303\241in socruithe 'Taifeadadh'.",
    "Taispe\303\241in socruithe 'S\303\241bh\303\241il'.",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Taispe\303\241in socruithe 'Cliant SMB'.",
+#endif
 #endif
    "Taispe\303\241in socruithe 'Steam'.",
    "Taispe\303\241in socruithe '\303\232s\303\241ideora'.",
@@ -9248,25 +9349,47 @@ static const struct
    "Suite\303\241il n\303\263 athch\303\263irigh cro\303\255 \303\263n eolaire '\303\215osl\303\263d"
    "\303\241lacha'.",
    "An r\303\241ta a sheinnfear \303\241bhar nuair a \303\272s\303\241idtear gluaiseacht mall.",
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    "Roghnaigh an f\303\255ordheimhni\303\272 a \303\272s\303\241idtear i do thimpeallacht.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Brabhs\303\241il comhaid ar an gcomhroinnt SMB cumraithe.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Cumasaigh rochtain scaireanna l\303\255onra SMB. Moltar go l\303\241idir Ethernet thar Wi-Fi le "
    "haghaidh nasc n\303\255os iontaofa. Tabhair faoi deara: tagann athruithe i bhfeidhm an ch\303"
    "\251ad uair eile a bhrabhs\303\241iltear sciar, agus coinn\303\255onn \303\241bhar at\303\241 ag"
    " rith cheana f\303\251in a nasc reatha.",
    "Roghnaigh an l\303\255on uasta naisc a \303\272s\303\241idtear i do thimpeallacht.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Pasfhocal le haghaidh f\303\255ordheimhnithe. T\303\241 s\303\251 seo roghnach nuair a bh\303"
    "\255onn rochtain aoi cumasaithe ar an bhfreastala\303\255. Windows 10 agus n\303\255os airde: t"
    "\303\241 rochtain aoi d\303\255chumasaithe de r\303\251ir r\303\251amhshocraithe, mar sin t\303"
    "\241 pasfhocal ag teast\303\241il anseo.",
    "Seoladh IP n\303\263 ainm \303\263stach an fhreastala\303\255.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Cumraigh socruithe comhroinnte l\303\255onra SMB.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Ainm an sciar l\303\255onra le rochtain a fh\303\241il air. F\303\241g folamh chun liosta a dh"
    "\303\251anamh de gach sciar a onnmhair\303\255onn an freastala\303\255 agus roghnaigh ceann amh"
    "\303\241in agus t\303\272 ag brabhs\303\241il.",
    "Cos\303\241n fo-eolaire ar an gcomhroinnt. Roghnach.",
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    "Roghnaigh an t-am scoir r\303\251amhshocraithe i soicind\303\255.",
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    "Ainm \303\272s\303\241ideora le haghaidh f\303\255ordheimhnithe. T\303\241 s\303\251 seo roghnac"
    "h nuair a bh\303\255onn rochtain aoi cumasaithe ar an bhfreastala\303\255. Windows 10 agus n\303"
    "\255os airde: t\303\241 rochtain aoi d\303\255chumasaithe de r\303\251ir r\303\251amhshocraithe,"
@@ -9322,10 +9445,10 @@ static const struct
    "F\303\251ach ar fhaisn\303\251is a bhaineann go sonrach leis an bhfeiste.",
    "Gabh \303\255omh\303\241 den sc\303\241ile\303\241n.",
    "D\303\251an tascanna ar shn\303\241ithe ar leithligh.",
-   "Coinnigh na pr\303\255omhshn\303\241itheanna agus na sn\303\241itheanna fuaime ar chro\303\255l"
-   "\303\241rna LAP is tap\303\272la pr\303\263ise\303\241la\303\255 cro\303\255-mheasctha. N\303"
-   "\255l aon \303\251ifeacht aige ar phr\303\263ise\303\241laithe a bhfuil a gcro\303\255l\303\241r"
-   "na go l\303\251ir mar a ch\303\251ile. Tagann s\303\251 i bhfeidhm ar atos\303\272.",
+   "Coinnigh na pr\303\255omhshn\303\241itheanna, f\303\255se, fuaime agus tascanna ar chro\303\255l"
+   "eac\303\241in LAP is tap\303\272la pr\303\263ise\303\241la\303\255 cro\303\255-mheasctha. N\303"
+   "\255l aon \303\251ifeacht aige ar phr\303\263ise\303\241laithe a bhfuil a gcro\303\255leac\303"
+   "\241in go l\303\251ir mar a ch\303\251ile. Tagann s\303\251 i bhfeidhm ar atos\303\272.",
    "Cine\303\241l mionsamhail le taispe\303\241int.",
    "St\303\263r\303\241iltear eala\303\255n bosca, mionsamhlacha sc\303\241ile\303\241in, agus mions"
    "amhlacha teidil sc\303\241ile\303\241in sa chomhadlann seo.",
@@ -9343,6 +9466,13 @@ static const struct
    "hu\303\255omh.",
 #endif
    "Taispe\303\241in an t-am reatha san fhorm\303\241id is fearr leat.",
+   "Riala\303\255onn s\303\251 an chaoi a nd\303\251antar deimhnithe freastala\303\255 a sheice\303"
+   "\241il ar na naisc shl\303\241vacha (HTTPS) a \303\272s\303\241ideann Cloud Sync, RetroAchieveme"
+   "nts agus an t-uasd\303\241taitheoir ar l\303\255ne. Di\303\272lta\303\255onn an socr\303\272 'Ri"
+   "achtanach' do theastais neamhiontaofa agus cosna\303\255onn s\303\251 i gcoinne ionsaithe 'fear "
+   "sa l\303\241r'. N\303\241 laghdaigh an socr\303\272 seo ach amh\303\241in m\303\241 t\303\241 t"
+   "\303\272 ag nascadh tr\303\255 sheachfhreastala\303\255 corpar\303\241ideach n\303\263 le h\303"
+   "\263stach f\303\251ins\303\255nithe a bhfuil muin\303\255n agat as.",
    "Tiom\303\241na\303\255 Chomh\303\251adain Chomh\303\251adain Deisce le h\303\272s\303\241id nuai"
    "r a bh\303\255onn an Roghchl\303\241r Deisce cumasaithe. (Atos\303\272 ag teast\303\241il)",
    "Taispe\303\241in barra roghchl\303\241ir na fuinneoige.",
@@ -9453,6 +9583,13 @@ static const struct
    "Cuir Scagaire F\303\255se i bhFeidhm. Leid nach g\303\241 don tiom\303\241na\303\255 f\303\255se"
    " a chomhl\303\255onadh.",
    "D\303\255luchtaigh aon scagaire f\303\255se gn\303\255omhach faoi thiom\303\241int ag LAP.",
+   "C\303\251 mh\303\251ad sn\303\241ithe ar f\303\251idir le scagaire f\303\255se LAP rith orthu. "
+   "\303\232s\303\241ideann 'Uathoibr\303\255och' na cro\303\255leac\303\241in at\303\241 f\303\241g"
+   "tha tar \303\251is do na sn\303\241itheanna aithrise, f\303\255se, fuaime agus tascanna a gcuid "
+   "f\303\251in a bheith acu, 8 gcro\303\255 ar a mh\303\251ad, agus n\303\255os l\303\272 i gc\303"
+   "\241s scagair\303\255 \303\251adroma a ritheann n\303\255os moille nuair a scaiptear amach iad. "
+   "Baineann scagair\303\255 troma, ar n\303\263s NTSC, an leas is m\303\263 as tuilleadh sn\303\241"
+   "itheanna. Braitear an t-athr\303\272 l\303\241ithreach ag scagaire at\303\241 ag rith.",
    "Taispe\303\241in teachtaireachta\303\255 ar an sc\303\241ile\303\241n.",
    "Roghnaigh an cl\303\263 le haghaidh f\303\263gra\303\255 ar an sc\303\241ile\303\241n.",
    "Sonraigh m\303\251id an chl\303\263 i bpoint\303\255. Nuair a \303\272s\303\241idtear giuirl\303"
@@ -9540,11 +9677,22 @@ static const struct
    "le caillte sin. M\303\241s g\303\241 duit n\303\255os m\303\263 smachta ar do l\303\255nte scana"
    "dh, f\303\251ach ar sc\303\241thaitheoir\303\255 saincheaptha a shol\303\241thra\303\255onn Retr"
    "oArch.",
+   "Cuir in i\303\272l do chomhshuiteoir Wayland c\303\251n raon gile at\303\241 i gceist leis an bh"
+   "fr\303\241ma, ionas go nd\303\251anfaidh s\303\251 \303\241bhar HDR a mhap\303\241il bunaithe ar"
+   " an m\303\251id at\303\241 sa bhfr\303\241ma f\303\251in seachas ar bhonn toimhde. Nuair a bh"
+   "\303\255onn an ghn\303\251 seo m\303\272chta, d\303\251antar cur s\303\255os ar an bhfr\303\241m"
+   "a mar Windows-scRGB, mar a bh\303\255odh roimhe seo. Tiocfaidh an t-athr\303\272 i bhfeidhm nuai"
+   "r a atos\303\263far an tiom\303\241na\303\255 f\303\255se.",
    "Athraigh socruithe HDR f\303\255se.",
    "Roghnaigh leagan amach fo-phicteil do thaispe\303\241ntais, n\303\255 dh\303\251anann s\303\251 "
    "seo ach difear do na l\303\255nte scanadh. Mura bhfuil a fhios agat cad \303\251 leagan amach fo"
    "-phicteil do thaispe\303\241ntais, f\303\251ach ar Rtings.com le haghaidh 'leagan amach fo-phict"
    "eil' do thaispe\303\241ntais",
+   "Bain \303\272s\303\241id as an mbuaic-gile a thuairisc\303\255onn an taispe\303\241int in ionad "
+   "Buaic-Gile, \303\241it a dtuairisc\303\255onn an taispe\303\241int ceann: is \303\251 sin an rud"
+   " a ins\303\255tear do na cro\303\255leac\303\241in agus an rud a iompra\303\255onn na meiteashon"
+   "ra\303\255 HDR a sheoltar chuig an taispe\303\241int. As, \303\272s\303\241idtear Buaic-Gile mar"
+   " at\303\241 socraithe.",
    "St\303\263r\303\241iltear Leagan Amach F\303\255se\303\241in san eolaire seo.",
    "Ins\303\255onn s\303\251 don tiom\303\241na\303\255 f\303\255se modh maol\303\241naithe sonraith"
    "e a \303\272s\303\241id go sainr\303\241ite.",
@@ -9611,6 +9759,11 @@ static const struct
    "\303\241nuimhreach m\303\241 t\303\241 na corrlaigh \303\255seal-sc\303\241la r\303\263-mh\303"
    "\263r.",
    "Athraigh socruithe sc\303\241l\303\272ch\303\241in f\303\255se.",
+   "D\303\251an an cur i l\303\241thair f\303\255se a shioncron\303\272 le tuar su\303\255mh na l"
+   "\303\255ne scanaithe bunaithe ar am an chro\303\255leac\303\241in. Riachtanais: VSync m\303\272c"
+   "hta, moill fr\303\241ma m\303\272chta, r\303\241ta athnuachana an sc\303\241ile\303\241in Hz gar"
+   " do 1x r\303\241ta fr\303\241ma\303\255 FPS an chro\303\255leac\303\241in, agus luas clog an GPU"
+   " ag an uasmh\303\251id.",
    "RABHADH: D\342\200\231fh\303\251adfadh caochadh tapa a bheith ina ch\303\272is le buanseasmhacht"
    " \303\255omh\303\241 ar roinnt taispe\303\241ntais. \303\232s\303\241id ar do phriacal f\303\251"
    "in // Insamhladh l\303\255ne scanadh rollta bhun\303\272sach thar ilfho-fhr\303\241ma\303\255 tr"
@@ -10446,7 +10599,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_ga_blob_check[
-      (sizeof(msg_hash_ga_blob) == (222435u
+      (sizeof(msg_hash_ga_blob) == (224557u
 #ifdef ANDROID
        + 390u
 #endif
@@ -10573,19 +10726,41 @@ typedef char msg_hash_ga_blob_check[
        + 77u
 #endif
 #endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
        + 24u
        + 26u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 25u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 21u
        + 20u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 14u
        + 16u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 22u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 22u
        + 14u
        + 15u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 17u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 24u
        + 17u
 #endif
@@ -10756,6 +10931,9 @@ typedef char msg_hash_ga_blob_check[
 #ifdef _3DS
        + 53u
 #endif
+#ifdef HAVE_NFSCLIENT
+       + 45u
+#endif
 #ifdef HAVE_GAME_AI
        + 34u
 #endif
@@ -10771,18 +10949,40 @@ typedef char msg_hash_ga_blob_check[
        + 54u
        + 63u
 #endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
        + 35u
        + 63u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 52u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 271u
        + 65u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 252u
        + 45u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 44u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 182u
        + 47u
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
        + 54u
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
        + 266u
        + 61u
 #endif
@@ -11466,6 +11666,7 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MAX_FREQ,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MENU_GOVERNOR,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_POLICY_MIN_FREQ,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_CPU_THREADS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CREATE_NEW_PLAYLIST,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CRT_SWITCHRES_SETTINGS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_CRT_SWITCH_HIRES_MENU,
@@ -12870,8 +13071,10 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_POWER_MANAGEMENT,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_RECORDING,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_SAVING,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_SMB_CLIENT,
+#endif
 #endif
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_STEAM,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SETTINGS_SHOW_USER,
@@ -12900,21 +13103,43 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_SIDELOAD_CORE_LIST,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SIDELOAD_CORE_SUCCESS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SLOWMOTION_RATIO,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_AUTH_MODE,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_BROWSE,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_NUM_CONTEXTS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_PASSWORD,
 #endif
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SEC_KRB_OR_NTLM,
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SETTINGS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SHARE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SMB_SHARE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SUBDIR,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_TIMEOUT,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_USERNAME,
    (uint32_t)MENU_ENUM_LABEL_VALUE_SMB_CLIENT_WORKGROUP,
 #endif
@@ -13055,6 +13280,10 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIME_UNIT_YEARS_PLURAL,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIME_UNIT_YEARS_SINGLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TIMING_SETTINGS,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_DISABLED,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_OPTIONAL,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_TLS_VERIFY_MODE_REQUIRED,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TRUE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TURBO_DUTY_CYCLE_HALF,
    (uint32_t)MENU_ENUM_LABEL_VALUE_TURBO_MODE_CLASSIC,
@@ -13145,6 +13374,7 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_FLICKER,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_REMOVE,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_THREADS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_ENABLE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_PATH,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_FONT_SIZE,
@@ -13179,7 +13409,9 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_MODE_OFF,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_PAPER_WHITE_NITS,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SCANLINES,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SEND_LUMINANCE,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SUBPIXEL_LAYOUT,
+   (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_USE_DISPLAY_PEAK,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_LAYOUT_DIRECTORY,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_MAX_FRAME_LATENCY,
    (uint32_t)MENU_ENUM_LABEL_VALUE_VIDEO_MAX_SWAPCHAIN_IMAGES,
@@ -14113,6 +14345,9 @@ static const uint32_t msg_hash_ga_ids[] =
 #ifdef _3DS
    (uint32_t)MENU_ENUM_SUBLABEL_NEW3DS_SPEEDUP_ENABLE,
 #endif
+#ifdef HAVE_NFSCLIENT
+   (uint32_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SERVER,
+#endif
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_AUTOCONFIG,
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_AUTOCONFIG_FAILS,
    (uint32_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_CHEATS_APPLIED,
@@ -14384,8 +14619,10 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_POWER_MANAGEMENT,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_RECORDING,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_SAVING,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_SMB_CLIENT,
+#endif
 #endif
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_STEAM,
    (uint32_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_USER,
@@ -14401,17 +14638,39 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_SHOW_WIMP,
    (uint32_t)MENU_ENUM_SUBLABEL_SIDELOAD_CORE_LIST,
    (uint32_t)MENU_ENUM_SUBLABEL_SLOWMOTION_RATIO,
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 #ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_AUTH_MODE,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_BROWSE,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_NUM_CONTEXTS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_PASSWORD,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SERVER,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SETTINGS,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SHARE,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_SUBDIR,
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
+#ifdef HAVE_SMBCLIENT
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_TIMEOUT,
+#endif
+#endif
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_USERNAME,
    (uint32_t)MENU_ENUM_SUBLABEL_SMB_CLIENT_WORKGROUP,
 #endif
@@ -14466,6 +14725,7 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_TIMEZONE,
 #endif
    (uint32_t)MENU_ENUM_SUBLABEL_TIME_SHOW,
+   (uint32_t)MENU_ENUM_SUBLABEL_TLS_VERIFY_MODE,
    (uint32_t)MENU_ENUM_SUBLABEL_UI_COMPANION_DRIVER,
    (uint32_t)MENU_ENUM_SUBLABEL_UI_MENUBAR_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_UNDO_LOAD_STATE,
@@ -14519,6 +14779,7 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_DIR,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_REMOVE,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FILTER_THREADS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_ENABLE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_PATH,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_FONT_SIZE,
@@ -14544,8 +14805,10 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_MAX_NITS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_PAPER_WHITE_NITS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SCANLINES,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SEND_LUMINANCE,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SETTINGS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SUBPIXEL_LAYOUT,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_USE_DISPLAY_PEAK,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_LAYOUT_DIRECTORY,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_MAX_FRAME_LATENCY,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_MAX_SWAPCHAIN_IMAGES,
@@ -14576,6 +14839,7 @@ static const uint32_t msg_hash_ga_ids[] =
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_SCALE_INTEGER_AXIS,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_SCALE_INTEGER_SCALING,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_SCALING_SETTINGS,
+   (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_SCANLINE_SYNC,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_SCAN_SUBFRAMES,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_SDL_DISPLAY_SERVER,
    (uint32_t)MENU_ENUM_SUBLABEL_VIDEO_SETTINGS,

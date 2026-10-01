@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        timeout-minutes: 5
+        timeout-minutes: 20
         run: |
           pkgs="build-essential libusb-1.0-0-dev libx11-dev libxtst-dev libxi-dev xvfb"
           if dpkg -s $pkgs >/dev/null 2>&1; then
@@ -39,6 +39,23 @@ jobs:
               -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
             echo "apt-get update failed (attempt $i); retrying in 10s"
             sleep 10
+          done
+          # Fetch first, under a bound: a download is safe to stop and
+          # resumes, an install is not. A mirror that stalls is left for
+          # the main archive on the next attempt.
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get install -y --download-only \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+              $pkgs && break
+            [ $i = 3 ] && exit 1
+            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+              [ -f "$f" ] || continue
+              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
+            done
+            sudo timeout 90 apt-get update -y \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
           done
           sudo apt-get install -y \
             -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
@@ -163,6 +180,25 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
              timeout 60 ./wii_handshake_test
           echo "[pass] wii_handshake_test (ASan)"
+
+      - name: Build and run android_lifecycle_flush_test (ASan + UBSan, TSan)
+        shell: bash
+        working-directory: samples/input/android_lifecycle_flush
+        run: |
+          set -eu
+          # The Android background flush handshake, a UI thread against
+          # an app thread. Pins that onPause() and onStop() return only
+          # once SRAM, core options and the config are on disk - a
+          # swiped-away task is killed as soon as they have returned -
+          # that the save is written once per trip to the background,
+          # and that the startup pump acknowledges without saving.
+          make clean all SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 60 ./android_lifecycle_flush_test
+          make clean all SANITIZER=thread
+          TSAN_OPTIONS=halt_on_error=1 timeout 60 ./android_lifecycle_flush_test
+          make clean
+          echo "[pass] android_lifecycle_flush_test (ASan, TSan)"
 
       - name: Build and run overlay_textures_test (plain, ASan + UBSan, threaded)
         shell: bash

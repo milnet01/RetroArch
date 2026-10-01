@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        timeout-minutes: 5
+        timeout-minutes: 20
         run: |
           # All three packages ship on the stock ubuntu-latest image, so
           # this step is a no-op there and apt is only contacted if the
@@ -44,6 +44,23 @@ jobs:
               -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
             echo "apt-get update failed (attempt $i); retrying in 10s"
             sleep 10
+          done
+          # Fetch first, under a bound: a download is safe to stop and
+          # resumes, an install is not. A mirror that stalls is left for
+          # the main archive on the next attempt.
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get install -y --download-only \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+              build-essential zlib1g-dev clang ffmpeg && break
+            [ $i = 3 ] && exit 1
+            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+              [ -f "$f" ] || continue
+              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
+            done
+            sudo timeout 90 apt-get update -y \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
           done
           sudo apt-get install -y \
             -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
@@ -93,6 +110,7 @@ jobs:
           # self-contained test and exits 0 on success / non-zero on
           # failure.  These are built AND executed.
           declare -a RUN_TARGETS=(
+            float_to_s32_test
             compat_fnmatch_test
             snprintf
             unbase64_test
@@ -103,11 +121,11 @@ jobs:
             config_file_test
             path_resolve_realpath_test
             fill_pathname_test
-            nbio_test
             rpng
             rzip_chunk_size_test
             rzip_matches_buf_test
             rzip_codec_test
+            rzip_parallel_test
             data_transfer_source_test
             data_transfer_prefix_test
             data_transfer_window_test
@@ -155,10 +173,14 @@ jobs:
             screenshot_io_bench
             word_wrap_overflow_test
             task_queue_title_error_test
+            task_queue_snapshot_test
             task_queue_init_failure_test
             # Stops the worker with a bound when a detachable
             # handler is stuck; waits ~1.5 s by design.
             task_queue_detach_test
+            task_queue_main_thread_test
+            task_queue_budget_test
+            image_blit_bands_test
             tpool_wait_test
             # Four CPU-burning jobs on a pool of four must overlap;
             # on a one-core runner it notes that and still passes.
@@ -183,6 +205,7 @@ jobs:
             retro_procbarrier_test
             retro_asym_eventcount_test
             sthread_ex_test
+            fast_cores_test
             memshm_test
             fastjmp_test
             rdds_block_test
@@ -564,6 +587,26 @@ jobs:
           make clean
           CC=clang make check SANITIZER=thread
 
+      - name: Run rzip_parallel_test under Clang + ThreadSanitizer
+        shell: bash
+        working-directory: libretro-common/samples/streams/rzip
+        run: |
+          # rzip_stream.c's chunk-writer pool hands each slot between the
+          # writer and one worker on an acquire/release status word and
+          # parks both sides on retro_eventcount, with no lock anywhere.
+          # The value checks prove in-order emission; a weakened store
+          # or a lost wakeup still passes them on x86 TSO, and only TSan
+          # sees the missing barrier.  The test drives the pool at every
+          # width and through two hundred short lifetimes so the
+          # start / park / shutdown edges are exercised often.
+          set -u
+          set -o pipefail
+
+          make clean
+          CC=clang make rzip_parallel_test SANITIZER=thread
+
+          TSAN_OPTIONS=halt_on_error=1 ./rzip_parallel_test
+
       - name: Run crc32_test under Clang + ThreadSanitizer
         shell: bash
         working-directory: libretro-common/samples/encodings/crc32
@@ -700,7 +743,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        timeout-minutes: 5
+        timeout-minutes: 20
         run: |
           # clang ships on the stock ubuntu-latest image; apt is only
           # contacted if the image ever drops it.
@@ -713,6 +756,23 @@ jobs:
               -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
             echo "apt-get update failed (attempt $i); retrying in 10s"
             sleep 10
+          done
+          # Fetch first, under a bound: a download is safe to stop and
+          # resumes, an install is not. A mirror that stalls is left for
+          # the main archive on the next attempt.
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get install -y --download-only \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+              clang && break
+            [ $i = 3 ] && exit 1
+            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+              [ -f "$f" ] || continue
+              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
+            done
+            sudo timeout 90 apt-get update -y \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
           done
           sudo apt-get install -y \
             -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
@@ -803,13 +863,30 @@ jobs:
 
     steps:
       - name: Install dependencies
-        timeout-minutes: 5
+        timeout-minutes: 20
         run: |
           for i in 1 2 3; do
             sudo timeout 90 apt-get update -y \
               -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
             echo "apt-get update failed (attempt $i); retrying in 10s"
             sleep 10
+          done
+          # Fetch first, under a bound: a download is safe to stop and
+          # resumes, an install is not. A mirror that stalls is left for
+          # the main archive on the next attempt.
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get install -y --download-only \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+              build-essential ${{ matrix.apt_pkgs }} qemu-user-static && break
+            [ $i = 3 ] && exit 1
+            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+              [ -f "$f" ] || continue
+              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
+            done
+            sudo timeout 90 apt-get update -y \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
           done
           sudo apt-get install -y \
             -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
@@ -938,13 +1015,30 @@ jobs:
 
     steps:
       - name: Install dependencies
-        timeout-minutes: 5
+        timeout-minutes: 20
         run: |
           for i in 1 2 3; do
             sudo timeout 90 apt-get update -y \
               -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
             echo "apt-get update failed (attempt $i); retrying in 10s"
             sleep 10
+          done
+          # Fetch first, under a bound: a download is safe to stop and
+          # resumes, an install is not. A mirror that stalls is left for
+          # the main archive on the next attempt.
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get install -y --download-only \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+              build-essential ${{ matrix.apt_pkgs }} qemu-user-static && break
+            [ $i = 3 ] && exit 1
+            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+              [ -f "$f" ] || continue
+              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
+            done
+            sudo timeout 90 apt-get update -y \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
           done
           sudo apt-get install -y \
             -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \

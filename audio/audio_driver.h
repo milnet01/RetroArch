@@ -31,12 +31,10 @@
  * calls into it - so the type has to exist there even though nothing
  * uses it. */
 #include <rthreads/retro_eventcount.h>
-#ifdef HAVE_THREADS
+/* Declarations only, with or without threads: the state holds lock and
+ * condition pointers either way. Declaring the types here instead would
+ * repeat typedefs a C89 compiler refuses once a file includes both. */
 #include <rthreads/rthreads.h>
-#else
-typedef struct slock slock_t;
-typedef struct scond scond_t;
-#endif
 #include <retro_inline.h>
 #include <libretro.h>
 #include <retro_miscellaneous.h>
@@ -693,6 +691,15 @@ typedef struct
     * pipe's target then, not just a frame. Consumer thread only after
     * init. */
    bool     pipe_priming;
+   /* How the consumer fared against the core after priming, said once
+    * at teardown beside the driver's silence count: the passes that
+    * found the pipe short and had to wait for the core, the longest
+    * such wait, and the least the pipe held at the start of a pass
+    * (kept as frames + 1, so zero is no pass yet).  Consumer writes,
+    * the main thread reads at teardown. */
+   retro_atomic_size_t pipe_source_waits;
+   retro_atomic_size_t pipe_source_wait_max_us;
+   retro_atomic_size_t pipe_held_min1;
    /* The audio thread's own copy of AUDIO_FLAG_PIPELINE_THREADED. Set
     * before the wrapper thread is released and cleared after it is
     * joined, so the thread never reads the flags word - which the main
@@ -903,7 +910,7 @@ typedef struct
    unsigned      out_channels;
    /* The multi-channel batch entry (RETRO_ENVIRONMENT_GET_AUDIO_
     * SAMPLE_BATCH_MULTI): the layout the core last delivered, and
-    * the stereo fold of a batch, grown to the largest batch seen. The
+    * the stereo fold of a batch slice, a fixed region of arena_float. The
     * pipeline carries stereo; a core's wider frame is folded here at
     * the boundary, and the device's upmix widens the stereo again.
     * core_layout is stereo until the core delivers something else,

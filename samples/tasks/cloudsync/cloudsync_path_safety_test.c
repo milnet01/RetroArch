@@ -20,20 +20,17 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/* Regression for commit 18b55ec71a (path traversal via hostile cloud-sync
- * manifest key in tasks/task_cloudsync.c::task_cloud_sync_fetch_server_file).
+/* Regression test for the manifest-key check in
+ * tasks/task_cloudsync.c::task_cloud_sync_fetch_server_file.
  *
- * A malicious sync server returns a manifest whose key, once the leading
- * "portable" prefix is stripped, contains ".." or an absolute component --
- * letting the fetch write outside the cloud-sync base directory via
- * fill_pathname_join_special. The guard rejects such keys.
+ * A malicious sync server can return a manifest key whose path portion
+ * contains ".." or an absolute component, letting the fetch write outside
+ * the cloud-sync base directory via fill_pathname_join_special. A key with
+ * no '/' made the old strchr(key, '/') + 1 read from address 1.
  *
- * Unlike the sibling archive_name_safety_test (which keeps a verbatim COPY
- * of a static predicate), this test #includes the REAL predicate source
- * (tasks/task_cloudsync_path.c). The predicate was extracted into its own
- * dependency-free translation unit precisely so the shipped code and this
- * test exercise the SAME function: if a re-sync or refactor reverts the
- * guard, this test fails -- it does not silently drift from a stale copy.
+ * This test #includes the real predicate source (tasks/task_cloudsync_path.c),
+ * which has no dependencies for that reason, so it checks the shipped code
+ * rather than a copy.
  *
  * Build standalone:
  *   cc -Wall -pedantic -std=gnu99 -g -O0 -o cloudsync_path_safety_test \

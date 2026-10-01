@@ -118,6 +118,22 @@ static bool audio_driver_pipeline_transport_publish(uint32_t tempo_q16,
  * out of pipe_ring per pass (one batch slice), and the producer stages
  * at most this many when it has to convert a float batch first. */
 #define AUDIO_PIPE_SLICE_INT16S        AUDIO_CHUNK_SIZE_NONBLOCKING
+
+/* Multichannel fold staging (audio_driver_state_t::multi_fold), in
+ * frames. Every multichannel entry slices its batch to at most this
+ * many frames before folding, so the region is sized once at init and
+ * the fold never grows it on the batch callback. Shared by the float
+ * and int16 paths; sized for float, the larger. */
+#define AUDIO_MULTI_FOLD_FRAMES        (AUDIO_CHUNK_SIZE_NONBLOCKING >> 1)
+
+/* Recorder remap staging (audio_driver_state_t::record_remap): two
+ * halves of one batch slice at the widest frame either side can carry
+ * (a multichannel core is bounded at 2 + 2 * extra pairs, a recorder
+ * layout at the same), so it too is a fixed region carved at init. In
+ * int16 samples per half. */
+#define AUDIO_RECORD_REMAP_CHANNELS    16
+#define AUDIO_RECORD_REMAP_INT16S      ((AUDIO_CHUNK_SIZE_NONBLOCKING >> 1) \
+                                        * AUDIO_RECORD_REMAP_CHANNELS)
 /* The canonical wide frame on a multi-channel core's ring: a slot per
  * speaker position bit, FL and FR first. */
 #define AUDIO_PIPE_CANON_CHANNELS      11
@@ -370,6 +386,9 @@ microphone_driver_t *microphone_drivers[] = {
 #endif
 #ifdef HAVE_WASAPI
       &microphone_wasapi,
+#endif
+#ifdef HAVE_WDMKS
+      &microphone_wdmks,
 #endif
 #ifdef HAVE_SDL2
       &microphone_sdl, /* Microphones are not supported in SDL 1 */
@@ -1034,6 +1053,23 @@ static bool audio_driver_deinit_internal(bool audio_enable)
       if (n)
          RARCH_LOG("[Audio] Driver \"%s\": %u period%s of silence for want of audio this session.\n",
                audio_driver_get_ident(), (unsigned)n, n == 1 ? "" : "s");
+#ifdef HAVE_THREADS
+      /* And the consumer's side of it: whether the pipe ever ran
+       * short of the core, which is the other place silence comes
+       * from, and how low it got. */
+      if (audio_st->pipe_threaded
+            && retro_atomic_load_acquire_size(&audio_st->pipe_held_min1))
+      {
+         size_t waits = retro_atomic_load_acquire_size(&audio_st->pipe_source_waits);
+         size_t low   = retro_atomic_load_acquire_size(&audio_st->pipe_held_min1) - 1;
+         RARCH_LOG("[Audio] Pipeline: waited for the core %u time%s after priming,"
+               " %.2f ms at the longest; the pipe held %u frames (%.1f ms) at its lowest.\n",
+               (unsigned)waits, waits == 1 ? "" : "s",
+               (double)retro_atomic_load_acquire_size(&audio_st->pipe_source_wait_max_us) / 1000.0,
+               (unsigned)low,
+               audio_st->input > 0.0f ? (double)low * 1000.0 / (double)audio_st->input : 0.0);
+      }
+#endif
       if (audio_st->context_audio_data)
          audio->free(audio_st->context_audio_data);
       audio_st->context_audio_data = NULL;
@@ -1085,10 +1121,10 @@ static bool audio_driver_deinit_internal(bool audio_enable)
    audio_st->pipe_wide                = NULL;
    audio_st->pipe_wide_bytes          = 0;
    audio_st->pipe_channels            = 2;
-   free(audio_st->multi_fold);
+   /* multi_fold is a region of arena_float, freed with it below. */
    audio_st->multi_fold               = NULL;
    audio_st->multi_fold_frames        = 0;
-   free(audio_st->record_remap);
+   /* record_remap is a region of arena_int16, freed with it above. */
    audio_st->record_remap             = NULL;
    audio_st->record_remap_frames      = 0;
    audio_st->core_layout              = AUDIO_LAYOUT_STEREO;
@@ -4056,10 +4092,13 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
     * in addition to its own. */
    size_t i16_rewind              = AUDIO_ARENA_NEXT(i16_in_scratch,
          max_buffer_samples, AUDIO_ARENA_ALIGN_INT16);
-   size_t i16_total               = i16_rewind + max_buffer_samples;
+   size_t i16_record              = AUDIO_ARENA_NEXT(i16_rewind,
+         max_buffer_samples, AUDIO_ARENA_ALIGN_INT16);
 #else
-   size_t i16_total               = i16_in_scratch + max_buffer_samples;
+   size_t i16_record              = AUDIO_ARENA_NEXT(i16_in_scratch,
+         max_buffer_samples, AUDIO_ARENA_ALIGN_INT16);
 #endif
+   size_t i16_total               = i16_record + 2 * AUDIO_RECORD_REMAP_INT16S;
    size_t f32_input               = 0;
    size_t f32_synth               = AUDIO_ARENA_NEXT(f32_input,
          max_buffer_samples, AUDIO_ARENA_ALIGN_FLOAT);
@@ -4068,10 +4107,13 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
 #ifdef HAVE_REWIND
    size_t f32_rewind              = AUDIO_ARENA_NEXT(f32_out,
          outsamples_max, AUDIO_ARENA_ALIGN_FLOAT);
-   size_t f32_total               = f32_rewind + max_buffer_samples;
+   size_t f32_fold                = AUDIO_ARENA_NEXT(f32_rewind,
+         max_buffer_samples, AUDIO_ARENA_ALIGN_FLOAT);
 #else
-   size_t f32_total               = f32_out + outsamples_max;
+   size_t f32_fold                = AUDIO_ARENA_NEXT(f32_out,
+         outsamples_max, AUDIO_ARENA_ALIGN_FLOAT);
 #endif
+   size_t f32_total               = f32_fold + AUDIO_MULTI_FOLD_FRAMES * 2;
    int16_t *arena_int16           = (int16_t*)memalign_alloc(64,
          i16_total * sizeof(int16_t));
    float *arena_float             = (float*)memalign_alloc(64,
@@ -4132,6 +4174,10 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
    audio_driver_st.rewind_buf_f                = arena_float + f32_rewind;
 #endif
    audio_driver_st.output_samples_buf_length   = outsamples_max * sizeof(float);
+   audio_driver_st.multi_fold                  = arena_float + f32_fold;
+   audio_driver_st.multi_fold_frames           = AUDIO_MULTI_FOLD_FRAMES;
+   audio_driver_st.record_remap                = arena_int16 + i16_record;
+   audio_driver_st.record_remap_frames         = AUDIO_RECORD_REMAP_INT16S;
 
    if (!audio_enable)
    {
@@ -4231,6 +4277,9 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
       retro_atomic_store_release_int(&audio_driver_st.pipe_ctrl_avail, -1);
       audio_driver_st.pipe_underruns_seen = 0;
       audio_driver_st.pipe_priming        = true;
+      retro_atomic_size_init(&audio_driver_st.pipe_source_waits, 0);
+      retro_atomic_size_init(&audio_driver_st.pipe_source_wait_max_us, 0);
+      retro_atomic_size_init(&audio_driver_st.pipe_held_min1, 0);
       if (audio_driver_st.pipe_channels > 2)
       {
          size_t wide = audio_driver_st.pipe_pass_frames * AUDIO_PIPE_CANON_CHANNELS * sizeof(float);
@@ -4543,18 +4592,7 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
                ? (double)audio_driver_st.buffer_size / frame_bytes
                   * 1000.0 / out_rate
                : 0.0;
-         const char *ident     = audio_driver_st.current_audio->ident;
-#ifdef HAVE_THREADS
-         /* Name the driver the user chose, not the wrapper it runs
-          * under. */
-         if (string_is_equal(ident, "audio-thread"))
-         {
-            const audio_driver_t *inner = audio_thread_wrapped_driver(
-                  audio_driver_st.context_audio_data);
-            if (inner)
-               ident           = inner->ident;
-         }
-#endif
+         const char *ident     = audio_driver_get_ident();
          RARCH_LOG("[Audio] Driver \"%s\" reports a %u-byte buffer: "
                "%.1f ms of %u-channel %s at %u Hz against a %u ms latency setting%s; "
                "rate control %s it near %.1f ms.\n",
@@ -5246,9 +5284,19 @@ static size_t audio_driver_pipe_target_frames(audio_driver_state_t *audio_st)
    }
    /* Never under one publish: the core delivers a frame at a time, and
     * a pipe holding less than that between publishes is a device that
-    * runs dry between them whatever its own buffer holds. */
+    * runs dry between them whatever its own buffer holds.
+    *
+    * And where nothing regulates the fill - no rate control - one
+    * publish is no margin at all: the pipe holds a frame just after
+    * the core hands one over and nothing just before the next, so a
+    * frame late by any amount reaches the device as silence.  Two
+    * publishes there, so a frame's worth is held at the worst phase,
+    * which is what a late frame costs. */
    if (target < audio_st->pipe_pass_frames)
       target = audio_st->pipe_pass_frames;
+   if (     !(AUDIO_FLAGS_GET(audio_st) & AUDIO_FLAG_CONTROL)
+         && target < 2 * audio_st->pipe_pass_frames)
+      target = 2 * audio_st->pipe_pass_frames;
    /* Within the ring less two publishes: one arriving, one of swing
     * in the fill between the core's publish and the consumer's pass. */
    ring_max    = audio_st->pipe_ring.capacity / audio_st->pipe_frame_bytes;
@@ -5257,6 +5305,29 @@ static size_t audio_driver_pipe_target_frames(audio_driver_state_t *audio_st)
    else
       ring_max  = 0;
    return target < ring_max ? target : ring_max;
+}
+
+/* What priming fills the pipe to: the target and the device's buffer
+ * on top, since the device starts empty and the pipe is to hold a
+ * buffer's worth ahead of it.  The same figure is the line above which
+ * audio is late after an underrun: trimming to the target alone threw
+ * the device's share away on the first pass after every prime, and the
+ * pipe then ran a device buffer short of what it had just been filled
+ * to.  Zero when there is no target. */
+static size_t audio_driver_pipe_prime_frames(audio_driver_state_t *audio_st)
+{
+   size_t target = audio_driver_pipe_target_frames(audio_st);
+   size_t frame_bytes, device, room, limit;
+   if (!target)
+      return 0;
+   frame_bytes = audio_driver_dev_frame_bytes(audio_st);
+   device      = (size_t)((double)audio_st->buffer_size / frame_bytes
+         / audio_st->src_ratio_orig);
+   room        = audio_st->pipe_ring.capacity / audio_st->pipe_frame_bytes;
+   limit       = room > audio_st->pipe_pass_frames
+      ? room - audio_st->pipe_pass_frames : 1;
+   target     += device;
+   return target > limit ? limit : target;
 }
 #endif
 
@@ -6058,6 +6129,27 @@ bool audio_driver_pipeline_transport_step(struct audio_pipeline_stretch *stage,
          output_budget, finishing, complete, &progress);
 }
 
+/* The consumer's account of the core, kept for the teardown line:
+ * a pass that starts with the pipe at its lowest so far, and a wait
+ * for source that ran after priming, with how long it took. */
+static void audio_driver_pipe_note_held(audio_driver_state_t *st, size_t held)
+{
+   size_t cur = retro_atomic_load_relaxed_size(&st->pipe_held_min1);
+   if (!cur || held + 1 < cur)
+      retro_atomic_store_release_size(&st->pipe_held_min1, held + 1);
+}
+
+static void audio_driver_pipe_note_wait(audio_driver_state_t *st,
+      retro_time_t began)
+{
+   retro_time_t took = cpu_features_get_time_usec() - began;
+   retro_atomic_fetch_add_size(&st->pipe_source_waits, 1);
+   if (took > 0 && (size_t)took
+         > retro_atomic_load_relaxed_size(&st->pipe_source_wait_max_us))
+      retro_atomic_store_release_size(&st->pipe_source_wait_max_us,
+            (size_t)took);
+}
+
 static bool audio_driver_transport_wait(audio_driver_state_t *st, size_t need,
       unsigned metadata_threshold)
 {
@@ -6086,8 +6178,13 @@ static bool audio_driver_transport_wait(audio_driver_state_t *st, size_t need,
         || retro_atomic_load_acquire_int(&st->pipe_wake))
       retro_eventcount_cancel_wait(&st->pipe_data);
    else
+   {
+      retro_time_t began = st->pipe_priming ? 0 : cpu_features_get_time_usec();
       retro_eventcount_commit_wait_timeout(&st->pipe_data, key,
             AUDIO_PIPE_WAIT_MAX_US);
+      if (began)
+         audio_driver_pipe_note_wait(st, began);
+   }
    if (retro_atomic_load_acquire_int(&st->pipe_wake))
    {
       retro_atomic_store_release_int(&st->pipe_wake, 0);
@@ -6120,26 +6217,28 @@ static void audio_driver_transport_consume(audio_driver_state_t *st)
       size_t seen = audio->underruns(st->context_audio_data);
       if (seen != st->pipe_underruns_seen)
       {
-         size_t target = audio_driver_pipe_target_frames(st);
+         size_t target = audio_driver_pipe_prime_frames(st);
          if (!audio_driver_pipeline_transport_discard(held > target ? held - target : 0))
             return;
          st->pipe_underruns_seen = seen;
          held = retro_spsc_read_avail(&st->pipe_ring) / st->pipe_frame_bytes;
+         /* Silence with the pipe short is the core having been late,
+          * and the cushion the pipe held ahead of the device is what
+          * the stall burned.  Nothing rebuilds it on this path - no
+          * rate control, and a core paced to the display never runs
+          * ahead - so from here every ordinary bit of jitter would be
+          * a hole.  Prime again: the same wait the first pass made,
+          * while the device is silent anyway, so the next stall meets
+          * a full cushion. */
+         if (held < target)
+            st->pipe_priming = true;
       }
    }
    if (st->pipe_priming)
    {
-      size_t target = audio_driver_pipe_target_frames(st);
-      size_t need = 1;
-      if (target)
-      {
-         size_t room = st->pipe_ring.capacity / st->pipe_frame_bytes;
-         size_t device = (size_t)((double)st->buffer_size
-               / audio_driver_dev_frame_bytes(st) / st->src_ratio_orig);
-         size_t limit = room > st->pipe_pass_frames ? room - st->pipe_pass_frames : 1;
-         need = target + device;
-         if (need > limit) need = limit;
-      }
+      size_t need = audio_driver_pipe_prime_frames(st);
+      if (!need)
+         need = 1;
       if (!audio_driver_transport_wait(st, need * st->pipe_frame_bytes,
                AUDIO_PIPELINE_LAYOUT_CAPACITY))
          return;
@@ -6149,6 +6248,8 @@ static void audio_driver_transport_consume(audio_driver_state_t *st)
          && audio_pipeline_stretch_needs_input(st->pipe_transport)
          && !audio_driver_transport_wait(st, st->pipe_frame_bytes, 1))
       return;
+   if (!st->pipe_priming)
+      audio_driver_pipe_note_held(st, held);
    /* What a pause left in the ring is stale behind its tail, and so is
     * what the stage holds: taken out unplayed, up to where the pause was
     * published. */
@@ -6257,18 +6358,9 @@ static void audio_driver_pipeline_consume(audio_driver_state_t *audio_st)
       size_t need = audio_st->pipe_frame_bytes;
       if (audio_st->pipe_priming)
       {
-         size_t target = audio_driver_pipe_target_frames(audio_st);
-         if (target)
-         {
-            size_t frame_bytes = audio_driver_dev_frame_bytes(audio_st);
-            size_t device = (size_t)((double)audio_st->buffer_size / frame_bytes
-                  / audio_st->src_ratio_orig);
-            size_t room   = audio_st->pipe_ring.capacity / audio_st->pipe_frame_bytes;
-            target += device;
-            if (target > room - audio_st->pipe_pass_frames)
-               target = room - audio_st->pipe_pass_frames;
-            need = target * audio_st->pipe_frame_bytes;
-         }
+         size_t prime = audio_driver_pipe_prime_frames(audio_st);
+         if (prime)
+            need = prime * audio_st->pipe_frame_bytes;
       }
    while (retro_spsc_read_avail(&audio_st->pipe_ring) < need)
    {
@@ -6305,15 +6397,25 @@ static void audio_driver_pipeline_consume(audio_driver_state_t *audio_st)
          retro_eventcount_cancel_wait(&audio_st->pipe_data);
          continue;
       }
-      if (!retro_eventcount_commit_wait_timeout(&audio_st->pipe_data, key,
-               AUDIO_PIPE_WAIT_MAX_US))
       {
-         /* Nothing came within the bound. A producer that has stopped
-          * is the wrapper's business, not this pass's. */
-         if (retro_atomic_load_acquire_int(&audio_st->pipe_data_gen) == gen)
-            return;
+         retro_time_t began = audio_st->pipe_priming
+            ? 0 : cpu_features_get_time_usec();
+         bool woken = retro_eventcount_commit_wait_timeout(&audio_st->pipe_data,
+               key, AUDIO_PIPE_WAIT_MAX_US);
+         if (began)
+            audio_driver_pipe_note_wait(audio_st, began);
+         if (!woken)
+         {
+            /* Nothing came within the bound. A producer that has
+             * stopped is the wrapper's business, not this pass's. */
+            if (retro_atomic_load_acquire_int(&audio_st->pipe_data_gen) == gen)
+               return;
+         }
       }
    }
+   if (!audio_st->pipe_priming)
+      audio_driver_pipe_note_held(audio_st,
+            retro_spsc_read_avail(&audio_st->pipe_ring) / audio_st->pipe_frame_bytes);
    audio_st->pipe_priming = false;
    }
 
@@ -6385,7 +6487,7 @@ static void audio_driver_pipeline_consume(audio_driver_state_t *audio_st)
       size_t seen = audio->underruns(audio_st->context_audio_data);
       if (seen != audio_st->pipe_underruns_seen)
       {
-         size_t target = audio_driver_pipe_target_frames(audio_st) * audio_st->pipe_frame_bytes;
+         size_t target = audio_driver_pipe_prime_frames(audio_st) * audio_st->pipe_frame_bytes;
          size_t held   = retro_spsc_read_avail(&audio_st->pipe_ring);
          bool discarded = false;
          audio_st->pipe_underruns_seen = seen;
@@ -6406,6 +6508,17 @@ static void audio_driver_pipeline_consume(audio_driver_state_t *audio_st)
             audio_driver_state_lock();
             audio_driver_reset_resamplers(audio_st);
             audio_driver_state_unlock();
+         }
+         /* Silence with the pipe short is the core having been late,
+          * and what the stall burned is the cushion the pipe held
+          * ahead of the device; nothing on this path rebuilds it.
+          * Prime again on the next pass - the wait the first pass
+          * made, while the device is silent anyway - so the next
+          * stall meets a full cushion rather than an empty pipe. */
+         if (held < target)
+         {
+            audio_st->pipe_priming = true;
+            return;
          }
          if (have > held / audio_st->pipe_frame_bytes)
             have = held / audio_st->pipe_frame_bytes;
@@ -6540,13 +6653,11 @@ static void audio_driver_record_push(audio_driver_state_t *audio_st,
    capacity = frames > (AUDIO_CHUNK_SIZE_NONBLOCKING >> 1)
       ? (AUDIO_CHUNK_SIZE_NONBLOCKING >> 1) : frames;
    need = capacity * (channels > rchannels ? channels : rchannels);
-   if (need > audio_st->record_remap_frames)
-   {
-      int16_t *nb = (int16_t*)realloc(audio_st->record_remap, need * 2 * sizeof(int16_t));
-      if (!nb) return;
-      audio_st->record_remap        = nb;
-      audio_st->record_remap_frames = need;
-   }
+   /* The region is carved out of arena_int16 at init for
+    * AUDIO_RECORD_REMAP_CHANNELS per frame; wider than that is not a
+    * layout either side can declare, so this is a check, not a grow. */
+   if (!audio_st->record_remap || need > audio_st->record_remap_frames)
+      return;
    while (frames)
    {
       size_t n = frames > capacity ? capacity : frames;
@@ -6722,18 +6833,11 @@ size_t audio_driver_sample_batch(const int16_t *data, size_t frames)
 static bool audio_driver_multi_fold_room(audio_driver_state_t *audio_st,
       size_t frames, size_t sample)
 {
-   if (frames > audio_st->multi_fold_frames)
-   {
-      /* float and int16 batches share the buffer: sized for float,
-       * the larger */
-      void *n = realloc(audio_st->multi_fold, frames * 2 * sizeof(float));
-      if (!n)
-         return false;
-      audio_st->multi_fold        = n;
-      audio_st->multi_fold_frames = frames;
-   }
+   /* The region is carved out of arena_float by
+    * audio_driver_init_internal() at AUDIO_MULTI_FOLD_FRAMES frames;
+    * callers slice to that bound, so this is a check, never a grow. */
    (void)sample;
-   return true;
+   return audio_st->multi_fold && frames <= audio_st->multi_fold_frames;
 }
 
 static bool audio_driver_multi_layout_ok(unsigned channels, unsigned layout)
@@ -8292,7 +8396,7 @@ bool audio_driver_start(bool is_shutdown)
    }
 
    RARCH_DBG("[Audio] Started audio driver \"%s\" (is_shutdown=%s)\n",
-         audio->ident, is_shutdown ? "true" : "false");
+         audio_driver_get_ident(), is_shutdown ? "true" : "false");
 
    return true;
 
@@ -8726,7 +8830,8 @@ bool audio_driver_stop(void)
          audio_driver_state_unlock();
       }
       AUDIO_FLAGS_CLEAR(audio_st, AUDIO_FLAG_STARTED);
-      RARCH_DBG("[Audio] Stopped audio driver \"%s\".\n", audio->ident);
+      RARCH_DBG("[Audio] Stopped audio driver \"%s\".\n",
+            audio_driver_get_ident());
    }
 
    return stopped;

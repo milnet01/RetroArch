@@ -4870,6 +4870,23 @@ bool menu_driver_init(bool video_is_threaded)
    return false;
 }
 
+void menu_driver_context_rebuild(void)
+{
+   struct menu_state *menu_st = &menu_driver_state;
+
+   if (!menu_st->driver_ctx || !menu_st->userdata)
+      return;
+
+   /* context_reset loads every texture into its slot without looking
+    * at what the slot held, so on its own it leaks the set already
+    * loaded. Release that set first, as on a video driver swap. */
+   if (menu_st->driver_ctx->context_destroy)
+      menu_st->driver_ctx->context_destroy(menu_st->userdata);
+   if (menu_st->driver_ctx->context_reset)
+      menu_st->driver_ctx->context_reset(menu_st->userdata,
+            video_driver_is_threaded());
+}
+
 const char *menu_driver_ident(void)
 {
    struct menu_state    *menu_st  = &menu_driver_state;
@@ -5490,7 +5507,7 @@ unsigned menu_event(
        * That is what makes the selection jump several places when
        * the menu unblocks mid-hold. Treat the block as ending the
        * hold: the next press starts from the initial delay again. */
-      last_time_us                                 = menu_st->current_time_us;
+      last_time_us                                 = menu_st->input_time_us;
       hold_reset                                   = true;
       hold_initial                                 = true;
       delay_count                                  = 0.0f;
@@ -5636,7 +5653,7 @@ unsigned menu_event(
                                       | BIT256_GET_PTR(p_input, RETRO_DEVICE_ID_JOYPAD_RIGHT);
       /* Reset the navigation auto-repeat state machine, for the
        * same reason as the BLOCK_ALL_INPUT path above */
-      last_time_us                    = menu_st->current_time_us;
+      last_time_us                    = menu_st->input_time_us;
       hold_reset                      = true;
       hold_initial                    = true;
       delay_count                     = 0.0f;
@@ -5660,9 +5677,9 @@ unsigned menu_event(
 
    if (navigation_current)
    {
-      float delta_time              = (float)(menu_st->current_time_us - last_time_us) / 1000;
+      float delta_time              = (float)(menu_st->input_time_us - last_time_us) / 1000;
 
-      last_time_us                  = menu_st->current_time_us;
+      last_time_us                  = menu_st->input_time_us;
       navigation_reset_delay        = true;
 
       /* Store first direction in order to block "diagonals" */

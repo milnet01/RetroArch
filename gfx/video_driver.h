@@ -655,6 +655,8 @@ typedef struct video_frame_info
     * never reads the recording state the main thread writes. */
    bool gpu_recording;
    bool threaded_present_repeat;
+   /* The threaded presenter is holding each push to the display's
+    * vblank: the setting is on and the wrapper is running. */
    bool threaded_display_pacing;
    bool present_timing_from_display;
 } video_frame_info_t;
@@ -2029,6 +2031,18 @@ float video_driver_get_hdr_max_nits(void);
  * driver's own fixed value, unchanged. */
 float video_driver_hdr_metadata_peak(float driver_value);
 
+/* The GPU index to use for 'api' out of the devices in 'list'.
+ *
+ * An index alone is a position in a list that a driver update, a BIOS
+ * change or another GPU reorders, after which it names a different
+ * device. The device the index was chosen as is remembered with it:
+ * where that name has moved, its new position is returned; where it is
+ * gone, 0 with a warning, rather than whatever now sits at the index.
+ * The name is kept up to date with what was resolved.
+ */
+int video_driver_gpu_index_resolve(enum gfx_ctx_api api, int index,
+      struct string_list *list);
+
 struct string_list* video_driver_get_gpu_api_devices(enum gfx_ctx_api api);
 
 const char *hw_render_context_name(
@@ -2059,6 +2073,21 @@ uintptr_t video_driver_get_current_framebuffer(void);
 retro_proc_address_t video_driver_get_proc_address(const char *sym);
 
 void video_driver_free_hw_context(void);
+
+/* A hardware-render request the core made for a context that does not
+ * exist yet - a staged content load takes the request during the new
+ * core's init, while the previous session's drivers are still up.
+ * The pair carries it across the teardown of those drivers: take
+ * moves the request out (the teardown then destroys nothing that was
+ * never reset), restore puts it back for drivers_init to build the
+ * context from, and publishes the type. */
+struct video_hw_request
+{
+   struct retro_hw_render_callback cb;
+   const struct retro_hw_render_context_negotiation_interface *negotiation;
+};
+void video_driver_hw_request_take(struct video_hw_request *req);
+void video_driver_hw_request_restore(const struct video_hw_request *req);
 
 #ifdef HAVE_VIDEO_FILTER
 void video_driver_filter_free(void);

@@ -191,6 +191,38 @@ enum filebrowser_enums filebrowser_get_type(void)
    return p_displist->filebrowser_types;
 }
 
+#ifdef HAVE_NFSCLIENT
+/* nfs://server/[export]/[subdir]; the export may be left out of the
+ * settings when the address carries it. */
+bool menu_displaylist_build_nfs_root(char *s, size_t len)
+{
+   size_t _len;
+   settings_t *settings = config_get_ptr();
+   const char *server   = settings->arrays.nfs_server;
+   const char *export_p = settings->arrays.nfs_export;
+   const char *subdir   = settings->arrays.nfs_subdir;
+
+   if (!*server)
+      return false;
+   _len = strlcpy_lit(s, "nfs://", len);
+   _len += strlcpy(s + _len, server, len - _len);
+   if (_len >= len)
+      return false;
+   if (*export_p)
+   {
+      /* with an export configured the VFS resolves paths against it,
+       * so the root is the server alone (plus the subdir) */
+      if (*subdir)
+      {
+         if (*subdir != '/')
+            _len += strlcpy_lit(s + _len, "/", len - _len);
+         _len += strlcpy(s + _len, subdir, len - _len);
+      }
+   }
+   return _len < len;
+}
+#endif
+
 #ifdef HAVE_SMBCLIENT
 bool menu_displaylist_build_smb_root(char *s, size_t len)
 {
@@ -2948,12 +2980,21 @@ static unsigned menu_displaylist_parse_system_info(file_list_t *list)
 
    /* CPU Cores */
    {
-      unsigned cores = cpu_features_get_core_amount();
-      size_t _len    = strlcpy(entry,
+      /* Physical cores, with the thread count alongside where SMT
+       * doubles it - the raw thread count read as 32 cores on a
+       * 16-core part. */
+      unsigned threads = cpu_features_get_core_amount();
+      unsigned cores   = cpu_features_get_core_amount_physical();
+      size_t _len      = strlcpy(entry,
             msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CPU_CORES),
             sizeof(entry));
-      snprintf(entry + _len, sizeof(entry) - _len,
-            ": %u", cores);
+      if (threads > cores)
+         snprintf(entry + _len, sizeof(entry) - _len,
+               ": %u (%u %s)", cores, threads,
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CPU_THREADS));
+      else
+         snprintf(entry + _len, sizeof(entry) - _len,
+               ": %u", cores);
       if (menu_entries_append(list, entry, "",
             MENU_ENUM_LABEL_CPU_CORES, MENU_SETTINGS_CORE_INFO_NONE,
             0, 0, NULL))
@@ -4755,22 +4796,6 @@ static int menu_displaylist_parse_load_content_settings(
             count++;
       }
 #endif
-#ifdef HAVE_SMBCLIENT
-      if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
-            MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS,
-            PARSE_ONLY_BOOL, false) == 0)
-         count++;
-
-      if (settings->bools.smb_client_enable)
-      {
-         if (menu_entries_append(list,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SETTINGS),
-               MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS_STR,
-               MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS,
-               MENU_SETTING_ACTION, 0, 0, NULL))
-            count++;
-      }
-#endif
    }
 
    return count;
@@ -5163,7 +5188,7 @@ static unsigned menu_displaylist_parse_playlists(
    size_t i, list_size;
    struct string_list str_list  = {0};
    struct string_list *walk_list = NULL;
-   enum menu_dirwalk_status walk_status;
+   enum menu_dirwalk_status walk_status = MENU_DIRWALK_FAILED;
    unsigned count               = 0;
    unsigned content_count       = 0;
    bool show_hidden_files       = settings->bools.show_hidden_files;
@@ -5296,28 +5321,39 @@ static unsigned menu_displaylist_parse_playlists(
 #endif
    }
 
-   menu_dirwalk_set_refresh_cb(menu_displaylist_dirwalk_refresh);
-   walk_status = menu_dirwalk_request(path, NULL, true,
-         show_hidden_files, true, MENU_DIRWALK_SORT_IGNORE_EXT,
-         MENU_DIRWALK_TAG_PLAYLISTS, &walk_list);
-
-   if (walk_status == MENU_DIRWALK_PENDING)
+   if (horizontal)
    {
-      /* The playlist-directory walk continues in the background;
-       * the refresh callback rebuilds this list on completion. */
-      if (menu_entries_append(info_list,
-            msg_hash_to_str(MSG_LOADING), "",
-            MSG_UNKNOWN, MENU_SETTING_NO_ITEM, 0, 0, NULL))
-         count++;
-      return count;
-   }
-   if (walk_status != MENU_DIRWALK_DONE || !walk_list)
-      return count;   /* same early-out as a failed walk before */
+      if (!dir_list_initialize(&str_list, path, NULL, true,
+            show_hidden_files, true, false))
+         return count;
 
-   /* Move the completed listing (sorted by the module) into the
-    * local list the loop below reads. */
-   str_list = *walk_list;
-   free(walk_list);
+      dir_list_sort_ignore_ext(&str_list, true);
+   }
+   else
+   {
+      menu_dirwalk_set_refresh_cb(menu_displaylist_dirwalk_refresh);
+      walk_status = menu_dirwalk_request(path, NULL, true,
+            show_hidden_files, true, MENU_DIRWALK_SORT_IGNORE_EXT,
+            MENU_DIRWALK_TAG_PLAYLISTS, &walk_list);
+
+      if (walk_status == MENU_DIRWALK_PENDING)
+      {
+         /* The playlist-directory walk continues in the background;
+          * the refresh callback rebuilds this list on completion. */
+         if (menu_entries_append(info_list,
+               msg_hash_to_str(MSG_LOADING), "",
+               MSG_UNKNOWN, MENU_SETTING_NO_ITEM, 0, 0, NULL))
+            count++;
+         return count;
+      }
+      if (walk_status != MENU_DIRWALK_DONE || !walk_list)
+         return count;   /* same early-out as a failed walk before */
+
+      /* Move the completed listing (sorted by the module) into the
+       * local list the loop below reads. */
+      str_list = *walk_list;
+      free(walk_list);
+   }
 
    content_count = count;
 
@@ -9535,6 +9571,11 @@ unsigned menu_displaylist_build_list(
                      PARSE_ONLY_PATH, false) == 0)
                count++;
 
+            if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
+                     MENU_ENUM_LABEL_VIDEO_FILTER_THREADS,
+                     PARSE_ONLY_UINT, false) == 0)
+               count++;
+
             if (*settings->paths.path_softfilter_plugin)
                if (menu_entries_append(list,
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_VIDEO_FILTER_REMOVE),
@@ -9627,6 +9668,20 @@ unsigned menu_displaylist_build_list(
                   msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SMB_CLIENT_BROWSE),
                   msg_hash_to_str(MENU_ENUM_SUBLABEL_SMB_CLIENT_BROWSE),
                   MENU_ENUM_LABEL_SMB_CLIENT_BROWSE,
+                  FILE_TYPE_DIRECTORY, 0, 0, NULL))
+                  count++;
+            }
+         }
+#endif
+#ifdef HAVE_NFSCLIENT
+         {
+            settings_t *settings = config_get_ptr();
+            if (*settings->arrays.nfs_server)
+            {
+               if (menu_entries_append(list,
+                  msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NFS_CLIENT_BROWSE),
+                  msg_hash_to_str(MENU_ENUM_SUBLABEL_NFS_CLIENT_BROWSE),
+                  MENU_ENUM_LABEL_NFS_CLIENT_BROWSE,
                   FILE_TYPE_DIRECTORY, 0, 0, NULL))
                   count++;
             }
@@ -10749,6 +10804,9 @@ unsigned menu_displaylist_build_list(
 #ifdef HAVE_SMBCLIENT
                {MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS,                PARSE_ACTION,      true},
 #endif
+#ifdef HAVE_NFSCLIENT
+               {MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS,                PARSE_ACTION,      true},
+#endif
                {MENU_ENUM_LABEL_NETPLAY_PUBLIC_ANNOUNCE,            PARSE_ONLY_BOOL,   true},
                {MENU_ENUM_LABEL_NETPLAY_USE_MITM_SERVER,            PARSE_ONLY_BOOL,   true},
                {MENU_ENUM_LABEL_NETPLAY_MITM_SERVER,                PARSE_ONLY_STRING, false},
@@ -10821,6 +10879,24 @@ unsigned menu_displaylist_build_list(
                      PARSE_ONLY_UINT, false) == 0)
                   count++;
             }
+
+#ifdef HAVE_MCP
+            if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
+                  MENU_ENUM_LABEL_MCP_SERVER_ENABLE,
+                  PARSE_ONLY_BOOL, false) == 0)
+               count++;
+            if (settings->bools.mcp_server_enable)
+            {
+               if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
+                     MENU_ENUM_LABEL_MCP_SERVER_PORT,
+                     PARSE_ONLY_UINT, false) == 0)
+                  count++;
+               if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
+                     MENU_ENUM_LABEL_MCP_SERVER_TOKEN,
+                     PARSE_ONLY_STRING, false) == 0)
+                  count++;
+            }
+#endif
 
             if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
                   MENU_ENUM_LABEL_NETWORK_REMOTE_ENABLE,
@@ -11536,6 +11612,19 @@ unsigned menu_displaylist_build_list(
                };
                count += menu_displaylist_parse_settings_rows(list, settings,
                      dl_rows_8, (unsigned)ARRAY_SIZE(dl_rows_8));
+
+               /* Only the GPUs the driver found: an index past them
+                * names no device, and picking one leaves the frontend
+                * on a GPU that may not reach the display at all. */
+               {
+                  rarch_setting_t *gpu_setting    = menu_setting_find_enum(
+                        MENU_ENUM_LABEL_VIDEO_GPU_INDEX);
+                  struct string_list *gpu_devices =
+                     video_driver_get_gpu_api_devices(
+                           video_context_driver_get_api());
+                  if (gpu_setting && gpu_devices && gpu_devices->size > 0)
+                     gpu_setting->max = (float)(gpu_devices->size - 1);
+               }
             }
 #if defined(WIIU)
             if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
@@ -11555,7 +11644,7 @@ unsigned menu_displaylist_build_list(
                         PARSE_ONLY_UINT, false) == 0)
                   count++;
 
-#if defined(GEKKO) || defined(PS2) || defined(__PS3__)
+#if defined(PS2)
             if (true)
 #else
             if (video_display_server_has_resolution_list())
@@ -11765,10 +11854,13 @@ unsigned menu_displaylist_build_list(
                            PARSE_ONLY_BOOL, false) == 0)
                      count++;
 
+#ifdef HAVE_WAYLAND
+                  /* Only the Wayland context reads this */
                   if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
                            MENU_ENUM_LABEL_VIDEO_HDR_SEND_LUMINANCE,
                            PARSE_ONLY_BOOL, false) == 0)
                      count++;
+#endif
 
                   if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
                            MENU_ENUM_LABEL_VIDEO_HDR_EXPAND_GAMUT,
@@ -13022,6 +13114,9 @@ unsigned menu_displaylist_build_list(
             static const menu_displaylist_build_info_t build_list[] = {
                {MENU_ENUM_LABEL_PRIVACY_SETTINGS,  PARSE_ACTION},
                {MENU_ENUM_LABEL_ACCOUNTS_LIST,     PARSE_ACTION},
+#if defined(HAVE_KEYCHAIN) && defined(HAVE_CRYPTO) && defined(HAVE_CONFIGFILE)
+               {MENU_ENUM_LABEL_KEYCHAIN_PASSPHRASE, PARSE_ACTION},
+#endif
                {MENU_ENUM_LABEL_NETPLAY_NICKNAME,  PARSE_ONLY_STRING},
             };
 
@@ -13798,6 +13893,7 @@ unsigned menu_displaylist_build_list(
                {MENU_ENUM_LABEL_SMB_CLIENT_AUTH_MODE,    PARSE_ONLY_UINT, false},
                {MENU_ENUM_LABEL_SMB_CLIENT_NUM_CONTEXTS, PARSE_ONLY_UINT, false},
                {MENU_ENUM_LABEL_SMB_CLIENT_TIMEOUT,      PARSE_ONLY_UINT, false},
+               {MENU_ENUM_LABEL_SMB_CLIENT_READAHEAD,    PARSE_ONLY_UINT, false},
             };
 
             for (i = 0; i < ARRAY_SIZE(build_list); i++)
@@ -13813,6 +13909,7 @@ unsigned menu_displaylist_build_list(
                   case MENU_ENUM_LABEL_SMB_CLIENT_AUTH_MODE:
                   case MENU_ENUM_LABEL_SMB_CLIENT_NUM_CONTEXTS:
                   case MENU_ENUM_LABEL_SMB_CLIENT_TIMEOUT:
+                  case MENU_ENUM_LABEL_SMB_CLIENT_READAHEAD:
                      build_list[i].checked = smb_enable;
                      break;
                   default:
@@ -13825,6 +13922,31 @@ unsigned menu_displaylist_build_list(
                if (!build_list[i].checked && !include_everything)
                   continue;
 
+               if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
+                        build_list[i].enum_idx,
+                        build_list[i].parse_type,
+                        false) == 0)
+                  count++;
+            }
+         }
+         break;
+#endif
+#ifdef HAVE_NFSCLIENT
+      case DISPLAYLIST_NFS_CLIENT_SETTINGS_LIST:
+         {
+            static const menu_displaylist_build_info_t build_list[] = {
+               {MENU_ENUM_LABEL_NFS_CLIENT_SERVER,       PARSE_ONLY_STRING},
+               {MENU_ENUM_LABEL_NFS_CLIENT_EXPORT,       PARSE_ONLY_STRING},
+               {MENU_ENUM_LABEL_NFS_CLIENT_SUBDIR,       PARSE_ONLY_STRING},
+               {MENU_ENUM_LABEL_NFS_CLIENT_TIMEOUT,      PARSE_ONLY_UINT},
+               {MENU_ENUM_LABEL_NFS_CLIENT_NUM_CONTEXTS, PARSE_ONLY_UINT},
+               {MENU_ENUM_LABEL_NFS_CLIENT_PORT,         PARSE_ONLY_UINT},
+               {MENU_ENUM_LABEL_NFS_CLIENT_MOUNT_PORT,   PARSE_ONLY_UINT},
+               {MENU_ENUM_LABEL_NFS_CLIENT_VERSION,      PARSE_ONLY_UINT},
+               {MENU_ENUM_LABEL_NFS_CLIENT_READAHEAD,    PARSE_ONLY_UINT},
+            };
+            for (i = 0; i < ARRAY_SIZE(build_list); i++)
+            {
                if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
                         build_list[i].enum_idx,
                         build_list[i].parse_type,
@@ -16327,6 +16449,10 @@ static bool menu_displaylist_ctl_internal(
 #ifdef HAVE_SMBCLIENT
          case DISPLAYLIST_SMB_CLIENT_SETTINGS_LIST:
          case DISPLAYLIST_OPTIONS_SMB_CLIENT:
+#endif
+#ifdef HAVE_NFSCLIENT
+         case DISPLAYLIST_NFS_CLIENT_SETTINGS_LIST:
+         case DISPLAYLIST_OPTIONS_NFS_CLIENT:
 #endif
          case DISPLAYLIST_OPTIONS_OVERRIDES:
             menu_entries_clear(info->list);

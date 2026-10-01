@@ -57,6 +57,11 @@
 
 static void sdl3_gfx_free(void *data);
 
+#ifdef HAVE_OVERLAY
+static void sdl3_overlay_free(sdl3_video_t *vid);
+static void sdl3_overlays_render(sdl3_video_t *vid);
+#endif
+
 static INLINE void sdl3_tex_zero(sdl3_tex_t *t)
 {
    if (t->tex)
@@ -415,6 +420,7 @@ static void sdl3_render_ui(sdl3_video_t *vid, const char *msg,
          &video_info->osd_stat_params;
    bool menu_is_alive             = false;
    bool widgets_active            = false;
+   bool overlay_visible           = false;
    bool menu_visible;
    bool show_stats;
 
@@ -436,7 +442,12 @@ static void sdl3_render_ui(sdl3_video_t *vid, const char *msg,
 
    menu_visible = vid->menu.active && vid->menu.tex;
 
-   if (!menu_is_alive && !widgets_active && !show_stats && !menu_visible && !(msg && *msg))
+#ifdef HAVE_OVERLAY
+   overlay_visible = vid->overlays_enabled && vid->overlays_size;
+#endif
+
+   if (   !menu_is_alive && !widgets_active && !show_stats
+       && !menu_visible && !overlay_visible && !(msg && *msg))
       return;
 
    sdl3_viewport_push_full(vid, &saved_vp);
@@ -463,6 +474,11 @@ static void sdl3_render_ui(sdl3_video_t *vid, const char *msg,
    if (show_stats)
       font_driver_render_msg(vid, stat_text,
             video_info->stat_text_len, osd_params, NULL);
+
+#ifdef HAVE_OVERLAY
+   if (overlay_visible)
+      sdl3_overlays_render(vid);
+#endif
 
 #ifdef HAVE_GFX_WIDGETS
    if (widgets_active)
@@ -563,6 +579,10 @@ static void sdl3_gfx_free(void *data)
 
    sdl3_tex_zero(&vid->frame);
    sdl3_tex_zero(&vid->menu);
+
+#ifdef HAVE_OVERLAY
+   sdl3_overlay_free(vid);
+#endif
 
    if (vid->window)
       SDL_StopTextInput(vid->window);
@@ -1382,193 +1402,140 @@ static int sdl3_raster_font_get_message_width(void *data, const char *msg,
       size_t msg_len, float scale)
 {
    sdl3_raster_t *font = (sdl3_raster_t*)data;
-   const char *msg_end = msg + msg_len;
-   int width = 0;
-
-   if (!font || !msg)
+   if (!font)
       return 0;
-
-   while (msg < msg_end)
-   {
-      uint32_t code = utf8_walk(&msg);
-      const struct font_glyph *glyph = font->font_driver->get_glyph(font->font_data, code);
-      if (!glyph)
-         glyph = font->font_driver->get_glyph(font->font_data, '?');
-      if (glyph)
-         width += glyph->advance_x;
-   }
-
-   return (int)((float)width * scale);
+   return font_renderer_get_message_width(font->font_driver,
+         font->font_data, msg, msg_len, scale);
 }
 
-/* Render a single line into one SDL_RenderGeometry batch. Up to
- * MAX_GLYPHS per submitted batch; we flush mid-line for longer runs.
- *
- * Coordinates: render_msg gives us params->x/y in 0..1 normalized
- * space. We convert to pixel coords against the full window, with
- * a top-left origin (SDL convention). */
-static void sdl3_raster_font_render_line(
-      sdl3_raster_t *font,
-      const char *msg, size_t msg_len,
-      float scale,
-      const SDL_FColor col,
-      float pos_x, float pos_y,
-      enum text_alignment align,
-      unsigned width, unsigned height)
-{
-/* Kept small deliberately: SDL_Vertex is 32 bytes, so the vertex array
- * alone is MAX_GLYPHS * 128 bytes of stack. The loop below flushes and
- * reuses the buffer whenever it fills, so a bigger batch buys very
- * little - 64 glyphs holds most real strings in one draw call while
- * keeping this frame under 10 KB. */
-#define SDL3_FONT_MAX_GLYPHS 64
-   SDL_Vertex  verts[SDL3_FONT_MAX_GLYPHS * 4];
-   int         idx[SDL3_FONT_MAX_GLYPHS * 6];
-   int         n_glyphs = 0;
-   const char *msg_end  = msg + msg_len;
-   float       x;
-   float       y;
-   float       inv_w;
-   float       inv_h;
-
-   if (!font || !font->tex)
-      return;
-
-   if (font->atlas->dirty)
-      sdl3_raster_font_upload_atlas(font);
-
-   /* gfx_display_draw_text gives us params->x/y in normalized 0..1
-    * coords (origin bottom-left to match GL). Convert to pixels
-    * with a top-left origin. */
-   x = pos_x * (float)width;
-   y = (1.0f - pos_y) * (float)height;
-
-   if (align == TEXT_ALIGN_RIGHT)
-      x -= sdl3_raster_font_get_message_width(font, msg, msg_len, scale);
-   else if (align == TEXT_ALIGN_CENTER)
-      x -= sdl3_raster_font_get_message_width(font, msg, msg_len, scale)
-         * 0.5f;
-
-   inv_w = 1.0f / (float)font->tex_width;
-   inv_h = 1.0f / (float)font->tex_height;
-
-   while (msg < msg_end)
-   {
-      uint32_t code = utf8_walk(&msg);
-      const struct font_glyph *glyph =
-         font->font_driver->get_glyph(font->font_data, code);
-      float gx, gy, gw, gh;
-      float u0, v0, u1, v1;
-      int   base;
-
-      if (!glyph)
-         glyph = font->font_driver->get_glyph(font->font_data, '?');
-      if (!glyph)
-         continue;
-
-      gx = x + glyph->draw_offset_x * scale;
-      gy = y + glyph->draw_offset_y * scale;
-      gw = glyph->width  * scale;
-      gh = glyph->height * scale;
-
-      u0 = (float)glyph->atlas_offset_x * inv_w;
-      v0 = (float)glyph->atlas_offset_y * inv_h;
-      u1 = u0 + (float)glyph->width     * inv_w;
-      v1 = v0 + (float)glyph->height    * inv_h;
-
-      base = n_glyphs * 4;
-
-      verts[base + 0].position.x  = gx;
-      verts[base + 0].position.y  = gy;
-      verts[base + 0].tex_coord.x = u0;
-      verts[base + 0].tex_coord.y = v0;
-      verts[base + 0].color       = col;
-
-      verts[base + 1].position.x  = gx + gw;
-      verts[base + 1].position.y  = gy;
-      verts[base + 1].tex_coord.x = u1;
-      verts[base + 1].tex_coord.y = v0;
-      verts[base + 1].color       = col;
-
-      verts[base + 2].position.x  = gx;
-      verts[base + 2].position.y  = gy + gh;
-      verts[base + 2].tex_coord.x = u0;
-      verts[base + 2].tex_coord.y = v1;
-      verts[base + 2].color       = col;
-
-      verts[base + 3].position.x  = gx + gw;
-      verts[base + 3].position.y  = gy + gh;
-      verts[base + 3].tex_coord.x = u1;
-      verts[base + 3].tex_coord.y = v1;
-      verts[base + 3].color       = col;
-
-      idx[n_glyphs * 6 + 0] = base + 0;
-      idx[n_glyphs * 6 + 1] = base + 1;
-      idx[n_glyphs * 6 + 2] = base + 2;
-      idx[n_glyphs * 6 + 3] = base + 2;
-      idx[n_glyphs * 6 + 4] = base + 1;
-      idx[n_glyphs * 6 + 5] = base + 3;
-
-      x += glyph->advance_x * scale;
-      n_glyphs++;
-
-      if (n_glyphs >= SDL3_FONT_MAX_GLYPHS)
-      {
-         SDL_RenderGeometry(font->vid->renderer, font->tex,
-               verts, n_glyphs * 4, idx, n_glyphs * 6);
-         n_glyphs = 0;
-      }
-   }
-
-   if (n_glyphs > 0)
-      SDL_RenderGeometry(font->vid->renderer, font->tex,
-            verts, n_glyphs * 4, idx, n_glyphs * 6);
-#undef SDL3_FONT_MAX_GLYPHS
-}
-
-/* Walk a (possibly multi-line) string and call render_line once per
- * line segment, dropping each subsequent line by one line-height in
- * GL-convention (params->y increases upward, so we subtract).
- *
- * Required because callers like XMB sublabels embed real '\n' bytes
- * into their wrapped text - gfx_display_draw_text doesn't pre-split
- * for us. Mirrors gl1's gl1_raster_font_render_message wrapper. */
+/* Lays the text out through gfx/font_layout.h, a line at a time, each
+ * line into SDL_RenderGeometry batches of up to SDL3_FONT_MAX_GLYPHS.
+ * params->x/y come in normalized 0..1 coordinates with the origin
+ * bottom-left, as for GL, and are turned into pixels from the top
+ * left; each later line drops by one line height. */
 static void sdl3_raster_font_render_message(
-      sdl3_raster_t *font, const char *msg, float scale,
+      sdl3_raster_t *font, const char *msg, size_t msg_len, float scale,
       const SDL_FColor col, float pos_x, float pos_y,
       enum text_alignment align, unsigned width, unsigned height)
 {
    struct font_line_metrics *line_metrics = NULL;
-   float line_height_norm = 0.0f;
-   int lines = 0;
+   float line_height_norm                 = 0.0f;
+   /* Kept small deliberately: SDL_Vertex is 32 bytes, so the vertex
+    * array alone is MAX_GLYPHS * 128 bytes of stack. A full batch is
+    * drawn and the buffer reused, so a bigger batch buys very little -
+    * 64 glyphs holds most real strings in one draw call while keeping
+    * this frame under 10 KB. */
+#define SDL3_FONT_MAX_GLYPHS 64
+   SDL_Vertex  verts[SDL3_FONT_MAX_GLYPHS * 4];
+   int         idx[SDL3_FONT_MAX_GLYPHS * 6];
+   int         n_glyphs                   = 0;
+   bool        line_ok                    = false;
+   float       x                          = 0.0f;
+   float       y                          = 0.0f;
+   float       inv_w                      = 0.0f;
+   float       inv_h                      = 0.0f;
+   const struct font_glyph* (*get_glyph)(void*, uint32_t)
+                                          = font->font_driver->get_glyph;
+   void       *font_data                  = font->font_data;
+   const struct font_glyph *glyph_q       = NULL;
 
-   if (font->font_driver && font->font_driver->get_line_metrics)
+   if (font->font_driver->get_line_metrics)
    {
       font->font_driver->get_line_metrics(font->font_data, &line_metrics);
       if (line_metrics && height > 0)
-         line_height_norm = (float)line_metrics->height * scale / (float)height;
+         line_height_norm = (float)line_metrics->height * scale
+                          / (float)height;
    }
 
-   for (;;)
-   {
-      const char *p = msg;
-      size_t len;
+   /* Looked up before the layout: a right or centred line is measured
+    * before its first glyph is drawn, and the stand-in counts there */
+   glyph_q = get_glyph(font_data, '?');
 
-      while (*p && *p != '\n')
-         p++;
-      len = (size_t)(p - msg);
-
-      if (len > 0)
-         sdl3_raster_font_render_line(font, msg, len, scale, col,
-               pos_x,
-               pos_y - (float)lines * line_height_norm,
-               align, width, height);
-
-      if (!*p)
-         break;
-      msg = p + 1;
-      lines++;
-   }
+#define FONT_LAYOUT_ALIGNED (align == TEXT_ALIGN_RIGHT \
+      || align == TEXT_ALIGN_CENTER)
+#define FONT_LAYOUT_LINE(line, line_width, count, bytes) \
+   do \
+   { \
+      (void)(count); \
+      line_ok = ((bytes) > 0 && font->tex); \
+      if (!line_ok) \
+         break; \
+      if (font->atlas->dirty) \
+         sdl3_raster_font_upload_atlas(font); \
+      x = pos_x * (float)width; \
+      y = (1.0f - (pos_y - (float)(line) * line_height_norm)) \
+         * (float)height; \
+      if (align == TEXT_ALIGN_RIGHT) \
+         x -= (int)((float)(line_width) * scale); \
+      else if (align == TEXT_ALIGN_CENTER) \
+         x -= (int)((float)(line_width) * scale) * 0.5f; \
+      inv_w = 1.0f / (float)font->tex_width; \
+      inv_h = 1.0f / (float)font->tex_height; \
+      n_glyphs = 0; \
+   } while (0)
+#define FONT_LAYOUT_GLYPH(glyph, pen_x, pen_y) \
+   do \
+   { \
+      float gx, gy, gw, gh, u0, v0, u1, v1; \
+      int   base; \
+      /* This driver keeps its own pen, in floating point */ \
+      (void)(pen_x); \
+      (void)(pen_y); \
+      if (!line_ok) \
+         break; \
+      gx = x + (glyph)->draw_offset_x * scale; \
+      gy = y + (glyph)->draw_offset_y * scale; \
+      gw = (glyph)->width  * scale; \
+      gh = (glyph)->height * scale; \
+      u0 = (float)(glyph)->atlas_offset_x * inv_w; \
+      v0 = (float)(glyph)->atlas_offset_y * inv_h; \
+      u1 = u0 + (float)(glyph)->width     * inv_w; \
+      v1 = v0 + (float)(glyph)->height    * inv_h; \
+      base = n_glyphs * 4; \
+      verts[base + 0].position.x  = gx; \
+      verts[base + 0].position.y  = gy; \
+      verts[base + 0].tex_coord.x = u0; \
+      verts[base + 0].tex_coord.y = v0; \
+      verts[base + 0].color       = col; \
+      verts[base + 1].position.x  = gx + gw; \
+      verts[base + 1].position.y  = gy; \
+      verts[base + 1].tex_coord.x = u1; \
+      verts[base + 1].tex_coord.y = v0; \
+      verts[base + 1].color       = col; \
+      verts[base + 2].position.x  = gx; \
+      verts[base + 2].position.y  = gy + gh; \
+      verts[base + 2].tex_coord.x = u0; \
+      verts[base + 2].tex_coord.y = v1; \
+      verts[base + 2].color       = col; \
+      verts[base + 3].position.x  = gx + gw; \
+      verts[base + 3].position.y  = gy + gh; \
+      verts[base + 3].tex_coord.x = u1; \
+      verts[base + 3].tex_coord.y = v1; \
+      verts[base + 3].color       = col; \
+      idx[n_glyphs * 6 + 0] = base + 0; \
+      idx[n_glyphs * 6 + 1] = base + 1; \
+      idx[n_glyphs * 6 + 2] = base + 2; \
+      idx[n_glyphs * 6 + 3] = base + 2; \
+      idx[n_glyphs * 6 + 4] = base + 1; \
+      idx[n_glyphs * 6 + 5] = base + 3; \
+      x += (glyph)->advance_x * scale; \
+      if (++n_glyphs >= SDL3_FONT_MAX_GLYPHS) \
+      { \
+         SDL_RenderGeometry(font->vid->renderer, font->tex, \
+               verts, n_glyphs * 4, idx, n_glyphs * 6); \
+         n_glyphs = 0; \
+      } \
+   } while (0)
+#define FONT_LAYOUT_LINE_END() \
+   do \
+   { \
+      if (line_ok && n_glyphs > 0) \
+         SDL_RenderGeometry(font->vid->renderer, font->tex, \
+               verts, n_glyphs * 4, idx, n_glyphs * 6); \
+      n_glyphs = 0; \
+   } while (0)
+#include "../font_layout.h"
+#undef SDL3_FONT_MAX_GLYPHS
 }
 
 static void sdl3_raster_font_render_msg(
@@ -1642,13 +1609,13 @@ static void sdl3_raster_font_render_msg(
       col_drop.b = col.b * drop_mod;
       col_drop.a = col.a * drop_alpha;
 
-      sdl3_raster_font_render_message(font, msg, scale, col_drop,
+      sdl3_raster_font_render_message(font, msg, msg_len, scale, col_drop,
             x + scale * drop_x / (float)width,
             y + scale * drop_y / (float)height,
             align, width, height);
    }
 
-   sdl3_raster_font_render_message(font, msg, scale, col,
+   sdl3_raster_font_render_message(font, msg, msg_len, scale, col,
          x, y, align, width, height);
 }
 
@@ -1684,6 +1651,249 @@ font_renderer_t sdl3_raster_font = {
    sdl3_raster_font_get_message_width,
    sdl3_raster_font_get_line_metrics
 };
+
+#ifdef HAVE_OVERLAY
+/*
+ * INPUT OVERLAY
+ *
+ * Implements video_overlay_interface_t. The overlay subsystem hands
+ * us BGRA32 images via load(), places them in 0..1 normalized space
+ * via vertex_geom() / tex_geom(), and they are drawn over the game.
+ */
+static void sdl3_overlay_free(sdl3_video_t *vid)
+{
+   unsigned i;
+   if (!vid || !vid->overlays)
+      return;
+   /* Textures from load_textures() stay the overlay pack's; only
+    * load()'s own uploads are this driver's to destroy. */
+   if (!(vid->flags & SDL3_FLAG_OVERLAY_BORROWED))
+   {
+      for (i = 0; i < vid->overlays_size; i++)
+      {
+         if (vid->overlays[i].tex)
+            SDL_DestroyTexture(vid->overlays[i].tex);
+      }
+   }
+   free(vid->overlays);
+   vid->overlays      = NULL;
+   vid->overlays_size = 0;
+   vid->flags        &= ~SDL3_FLAG_OVERLAY_BORROWED;
+}
+
+static void sdl3_overlay_defaults(struct sdl3_overlay *o, SDL_Texture *tex)
+{
+   o->tex           = tex;
+   o->alpha_mod     = 1.0f;
+   o->tex_coords.w  = 1.0f;
+   o->tex_coords.h  = 1.0f;
+   o->vert_coords.w = 1.0f;
+   o->vert_coords.h = 1.0f;
+}
+
+static bool sdl3_overlay_load(void *data,
+      const void *image_data, unsigned num_images)
+{
+   unsigned i;
+   sdl3_video_t                *vid  = (sdl3_video_t*)data;
+   const struct texture_image  *imgs = (const struct texture_image*)image_data;
+
+   if (!vid)
+      return false;
+
+   /* Drop any prior overlay first. */
+   sdl3_overlay_free(vid);
+
+   if (num_images == 0 || !imgs)
+      return true;
+
+   if (!(vid->overlays = (struct sdl3_overlay*)calloc(num_images,
+         sizeof(*vid->overlays))))
+      return false;
+   vid->overlays_size = num_images;
+
+   for (i = 0; i < num_images; i++)
+   {
+      SDL_Texture *tex;
+      unsigned w = imgs[i].width;
+      unsigned h = imgs[i].height;
+
+      if (w == 0 || h == 0 || !imgs[i].pixels)
+         continue;
+
+      /* Source pixels are BGRA in byte order, which is
+       * SDL_PIXELFORMAT_ARGB8888. This matches what is used
+       * in sdl3_load_texture_internal. */
+      if (!(tex = SDL_CreateTexture(vid->renderer,
+            SDL_PIXELFORMAT_ARGB8888,
+            SDL_TEXTUREACCESS_STATIC,
+            (int)w, (int)h)))
+      {
+         RARCH_WARN("[SDL3] Failed to create overlay texture: %s.\n",
+               SDL_GetError());
+         continue;
+      }
+
+      SDL_UpdateTexture(tex, NULL, imgs[i].pixels,
+            (int)(w * sizeof(uint32_t)));
+      SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+      /* Scale the overlay to the window, linear. This matches
+       * sdl3_load_texture_internal's TEXTURE_FILTER_LINEAR. */
+      SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+
+      sdl3_overlay_defaults(&vid->overlays[i], tex);
+   }
+
+   return true;
+}
+
+static bool sdl3_overlay_load_textures(void *data,
+      const uintptr_t *textures, unsigned num_textures)
+{
+   unsigned i;
+   sdl3_video_t *vid = (sdl3_video_t*)data;
+
+   if (!vid)
+      return false;
+
+   sdl3_overlay_free(vid);
+
+   if (num_textures == 0 || !textures)
+      return true;
+
+   if (!(vid->overlays = (struct sdl3_overlay*)calloc(num_textures,
+         sizeof(*vid->overlays))))
+      return false;
+   vid->overlays_size = num_textures;
+   vid->flags        |= SDL3_FLAG_OVERLAY_BORROWED;
+
+   for (i = 0; i < num_textures; i++)
+      sdl3_overlay_defaults(&vid->overlays[i],
+            (SDL_Texture*)textures[i]);
+
+   return true;
+}
+
+static void sdl3_overlay_tex_geom(void *data, unsigned index,
+      float x, float y, float w, float h)
+{
+   sdl3_video_t *vid = (sdl3_video_t*)data;
+   if (!vid || index >= vid->overlays_size)
+      return;
+   vid->overlays[index].tex_coords.x = x;
+   vid->overlays[index].tex_coords.y = y;
+   vid->overlays[index].tex_coords.w = w;
+   vid->overlays[index].tex_coords.h = h;
+}
+
+static void sdl3_overlay_vertex_geom(void *data, unsigned index,
+      float x, float y, float w, float h)
+{
+   sdl3_video_t *vid = (sdl3_video_t*)data;
+   if (!vid || index >= vid->overlays_size)
+      return;
+   vid->overlays[index].vert_coords.x = x;
+   vid->overlays[index].vert_coords.y = y;
+   vid->overlays[index].vert_coords.w = w;
+   vid->overlays[index].vert_coords.h = h;
+}
+
+static void sdl3_overlay_enable(void *data, bool state)
+{
+   sdl3_video_t *vid = (sdl3_video_t*)data;
+   if (!vid)
+      return;
+   vid->overlays_enabled = state;
+}
+
+static void sdl3_overlay_full_screen(void *data, bool enable)
+{
+   unsigned i;
+   sdl3_video_t *vid = (sdl3_video_t*)data;
+   if (!vid || !vid->overlays)
+      return;
+   for (i = 0; i < vid->overlays_size; i++)
+      vid->overlays[i].fullscreen = enable;
+}
+
+static void sdl3_overlay_set_alpha(void *data, unsigned index, float mod)
+{
+   sdl3_video_t *vid = (sdl3_video_t*)data;
+   if (!vid || index >= vid->overlays_size)
+      return;
+   vid->overlays[index].alpha_mod = mod;
+}
+
+/* Render every loaded overlay image. Runs inside sdl3_render_ui's
+ * full-window viewport switch. */
+static void sdl3_overlays_render(sdl3_video_t *vid)
+{
+   unsigned i;
+
+   for (i = 0; i < vid->overlays_size; i++)
+   {
+      SDL_FRect src, dst;
+      struct sdl3_overlay *o = &vid->overlays[i];
+      float base_x, base_y, base_w, base_h;
+
+      if (!o->tex || o->alpha_mod <= 0.0f)
+         continue;
+
+      /* fullscreen overlays span the whole window including the
+       * letterbox/pillarbox bars; non-fullscreen ones span only the
+       * aspect-corrected game viewport. */
+      if (o->fullscreen)
+      {
+         base_x = 0.0f;
+         base_y = 0.0f;
+         base_w = (float)VIDEO_SCALE_W(vid->vp.full_dims);
+         base_h = (float)VIDEO_SCALE_H(vid->vp.full_dims);
+      }
+      else
+      {
+         base_x = (float)VIDEO_POS_X(vid->vp.pos);
+         base_y = (float)VIDEO_POS_Y(vid->vp.pos);
+         base_w = (float)VIDEO_SCALE_W(vid->vp.dims);
+         base_h = (float)VIDEO_SCALE_H(vid->vp.dims);
+      }
+
+      dst.x = base_x + o->vert_coords.x * base_w;
+      dst.y = base_y + o->vert_coords.y * base_h;
+      dst.w =          o->vert_coords.w * base_w;
+      dst.h =          o->vert_coords.h * base_h;
+
+      if (dst.w <= 0.0f || dst.h <= 0.0f)
+         continue;
+
+      src.x = o->tex_coords.x * (float)o->tex->w;
+      src.y = o->tex_coords.y * (float)o->tex->h;
+      src.w = o->tex_coords.w * (float)o->tex->w;
+      src.h = o->tex_coords.h * (float)o->tex->h;
+
+      if (src.w <= 0.0f || src.h <= 0.0f)
+         continue;
+
+      SDL_SetTextureAlphaModFloat(o->tex, o->alpha_mod);
+      SDL_RenderTexture(vid->renderer, o->tex, &src, &dst);
+   }
+}
+
+static const video_overlay_interface_t sdl3_overlay_iface = {
+   sdl3_overlay_enable,
+   sdl3_overlay_load,
+   sdl3_overlay_load_textures,
+   sdl3_overlay_tex_geom,
+   sdl3_overlay_vertex_geom,
+   sdl3_overlay_full_screen,
+   sdl3_overlay_set_alpha
+};
+
+static void sdl3_get_overlay_interface(void *data,
+      const video_overlay_interface_t **iface)
+{
+   *iface = &sdl3_overlay_iface;
+}
+#endif /* HAVE_OVERLAY */
 
 static video_poke_interface_t sdl3_video_poke_interface = {
    sdl3_get_flags,
@@ -1735,7 +1945,7 @@ video_driver_t video_sdl3 = {
    sdl3_gfx_viewport_info,
    sdl3_gfx_read_viewport,
 #ifdef HAVE_OVERLAY
-   NULL,                        /* overlay_interface */
+   sdl3_get_overlay_interface,
 #endif
    sdl3_gfx_poke_interface,
    NULL,                        /* wrap_type_to_enum */

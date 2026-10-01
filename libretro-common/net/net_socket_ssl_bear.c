@@ -26,7 +26,7 @@
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
 
-#include "../../deps/bearssl-0.6/inc/bearssl.h"
+#include <bearssl.h>
 
 struct ssl_state
 {
@@ -240,37 +240,15 @@ static void initialize(void)
    free(certs_pem);
 }
 
-/* --- TLS certificate-verification policy (RetroArch fork) ---------------
- * BearSSL's br_ssl_client_init_full (below) always performs full
- * verification and fails-closed on a bad chain, so REQUIRED — the safe
- * default — is already this backend's behaviour. The OPTIONAL/DISABLED
- * opt-out has no native BearSSL equivalent; it needs a manual
- * br_x509_minimal_init plus a permissive end_chain vtable wrapper (see the
- * TLS-verification design doc's "BearSSL backend" section) and is deferred.
- * Until then this backend keeps verifying regardless of the selected mode
- * (fail-safe). The stored value exists so the setting wiring links; it is
- * intentionally not yet consulted. */
-static volatile unsigned ssl_authmode = 0; /* 0 == TLS_VERIFY_REQUIRED */
-
+/* BearSSL's br_ssl_client_init_full (below) always performs full
+ * verification and fails closed on a bad chain, which is the REQUIRED
+ * policy. The OPTIONAL/DISABLED opt-out has no native BearSSL equivalent
+ * (it would need a permissive end_chain X.509 vtable), so this backend
+ * keeps verifying whatever mode is selected. */
 void ssl_socket_set_verify_mode(unsigned mode)
 {
-   ssl_authmode = mode;
+   (void)mode;
 }
-
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((weak))
-void ssl_socket_log_verify_fail(int mode_required, const char *domain,
-      const char *verify_info)
-{
-   (void)mode_required; (void)domain; (void)verify_info;
-}
-
-__attribute__((weak))
-void ssl_socket_log_verify_disabled(const char *domain)
-{
-   (void)domain;
-}
-#endif
 
 void* ssl_socket_init(int fd, const char *domain)
 {
@@ -468,26 +446,62 @@ int ssl_socket_send_all_blocking(void *state_data,
    return 1;
 }
 
+/* Takes what fits in the engine's output buffer now and pushes what the
+ * socket will take.  0 means the engine is full of records the socket
+ * has not taken yet; ssl_socket_flush_nonblocking() moves them on. */
 ssize_t ssl_socket_send_all_nonblocking(void *state_data,
       const void *data_, size_t len, bool no_signal)
 {
    size_t __len;
    uint8_t *bear_data;
    struct ssl_state *state = (struct ssl_state*)state_data;
+   (void)no_signal;
 
+   if (br_ssl_engine_current_state(&state->sc.eng) == BR_SSL_CLOSED)
+      return -1;
    socket_set_block(state->fd, false);
+   /* Make room first: records already sealed go before new ones. */
+   if (!process_inner(state, false))
+      return -1;
    bear_data = br_ssl_engine_sendapp_buf(&state->sc.eng, &__len);
    if (__len > len)
       __len = len;
-   memcpy(bear_data, data_, __len);
+   /* sendapp_buf returns NULL with nothing free; memcpy() declares its
+    * pointers nonnull even for a zero length. */
    if (__len)
    {
+      memcpy(bear_data, data_, __len);
       br_ssl_engine_sendapp_ack(&state->sc.eng, __len);
       br_ssl_engine_flush(&state->sc.eng, false);
+      if (!process_inner(state, false))
+         return -1;
    }
-   if (!process_inner(state, false))
+   return (ssize_t)__len;
+}
+
+int ssl_socket_flush_nonblocking(void *state_data)
+{
+   size_t buflen;
+   struct ssl_state *state = (struct ssl_state*)state_data;
+
+   if (br_ssl_engine_current_state(&state->sc.eng) == BR_SSL_CLOSED)
       return -1;
-   return __len;
+   socket_set_block(state->fd, false);
+   br_ssl_engine_flush(&state->sc.eng, false);
+   /* process_inner() sends at most one batch per call and stops when
+    * the socket does; loop while it makes progress. */
+   for (;;)
+   {
+      size_t before;
+      br_ssl_engine_sendrec_buf(&state->sc.eng, &before);
+      if (!before)
+         return 1;
+      if (!process_inner(state, false))
+         return -1;
+      br_ssl_engine_sendrec_buf(&state->sc.eng, &buflen);
+      if (buflen >= before)
+         return 0;
+   }
 }
 
 void ssl_socket_close(void *state_data)

@@ -87,7 +87,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        timeout-minutes: 5
+        timeout-minutes: 20
         run: |
           pkgs="build-essential libx11-dev libxrandr-dev libdrm-dev"
           pkgs="$pkgs xserver-xorg-core xserver-xorg-video-dummy x11-xserver-utils libsdl2-dev libxinerama-dev"
@@ -102,6 +102,23 @@ jobs:
               -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
             echo "apt-get update failed (attempt $i); retrying in 10s"
             sleep 10
+          done
+          # Fetch first, under a bound: a download is safe to stop and
+          # resumes, an install is not. A mirror that stalls is left for
+          # the main archive on the next attempt.
+          for i in 1 2 3; do
+            sudo timeout 240 apt-get install -y --download-only \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+              $pkgs && break
+            [ $i = 3 ] && exit 1
+            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+              [ -f "$f" ] || continue
+              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
+            done
+            sudo timeout 90 apt-get update -y \
+              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
           done
           sudo apt-get install -y \
             -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
@@ -359,20 +376,20 @@ jobs:
           set -eu
           # Regression test for the partial-init leak fix in
           # gfx/common/vulkan_common.c::vulkan_emulated_mailbox_init.
-          # Pre-fix the function had three sequential allocations
-          # (scond_new, slock_new, sthread_create) and on any of the
-          # latter two failures returned `false` directly, leaking
-          # the already-allocated cond and/or lock.  Both production
-          # call sites in vulkan_create_swapchain ignore the return
-          # value, so an init failure also left vk->mailbox.lock ==
-          # NULL and vk->mailbox.cond == NULL while VK_DATA_FLAG_
-          # EMULATING_MAILBOX was still set, setting up a NULL-deref
-          # the next time vulkan_acquire_next_image routed into
-          # vulkan_emulated_mailbox_acquire_next_image (slock_lock
-          # on a NULL pointer).  Fix routes every early failure
-          # through `goto error` to a single deinit call, which is
-          # null-safe and ends with a memset, leaving the struct in
-          # the same shape the deinit-on-shutdown path produces and
+          # The function brings up three things in sequence (two
+          # eventcounts and the acquire thread; a condition variable,
+          # a mutex and the thread when this was written) and used to
+          # return `false` directly when the second or third failed,
+          # leaking what the earlier ones had allocated.  Both
+          # production call sites in vulkan_create_swapchain ignore
+          # the return value, so an init failure also left the
+          # mailbox half built while VK_DATA_FLAG_EMULATING_MAILBOX
+          # was still set, setting up a crash the next time
+          # vulkan_acquire_next_image routed into the emulated path.
+          # Fix routes every early failure through `goto error` to a
+          # single deinit call, which is safe on a partly built
+          # mailbox and ends with a memset, leaving the struct in the
+          # same shape the deinit-on-shutdown path produces and
           # tripping the existing `mailbox.swapchain == VK_NULL_
           # HANDLE` guard at vulkan_acquire_next_image.  Build under
           # AddressSanitizer with leak detection so any
@@ -466,42 +483,19 @@ jobs:
         working-directory: samples/gfx/gfx_widgets_msg_queue_race
         run: |
           set -eu
-          # Regression test for the producer-producer race fix on
-          # dispgfx_widget_t::msg_queue in gfx/gfx_widgets.c.
-          # Pre-fix the FIFO had no dedicated lock: producers could
-          # be invoked from any thread (the threaded task system at
-          # libretro-common/queues/task_queue.c runs a worker
-          # thread; gfx/video_driver.c::video_driver_frame released
-          # RUNLOOP_MSG_QUEUE_LOCK before calling the producer, so
-          # main-thread producers ran unlocked) yet there was no
-          # lock dedicated to msg_queue itself.  Post-fix a
-          # msg_queue_lock is acquired around every fifo_write (in
-          # gfx_widgets_msg_queue_push), every fifo_read (in
-          # gfx_widgets_iterate), and the avail-check that gates
-          # them.  The outer fast-path FIFO_*_AVAIL checks that
-          # used to wrap the function bodies were dropped: reading
-          # the FIFO cursors outside the lock is itself a data
-          # race against the locked writes (TSan-detectable;
-          # benign on x86 TSO but real on weak-memory hardware).
-          #
-          # ThreadSanitizer is the right validator: it instruments
-          # every memory access on fifo_buffer_t::end and
-          # ::first and would flag a missing-lock regression as a
-          # data race on the producer side, the consumer side, or
-          # the avail check.  ASan/UBSan would not catch the lock
-          # removal at all.  halt_on_error=1 makes TSan exit
-          # non-zero on the first observed race, which is what we
-          # want for CI: any race here means the production
-          # locking discipline is broken.
-          #
-          # The test mirrors the post-fix locking protocol of
-          # gfx_widgets_msg_queue_push and gfx_widgets_iterate's
-          # FIFO interaction; the widget allocation, font
-          # measurement, and animation push that wrap the actual
-          # FIFO calls in production are not part of the race and
-          # are stripped from the test.  If gfx_widgets.c amends
-          # the locking around msg_queue, the verbatim copies in
-          # gfx_widgets_msg_queue_race_test.c must follow.
+          # The widget message ring in gfx/gfx_widgets.c is a lock-free
+          # single-producer / single-consumer queue: the main thread
+          # publishes through msg_queue_tail, the widgets' owner pops
+          # through msg_queue_head, each cursor released by its writer
+          # and acquired by the other side, and the slot pointer rides
+          # that pairing.  The test builds the production push and pop
+          # out of gfx_widgets.c itself and drives them from one producer
+          # thread and one consumer thread, checking order, loss, and the
+          # full-ring refusal.  ThreadSanitizer is the validator that
+          # matters: a store to the slot array outside the release /
+          # acquire pairing, or a cursor published before its slot is
+          # written, is a race it reports and the value checks may not.
+          # halt_on_error=1 fails the run on the first race.
           make clean all SANITIZER=thread
           test -x gfx_widgets_msg_queue_race_test
           TSAN_OPTIONS=halt_on_error=1 timeout 60 \
@@ -582,6 +576,16 @@ jobs:
           TSAN_OPTIONS=halt_on_error=1 timeout 120 \
              ./gfx_widgets_sanitize_test
           echo "[pass] gfx_widgets_sanitize_test (TSan)"
+      - name: Build and run widget snapshot ownership test
+        shell: bash
+        working-directory: tests-other
+        run: |
+          set -eu
+          make -f Makefile.widget_snapshot clean
+          make -f Makefile.widget_snapshot
+          timeout 60 ./widget_snapshot_ownership_test
+          make -f Makefile.widget_snapshot clean
+
       - name: Build and run gfx_widgets_task_bar_stack_test (ASan + UBSan, TSan)
         shell: bash
         working-directory: samples/gfx/gfx_widgets_task_bar_stack
@@ -632,6 +636,55 @@ jobs:
           test -x display_servers_test
           timeout 60 ./display_servers_test
           echo "[pass] display_servers_test"
+
+      - name: Build and run dispserv_gx_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/gfx/dispserv_gx
+        run: |
+          set -eu
+          # The GameCube/Wii display server (dispserv_gx.c and the mode
+          # rules in dispserv_gx_modes.c), linked as they ship against
+          # stubbed libogc queries, on every TV standard: the list holds
+          # only modes the standard shows, one of them current, and each
+          # entry - through the label the menu prints and the parse the
+          # menu does - selects exactly that mode, stores its config id
+          # and reports the refresh rate it listed.
+          #
+          # The menu's parse used to run strtoul() inside
+          # VIDEO_SCALE_PUT_H, whose PACK evaluates its argument twice;
+          # the second call returned 0 and every pick from the list
+          # went out as Wx0. Guard the shape as well as the behaviour.
+          if grep -nE 'VIDEO_SCALE_(PUT_[WH]|PACK)\([^;]*strto' \
+                ../../../menu/cbs/menu_cbs_ok.c; then
+             echo "::error::strtoul inside a VIDEO_SCALE macro runs twice"
+             exit 1
+          fi
+          make clean all SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 60 ./dispserv_gx_test
+          make clean
+
+      - name: Build and run dispserv_ps3_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/gfx/dispserv_ps3
+        run: |
+          set -eu
+          # The PS3 display server (dispserv_ps3.c and the mode rules in
+          # dispserv_ps3_modes.c), linked as they ship against stubbed
+          # PSL1GHT video output queries, for displays taking different
+          # sets of modes with the system menu in each: the list holds
+          # exactly what the display takes with the mode in use marked,
+          # each entry - through the menu's label and parse - selects
+          # that mode and reinitialises the driver once, and
+          # ps3_display_server_resolution(), which the RSX driver
+          # configures the output from, follows the choice (before, the
+          # RSX driver ignored the setting and kept the system menu's
+          # mode) and falls back to the system mode when the display
+          # does not take it.
+          make clean all SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 60 ./dispserv_ps3_test
+          make clean
 
       - name: X11 window poll sends no requests (Xvfb, ASan + UBSan)
         shell: bash
@@ -903,6 +956,49 @@ jobs:
              timeout 60 ./wayland_wlr_output_test
           echo "[pass] wayland_wlr_output_test"
 
+      - name: Build and run wayland_cursor_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/gfx/wayland_cursor
+        run: |
+          set -eu
+          # input/common/wayland_cursor.h: the size and scale the Wayland
+          # context loads its cursor theme at when the compositor has no
+          # cursor-shape-v1 - XCURSOR_SIZE honoured, fractional scales
+          # rounded up to a whole buffer scale.
+          make clean all SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 60 ./wayland_cursor_test
+          echo "[pass] wayland_cursor_test"
+
+      - name: Build and run wayland_resize_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/gfx/wayland_resize
+        run: |
+          set -eu
+          # gfx/common/wayland_resize.h, what the Wayland GL and Vulkan
+          # contexts do once their buffers are resized, against an
+          # in-process compositor: configures count again whatever the
+          # scaling, and the buffer scale goes only to a surface on the
+          # whole-scale path that is new enough to take it.
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          make clean all SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 60 ./wayland_resize_test
+          echo "[pass] wayland_resize_test"
+
+      - name: Build and run video_mode_select_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/gfx/video_mode_select
+        run: |
+          set -eu
+          # gfx/common/video_mode_select.c: which listed mode a size and
+          # rate name, and the order a resolution list is shown in - the
+          # code every display server's mode switch goes through.
+          make clean all SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 60 ./video_mode_select_test
+          echo "[pass] video_mode_select_test"
+
       - name: Build and run wayland_kwin_output_test (ASan + UBSan)
         shell: bash
         working-directory: samples/gfx/wayland_kwin_output
@@ -1005,6 +1101,14 @@ jobs:
           make clean all SANITIZER=address,undefined
           ASAN_OPTIONS=detect_leaks=1:allocator_may_return_null=1 \
           UBSAN_OPTIONS=print_stacktrace=1 timeout 120 make check SANITIZER=address,undefined
+          make clean
+          # A fallback font is read on a thread of its own while two
+          # fonts on two threads ask for it; DejaVu stands in for the
+          # assets' fallback-font.ttf.
+          sudo apt-get install -y -qq fonts-dejavu-core > /dev/null
+          make fallback SAN=thread
+          TSAN_OPTIONS=halt_on_error=1 setarch "$(uname -m)" -R \
+             timeout 120 ./fallback
           make clean
 
       - name: Build and run overlay_apng_test (ASan + UBSan, TSan)
@@ -1327,3 +1431,25 @@ jobs:
              ./preview_audio_decode_test fixtures/trailing_large.mp4 1024 island
              ./preview_audio_decode_test fixtures/trailing_large.mp4 262144 island'
           echo "[pass] preview_audio_decode_test (TSan)"
+
+      - name: Build and run hw_ring_fence_test (ASan + UBSan, TSan)
+        shell: bash
+        working-directory: samples/gfx/hw_ring_fence
+        run: |
+          set -u
+          set -o pipefail
+          # The hardware ring's fence handoff between the video thread
+          # and the core's thread (gfx/video_thread_hw_fence.h), the
+          # tree's own header, with two threads at one slot: a fence is
+          # signalled only while idle, waited only once signalled, and
+          # never inside two calls at once - with no lock. The single
+          # re-signalled fence it replaced is built too and must fail.
+          make clean all SANITIZER=address,undefined
+          timeout 120 make check SANITIZER=address,undefined
+          echo "[pass] hw_ring_fence_test (ASan + UBSan)"
+          # The two threads share nothing but atomics, and TSan is
+          # what says so.
+          make clean all SANITIZER=thread
+          TSAN_OPTIONS=halt_on_error=1 timeout 120 make check SANITIZER=thread
+          echo "[pass] hw_ring_fence_test (TSan)"
+          make clean

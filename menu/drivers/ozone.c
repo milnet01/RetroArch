@@ -5341,13 +5341,9 @@ static void ozone_context_reset_horizontal_list(ozone_handle_t *ozone)
       {
          if (!(node = ozone_alloc_node()))
             continue;
-         /* Hand ownership to the list immediately. The original code
-          * allocated a node and only stored it back via RHMAP_SET_STR
-          * inside the .lpl branch; on the no-path / .lvw branches the
-          * freshly-allocated node was never reachable from the list
-          * and leaked when the loop iteration ended. (Matches the
-          * userdata-write-after-alloc-or-find pattern used by the
-          * canonical setter at ozone.c:13050-13064.) */
+         /* Store the new node in the list, which owns and frees it.
+          * Otherwise it is only reachable from playlist_db_node_map,
+          * which does not free its values, or from nothing at all. */
          ozone->horizontal_list.list[i].userdata = node;
       }
 

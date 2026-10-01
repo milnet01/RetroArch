@@ -455,9 +455,22 @@ runloop_state_t *runloop_state_get_ptr(void)
    return &runloop_state;
 }
 
+void runloop_frame_work_set(unsigned bit, bool on)
+{
+   if (on)
+      runloop_state.frame_work |=  bit;
+   else
+      runloop_state.frame_work &= ~bit;
+}
+
 bool runloop_is_content_closing(void)
 {
    return runloop_state.content_closing;
+}
+
+bool runloop_is_content_switching(void)
+{
+   return runloop_state.content_switching;
 }
 
 bool state_manager_frame_is_reversed(void)
@@ -3475,6 +3488,7 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
          if (midi_interface)
          {
+            midi_driver_request();
             midi_interface->input_enabled  = midi_driver_input_enabled;
             midi_interface->output_enabled = midi_driver_output_enabled;
             midi_interface->read           = midi_driver_read;
@@ -4739,7 +4753,11 @@ void runloop_event_deinit_core(void)
    if (settings->bools.video_frame_delay_auto)
       video_st->frame_delay_target = 0;
 
-   driver_uninit(DRIVERS_CMD_ALL, (enum driver_lifetime_flags)0);
+   /* A staged content load keeps the drivers up through the close
+    * and the next core's init, so the window keeps presenting; it
+    * frees them itself, right before the new session's drivers_init. */
+   if (!runloop_st->content_switching)
+      driver_uninit(DRIVERS_CMD_ALL, (enum driver_lifetime_flags)0);
 
 #ifdef HAVE_CONFIGFILE
    /* Reload the original config */
@@ -6963,6 +6981,13 @@ static enum runloop_state_enum runloop_check_state(
 
       /* Get current time */
       menu_st->current_time_us      = current_time;
+      /* 'current_bits' was collected from the previous poll. On the
+       * first menu frame that poll was taken outside the menu, so
+       * the current time stands in for it. */
+      if (!menu_was_alive)
+         menu_st->input_poll_time_us = current_time;
+      menu_st->input_time_us        = menu_st->input_poll_time_us;
+      menu_st->input_poll_time_us   = current_time;
 
       cbs->poll_cb();
 
@@ -7054,7 +7079,13 @@ static enum runloop_state_enum runloop_check_state(
        * free and recreate the menu driver), so it must never run from
        * within menu iteration. Exit afterwards to start the next frame
        * with a freshly (re)built menu. */
-      if (menu_st->flags & MENU_ST_FLAG_PENDING_CONFIG_REPLACE)
+      /* A content load in flight owns the session until it is through:
+       * a pending config replace or close starts another load (of the
+       * dummy core) and a pending core reload loads a library into a
+       * session the job is still building, so each waits, flag set,
+       * for the frame after the load. */
+      if (     (menu_st->flags & MENU_ST_FLAG_PENDING_CONFIG_REPLACE)
+            && !runloop_st->content_switching)
       {
          bool config_save_on_exit = settings->bools.config_save_on_exit;
          menu_st->flags          &= ~MENU_ST_FLAG_PENDING_CONFIG_REPLACE;
@@ -7176,8 +7207,9 @@ static enum runloop_state_enum runloop_check_state(
          menu_st->flags &= ~MENU_ST_FLAG_PENDING_STARTUP_PAGE;
          return RUNLOOP_STATE_POLLED_AND_CONTINUE;
       }
-      else if ((menu_st->flags & MENU_ST_FLAG_PENDING_CLOSE_CONTENT)
-            || (menu_st->flags & MENU_ST_FLAG_PENDING_ENV_SHUTDOWN_FLUSH))
+      else if (   ((menu_st->flags & MENU_ST_FLAG_PENDING_CLOSE_CONTENT)
+               || (menu_st->flags & MENU_ST_FLAG_PENDING_ENV_SHUTDOWN_FLUSH))
+               && !runloop_st->content_switching)
       {
          menu_list_t *menu_list    = menu_st->entries.list;
          file_list_t *menu_stack   = menu_list ? MENU_LIST_GET(menu_list, (unsigned)0) : NULL;
@@ -7279,7 +7311,8 @@ static enum runloop_state_enum runloop_check_state(
       }
 
       /* Handle pending core reload separately after menu driver iterate */
-      if (menu_st->flags & MENU_ST_FLAG_PENDING_RELOAD_CORE)
+      if (     (menu_st->flags & MENU_ST_FLAG_PENDING_RELOAD_CORE)
+            && !runloop_st->content_switching)
       {
 #ifdef HAVE_DYNAMIC
          const char *a = path_get(RARCH_PATH_CORE_LAST);
@@ -8272,6 +8305,70 @@ end:
  * button input in order to wake up the loop,
  * -1 if we forcibly quit out of the RetroArch iteration loop.
  **/
+/* Recovery from a lost GPU device, with a bound on how hard it is
+ * tried. A device lost once - a TDR, a driver update, a GPU reset -
+ * comes back on the first rebuild, and that rebuild happens at once.
+ * A device that is lost again straight after being rebuilt is a
+ * driver or hardware that is failing, and rebuilding every frame on
+ * it is a busy loop of full driver reinitialisations, each of which
+ * fails: the retries back off instead, doubling from one second, and
+ * after a run of them the rebuild is abandoned with a message rather
+ * than attempted forever. A loss well clear of the previous one (a
+ * minute or more) is a fresh incident and starts the count again. */
+#define GPU_LOST_RETRY_BASE_USEC   1000000
+#define GPU_LOST_RETRY_MAX_USEC   16000000
+#define GPU_LOST_GIVE_UP_AFTER     6
+#define GPU_LOST_FRESH_AFTER_USEC 60000000
+
+static void runloop_gpu_device_lost(runloop_state_t *runloop_st)
+{
+   retro_time_t now = cpu_features_get_time_usec();
+   int reinit_flags = DRIVER_VIDEO_MASK | DRIVER_INPUT_MASK
+      | DRIVER_MENU_MASK;
+
+   /* Not yet due: leave the flag set and try again on a later frame */
+   if (now < runloop_st->gpu_lost_retry_at)
+      return;
+
+   video_driver_modify_disp_flags(0, VIDEO_FLAG_GPU_DEVICE_LOST);
+
+   if (     runloop_st->gpu_lost_count
+         && now - runloop_st->gpu_lost_last > GPU_LOST_FRESH_AFTER_USEC)
+      runloop_st->gpu_lost_count = 0;
+   runloop_st->gpu_lost_last = now;
+   runloop_st->gpu_lost_count++;
+
+   if (runloop_st->gpu_lost_count > GPU_LOST_GIVE_UP_AFTER)
+   {
+      const char *msg = "The GPU device keeps being lost; giving up on recovering the video driver.";
+      RARCH_ERR("[Video] %s\n", msg);
+      runloop_msg_queue_push(msg, strlen(msg), 1, 240, true, NULL,
+            MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_ERROR);
+      /* Look again only after a fresh incident's worth of time */
+      runloop_st->gpu_lost_retry_at = now + GPU_LOST_FRESH_AFTER_USEC;
+      return;
+   }
+
+   if (runloop_st->gpu_lost_count > 1)
+   {
+      retro_time_t delay = (retro_time_t)GPU_LOST_RETRY_BASE_USEC
+         << (runloop_st->gpu_lost_count - 2);
+      if (delay > GPU_LOST_RETRY_MAX_USEC)
+         delay = GPU_LOST_RETRY_MAX_USEC;
+      runloop_st->gpu_lost_retry_at = now + delay;
+      RARCH_ERR("[Video] The GPU device was lost again (%u in a row); "
+            "next rebuild in %u ms.\n",
+            runloop_st->gpu_lost_count, (unsigned)(delay / 1000));
+   }
+   else
+   {
+      runloop_st->gpu_lost_retry_at = 0;
+      RARCH_ERR("[Video] The GPU device was lost; reinitialising the video driver.\n");
+   }
+
+   command_event(CMD_EVENT_REINIT, &reinit_flags);
+}
+
 int runloop_iterate(void)
 {
    retro_time_t pace_limit_min;
@@ -8307,14 +8404,8 @@ int runloop_iterate(void)
    bool core_paused                       = !!(runloop_st->flags & RUNLOOP_FLAG_PAUSED);
 #endif
    float slowmotion_ratio                 = settings->floats.slowmotion_ratio;
-#ifdef HAVE_CHEEVOS
-   bool cheevos_enable                    = settings->bools.cheevos_enable;
-#endif
    bool audio_sync                        = settings->bools.audio_sync;
    bool savestate_automatic_enable        = settings->uints.savestate_automatic_interval > 0;
-#ifdef HAVE_DISCORD
-   discord_state_t *discord_st            = discord_state_get_ptr();
-#endif
 
    runloop_msg_queue_drain_deferred();
 
@@ -8327,24 +8418,16 @@ int runloop_iterate(void)
     * recovered device, and a hardware core gets context_reset. */
    if ((uint32_t)retro_atomic_load_relaxed_int(&video_st->flags)
          & VIDEO_FLAG_GPU_DEVICE_LOST)
-   {
-      int reinit_flags = DRIVER_VIDEO_MASK | DRIVER_INPUT_MASK
-         | DRIVER_MENU_MASK;
-      video_driver_modify_disp_flags(0, VIDEO_FLAG_GPU_DEVICE_LOST);
-      RARCH_ERR("[Video] The GPU device was lost; reinitialising the video driver.\n");
-      command_event(CMD_EVENT_REINIT, &reinit_flags);
-   }
+      runloop_gpu_device_lost(runloop_st);
 
 #ifdef HAVE_DISCORD
-   if (discord_st->inited)
-   {
-      Discord_RunCallbacks();
-      Discord_UpdateConnection();
-   }
+   if (runloop_st->frame_work & RUNLOOP_WORK_DISCORD)
+      discord_poll(current_time);
 #endif
 
 #ifdef HAVE_BSV_MOVIE
-   bsv_movie_dequeue_next(input_st);
+   if (input_st->bsv_movie_state_next_handle)
+      bsv_movie_dequeue_next(input_st);
 #endif
 
 #ifdef ANDROID
@@ -8356,14 +8439,6 @@ int runloop_iterate(void)
    /* Same poll, same reason: entering Java is only safe on the OS
     * stack, and a libco core reaches the poll on its own. */
    android_input_flush_pending_haptics();
-#endif
-
-#if defined(HAVE_DYNAMIC) && defined(HAVE_MENU)
-   /* Perform the parked remainder of a deferred (prefetched) menu
-    * load.  It runs here, not from the prefetch task's callback,
-    * because content_load() reinitializes the task queue - fatal
-    * from inside the queue's own dispatch. */
-   task_content_deferred_load_check();
 #endif
 
    /* Tick deferred shader compilation (one pass per frame) */
@@ -8450,6 +8525,11 @@ int runloop_iterate(void)
 #endif
    }
 
+#ifdef HAVE_THREADS
+   if (runloop_st->flags & RUNLOOP_FLAG_AUTOSAVE)
+      autosave_check();
+#endif
+
    switch ((enum runloop_state_enum)runloop_check_state(
             input_st, audio_st, video_st,
             uico_st,
@@ -8522,7 +8602,7 @@ int runloop_iterate(void)
 #endif
 
 #ifdef HAVE_CHEEVOS
-         if (cheevos_enable)
+         if (runloop_st->frame_work & RUNLOOP_WORK_CHEEVOS)
          {
             if (runloop_is_libretro_running(runloop_st, menu_pause_libretro))
                rcheevos_test();
@@ -8582,6 +8662,15 @@ int runloop_iterate(void)
 #endif
          goto end;
       case RUNLOOP_STATE_ITERATE:
+         /* A staged content load has no core to run between its
+          * stages: poll, present what is on screen, and pace as a
+          * paused frame does. */
+         if (runloop_st->content_switching)
+         {
+            input_driver_poll();
+            video_driver_cached_frame();
+            goto end;
+         }
          runloop_st->flags       |= RUNLOOP_FLAG_CORE_RUNNING;
          break;
    }
@@ -8591,11 +8680,10 @@ int runloop_iterate(void)
       autosave_lock();
 #endif
 
-   if (     settings->bools.camera_allow
-         && camera_st->cb.caps
-         && camera_st->driver
-         && camera_st->driver->poll
-         && camera_st->data)
+   /* driver_camera_start() raised the bit only with a pollable
+    * driver and registered caps; stop, teardown and a camera_allow
+    * change drop it. */
+   if (runloop_st->frame_work & RUNLOOP_WORK_CAMERA)
       camera_st->driver->poll(camera_st->data,
             camera_st->cb.frame_raw_framebuffer,
             camera_st->cb.frame_opengl_texture);
@@ -8636,21 +8724,30 @@ int runloop_iterate(void)
          runloop_st, slowmotion_ratio, current_time);
 
 #ifdef HAVE_CHEEVOS
-   if (cheevos_enable)
+   if (runloop_st->frame_work & RUNLOOP_WORK_CHEEVOS)
       rcheevos_test();
 #endif
 #ifdef HAVE_CHEATS
-   cheat_manager_apply_retro_cheats();
+   if (runloop_st->frame_work & RUNLOOP_WORK_CHEATS)
+      cheat_manager_apply_retro_cheats();
 #endif
 #ifdef HAVE_PRESENCE
-   presence_update(PRESENCE_GAME);
+   /* "In a game" does not change at the core rate; the sinks
+    * (Discord at 10 Hz, Steam) are written on the same cadence. */
+   if (runloop_st->frame_work & RUNLOOP_WORK_PRESENCE)
+      presence_poll(PRESENCE_GAME, current_time);
 #endif
 #ifdef HAVE_BSV_MOVIE
-   bsv_movie_next_frame(input_st);
-   if (input_st->bsv_movie_state.flags & BSV_FLAG_MOVIE_END)
+   /* The movie handle lives on input_st, which this frame already
+    * has in cache; no bit needed. */
+   if (input_st->bsv_movie_state_handle)
    {
-      movie_stop(input_st);
-      command_event(CMD_EVENT_PAUSE, NULL);
+      bsv_movie_next_frame(input_st);
+      if (input_st->bsv_movie_state.flags & BSV_FLAG_MOVIE_END)
+      {
+         movie_stop(input_st);
+         command_event(CMD_EVENT_PAUSE, NULL);
+      }
    }
 #endif
 
@@ -8661,7 +8758,7 @@ int runloop_iterate(void)
 
    /* Check if we should save state automatically */
    if (savestate_automatic_enable)
-      content_save_state_automatic();
+      content_save_state_automatic(current_time);
 
 end:
    if (vrr_runloop_enable)
@@ -8975,24 +9072,23 @@ void runloop_task_msg_queue_push(retro_task_t *task, const char *msg,
    dispgfx_widget_t *p_dispwidget = dispwidget_get_ptr();
    bool widgets_active            = p_dispwidget->active;
 
-   /* The task's title and mute flag are what decided this message
-    * existed at all, and task_queue_push_progress() read them under the
-    * lock that guards them before it called here. Re-reading them now
-    * would be reading a title a worker is free to replace, so the test
-    * is the caller's and not repeated. */
+   /* An empty message only completes an existing widget's task link. */
    if (widgets_active)
    {
+      if (*msg)
+      {
          ui_companion_driver_msg_queue_push(msg,
-            prio, task ? duration : duration * 60 / 1000, flush);
+               prio, task ? duration : duration * 60 / 1000, flush);
 #ifdef HAVE_ACCESSIBILITY
-      if (is_accessibility_enabled(
-            accessibility_enable,
-            access_st->enabled))
-         accessibility_speak_priority(
+         if (is_accessibility_enabled(
                accessibility_enable,
-               accessibility_narrator_speech_speed,
-               (char*)msg, 0);
+               access_st->enabled))
+            accessibility_speak_priority(
+                  accessibility_enable,
+                  accessibility_narrator_speech_speed,
+                  (char*)msg, 0);
 #endif
+      }
       gfx_widgets_msg_queue_push(
             task,
             msg,
@@ -9009,9 +9105,10 @@ void runloop_task_msg_queue_push(retro_task_t *task, const char *msg,
             false
 #endif
             );
-      }
+   }
    else
 #endif
+   if (*msg)
       runloop_msg_queue_push(msg, strlen(msg), prio, duration, flush, NULL,
             MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
 }
@@ -9461,23 +9558,20 @@ void core_run(void)
    bool netplay_preframe;
 #endif
 
-   /* The core is being torn down: do not run it.
+   /* The core is being torn down, or replaced: do not run it.
     *
     * retro_run() must not be entered once closing has begun, because
-    * the teardown unloads the library that function lives in.
-    *
-    * Today this cannot be reached - closing is synchronous, so the
-    * main thread sits inside the teardown and no frame runs - and
-    * the guard is placed first, inert, so that the change which does
-    * let frames run during a close is only about where the waiting
-    * happens, not about what the frame loop may touch.
+    * the teardown unloads the library that function lives in.  A
+    * staged content load closes the core and then returns to the
+    * frame loop - while a save state task is still inside the core,
+    * and between its stages - so frames run here with the flags set.
     *
     * Poll and present anyway rather than returning bare, so input
     * keeps being drained and whatever the close has put on screen
     * keeps being drawn.  Same shape as the netplay-paused case
     * below, for the same reason: a frame that stops being produced
     * reads as a hang. */
-   if (runloop_st->content_closing)
+   if (runloop_st->content_closing || runloop_st->content_switching)
    {
       input_driver_poll();
       video_driver_cached_frame();

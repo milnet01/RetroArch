@@ -166,6 +166,7 @@ typedef struct gl3
       GLuint hdr_scrgb;
       struct gl3_buffer_locations hdr_scrgb_loc;
    } pipelines;
+#endif /* HAVE_SLANG */
 
    /* scRGB (FP16) default framebuffer support: when the context
     * advertises GFX_CTX_FLAGS_SCRGB_FRAMEBUFFER, everything (core
@@ -194,7 +195,6 @@ typedef struct gl3
       float    paper_white_nits;
       unsigned expand_gamut;
    } scrgb;
-#endif /* HAVE_SLANG */
 
    /* In VIDEO_SCALE_PACK's layout. */
    unsigned video_dims;
@@ -676,6 +676,7 @@ uint32_t gl3_get_cross_compiler_target_version(void)
    return 100 * major + 10 * minor;
 }
 
+#if defined(HAVE_SLANG) && defined(HAVE_SHADERPIPELINE)
 /* Bind the ribbon's static VBO, uploading it first if this vertex
  * array has not been seen. Returns false if it cannot be had, in which
  * case the caller streams through the scratch VBOs as before. */
@@ -703,6 +704,7 @@ static bool gl3_bind_ribbon_vbo(gl3_t *gl, const float *vertex,
    memcpy(gl->ribbon.tail, vertex + 2 * vertices - 4, sizeof(gl->ribbon.tail));
    return true;
 }
+#endif
 
 static void gl3_bind_scratch_vbo(gl3_t *gl, const void *data, size_t len)
 {
@@ -1230,36 +1232,11 @@ static void *gl3_raster_font_init(void *data,
 static int gl3_raster_font_get_message_width(void *data, const char *msg,
       size_t msg_len, float scale)
 {
-   void *font_data;
-   const struct font_glyph* (*get_glyph)(void*, uint32_t);
-   const struct font_glyph* glyph_q = NULL;
-   gl3_raster_t *font   = (gl3_raster_t*)data;
-   const char* msg_end  = msg + msg_len;
-   int delta_x          = 0;
-
-   if (     !font
-         || !font->font_driver
-         || !font->font_data )
+   gl3_raster_t *font = (gl3_raster_t*)data;
+   if (!font)
       return 0;
-
-   get_glyph = font->font_driver->get_glyph;
-   font_data = font->font_data;
-   glyph_q   = get_glyph(font_data, '?');
-
-   while (msg < msg_end)
-   {
-      const struct font_glyph *glyph;
-      unsigned code = utf8_walk(&msg);
-
-      /* Do something smarter here ... */
-      if (!(glyph = get_glyph(font_data, code)))
-         if (!(glyph = glyph_q))
-            continue;
-
-      delta_x += glyph->advance_x;
-   }
-
-   return delta_x * scale;
+   return font_renderer_get_message_width(font->font_driver,
+         font->font_data, msg, msg_len, scale);
 }
 
 static void gl3_raster_font_draw_vertices(gl3_t *gl,
@@ -1332,59 +1309,53 @@ static void gl3_raster_font_draw_vertices(gl3_t *gl,
    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-static void gl3_raster_font_render_line(gl3_t *gl,
-      gl3_raster_t *font,
-      const struct font_glyph* glyph_q,
-      const char *msg, size_t msg_len,
-      GLfloat scale, const GLfloat color[4],
-      GLfloat pos_x,
-      GLfloat pos_y,
-      int pre_x,
-      float inv_tex_size_x,
-      float inv_tex_size_y,
-      float inv_win_width,
-      float inv_win_height,
-      unsigned text_align)
+#define GL3_RASTER_FONT_FLUSH() \
+   do \
+   { \
+      coords.tex_coord     = font_tex_coords; \
+      coords.vertex        = font_vertex; \
+      coords.color         = font_color; \
+      coords.vertices      = i * 6; \
+      coords.lut_tex_coord = font_tex_coords; \
+      if (font->block) \
+         video_coord_array_append(&font->block->carr, \
+               &coords, coords.vertices); \
+      else \
+         gl3_raster_font_draw_vertices(gl, font, &coords); \
+      i = 0; \
+   } while (0)
+
+static void gl3_raster_font_render_message(
+      gl3_t *gl,
+      gl3_raster_t *font, const char *msg, size_t msg_len,
+      GLfloat scale, const GLfloat color[4], GLfloat pos_x,
+      GLfloat pos_y, unsigned text_align)
 {
-   int i;
    struct video_coords coords;
-   GLfloat *font_tex_coords = font->font_tex_coords;
-   GLfloat *font_vertex     = font->font_vertex;
-   GLfloat *font_color      = font->font_color;
    GLfloat color_block[4 * 6];
    int n;
-   const char* msg_end  = msg + msg_len;
-   int x                = pre_x;
-   int y                = roundf(pos_y * VIDEO_SCALE_H(gl->vp.dims));
-   int delta_x          = 0;
-   int delta_y          = 0;
-   const struct font_glyph* (*get_glyph)(void*, uint32_t) = font->font_driver->get_glyph;
-   void *font_data      = font->font_data;
+   float line_height;
+   struct font_line_metrics *line_metrics = NULL;
+   int i                                  = 0;
+   int x                                  = 0;
+   int y                                  = 0;
+   GLfloat *font_tex_coords               = font->font_tex_coords;
+   GLfloat *font_vertex                   = font->font_vertex;
+   GLfloat *font_color                    = font->font_color;
+   float inv_tex_size_x                   = 1.0f / font->atlas->width;
+   float inv_tex_size_y                   = 1.0f / font->atlas->height;
+   float inv_win_width                    = 1.0f / VIDEO_SCALE_W(gl->vp.dims);
+   float inv_win_height                   = 1.0f / VIDEO_SCALE_H(gl->vp.dims);
+   int pre_x                              = roundf(pos_x * VIDEO_SCALE_W(gl->vp.dims));
+   const struct font_glyph* (*get_glyph)(void*, uint32_t)
+                                          = font->font_driver->get_glyph;
+   void *font_data                        = font->font_data;
+   const struct font_glyph *glyph_q       = get_glyph(font_data, '?');
+   bool aligned                           = (text_align == TEXT_ALIGN_RIGHT
+                                         || text_align == TEXT_ALIGN_CENTER);
 
-   /* For right/center alignment, compute width with a lightweight pass
-    * that only accumulates advance_x — avoids the redundant glyph lookups
-    * and atlas dirty checks that gl3_raster_font_get_message_width 
-    * would repeat. */
-   if (text_align == TEXT_ALIGN_RIGHT || text_align == TEXT_ALIGN_CENTER)
-   {
-      int width_accum      = 0;
-      const char *scan     = msg;
-      const char *scan_end = msg_end;
-      while (scan < scan_end)
-      {
-         const struct font_glyph *glyph;
-         uint32_t code       = utf8_walk(&scan);
-         if (!(glyph = get_glyph(font_data, code)))
-            if (!(glyph = glyph_q))
-               continue;
-         width_accum += glyph->advance_x;
-      }
-
-      if (text_align == TEXT_ALIGN_RIGHT)
-         x -= (int)(width_accum * scale);
-      else
-         x -= (int)(width_accum * scale) / 2;
-   }
+   font->font_driver->get_line_metrics(font->font_data, &line_metrics);
+   line_height = line_metrics->height * scale / VIDEO_SCALE_H(gl->vp.dims);
 
    for (n = 0; n < 6; n++)
    {
@@ -1394,100 +1365,50 @@ static void gl3_raster_font_render_line(gl3_t *gl,
       color_block[4 * n + 3] = color[3];
    }
 
-   while (msg < msg_end)
-   {
-      i = 0;
-      while ((i < MAX_MSG_LEN_CHUNK) && (msg < msg_end))
-      {
-         const struct font_glyph *glyph;
-         int off_x, off_y, tex_x, tex_y, width, height;
-         unsigned code = utf8_walk(&msg);
-
-         /* Do something smarter here ... */
-         if (!(glyph = get_glyph(font_data, code)))
-            if (!(glyph = glyph_q))
-               continue;
-
-         off_x  = glyph->draw_offset_x;
-         off_y  = glyph->draw_offset_y;
-         tex_x  = glyph->atlas_offset_x;
-         tex_y  = glyph->atlas_offset_y;
-         width  = glyph->width;
-         height = glyph->height;
-
-         GL_CORE_RASTER_FONT_EMIT(0, 0, 1); /* Bottom-left */
-         GL_CORE_RASTER_FONT_EMIT(1, 1, 1); /* Bottom-right */
-         GL_CORE_RASTER_FONT_EMIT(2, 0, 0); /* Top-left */
-
-         GL_CORE_RASTER_FONT_EMIT(3, 1, 0); /* Top-right */
-         GL_CORE_RASTER_FONT_EMIT(4, 0, 0); /* Top-left */
-         GL_CORE_RASTER_FONT_EMIT(5, 1, 1); /* Bottom-right */
-
-         memcpy(&font_color[4 * 6 * i], color_block,
-               sizeof(color_block));
-
-         i++;
-
-         delta_x += glyph->advance_x;
-         delta_y -= glyph->advance_y;
-      }
-
-      coords.tex_coord     = font_tex_coords;
-      coords.vertex        = font_vertex;
-      coords.color         = font_color;
-      coords.vertices      = i * 6;
-      coords.lut_tex_coord = font_tex_coords;
-
-      if (font->block)
-         video_coord_array_append(&font->block->carr,
-               &coords, coords.vertices);
-      else
-         gl3_raster_font_draw_vertices(gl, font, &coords);
-   }
+#define FONT_LAYOUT_ALIGNED aligned
+#define FONT_LAYOUT_LINE(line, line_width, count, bytes) \
+   do \
+   { \
+      (void)(count); \
+      x = pre_x; \
+      y = roundf((pos_y - (float)(line) * line_height) \
+            * VIDEO_SCALE_H(gl->vp.dims)); \
+      if (text_align == TEXT_ALIGN_RIGHT) \
+         x -= (int)((line_width) * scale); \
+      else if (text_align == TEXT_ALIGN_CENTER) \
+         x -= (int)((line_width) * scale) / 2; \
+   } while (0)
+#define FONT_LAYOUT_GLYPH(glyph, pen_x, pen_y) \
+   do \
+   { \
+      int off_x   = (glyph)->draw_offset_x; \
+      int off_y   = (glyph)->draw_offset_y; \
+      int tex_x   = (glyph)->atlas_offset_x; \
+      int tex_y   = (glyph)->atlas_offset_y; \
+      int width   = (glyph)->width; \
+      int height  = (glyph)->height; \
+      int delta_x = (pen_x); \
+      int delta_y = -(pen_y); \
+      GL_CORE_RASTER_FONT_EMIT(0, 0, 1); /* Bottom-left */ \
+      GL_CORE_RASTER_FONT_EMIT(1, 1, 1); /* Bottom-right */ \
+      GL_CORE_RASTER_FONT_EMIT(2, 0, 0); /* Top-left */ \
+      GL_CORE_RASTER_FONT_EMIT(3, 1, 0); /* Top-right */ \
+      GL_CORE_RASTER_FONT_EMIT(4, 0, 0); /* Top-left */ \
+      GL_CORE_RASTER_FONT_EMIT(5, 1, 1); /* Bottom-right */ \
+      memcpy(&font_color[4 * 6 * i], color_block, sizeof(color_block)); \
+      if (++i == MAX_MSG_LEN_CHUNK) \
+         GL3_RASTER_FONT_FLUSH(); \
+   } while (0)
+#define FONT_LAYOUT_LINE_END() \
+   do \
+   { \
+      if (i) \
+         GL3_RASTER_FONT_FLUSH(); \
+   } while (0)
+#include "../font_layout.h"
 }
 
-static void gl3_raster_font_render_message(
-      gl3_t *gl,
-      gl3_raster_t *font, const char *msg, GLfloat scale,
-      const GLfloat color[4], GLfloat pos_x, GLfloat pos_y,
-      unsigned text_align)
-{
-   float line_height;
-   struct font_line_metrics *line_metrics = NULL;
-   int lines                              = 0;
-   float inv_tex_size_x = 1.0f / font->atlas->width;
-   float inv_tex_size_y = 1.0f / font->atlas->height;
-   float inv_win_width  = 1.0f / VIDEO_SCALE_W(gl->vp.dims);
-   float inv_win_height = 1.0f / VIDEO_SCALE_H(gl->vp.dims);
-   int x                = roundf(pos_x * VIDEO_SCALE_W(gl->vp.dims));
-   const struct font_glyph* glyph_q = font->font_driver->get_glyph(font->font_data, '?');
-   font->font_driver->get_line_metrics(font->font_data, &line_metrics);
-   line_height = line_metrics->height * scale / VIDEO_SCALE_H(gl->vp.dims);
-   for (;;)
-   {
-      const char *delim = msg;
-      size_t msg_len;
-      while (*delim != '\n' && *delim != '\0')
-         delim++;
-      msg_len = delim - msg;
-      /* Draw the line */
-      gl3_raster_font_render_line(gl, font,
-            glyph_q,
-            msg, msg_len, scale, color,
-            pos_x,
-            pos_y - (float)lines * line_height,
-            x,
-            inv_tex_size_x,
-            inv_tex_size_y,
-            inv_win_width,
-            inv_win_height,
-            text_align);
-      if (*delim == '\0')
-         break;
-      msg += msg_len + 1;
-      lines++;
-   }
-}
+#undef GL3_RASTER_FONT_FLUSH
 
 static void gl3_raster_font_setup_viewport(
       gl3_t *gl,
@@ -1615,12 +1536,14 @@ static void gl3_raster_font_render_msg(
          color_dark[2] = color[2] * drop_mod;
          color_dark[3] = color[3] * drop_alpha;
 
-         gl3_raster_font_render_message(gl, font, msg, scale, color_dark,
+         gl3_raster_font_render_message(gl, font, msg, msg_len, scale,
+               color_dark,
                x + scale * drop_x / VIDEO_SCALE_W(gl->vp.dims),
                y + scale * drop_y / VIDEO_SCALE_H(gl->vp.dims), text_align);
       }
 
-      gl3_raster_font_render_message(gl, font, msg, scale, color,
+      gl3_raster_font_render_message(gl, font, msg, msg_len, scale,
+            color,
             x, y, text_align);
    }
 
@@ -3392,6 +3315,8 @@ static void *gl3_init(const video_info_t *video,
    renderer = (const char*)glGetString(GL_RENDERER);
    version  = (const char*)glGetString(GL_VERSION);
 
+   /* The scRGB / HDR10 encode needs the slang pipelines */
+#ifdef HAVE_SLANG
    {
       gfx_ctx_flags_t ctx_flags;
       ctx_flags.flags = 0;
@@ -3409,6 +3334,7 @@ static void *gl3_init(const video_info_t *video,
          RARCH_LOG("[GLCore] scRGB backbuffer active; SDR content will be encoded for HDR output.\n");
       }
    }
+#endif
 
    /* Whether the source is PQ decides every later composition choice, it
     * arrives only through video_info, and getting it wrong is silent --
@@ -4423,7 +4349,13 @@ static void gl3_draw_menu_texture(gl3_t *gl,
  * accepts and the driver reconciles it here. */
 static bool gl3_needs_pq_downconvert(gl3_t *gl)
 {
+#ifdef HAVE_SLANG
    return gl->video_info.source_hdr10 && !gl->scrgb.active;
+#else
+   /* Nothing to downconvert with */
+   (void)gl;
+   return false;
+#endif
 }
 
 static GLuint gl3_frame_target_fbo(gl3_t *gl, unsigned dims)
@@ -4737,6 +4669,7 @@ static void gl3_renderchain_render(
  * linear-light compositing applies. */
 static void gl3_encode_pq_to_sdr(gl3_t *gl, unsigned width, unsigned height)
 {
+#ifdef HAVE_SLANG
    float ubo_data[24];
    static const float quad_pos[8] = {
       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f
@@ -4804,6 +4737,11 @@ static void gl3_encode_pq_to_sdr(gl3_t *gl, unsigned width, unsigned height)
    glBindTexture(GL_TEXTURE_2D, 0);
    glActiveTexture(GL_TEXTURE0);
    glUseProgram(0);
+#else
+   (void)gl;
+   (void)width;
+   (void)height;
+#endif
 }
 
 static bool gl3_frame(void *data, const void *frame,
@@ -5282,6 +5220,7 @@ static bool gl3_frame(void *data, const void *frame,
     * linearize, gamut handling, paper-white / 80 scaling). Runs before
     * the read-back block so screenshots and recording keep observing
     * the backbuffer as before. */
+#ifdef HAVE_SLANG
    if (gl->scrgb.active && gl->scrgb.fbo && gl->pipelines.hdr_scrgb)
    {
       float ubo_data[24];
@@ -5392,6 +5331,7 @@ static bool gl3_frame(void *data, const void *frame,
       glActiveTexture(GL_TEXTURE0);
       glUseProgram(0);
    }
+#endif
 
    if (gl->ctx_driver->update_window_title)
       gl->ctx_driver->update_window_title(gl->ctx_data);

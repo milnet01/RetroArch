@@ -122,20 +122,29 @@ LIBS += -logc
 
 CFLAGS += -DGEKKO -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
 
-HAVE_RUNAHEAD            := 1
+# 24 MB of MEM1 makes resident code weight count, so features that cannot
+# do their job on this hardware are compiled out: runahead (the second
+# savestate never fits beside a running core), the webp/dds thumbnail
+# decoders, the mod/s3m/xm tracker, 7z (LZMA dictionaries alone outsize
+# the console's free RAM, so 7z archives could never extract anyway) and
+# libretrodb (defaulted on by Makefile.common; database scanning is
+# impractical here, and the explore menu goes with it).  Together these
+# return about 640 KB of MEM1 to content.
+HAVE_LIBRETRODB          := 0
+HAVE_RUNAHEAD            := 0
 HAVE_DSP_FILTER          := 1
 HAVE_VIDEO_FILTER        := 1
 HAVE_FILTERS_BUILTIN     := 1
 HAVE_THREADS             := 1
 HAVE_RPNG                := 1
-HAVE_RWEBP               := 1
-HAVE_RDDS                := 1
+HAVE_RWEBP               := 0
+HAVE_RDDS                := 0
 HAVE_RJPEG               := 1
 HAVE_RBMP                := 1
 HAVE_RTGA                := 1
-HAVE_RMODTRACKER                := 1
+HAVE_RMODTRACKER         := 0
 HAVE_OVERLAY             := 1
-HAVE_7ZIP                := 1
+HAVE_7ZIP                := 0
 HAVE_RZSTD               := 1
 HAVE_CONFIGFILE          := 1
 HAVE_PATCH               := 1
@@ -161,9 +170,13 @@ INCLUDE += -I./libretro-common/include \
            -Ideps
 CFLAGS += -Wall -std=gnu99 $(MACHDEP) $(PLATCFLAGS) $(INCLUDE)
 
-OBJ =  $(PLATOBJS) audio/drivers/gx_audio.o gfx/drivers/gx_gfx.o input/drivers/gx_input.o frontend/drivers/platform_gx.o input/drivers_joypad/gx_joypad.o
+OBJ =  $(PLATOBJS) audio/drivers/gx_audio.o gfx/drivers/gx_gfx.o gfx/display_servers/dispserv_gx.o gfx/display_servers/dispserv_gx_modes.o input/drivers/gx_input.o frontend/drivers/platform_gx.o input/drivers_joypad/gx_joypad.o
 
 ifeq ($(EXTERNAL_LIBOGC), 0)
+   # Bridge the prebuilt in-tree libogc's __syscalls table onto the
+   # per-symbol __syscall_* hooks modern devkitPPC libsysbase dispatches
+   # through (see wii/libogc_syscalls_compat.c).
+   OBJ += wii/libogc_syscalls_compat.o
    OBJ += wii/libogc/libfat/libfat.o wii/libogc/libfat/fatfile.o wii/libogc/libfat/file_allocation_table.o wii/libogc/libfat/cache.o wii/libogc/libfat/fatdir.o wii/libogc/libfat/partition.o wii/libogc/libfat/directory.o wii/libogc/libfat/filetime.o wii/libogc/libfat/disc.o
 endif
 

@@ -143,6 +143,29 @@ void retroarch_drain_tasks_for_exit(void);
  **/
 bool retroarch_main_init(int argc, char *argv[]);
 
+/**
+ * retroarch_main_init_core:
+ * retroarch_main_init_drivers:
+ *
+ * retroarch_main_init() in two phases, for the staged content load:
+ * the first parses the configuration and brings the core up (dlopen,
+ * retro_init, the content read, retro_load_game), the second finds
+ * and initializes the drivers and finishes the session.  The staged
+ * load runs the first behind the drivers of the previous session
+ * (find_drivers false); the second phase (staged) then frees those,
+ * carrying the new core's hardware-render request around the
+ * teardown, and finds the drivers with the previous session's no
+ * longer in the way.  Startup runs both back to back with the find
+ * in the first phase, ahead of the core, as it always has.
+ *
+ * Both phases report a failure that retroarch_fail() raised; the
+ * verbosity the first phase parsed is handed to the second.
+ **/
+bool retroarch_main_init_core(int argc, char *argv[],
+      bool find_drivers, bool *verbosity_enabled);
+bool retroarch_main_init_drivers(bool staged,
+      bool verbosity_enabled);
+
 bool retroarch_main_quit(void);
 
 global_t *global_get_ptr(void);
@@ -200,6 +223,24 @@ unsigned int retroarch_get_core_requested_rotation(void);
 unsigned int retroarch_get_rotation(void);
 
 void retroarch_init_task_queue(void);
+
+/* Applies the task-queue settings to the running queue. */
+void retroarch_task_queue_configure(void);
+
+/**
+ * retroarch_main_deinit_begin:
+ * retroarch_main_deinit_pending:
+ * retroarch_main_deinit_finish:
+ *
+ * RARCH_CTL_MAIN_DEINIT in two halves around the wait for a save or
+ * load state task still inside the core.  RARCH_CTL_MAIN_DEINIT waits
+ * between them; the staged content load returns to the frame loop
+ * between them and asks pending() each frame, then finishes.  begin
+ * returns false when there is no session to close.
+ **/
+bool retroarch_main_deinit_begin(void);
+bool retroarch_main_deinit_pending(void);
+void retroarch_main_deinit_finish(void);
 
 /* Creates folder and core options stub file for subsequent runs */
 bool core_options_create_override(bool game_specific);

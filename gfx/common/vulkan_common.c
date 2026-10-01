@@ -200,22 +200,32 @@ static void vulkan_emulated_mailbox_deinit(
 {
    if (mailbox->thread)
    {
-      slock_lock(mailbox->lock);
-      mailbox->flags |= VK_MAILBOX_FLAG_DEAD;
-      scond_signal(mailbox->cond);
-      slock_unlock(mailbox->lock);
-      /* Wait for the background thread to see the DEAD flag.
+      retro_atomic_store_release_int(&mailbox->dead, 1);
+      retro_eventcount_notify(&mailbox->work);
+      /* Wait for the background thread to see the dead flag.
        * Its acquire and fence waits are finite, so it will
        * unblock and exit the loop. */
       sthread_join(mailbox->thread);
    }
 
-   if (mailbox->lock)
-      slock_free(mailbox->lock);
-   if (mailbox->cond)
-      scond_free(mailbox->cond);
+   /* Safe on ones never brought up: the struct starts zeroed. */
+   retro_eventcount_free(&mailbox->answered);
+   retro_eventcount_free(&mailbox->work);
 
    memset(mailbox, 0, sizeof(*mailbox));
+}
+
+/* The presenting thread. Asks for an image unless a request is already
+ * out. */
+static void vulkan_emulated_mailbox_request(
+      struct vulkan_emulated_mailbox *mailbox)
+{
+   if (!mailbox->has_pending_request)
+   {
+      retro_atomic_store_release_int(&mailbox->request, 1);
+      retro_eventcount_notify(&mailbox->work);
+   }
+   mailbox->has_pending_request = true;
 }
 
 static VkResult vulkan_emulated_mailbox_acquire_next_image(
@@ -224,25 +234,16 @@ static VkResult vulkan_emulated_mailbox_acquire_next_image(
 {
    VkResult res                    = VK_TIMEOUT;
 
-   slock_lock(mailbox->lock);
+   vulkan_emulated_mailbox_request(mailbox);
 
-   if (!(mailbox->flags & VK_MAILBOX_FLAG_HAS_PENDING_REQUEST))
-   {
-      mailbox->flags |= VK_MAILBOX_FLAG_REQUEST_ACQUIRE;
-      scond_signal(mailbox->cond);
-   }
-
-   mailbox->flags |= VK_MAILBOX_FLAG_HAS_PENDING_REQUEST;
-
-   if (mailbox->flags & VK_MAILBOX_FLAG_ACQUIRED)
+   if (retro_atomic_load_acquire_int(&mailbox->acquired))
    {
       res                          = mailbox->result;
       *index                       = mailbox->index;
-      mailbox->flags              &= ~(VK_MAILBOX_FLAG_HAS_PENDING_REQUEST
-                                     | VK_MAILBOX_FLAG_ACQUIRED);
+      mailbox->has_pending_request = false;
+      retro_atomic_store_release_int(&mailbox->acquired, 0);
    }
 
-   slock_unlock(mailbox->lock);
    return res;
 }
 
@@ -253,42 +254,49 @@ static VkResult vulkan_emulated_mailbox_acquire_next_image_blocking(
    VkResult res = VK_SUCCESS;
    retro_time_t deadline;
 
-   slock_lock(mailbox->lock);
+   vulkan_emulated_mailbox_request(mailbox);
 
-   if (!(mailbox->flags & VK_MAILBOX_FLAG_HAS_PENDING_REQUEST))
-   {
-      mailbox->flags |= VK_MAILBOX_FLAG_REQUEST_ACQUIRE;
-      scond_signal(mailbox->cond);
-   }
-
-   mailbox->flags |= VK_MAILBOX_FLAG_HAS_PENDING_REQUEST;
-
-   /* One deadline for the whole wait, not one per iteration: this
-    * condition carries the request and the dead flag as well as the
-    * acquire, so a wake that is none of ours would re-arm the full
-    * timeout, and enough of them would be a bound on nothing. */
+   /* One deadline for the whole wait, not one per iteration: a wake
+    * that is not the answer would otherwise re-arm the full timeout,
+    * and enough of them would be a bound on nothing. */
    deadline = cpu_features_get_time_usec() + mailbox->timeout_us;
-   while (!(mailbox->flags & VK_MAILBOX_FLAG_ACQUIRED))
+   for (;;)
    {
-      retro_time_t now = cpu_features_get_time_usec();
+      retro_time_t now;
+      int key = retro_eventcount_prepare_wait(&mailbox->answered);
+
+      if (retro_atomic_load_acquire_int(&mailbox->acquired))
+      {
+         retro_eventcount_cancel_wait(&mailbox->answered);
+         break;
+      }
       /* A finite wait also covers a background thread still
        * waiting on its acquire or its fence. */
-      if (      now >= deadline
-            || !scond_wait_timeout(mailbox->cond, mailbox->lock,
-               (int64_t)(deadline - now)))
+      now = cpu_features_get_time_usec();
+      if (now >= deadline)
       {
-         slock_unlock(mailbox->lock);
+         retro_eventcount_cancel_wait(&mailbox->answered);
          return VK_TIMEOUT;
       }
+      retro_eventcount_commit_wait_timeout(&mailbox->answered, key,
+            (int64_t)(deadline - now));
    }
 
    if ((res = mailbox->result) == VK_SUCCESS)
       *index                    = mailbox->index;
-   mailbox->flags              &= ~(VK_MAILBOX_FLAG_HAS_PENDING_REQUEST
-                                  | VK_MAILBOX_FLAG_ACQUIRED);
+   mailbox->has_pending_request = false;
+   retro_atomic_store_release_int(&mailbox->acquired, 0);
 
-   slock_unlock(mailbox->lock);
    return res;
+}
+
+/* The acquire thread: an answer is ready. result and index are
+ * written before this. */
+static void vulkan_emulated_mailbox_answer(
+      struct vulkan_emulated_mailbox *mailbox)
+{
+   retro_atomic_store_release_int(&mailbox->acquired, 1);
+   retro_eventcount_notify(&mailbox->answered);
 }
 
 static void vulkan_emulated_mailbox_loop(void *userdata)
@@ -309,22 +317,29 @@ static void vulkan_emulated_mailbox_loop(void *userdata)
 
    for (;;)
    {
-      slock_lock(mailbox->lock);
-      while (   !(mailbox->flags & VK_MAILBOX_FLAG_DEAD)
-             && !(mailbox->flags & VK_MAILBOX_FLAG_REQUEST_ACQUIRE))
-         scond_wait(mailbox->cond, mailbox->lock);
-
-      if (mailbox->flags & VK_MAILBOX_FLAG_DEAD)
+      /* Sleep until there is a request, or the teardown. The second
+       * look, between announcing the wait and committing to it, is
+       * what keeps a request made in that window from being slept
+       * through. */
+      for (;;)
       {
-         slock_unlock(mailbox->lock);
-         break;
+         int key = retro_eventcount_prepare_wait(&mailbox->work);
+         if (     retro_atomic_load_acquire_int(&mailbox->dead)
+               || retro_atomic_load_acquire_int(&mailbox->request))
+         {
+            retro_eventcount_cancel_wait(&mailbox->work);
+            break;
+         }
+         retro_eventcount_commit_wait(&mailbox->work, key);
       }
 
-      mailbox->flags &= ~VK_MAILBOX_FLAG_REQUEST_ACQUIRE;
-      slock_unlock(mailbox->lock);
+      if (retro_atomic_load_acquire_int(&mailbox->dead))
+         break;
+
+      retro_atomic_store_release_int(&mailbox->request, 0);
 
       /* Use a finite timeout so the thread can regularly check
-       * for the DEAD flag and exit promptly during teardown.
+       * for the dead flag and exit promptly during teardown.
        * UINT64_MAX would block forever, causing sthread_join
        * in vulkan_emulated_mailbox_deinit to deadlock. */
       mailbox->result          = vkAcquireNextImageKHR(
@@ -346,16 +361,14 @@ static void vulkan_emulated_mailbox_loop(void *userdata)
          /* The image is already ours; VK_TIMEOUT only means the
           * presentation engine has not released it yet. It cannot be
           * handed back, and acquiring again with this fence pending is
-          * invalid, so keep waiting, checking DEAD between waits. */
+          * invalid, so keep waiting, checking dead between waits. */
          bool dead = false;
          VkResult wait_res;
 
          while ((wait_res = vkWaitForFences(mailbox->device, 1, &fence, true,
                   (uint64_t)mailbox->timeout_us * 1000)) == VK_TIMEOUT)
          {
-            slock_lock(mailbox->lock);
-            dead = (mailbox->flags & VK_MAILBOX_FLAG_DEAD) != 0;
-            slock_unlock(mailbox->lock);
+            dead = retro_atomic_load_acquire_int(&mailbox->dead) != 0;
             if (dead)
                break;
          }
@@ -374,36 +387,25 @@ static void vulkan_emulated_mailbox_loop(void *userdata)
          mailbox->result = wait_res;
          vkResetFences(mailbox->device, 1, &fence);
 
-         slock_lock(mailbox->lock);
-         mailbox->flags |= VK_MAILBOX_FLAG_ACQUIRED;
-         scond_signal(mailbox->cond);
-         slock_unlock(mailbox->lock);
+         vulkan_emulated_mailbox_answer(mailbox);
       }
       else if (   mailbox->result == VK_TIMEOUT
                || mailbox->result == VK_NOT_READY)
       {
          /* No image available this round.
-          * Check DEAD flag, re-arm the request the loop cleared,
+          * Check dead, re-arm the request the loop cleared,
           * then loop back to try again. */
-         slock_lock(mailbox->lock);
-         if (mailbox->flags & VK_MAILBOX_FLAG_DEAD)
-         {
-            slock_unlock(mailbox->lock);
+         if (retro_atomic_load_acquire_int(&mailbox->dead))
             break;
-         }
-         mailbox->flags |= VK_MAILBOX_FLAG_REQUEST_ACQUIRE;
-         slock_unlock(mailbox->lock);
+         retro_atomic_store_release_int(&mailbox->request, 1);
       }
       else
       {
          /* VK_ERROR_OUT_OF_DATE_KHR, VK_ERROR_DEVICE_LOST, etc.
-          * Propagate to the main thread via ACQUIRED + result.
+          * Propagate to the main thread via acquired + result.
           * The caller (non-blocking acquire) will return this error. */
          vkResetFences(mailbox->device, 1, &fence);
-         slock_lock(mailbox->lock);
-         mailbox->flags |= VK_MAILBOX_FLAG_ACQUIRED;
-         scond_signal(mailbox->cond);
-         slock_unlock(mailbox->lock);
+         vulkan_emulated_mailbox_answer(mailbox);
       }
    }
 
@@ -415,19 +417,20 @@ static bool vulkan_emulated_mailbox_init(
       VkDevice device,
       VkSwapchainKHR swapchain)
 {
-   mailbox->thread              = NULL;
-   mailbox->lock                = NULL;
-   mailbox->cond                = NULL;
+   /* Zeroed first, so that the error path can free an eventcount that
+    * was never brought up. */
+   memset(mailbox, 0, sizeof(*mailbox));
    mailbox->device              = device;
    mailbox->swapchain           = swapchain;
    mailbox->timeout_us          = vulkan_mailbox_timeout_us();
-   mailbox->index               = 0;
    mailbox->result              = VK_SUCCESS;
-   mailbox->flags               = 0;
+   retro_atomic_int_init(&mailbox->request, 0);
+   retro_atomic_int_init(&mailbox->acquired, 0);
+   retro_atomic_int_init(&mailbox->dead, 0);
 
-   if (!(mailbox->cond      = scond_new()))
+   if (!retro_eventcount_init(&mailbox->work))
       goto error;
-   if (!(mailbox->lock      = slock_new()))
+   if (!retro_eventcount_init(&mailbox->answered))
       goto error;
    if (!(mailbox->thread    = sthread_create(vulkan_emulated_mailbox_loop,
                mailbox)))
@@ -443,7 +446,7 @@ error:
     * vulkan_create_swapchain) will then take the
     * mailbox.swapchain == VK_NULL_HANDLE branch in
     * vulkan_acquire_next_image and skip the emulated path
-    * cleanly instead of dereferencing a NULL lock/cond. */
+    * cleanly instead of using a mailbox that never came up. */
    vulkan_emulated_mailbox_deinit(mailbox);
    return false;
 }
@@ -696,10 +699,15 @@ static bool vulkan_context_init_gpu(gfx_ctx_vulkan_data_t *vk)
 
    video_driver_set_gpu_api_devices(GFX_CTX_VULKAN_API, vk->gpu_list);
 
+   /* The device the index was chosen as, wherever the list now puts it */
+   gpu_index = video_driver_gpu_index_resolve(GFX_CTX_VULKAN_API,
+         gpu_index, vk->gpu_list);
+
    if (0 <= gpu_index && gpu_index < (int)gpu_count)
    {
       RARCH_LOG("[Vulkan] Using GPU #%d: \"%s\".\n", gpu_index, vk->gpu_list->elems[gpu_index].data);
-      vk->context.gpu = gpus[gpu_index];
+      vk->context.gpu       = gpus[gpu_index];
+      vk->context.gpu_index = gpu_index;
    }
    else
    {
@@ -2142,6 +2150,78 @@ uint32_t vulkan_find_memory_type_fallback(
          device_reqs, host_reqs_second, 0);
 }
 
+/* The stale list is full: consume every signal on it, so the
+ * semaphores can be destroyed and the list starts again.
+ *
+ * A pending acquire signal is consumed by a submission that waits on
+ * it, and a batch may wait without running anything. So one batch
+ * waits on the whole list, with a fence, and the fence is waited on
+ * here. queue_lock is held for the submit call and not a moment
+ * longer.
+ *
+ * This was vkDeviceWaitIdle followed by destroying one semaphore. That
+ * is a use of every queue of the device made without queue_lock, while
+ * a hardware core may be submitting on the queue from its own thread;
+ * it waited for the core's work as well as ours; and an acquire is not
+ * queue work, so it did not even wait for the signal it then destroyed
+ * the semaphore under. */
+static void vulkan_consume_stale_acquires(gfx_ctx_vulkan_data_t *vk)
+{
+   VkSubmitInfo submit;
+   VkFenceCreateInfo fence_info;
+   VkPipelineStageFlags stages[VULKAN_MAX_SWAPCHAIN_IMAGES];
+   struct vulkan_context *ctx = &vk->context;
+   VkFence fence              = VK_NULL_HANDLE;
+   VkResult res;
+   unsigned i;
+
+   fence_info.sType            = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+   fence_info.pNext            = NULL;
+   fence_info.flags            = 0;
+   if (vkCreateFence(ctx->device, &fence_info, NULL, &fence) != VK_SUCCESS)
+      fence = VK_NULL_HANDLE;
+
+   for (i = 0; i < ctx->num_stale_acquire_semaphores; i++)
+      stages[i]                = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+   submit.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+   submit.pNext                = NULL;
+   submit.waitSemaphoreCount   = ctx->num_stale_acquire_semaphores;
+   submit.pWaitSemaphores      = ctx->swapchain_stale_acquire_semaphores;
+   submit.pWaitDstStageMask    = stages;
+   submit.commandBufferCount   = 0;
+   submit.pCommandBuffers      = NULL;
+   submit.signalSemaphoreCount = 0;
+   submit.pSignalSemaphores    = NULL;
+
+#ifdef HAVE_THREADS
+   slock_lock(ctx->queue_lock);
+#endif
+   res = (fence != VK_NULL_HANDLE)
+      ? vkQueueSubmit(ctx->queue, 1, &submit, fence)
+      : VK_ERROR_OUT_OF_HOST_MEMORY;
+#ifdef HAVE_THREADS
+   slock_unlock(ctx->queue_lock);
+#endif
+
+   if (res == VK_SUCCESS)
+   {
+      vkWaitForFences(ctx->device, 1, &fence, VK_TRUE, UINT64_MAX);
+      for (i = 0; i < ctx->num_stale_acquire_semaphores; i++)
+         vkDestroySemaphore(ctx->device,
+               ctx->swapchain_stale_acquire_semaphores[i], NULL);
+   }
+   /* else: nothing waits on them and their signals stay pending.
+    * They cannot be destroyed or acquired with again; the handles are
+    * dropped, and the device teardown takes them. */
+   if (fence != VK_NULL_HANDLE)
+      vkDestroyFence(ctx->device, fence, NULL);
+
+   for (i = 0; i < VULKAN_MAX_SWAPCHAIN_IMAGES; i++)
+      ctx->swapchain_stale_acquire_semaphores[i] = VK_NULL_HANDLE;
+   ctx->num_stale_acquire_semaphores = 0;
+}
+
 void vulkan_acquire_next_image(gfx_ctx_vulkan_data_t *vk)
 {
    unsigned index;
@@ -2229,19 +2309,15 @@ retry:
           * with again nor destroyed. It goes on the stale list, and
           * the next submission waits on it along with its own
           * acquire - that consumes the signal, and it recycles with
-          * that frame. Only when frames have gone unsubmitted for
-          * a whole swapchain's worth is the device drained to
-          * destroy one, as every one of them used to be. */
+          * that frame. When frames have gone unsubmitted for a whole
+          * swapchain's worth the list is full, and it is emptied by
+          * the same means: see vulkan_consume_stale_acquires(). */
          VkSemaphore old_sem                     = vk->context.swapchain_acquire_semaphore;
          vk->context.swapchain_acquire_semaphore = semaphore;
-         if (vk->context.num_stale_acquire_semaphores < VULKAN_MAX_SWAPCHAIN_IMAGES)
-            vk->context.swapchain_stale_acquire_semaphores[
-               vk->context.num_stale_acquire_semaphores++] = old_sem;
-         else
-         {
-            vkDeviceWaitIdle(vk->context.device);
-            vkDestroySemaphore(vk->context.device, old_sem, NULL);
-         }
+         if (vk->context.num_stale_acquire_semaphores == VULKAN_MAX_SWAPCHAIN_IMAGES)
+            vulkan_consume_stale_acquires(vk);
+         vk->context.swapchain_stale_acquire_semaphores[
+            vk->context.num_stale_acquire_semaphores++] = old_sem;
       }
       else
          vk->context.swapchain_acquire_semaphore = semaphore;
@@ -3559,11 +3635,21 @@ void vulkan_present(gfx_ctx_vulkan_data_t *vk, unsigned index)
       present.pNext              = &times;
    }
 
-   /* Better hope QueuePresent doesn't block D: */
+   /* queue_lock is for the queue call and is dropped the moment it
+    * returns. It used to be kept to the end of this function, across
+    * the failure handling - and a failed present tears the swapchain
+    * down, which waits for the present with an empty fenced submission
+    * behind it (vulkan_context_wait_frames), which takes queue_lock.
+    * Where the mutex is not recursive - everywhere but Windows - the
+    * thread then waited on itself: an out-of-date present, as on a
+    * resize, never returned. */
 #ifdef HAVE_THREADS
    slock_lock(vk->context.queue_lock);
 #endif
    err = vkQueuePresentKHR(vk->context.queue, &present);
+#ifdef HAVE_THREADS
+   slock_unlock(vk->context.queue_lock);
+#endif
    /* Queued whatever it returned: a failed present has still put its
     * semaphore wait on the queue, or may have, and the fence taken
     * before the next rebuild covers either. */
@@ -3584,10 +3670,29 @@ void vulkan_present(gfx_ctx_vulkan_data_t *vk, unsigned index)
    trigger_spurious_error_vkresult(&err);
 #endif
 
+   if (err == VK_SUCCESS && result == VK_SUCCESS)
+      vk->context.swapchain_never_presented = 0;
+
    if (err != VK_SUCCESS || result != VK_SUCCESS)
    {
       RARCH_LOG("[Vulkan] QueuePresent failed (err = %d, result = %d), destroying swapchain.\n",
             (int)err, (int)result);
+      /* Swapchain after swapchain with nothing ever shown: the GPU the
+       * index picked cannot present to this display, whatever it
+       * answered when asked. Say so once rather than loop in silence. */
+      if (++vk->context.swapchain_never_presented == 8)
+      {
+         struct string_list *gpus = video_driver_get_gpu_api_devices(
+               GFX_CTX_VULKAN_API);
+         int idx                  = vk->context.gpu_index;
+         RARCH_ERR("[Vulkan] Nothing has reached the display through %u swapchains.\n",
+               vk->context.swapchain_never_presented);
+         if (gpus && idx > 0 && idx < (int)gpus->size)
+            RARCH_ERR("[Vulkan] GPU #%d (\"%s\") cannot present here; set GPU Index back to 0 in Video -> Output.\n",
+                  idx, gpus->elems[idx].data);
+         else
+            RARCH_ERR("[Vulkan] The GPU in use cannot present to this display.\n");
+      }
       /* A lost device does not come back with a new swapchain: the
        * whole driver has to, and the runloop does that when it sees
        * the flag (after a TDR, a GPU reset). */
@@ -3595,8 +3700,4 @@ void vulkan_present(gfx_ctx_vulkan_data_t *vk, unsigned index)
          video_driver_modify_disp_flags(VIDEO_FLAG_GPU_DEVICE_LOST, 0);
       vulkan_destroy_swapchain(vk);
    }
-
-#ifdef HAVE_THREADS
-   slock_unlock(vk->context.queue_lock);
-#endif
 }

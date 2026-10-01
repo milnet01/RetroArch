@@ -41,8 +41,7 @@ S_UINT_EX_NS(netplay_share_analog, NETPLAY_SHARE_ANALOG,
       "Analog Input Sharing")
 #endif
 #endif
-/* TLS certificate-verification policy (fork: CRITICAL MITM fix, see
- * docs/private/specs/2026-04-27-tls-verification-opt-in-design.md).
+/* TLS certificate-verification policy for outbound HTTPS.
  * Values are enum tls_verify_mode (network/tls_config.h); the default
  * DEFAULT_TLS_VERIFY_MODE is TLS_VERIFY_REQUIRED, which fails closed.
  * general_write_handler pushes a change to the SSL backend live.

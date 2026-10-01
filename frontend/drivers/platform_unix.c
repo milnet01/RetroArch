@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <sys/utsname.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
 
 #ifdef __linux__
 #include <linux/version.h>
@@ -146,7 +147,12 @@ static char unix_cpu_model_name[64]      = {0};
 
 
 #if (defined(__linux__) || defined(__HAIKU__) || defined(__unix__)) && !defined(ANDROID)
-static int speak_pid                     = 0;
+/* The narrator is a direct child, reaped with waitpid(WNOHANG): SIGCHLD
+ * keeps its default action, so every other child stays waitable. */
+static pid_t speak_pid                   = 0;
+/* Narrators sent SIGTERM that had not exited yet: reaped on later calls. */
+#define NARRATOR_STOPPING_MAX 4
+static pid_t speak_stopping[NARRATOR_STOPPING_MAX];
 #endif
 
 /* Counts SIGINT/SIGTERM. Written by the signal handler and read by
@@ -329,7 +335,10 @@ static void android_app_set_window(struct android_app *android_app,
 /* START/RESUME/PAUSE/STOP are notifications: activityState is written by
  * the app thread and read by nothing else, so giving up on the
  * acknowledgement costs the caller nothing beyond returning before the app
- * thread has caught up.
+ * thread has caught up. PAUSE and STOP are acknowledged once SRAM, core
+ * options and the config have been written (see
+ * android_input_flush_pending_state()), so while the wait lasts the
+ * process cannot be killed with those unsaved.
  *
  * This does not generalise to android_app_set_window() or
  * android_app_set_input(), where returning early hands the framework an
@@ -2466,6 +2475,33 @@ static void frontend_unix_set_screen_brightness(int value)
 }
 #endif
 
+#if !defined(ANDROID) && !defined(DINGUX)
+/* Distribution packages install the shared libretro data sets under
+ * <prefix>/share/libretro/<name> (FreeBSD ports: retroarch-assets,
+ * libretro-core-info; Debian and its derivatives use the same layout).
+ * Default to those when present so a locally built RetroArch finds the
+ * packaged assets, core info, shaders and joypad profiles without any
+ * retroarch.cfg edits.  Only what would otherwise fall back to an empty
+ * per-user directory is probed here; the per-user directory stays the
+ * default for anything writable. */
+static bool unix_find_packaged_dir(char *s, size_t len, const char *name)
+{
+   static const char *const prefixes[] = {
+      "/usr/local/share/libretro",
+      "/usr/share/libretro"
+   };
+   size_t i;
+   for (i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++)
+   {
+      fill_pathname_join(s, prefixes[i], name, len);
+      if (path_is_directory(s))
+         return true;
+   }
+   *s = '\0';
+   return false;
+}
+#endif
+
 static void frontend_unix_get_env(int *argc,
       char *argv[], void *data, void *params_data)
 {
@@ -3027,6 +3063,9 @@ static void frontend_unix_get_env(int *argc,
    if (libretro_directory && *libretro_directory)
       strlcpy(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], libretro_directory,
             sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
+   else if (unix_find_packaged_dir(g_defaults.dirs[DEFAULT_DIR_CORE_INFO],
+            sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]), "info"))
+      ;
    else
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], base_path,
             "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
@@ -3035,6 +3074,11 @@ static void frontend_unix_get_env(int *argc,
       strlcpy(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG],
 	    libretro_autoconfig_directory,
             sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]));
+#if !defined(DINGUX)
+   else if (unix_find_packaged_dir(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG],
+            sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]), "autoconfig"))
+      ;
+#endif
    else
        fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG], base_path,
             "autoconfig", sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]));
@@ -3064,6 +3108,11 @@ static void frontend_unix_get_env(int *argc,
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS],
             "/usr/share/games/retroarch",
             "assets", sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]));
+#if !defined(DINGUX)
+   else if (unix_find_packaged_dir(g_defaults.dirs[DEFAULT_DIR_ASSETS],
+            sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]), "assets"))
+      ;
+#endif
    else
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS], base_path,
             "assets", sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]));
@@ -3155,6 +3204,11 @@ static void frontend_unix_get_env(int *argc,
        strlcpy(g_defaults.dirs[DEFAULT_DIR_SHADER],
 	       libretro_video_shader_directory,
 	       sizeof(g_defaults.dirs[DEFAULT_DIR_SHADER]));
+#if !defined(DINGUX)
+   else if (unix_find_packaged_dir(g_defaults.dirs[DEFAULT_DIR_SHADER],
+            sizeof(g_defaults.dirs[DEFAULT_DIR_SHADER]), "shaders"))
+      ;
+#endif
    else
        fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SHADER], base_path,
              "shaders", sizeof(g_defaults.dirs[DEFAULT_DIR_SHADER]));
@@ -4058,9 +4112,47 @@ enum retro_language frontend_unix_get_user_language(void)
 }
 
 #if (defined(__linux__) || defined(__HAIKU__) || defined(__unix__)) && !defined(ANDROID)
+static void narrator_reap_stopping_unix(void)
+{
+   unsigned i;
+   for (i = 0; i < NARRATOR_STOPPING_MAX; i++)
+      if (speak_stopping[i] > 0 && waitpid(speak_stopping[i], NULL, WNOHANG) != 0)
+         speak_stopping[i] = 0;
+}
+
+/* Running while waitpid finds it unfinished; once it has exited it is
+ * reaped here, so a finished narrator never reads as running and its
+ * pid is never kept past its exit. */
 static bool is_narrator_running_unix(void)
 {
-   return (kill(speak_pid, 0) == 0);
+   narrator_reap_stopping_unix();
+   if (speak_pid <= 0)
+      return false;
+   if (waitpid(speak_pid, NULL, WNOHANG) == 0)
+      return true;
+   speak_pid = 0;
+   return false;
+}
+
+/* SIGTERM to the running narrator, reaped now if it has gone, else kept
+ * to reap on a later call: nothing here waits. */
+static void narrator_stop_unix(void)
+{
+   unsigned i;
+   if (speak_pid <= 0)
+      return;
+   kill(speak_pid, SIGTERM);
+   if (waitpid(speak_pid, NULL, WNOHANG) == 0)
+   {
+      narrator_reap_stopping_unix();
+      for (i = 0; i < NARRATOR_STOPPING_MAX; i++)
+         if (speak_stopping[i] <= 0)
+         {
+            speak_stopping[i] = speak_pid;
+            break;
+         }
+   }
+   speak_pid = 0;
 }
 
 static const char* accessibility_unix_language_code(const char* language)
@@ -4199,19 +4291,11 @@ static bool accessibility_speak_unix(int speed,
    speed_out[2] = '\0';
    strlcat(speed_out, speeds[speed-1], 6);
 
-   if (priority < 10 && speak_pid > 0)
-   {
-      /* check if old pid is running */
-      if (is_narrator_running_unix())
-         goto end;
-   }
+   /* a lower-priority message waits for the running narrator */
+   if (priority < 10 && is_narrator_running_unix())
+      goto end;
 
-   if (speak_pid > 0)
-   {
-      /* Kill the running narrator */
-      kill(speak_pid, SIGTERM);
-      speak_pid = 0;
-   }
+   narrator_stop_unix();
 
    pid = fork();
    switch (pid)
@@ -4257,12 +4341,10 @@ static bool accessibility_speak_unix(int speed,
          RARCH_ERR("Could not fork for narrator.\n");
       default:
          {
-            /* parent process */
-            speak_pid = pid;
-
-            /* Tell the system that we'll ignore the exit status of the child
-             * process.  This prevents zombie processes. */
-            signal(SIGCHLD, SIG_IGN);
+            /* parent process: the narrator is reaped by
+             * is_narrator_running_unix() and narrator_stop_unix() */
+            if (pid > 0)
+               speak_pid = pid;
          }
    }
 

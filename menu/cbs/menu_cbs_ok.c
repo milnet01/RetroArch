@@ -46,6 +46,9 @@
 
 #include "../../config.def.h"
 #include "../../gfx/gfx_surface.h"
+#ifdef HAVE_GFX_WIDGETS
+#include "../../gfx/gfx_widgets.h"
+#endif
 #include "../../driver.h"
 #include "../../file_path_special.h"
 
@@ -436,6 +439,10 @@ static enum msg_hash_enums action_ok_dl_to_enum(unsigned lbl)
 #ifdef HAVE_SMBCLIENT
       case ACTION_OK_DL_SMB_CLIENT_SETTINGS_LIST:
          return MENU_ENUM_LABEL_DEFERRED_SMB_CLIENT_SETTINGS_LIST;
+#endif
+#ifdef HAVE_NFSCLIENT
+      case ACTION_OK_DL_NFS_CLIENT_SETTINGS_LIST:
+         return MENU_ENUM_LABEL_DEFERRED_NFS_CLIENT_SETTINGS_LIST;
 #endif
       case ACTION_OK_DL_ACCESSIBILITY_SETTINGS_LIST:
          return MENU_ENUM_LABEL_DEFERRED_ACCESSIBILITY_SETTINGS_LIST;
@@ -1818,6 +1825,9 @@ int generic_action_ok_displaylist_push(
       case ACTION_OK_DL_AI_SERVICE_SETTINGS_LIST:
 #ifdef HAVE_SMBCLIENT
       case ACTION_OK_DL_SMB_CLIENT_SETTINGS_LIST:
+#endif
+#ifdef HAVE_NFSCLIENT
+      case ACTION_OK_DL_NFS_CLIENT_SETTINGS_LIST:
 #endif
       case ACTION_OK_DL_ACCESSIBILITY_SETTINGS_LIST:
       case ACTION_OK_DL_POWER_MANAGEMENT_SETTINGS_LIST:
@@ -5290,7 +5300,14 @@ static void cb_decompressed(retro_task_t *task,
       switch (enum_idx)
       {
          case MENU_ENUM_LABEL_CB_UPDATE_ASSETS:
-            generic_action_ok_command(CMD_EVENT_REINIT);
+            /* The menu reads its icons and fonts from the assets
+             * directory when its context is built, so the new ones
+             * only need that context rebuilt against the running
+             * video driver. */
+            menu_driver_context_rebuild();
+#ifdef HAVE_GFX_WIDGETS
+            gfx_widgets_reload_assets();
+#endif
             break;
          case MENU_ENUM_LABEL_CB_UPDATE_AUTOCONFIG_PROFILES:
             {
@@ -5797,8 +5814,6 @@ void cb_generic_download(retro_task_t *task,
    if (path_is_compressed_file(output_path))
    {
       retro_task_t *decompress_task = NULL;
-      void *frontend_userdata       = task->frontend_userdata;
-      task->frontend_userdata       = NULL;
 
       /* Content from the Content Downloader is saved into a category
        * sub-directory. Make sure to extract it to the same directory.
@@ -5818,7 +5833,7 @@ void cb_generic_download(retro_task_t *task,
             NULL,
             cb_decompressed,
             (void*)(uintptr_t)transf->enum_idx,
-            frontend_userdata,
+            NULL,
             false);
 
       if (!decompress_task)
@@ -5826,6 +5841,10 @@ void cb_generic_download(retro_task_t *task,
          err = msg_hash_to_str(MSG_DECOMPRESSION_FAILED);
          goto finish;
       }
+#ifdef HAVE_GFX_WIDGETS
+      /* Rebind before a delayed extraction can inherit expiration. */
+      gfx_widgets_task_transfer(task, decompress_task);
+#endif
    }
 #endif
 
@@ -7074,6 +7093,9 @@ STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_push_audio_mixer_settings_list, ACTION_O
 #ifdef HAVE_SMBCLIENT
 STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_push_smb_client_settings_list, ACTION_OK_DL_SMB_CLIENT_SETTINGS_LIST)
 #endif
+#ifdef HAVE_NFSCLIENT
+STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_push_nfs_client_settings_list, ACTION_OK_DL_NFS_CLIENT_SETTINGS_LIST)
+#endif
 STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_push_user_binds_list, ACTION_OK_DL_USER_BINDS_LIST)
 STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_push_accounts_cheevos_list, ACTION_OK_DL_ACCOUNTS_CHEEVOS_LIST)
 #ifdef HAVE_LAKKA
@@ -7591,14 +7613,38 @@ static int generic_action_ok_dropdown_setting(const char *path, const char *labe
 
    switch (setting->type)
    {
+      /* Integer lists are built from the minimum (0 unless the range
+       * enforces one) in whole steps, so entry @idx is that value;
+       * the value is taken back the same way, not from offset_by,
+       * which only some settings set to their minimum. */
       case ST_INT:
-         setting_int_set(setting,
-               (int)((idx * setting->step) + setting->offset_by));
+         {
+            int32_t i_min  = (setting->flags & SD_FLAG_ENFORCE_MINRANGE)
+               ? (int32_t)setting->min : 0;
+            int32_t i_step = (int32_t)setting->step;
+            int32_t value;
+            if (i_step < 1)
+               i_step = 1;
+            value = i_min + (int32_t)idx * i_step;
+            if (     (setting->flags & SD_FLAG_ENFORCE_MAXRANGE)
+                  && value > (int32_t)setting->max)
+               value = (int32_t)setting->max;
+            setting_int_set(setting, value);
+         }
          break;
       case ST_UINT:
          {
-            unsigned value = (unsigned)((idx * setting->step) + setting->offset_by);
-            setting_uint_set(setting, value);
+            int32_t i_min  = (setting->flags & SD_FLAG_ENFORCE_MINRANGE)
+               ? (int32_t)setting->min : 0;
+            int32_t i_step = (int32_t)setting->step;
+            int32_t value;
+            if (i_step < 1)
+               i_step = 1;
+            value = i_min + (int32_t)idx * i_step;
+            if (     (setting->flags & SD_FLAG_ENFORCE_MAXRANGE)
+                  && value > (int32_t)setting->max)
+               value = (int32_t)setting->max;
+            setting_uint_set(setting, (unsigned)value);
          }
          break;
       case ST_FLOAT:
@@ -7675,17 +7721,24 @@ int action_cb_push_dropdown_item_resolution(const char *path,
 {
    char *end            = NULL;
    unsigned dims        = 0;
+   unsigned width       = 0;
+   unsigned height      = 0;
    float refreshrate    = 0.0f;
 
    if (!path)
       return -1;
 
-   VIDEO_SCALE_PUT_W(dims, (unsigned)strtoul(path, &end, 0));
+   /* Each axis is parsed into a local first: VIDEO_SCALE_PACK reads
+    * its arguments twice, so a strtoul() written inside it runs twice,
+    * and the second call for the height parsed on from where the first
+    * had left 'end' - every mode picked from the list went out as Wx0 */
+   width  = (unsigned)strtoul(path, &end, 0);
    if (end == path || *end != 'x')
       return -1;
 
    ++end;
-   VIDEO_SCALE_PUT_H(dims, (unsigned)strtoul(end, &end, 0));
+   height = (unsigned)strtoul(end, &end, 0);
+   dims   = VIDEO_SCALE_PACK(width, height);
    /* Skip whitespace and opening parenthesis: "2160 (120 Hz)" → "120 Hz)" */
    while (*end == ' ' || *end == '(')
       ++end;
@@ -8598,7 +8651,7 @@ static int generic_dropdown_box_list(size_t idx, unsigned lbl)
 static int action_ok_video_resolution(const char *path,
       const char *label, unsigned type, size_t idx, size_t entry_idx)
 {
-#if defined(GEKKO) || defined(PS2) || defined(__PS3__)
+#if defined(PS2)
    unsigned dims    = 0;
    char desc[64]    = {0};
 
@@ -8608,16 +8661,7 @@ static int action_ok_video_resolution(const char *path,
       char msg[128];
       msg[0] = '\0';
 
-#if defined(_WIN32) || defined(__PS3__)
-      generic_action_ok_command(CMD_EVENT_REINIT);
-#endif
       video_driver_set_video_mode(dims, true);
-#ifdef GEKKO
-      if (!VIDEO_SCALE_W(dims) || !VIDEO_SCALE_H(dims))
-         _len = snprintf(msg, sizeof(msg),
-               msg_hash_to_str(MSG_SCREEN_RESOLUTION_APPLYING_DEFAULT));
-      else
-#endif
       {
          if (*desc)
             _len = snprintf(msg, sizeof(msg),
@@ -9467,6 +9511,31 @@ static int action_ok_core_steam_uninstall(
 }
 #endif
 
+#ifdef HAVE_NFSCLIENT
+static int action_ok_nfs_browse(const char *path,
+      const char *label, unsigned type, size_t idx, size_t entry_idx)
+{
+   char nfs_path[PATH_MAX_LENGTH];
+
+   if (!menu_displaylist_build_nfs_root(nfs_path, sizeof(nfs_path)))
+   {
+      runloop_msg_queue_push(
+            "NFS server address not configured.",
+            0, 100, 180, true, NULL,
+            MESSAGE_QUEUE_ICON_DEFAULT,
+            MESSAGE_QUEUE_CATEGORY_ERROR);
+      return -1;
+   }
+   filebrowser_set_type(FILEBROWSER_SELECT_FILE);
+   return generic_action_ok_displaylist_push(
+      nfs_path,
+      nfs_path,
+      msg_hash_to_str(MENU_ENUM_LABEL_FAVORITES),
+      type, idx, entry_idx,
+      ACTION_OK_DL_CONTENT_LIST);
+}
+#endif
+
 #ifdef HAVE_SMBCLIENT
 static int action_ok_smb_browse(const char *path,
       const char *label, unsigned type, size_t idx, size_t entry_idx)
@@ -9709,6 +9778,10 @@ static int menu_cbs_init_bind_ok_compare_label(menu_file_list_cbs_t *cbs,
 #ifdef HAVE_SMBCLIENT
          {MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS,                 action_ok_push_smb_client_settings_list},
          {MENU_ENUM_LABEL_SMB_CLIENT_BROWSE,                   action_ok_smb_browse},
+#endif
+#ifdef HAVE_NFSCLIENT
+         {MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS,                 action_ok_push_nfs_client_settings_list},
+         {MENU_ENUM_LABEL_NFS_CLIENT_BROWSE,                   action_ok_nfs_browse},
 #endif
          {MENU_ENUM_LABEL_CORE_DELETE,                         action_ok_core_delete},
          {MENU_ENUM_LABEL_CORE_CREATE_BACKUP,                  action_ok_core_create_backup},

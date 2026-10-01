@@ -20,25 +20,22 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/* Regression for commit 9953abc994 (NULL-deref + inverted recursion in the
- * UPnP IGD description parser, network/natt.c::natt_parse_desc_node).
+/* Regression test for the UPnP IGD description parser
+ * (network/natt_desc.c::natt_parse_desc_node).
  *
- * The description XML is served by a router on the LAN -- untrusted input.
- * Two bugs the fix closed:
- *   1. The old else-branch fired when a node had no children, then walked
- *      `child = child->next` with child already NULL -- a crash on any leaf
- *      node, including the empty-root response a hostile router can craft.
- *   2. The old logic recursed ONLY when a node had no children, so a
- *      <service> nested inside <serviceList>/<device>/<root> (the real UPnP
- *      shape) was never reached.
- * The fix also NULL-guards serviceType->data / controlURL->data before strstr.
+ * The description XML is served by a router on the LAN, so it is untrusted.
+ * The parser previously:
+ *   1. took the else-branch when a node had no children, then walked
+ *      `child = child->next` with child already NULL, crashing on any leaf
+ *      node, including an empty root;
+ *   2. recursed only into nodes without children, so a <service> nested
+ *      inside <serviceList>/<device>/<root> (the real UPnP shape) was never
+ *      reached.
+ * It now also NULL-checks serviceType->data / controlURL->data before strstr.
  *
- * Like samples/tasks/cloudsync, this test #includes the REAL
- * parser source (network/natt_desc.c) -- the walk was split out of natt.c into
- * its own translation unit so the shipped code and this test exercise the SAME
- * function. A re-sync or refactor that reverts the crash-guard or the recursion
- * fix fails this test (the hostile-tree cases segfault on the pre-fix code; the
- * nested-service case returns false).
+ * The walk lives in its own translation unit so this test can #include the
+ * real parser source. The hostile-tree cases crash the old parser and the
+ * nested-service case fails on it.
  *
  * Build standalone:
  *   cc -Wall -pedantic -std=gnu99 -g -O0 -I../../../libretro-common/include \

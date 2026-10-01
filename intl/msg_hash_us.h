@@ -1540,6 +1540,10 @@ MSG_HASH(
    "CPU Cores"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CPU_THREADS,
+   "threads"
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_JIT_AVAILABLE,
    "JIT Available"
    )
@@ -24077,6 +24081,10 @@ MSG_HASH(
    "By Release Year"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_EXPLORE_BY_RELEASE_MONTH,
+   "By Release Month"
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_EXPLORE_BY_PLAYER_COUNT,
    "By Player Count"
    )
@@ -32903,6 +32911,42 @@ MSG_HASH(
    "Password incorrect."
    )
 MSG_HASH(
+   MSG_INPUT_KEYCHAIN_PASSPHRASE,
+   "Keychain Passphrase"
+   )
+MSG_HASH(
+   MSG_INPUT_KEYCHAIN_PASSPHRASE_NEW,
+   "New Keychain Passphrase (empty removes it)"
+   )
+MSG_HASH(
+   MSG_KEYCHAIN_UNLOCKING,
+   "Unlocking keychain..."
+   )
+MSG_HASH(
+   MSG_KEYCHAIN_SETTING_PASSPHRASE,
+   "Setting keychain passphrase..."
+   )
+MSG_HASH(
+   MSG_KEYCHAIN_UNLOCKED,
+   "Keychain unlocked."
+   )
+MSG_HASH(
+   MSG_KEYCHAIN_PASSPHRASE_WRONG,
+   "Keychain passphrase incorrect."
+   )
+MSG_HASH(
+   MSG_KEYCHAIN_PASSPHRASE_SET,
+   "Keychain passphrase set."
+   )
+MSG_HASH(
+   MSG_KEYCHAIN_PASSPHRASE_REMOVED,
+   "Keychain passphrase removed."
+   )
+MSG_HASH(
+   MSG_KEYCHAIN_WRITE_FAILED,
+   "Could not update the keychain key file."
+   )
+MSG_HASH(
    MSG_CONFIG_OVERRIDE_LOADED,
    "Configuration override loaded."
    )
@@ -36324,7 +36368,7 @@ MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
 
 
 #endif
-#ifdef HAVE_SMBCLIENT
+#if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
 /* GENERATED REGION: netplay action (see settings_def_netplay_action.h). */
 #define SETTINGS_DEF_STRINGS_PASS
 #define S_BOOL(f, T, n, d, sd, df, c, us, sub) \
@@ -36816,6 +36860,88 @@ MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_SMB_CLIENT_SMB_SHARE,
    "SMB Share"
+   )
+#endif
+#ifdef HAVE_NFSCLIENT
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SERVER,
+   "NFS Server"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_SERVER,
+   "Server IP address or hostname."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_EXPORT,
+   "NFS Export"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_EXPORT,
+   "Path the server exports, e.g. /export/roms. The directory's path on the server works for NFS version 4 too, where the server may present it under a shorter name. Leave empty to give the export in the address as nfs://server/export/path."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_SUBDIR,
+   "NFS Sub directory"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_SUBDIR,
+   "Sub directory path under the export. Optional."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_TIMEOUT,
+   "NFS Timeout"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_TIMEOUT,
+   "Seconds to wait for the server on each request."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_NUM_CONTEXTS,
+   "NFS Maximum connections"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_NUM_CONTEXTS,
+   "Connections kept open to the server."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_PORT,
+   "NFS Port"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_PORT,
+   "Port of the NFS service. 0 asks the server's portmapper."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_MOUNT_PORT,
+   "NFS Mount Port"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_MOUNT_PORT,
+   "Port of the MOUNT service. 0 asks the server's portmapper."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_VERSION,
+   "NFS Version"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_VERSION,
+   "3 uses the portmapper and MOUNT service; 4 connects straight to the NFS port and takes the export as the server's pseudo-filesystem path, speaking the newest of 4.2, 4.1 and 4.0 the server offers."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_READAHEAD,
+   "NFS Read-Ahead (KiB)"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_READAHEAD,
+   "Data fetched ahead when a game reads a file in small pieces, with a background thread keeping the next window coming. Can smooth large disc images over a slow link; costs that much memory and one more connection per open file. 0 turns it off: each read is one request, as before read-ahead existed."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_NFS_CLIENT_BROWSE,
+   "Browse NFS Export"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_NFS_CLIENT_BROWSE,
+   "Browse the configured NFS export for content."
    )
 #endif
 /* GENERATED REGION: menu throttle setting (see settings_def_menu_throttle.h). */

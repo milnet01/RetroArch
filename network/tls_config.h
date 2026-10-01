@@ -22,9 +22,8 @@
 RETRO_BEGIN_DECLS
 
 /* TLS certificate-verification policy for outbound HTTPS connections
- * (cloud sync, cheevos, online updater). Selected via
- * Settings -> Network -> Advanced -> TLS Verification and persisted as
- * settings->uints.tls_verify_mode.
+ * (cloud sync, cheevos, online updater), selected by the
+ * tls_verify_mode setting (settings->uints.tls_verify_mode).
  *
  * REQUIRED is 0 so a fresh / unset / default-initialised config lands on
  * the safe value. This numbering is RA-side; ssl_socket_set_verify_mode()

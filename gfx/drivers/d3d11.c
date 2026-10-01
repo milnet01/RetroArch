@@ -537,7 +537,26 @@ typedef struct
    IDXGIAdapter1 *current_adapter;
    IDXGIAdapter1 *adapters[D3D11_MAX_GPU_COUNT];
    d3d11_texture_t      luts[GFX_MAX_TEXTURES];
+
+   /* Streamed recording readback. While recording, every presented
+    * frame is copied from the back buffer into the next staging
+    * texture of this ring before Present; read_viewport maps the one
+    * copied D3D11_RECORD_RING frames ago without waiting on the GPU.
+    * Before this the recorder re-rendered the frame, created a fresh
+    * staging texture and mapped it with a blocking read, every frame. */
+#define D3D11_RECORD_RING 3
+   struct
+   {
+      D3D11Texture2D  staging[D3D11_RECORD_RING];
+      bool            valid[D3D11_RECORD_RING];
+      unsigned        index;
+      unsigned        dims;
+      DXGI_FORMAT     format;
+      bool            enable;
+   } record;
 } d3d11_video_t;
+
+static void d3d11_record_free(d3d11_video_t *d3d11);
 
 /* Sprite/font shader selection: HDR output uses the encoding
  * entries (driven by sprites.hdr_cb at PS slot b1); SDR uses the
@@ -1203,40 +1222,14 @@ static void d3d11_font_free(void* data, bool is_threaded)
    free(font);
 }
 
-static int d3d11_font_get_message_width(void* data, const char* msg, size_t msg_len, float scale)
+static int d3d11_font_get_message_width(void *data, const char *msg,
+      size_t msg_len, float scale)
 {
-   size_t i;
-   int delta_x                      = 0;
-   const struct font_glyph* glyph_q = NULL;
-   d3d11_font_t* font               = (d3d11_font_t*)data;
-   const struct font_glyph* (*get_glyph)(void*, uint32_t)
-                                    = font->font_driver->get_glyph;
-   void *font_data                  = font->font_data;
-
+   d3d11_font_t *font = (d3d11_font_t*)data;
    if (!font)
       return 0;
-
-   glyph_q = get_glyph(font_data, '?');
-
-   for (i = 0; i < msg_len; i++)
-   {
-      const struct font_glyph *glyph;
-      const char* msg_tmp = &msg[i];
-      unsigned    code    = utf8_walk(&msg_tmp);
-      unsigned    skip    = msg_tmp - &msg[i];
-
-      if (skip > 1)
-         i += skip - 1;
-
-      /* Do something smarter here ... */
-      if (!(glyph = get_glyph(font_data, code)))
-         if (!(glyph = glyph_q))
-            continue;
-
-      delta_x += glyph->advance_x;
-   }
-
-   return delta_x * scale;
+   return font_renderer_get_message_width(font->font_driver,
+         font->font_data, msg, msg_len, scale);
 }
 
 /* Update only the atlas dirty rectangle of the A8 font texture:
@@ -1465,184 +1458,133 @@ static void d3d11_font_render_msg(
 
    v = (d3d11_sprite_t*)mapped_vbo.pData + start_offset;
 
-   /* Prepare a sprite template for the constant fields.
-    * params.scaling (1.0f) and params.rotation (0.0f) are identical for
-    * every glyph; colors are identical within a pass.  We memcpy this
-    * template per glyph instead of doing 6 individual stores. */
-
-   /* Single-pass emit: walk the message once, emitting
-    * shadow + foreground glyphs together per line.
-    *
-    * For RIGHT/CENTER alignment, emit glyphs at the base lx
-    * first, then retroactively shift pos.x for the line.  This fuses
-    * the measurement and emit passes — each glyph is looked up once. */
+   /* Each line's shadow sprites go ahead of its glyph sprites, so the
+    * shadows draw behind the text. With a shadow the line is measured
+    * first: knowing its glyph count, every sprite is written straight
+    * to its slot - shadow k at v_line + k, glyph k at v_line + n + k.
+    * Right and centred lines are shifted once their advance is known,
+    * and their shadows taken from the shifted glyphs. */
    {
-      const char *line_start = msg;
-      int lines              = 0;
+      d3d11_sprite_t *v_line = v;
+      unsigned n             = 0;
+      unsigned k             = 0;
+      bool line_ok           = false;
+      int lx                 = base_lx;
+      int fg_ly              = 0;
+      int fx                 = 0;
+      int fy                 = 0;
+      int sx                 = 0;
+      int sy                 = 0;
       int capacity           = font->block
          ? (int)(font->acc_cap - start_offset) : d3d11->sprites.capacity;
       bool need_align        = (text_align == TEXT_ALIGN_RIGHT
                                  || text_align == TEXT_ALIGN_CENTER);
 
-      for (;;)
-      {
-         const char *delim   = line_start;
-         const char *line_end;
-         size_t line_len;
+#define D3D11_FONT_SPRITE(dst, px, py, glyph, col) \
+      do \
+      { \
+         (dst)->pos.x           = ((px) + (glyph)->draw_offset_x * scale) * inv_vp_w; \
+         (dst)->pos.y           = ((py) + (glyph)->draw_offset_y * scale) * inv_vp_h; \
+         (dst)->pos.w           = (glyph)->width  * scale_inv_vp_w; \
+         (dst)->pos.h           = (glyph)->height * scale_inv_vp_h; \
+         (dst)->coords.u        = (glyph)->atlas_offset_x * inv_tex_w; \
+         (dst)->coords.v        = (glyph)->atlas_offset_y * inv_tex_h; \
+         (dst)->coords.w        = (glyph)->width  * inv_tex_w; \
+         (dst)->coords.h        = (glyph)->height * inv_tex_h; \
+         (dst)->params.scaling  = 1; \
+         (dst)->params.rotation = 0; \
+         (dst)->colors[0]       = (col); \
+         (dst)->colors[1]       = (col); \
+         (dst)->colors[2]       = (col); \
+         (dst)->colors[3]       = (col); \
+      } while (0)
 
-         while (*delim && *delim != '\n')
-            delim++;
-         line_len = (size_t)(delim - line_start);
-         line_end = line_start + line_len;
-
-         if (line_len > 0 && line_len <= (unsigned)capacity)
-         {
-            float fg_pos_y  = y - (float)lines * line_height;
-            int   fg_ly     = (int)roundf((1.0f - fg_pos_y) * height);
-            int   lx        = base_lx;
-
-            /* Emit shadow glyphs for this line (if drop shadow enabled).
-             * Uses the same glyph lookup as the foreground pass
-             * below — but only when need_align is false.  When alignment
-             * is needed, we defer shadow to after the alignment shift. */
-            if (have_drop && !need_align)
-            {
-               const char *scan = line_start;
-               int sx           = lx + drop_x_px;
-               int sy           = fg_ly + drop_y_px;
-               while (scan < line_end)
-               {
-                  const struct font_glyph *glyph;
-                  uint32_t code  = utf8_walk(&scan);
-
-                  if (!(glyph = get_glyph(font_data, code)))
-                     if (!(glyph = glyph_q))
-                        continue;
-
-                  v->pos.x           = (sx + glyph->draw_offset_x * scale) * inv_vp_w;
-                  v->pos.y           = (sy + glyph->draw_offset_y * scale) * inv_vp_h;
-                  v->pos.w           = glyph->width  * scale_inv_vp_w;
-                  v->pos.h           = glyph->height * scale_inv_vp_h;
-                  v->coords.u        = glyph->atlas_offset_x * inv_tex_w;
-                  v->coords.v        = glyph->atlas_offset_y * inv_tex_h;
-                  v->coords.w        = glyph->width  * inv_tex_w;
-                  v->coords.h        = glyph->height * inv_tex_h;
-                  v->params.scaling  = 1;
-                  v->params.rotation = 0;
-                  v->colors[0]       = color_dark;
-                  v->colors[1]       = color_dark;
-                  v->colors[2]       = color_dark;
-                  v->colors[3]       = color_dark;
-
-                  v++;
-
-                  sx                += glyph->advance_x * scale;
-                  sy                += glyph->advance_y * scale;
-               }
-            }
-
-            /* Emit foreground glyphs for this line. */
-            {
-               const char *scan       = line_start;
-               d3d11_sprite_t *v_line = v;
-               int fx                 = lx;
-               int fy                 = fg_ly;
-               while (scan < line_end)
-               {
-                  const struct font_glyph *glyph;
-                  uint32_t code  = utf8_walk(&scan);
-
-                  if (!(glyph = get_glyph(font_data, code)))
-                     if (!(glyph = glyph_q))
-                        continue;
-
-                  v->pos.x           = (fx + glyph->draw_offset_x * scale) * inv_vp_w;
-                  v->pos.y           = (fy + glyph->draw_offset_y * scale) * inv_vp_h;
-                  v->pos.w           = glyph->width  * scale_inv_vp_w;
-                  v->pos.h           = glyph->height * scale_inv_vp_h;
-                  v->coords.u        = glyph->atlas_offset_x * inv_tex_w;
-                  v->coords.v        = glyph->atlas_offset_y * inv_tex_h;
-                  v->coords.w        = glyph->width  * inv_tex_w;
-                  v->coords.h        = glyph->height * inv_tex_h;
-                  v->params.scaling  = 1;
-                  v->params.rotation = 0;
-                  v->colors[0]       = color;
-                  v->colors[1]       = color;
-                  v->colors[2]       = color;
-                  v->colors[3]       = color;
-
-                  v++;
-
-                  fx                += glyph->advance_x * scale;
-                  fy                += glyph->advance_y * scale;
-               }
-
-               /* Retroactive alignment shift — avoids a separate
-                * measurement pass.  The total advance is fx - lx (pixels).
-                * Shift every foreground sprite's pos.x in this line. */
-               if (need_align)
-               {
-                  float shift_vp;
-                  int advance_px = fx - lx;
-                  if (text_align == TEXT_ALIGN_RIGHT)
-                     shift_vp = -(float)(int)(advance_px * scale) * inv_vp_w;
-                  else /* TEXT_ALIGN_CENTER */
-                     shift_vp = -(float)((int)(advance_px * scale) / 2) * inv_vp_w;
-
-                  if (shift_vp != 0.0f)
-                  {
-                     d3d11_sprite_t *s;
-                     for (s = v_line; s < v; s++)
-                        s->pos.x += shift_vp;
-                  }
-
-                  /* Now emit shadow glyphs for this aligned line.
-                   * Shadow must appear before foreground in the VBO so
-                   * it draws behind the text.  Clone the foreground
-                   * sprites with shadow offset + color, then swap the
-                   * two blocks so shadow comes first. */
-                  if (have_drop)
-                  {
-                     float dx_vp = (float)drop_x_px * inv_vp_w;
-                     float dy_vp = (float)drop_y_px * inv_vp_h;
-                     unsigned fg_count = (unsigned)(v - v_line);
-                     d3d11_sprite_t *s;
-                     /* Append shadow copies after foreground (temporary) */
-                     for (s = v_line; s < v_line + fg_count; s++)
-                     {
-                        d3d11_sprite_t tmp = *s;
-                        tmp.pos.x   += dx_vp;
-                        tmp.pos.y   += dy_vp;
-                        tmp.colors[0] = color_dark;
-                        tmp.colors[1] = color_dark;
-                        tmp.colors[2] = color_dark;
-                        tmp.colors[3] = color_dark;
-                        *v = tmp;
-                        v++;
-                     }
-                     /* Reorder: swap fg and shadow blocks in-place
-                      * so shadow draws first (painters order). */
-                     {
-                        unsigned i;
-                        d3d11_sprite_t *fg_start   = v_line;
-                        d3d11_sprite_t *shad_start = v_line + fg_count;
-                        for (i = 0; i < fg_count; i++)
-                        {
-                           d3d11_sprite_t tmp = fg_start[i];
-                           fg_start[i]        = shad_start[i];
-                           shad_start[i]      = tmp;
-                        }
-                     }
-                  }
-               }
-            }
-         }
-
-         if (!*delim)
-            break;
-         line_start = delim + 1;
-         lines++;
-      }
+#define FONT_LAYOUT_ALIGNED have_drop
+      /* An empty line, or one too long for the sprite buffer, is not
+       * looked up either */
+#define FONT_LAYOUT_SKIP(line, bytes) \
+      ((bytes) == 0 || (bytes) > (unsigned)capacity)
+#define FONT_LAYOUT_LINE(line, width, count, bytes) \
+      do \
+      { \
+         (void)(width); \
+         line_ok = ((bytes) > 0 && (bytes) <= (unsigned)capacity); \
+         fg_ly   = (int)roundf((1.0f - (y - (float)(line) * line_height)) \
+               * height); \
+         fx      = lx; \
+         fy      = fg_ly; \
+         sx      = lx + drop_x_px; \
+         sy      = fg_ly + drop_y_px; \
+         v_line  = v; \
+         n       = (count); \
+         k       = 0; \
+      } while (0)
+#define FONT_LAYOUT_GLYPH(glyph, pen_x, pen_y) \
+      do \
+      { \
+         /* This driver keeps its own truncating pen */ \
+         (void)(pen_x); \
+         (void)(pen_y); \
+         if (!line_ok) \
+            break; \
+         if (!have_drop) \
+            D3D11_FONT_SPRITE(v_line + k, fx, fy, glyph, color); \
+         else \
+         { \
+            D3D11_FONT_SPRITE(v_line + n + k, fx, fy, glyph, color); \
+            if (!need_align) \
+            { \
+               D3D11_FONT_SPRITE(v_line + k, sx, sy, glyph, color_dark); \
+               sx += (glyph)->advance_x * scale; \
+               sy += (glyph)->advance_y * scale; \
+            } \
+         } \
+         k++; \
+         fx += (glyph)->advance_x * scale; \
+         fy += (glyph)->advance_y * scale; \
+      } while (0)
+#define FONT_LAYOUT_LINE_END() \
+      do \
+      { \
+         d3d11_sprite_t *fg = have_drop ? v_line + n : v_line; \
+         if (!line_ok) \
+            break; \
+         /* Right and centred: shift the line by its advance */ \
+         if (need_align) \
+         { \
+            float shift_vp; \
+            int advance_px = fx - lx; \
+            if (text_align == TEXT_ALIGN_RIGHT) \
+               shift_vp = -(float)(int)(advance_px * scale) * inv_vp_w; \
+            else /* TEXT_ALIGN_CENTER */ \
+               shift_vp = -(float)((int)(advance_px * scale) / 2) * inv_vp_w; \
+            if (shift_vp != 0.0f) \
+            { \
+               unsigned j; \
+               for (j = 0; j < k; j++) \
+                  fg[j].pos.x += shift_vp; \
+            } \
+            if (have_drop) \
+            { \
+               unsigned j; \
+               float dx_vp = (float)drop_x_px * inv_vp_w; \
+               float dy_vp = (float)drop_y_px * inv_vp_h; \
+               for (j = 0; j < k; j++) \
+               { \
+                  v_line[j]            = fg[j]; \
+                  v_line[j].pos.x     += dx_vp; \
+                  v_line[j].pos.y     += dy_vp; \
+                  v_line[j].colors[0]  = color_dark; \
+                  v_line[j].colors[1]  = color_dark; \
+                  v_line[j].colors[2]  = color_dark; \
+                  v_line[j].colors[3]  = color_dark; \
+               } \
+            } \
+         } \
+         v = fg + k; \
+      } while (0)
+#include "../font_layout.h"
+#undef D3D11_FONT_SPRITE
    }
 
    total_count = (unsigned)(v
@@ -3174,6 +3116,7 @@ static void d3d11_gfx_free(void* data)
    Release(d3d11->retained);
    d3d11->retained = NULL;
    d3d11_hw_ring_free(d3d11);
+   d3d11_record_free(d3d11);
 
 
 #ifdef HAVE_OVERLAY
@@ -4232,6 +4175,11 @@ static void *d3d11_gfx_init(const video_info_t* video,
 
       video_driver_set_gpu_api_devices(GFX_CTX_DIRECT3D11_API, d3d11->gpu_list);
 
+      /* The device the index was chosen as, wherever the list now
+       * puts it */
+      gpu_index = video_driver_gpu_index_resolve(GFX_CTX_DIRECT3D11_API,
+            gpu_index, d3d11->gpu_list);
+
       if (0 <= gpu_index && gpu_index <= i && gpu_index < D3D11_MAX_GPU_COUNT)
       {
          RARCH_LOG("[D3D11] Using GPU #%d: \"%s\".\n", gpu_index, d3d11->gpu_list->elems[gpu_index].data);
@@ -4417,6 +4365,70 @@ static INLINE void d3d11_wait_for_vblank(d3d11_video_t* d3d11)
 
 /* Copies the current backbuffer into the retained texture, creating or
  * resizing that texture to match the swapchain when it does not. */
+static void d3d11_record_free(d3d11_video_t *d3d11)
+{
+   unsigned i;
+   for (i = 0; i < D3D11_RECORD_RING; i++)
+   {
+      Release(d3d11->record.staging[i]);
+      d3d11->record.staging[i] = NULL;
+      d3d11->record.valid[i]   = false;
+   }
+   d3d11->record.index  = 0;
+   d3d11->record.dims   = 0;
+   d3d11->record.enable = false;
+}
+
+/* Queue a copy of this frame's back buffer into the ring, before it is
+ * presented. Recreates the ring when the back buffer changes size or
+ * format. */
+static void d3d11_record_capture(d3d11_video_t *d3d11)
+{
+   D3D11Texture2D back_buffer = NULL;
+   D3D11_TEXTURE2D_DESC desc;
+   unsigned dims;
+
+   d3d11->swapChain->lpVtbl->GetBuffer(d3d11->swapChain, 0,
+         uuidof(ID3D11Texture2D), (void**)&back_buffer);
+   if (!back_buffer)
+      return;
+   back_buffer->lpVtbl->GetDesc(back_buffer, &desc);
+   dims = VIDEO_SCALE_PACK(desc.Width, desc.Height);
+
+   if (     !d3d11->record.enable
+         || d3d11->record.dims   != dims
+         || d3d11->record.format != desc.Format)
+   {
+      unsigned i;
+      d3d11_record_free(d3d11);
+      desc.Usage          = D3D11_USAGE_STAGING;
+      desc.BindFlags      = 0;
+      desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+      desc.MiscFlags      = 0;
+      for (i = 0; i < D3D11_RECORD_RING; i++)
+      {
+         if (FAILED(d3d11->device->lpVtbl->CreateTexture2D(d3d11->device,
+                     &desc, NULL, &d3d11->record.staging[i])))
+         {
+            RARCH_ERR("[D3D11] Recording staging texture failed.\n");
+            d3d11_record_free(d3d11);
+            Release(back_buffer);
+            return;
+         }
+      }
+      d3d11->record.dims   = dims;
+      d3d11->record.format = desc.Format;
+      d3d11->record.enable = true;
+   }
+
+   d3d11->context->lpVtbl->CopyResource(d3d11->context,
+         (D3D11Resource)d3d11->record.staging[d3d11->record.index],
+         (D3D11Resource)back_buffer);
+   d3d11->record.valid[d3d11->record.index] = true;
+   d3d11->record.index = (d3d11->record.index + 1) % D3D11_RECORD_RING;
+   Release(back_buffer);
+}
+
 static void d3d11_retain_backbuffer(d3d11_video_t *d3d11)
 {
    D3D11Texture2D back_buffer = NULL;
@@ -5896,6 +5908,14 @@ static bool d3d11_gfx_frame_body(
       d3d11->retained_dark  = 0;
    }
 
+   /* The recorder's copy of this frame, queued behind the render so
+    * the GPU does it in its own time; read_viewport picks it up frames
+    * later. Torn down when recording stops. */
+   if (video_info->gpu_recording)
+      d3d11_record_capture(d3d11);
+   else if (d3d11->record.enable)
+      d3d11_record_free(d3d11);
+
    if (vsync && d3d11->wait_for_vblank < 0)
    {
       d3d11->context->lpVtbl->Flush(d3d11->context);
@@ -6076,231 +6096,6 @@ static void d3d11_gfx_viewport_info(void* data, struct video_viewport* vp)
 }
 
 #ifdef HAVE_DXGI_HDR
-/* GPU path for HDR screenshot readback.
- *
- * Runs a single full-screen pass that samples the captured HDR backbuffer
- * and writes sRGB-encoded SDR into a B8G8R8A8_UNORM render target, then
- * copies that to a CPU-mappable staging texture and unswizzles into the
- * caller's BGR24 output.  Mirrors the Vulkan driver's hdr_to_sdr path
- * and the CPU implementation in dxgi_hdr_readback_to_bgr24() — either
- * one should produce visually identical screenshots.
- *
- * Returns false on any failure; the caller then falls back to the CPU
- * decoder so HDR screenshots still work even if the GPU path breaks
- * (driver PSO compile bug, OOM, unexpected state, etc.). */
-static bool d3d11_gpu_hdr_readback_to_bgr24(
-      d3d11_video_t* d3d11,
-      ID3D11Resource* src_backbuffer_res,
-      DXGI_FORMAT src_format,
-      unsigned full_width,
-      unsigned full_height,
-      unsigned vp_x, unsigned vp_y,
-      unsigned vp_w, unsigned vp_h,
-      uint8_t* buffer)
-{
-   ID3D11Device*        device      = d3d11->device;
-   ID3D11DeviceContext* context     = d3d11->context;
-   d3d11_shader_t*      hdr_shader  = &d3d11->shaders[VIDEO_SHADER_STOCK_HDR];
-   d3d11_texture_t      src_tex     = { 0 };
-   d3d11_texture_t      sdr_tex     = { 0 };
-   ID3D11Texture2D*     staging_tex = NULL;
-   ID3D11Resource*      staging_res = NULL;
-   ID3D11Resource*      sdr_res     = NULL;
-   D3D11_TEXTURE2D_DESC staging_desc;
-   D3D11_MAPPED_SUBRESOURCE map;
-   D3D11_VIEWPORT       vp;
-   D3D11_RECT           sc;
-   unsigned             hdr_mode;
-   unsigned             y, x;
-   UINT                 stride     = sizeof(d3d11_vertex_t);
-   UINT                 offset     = 0;
-   bool                 mapped     = false;
-   bool                 ret        = false;
-
-   if (src_format == DXGI_FORMAT_R10G10B10A2_UNORM)
-      hdr_mode = 1;
-   else if (src_format == DXGI_FORMAT_R16G16B16A16_FLOAT)
-      hdr_mode = 2;
-   else
-      return false;
-
-   /* Lazy compile of the readback pixel shader.  Only pays the cost
-    * the first time a screenshot is taken with HDR enabled. */
-   if (!d3d11->hdr.ps_readback)
-   {
-      static const char shader_src[] =
-#include "d3d_shaders/hdr_sm5.hlsl.h"
-         ;
-      D3DBlob ps_code = NULL;
-      if (!d3d_compile(shader_src, sizeof(shader_src), NULL,
-               "PSMainToSDR", "ps_5_0", &ps_code) || !ps_code)
-      {
-         RARCH_ERR("[D3D11] Failed to compile PSMainToSDR for HDR readback.\n");
-         return false;
-      }
-      if (FAILED(device->lpVtbl->CreatePixelShader(device,
-                  ps_code->lpVtbl->GetBufferPointer(ps_code),
-                  ps_code->lpVtbl->GetBufferSize(ps_code),
-                  NULL, &d3d11->hdr.ps_readback)))
-      {
-         ps_code->lpVtbl->Release(ps_code);
-         RARCH_ERR("[D3D11] Failed to create readback PS.\n");
-         return false;
-      }
-      ps_code->lpVtbl->Release(ps_code);
-   }
-
-   /* HDR-format intermediate source: a shader-readable copy of the
-    * swapchain backbuffer.  (The swapchain itself is created with
-    * RENDER_TARGET_OUTPUT only and cannot be bound as an SRV.) */
-   src_tex.desc.Width     = full_width;
-   src_tex.desc.Height    = full_height;
-   src_tex.desc.Format    = src_format;
-   src_tex.desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-   if (!d3d11_init_texture(device, &src_tex))
-      goto cleanup;
-
-   context->lpVtbl->CopyResource(context,
-         (ID3D11Resource*)src_tex.handle, src_backbuffer_res);
-
-   /* SDR render target: receives the tonemap output. */
-   sdr_tex.desc.Width     = full_width;
-   sdr_tex.desc.Height    = full_height;
-   sdr_tex.desc.Format    = DXGI_FORMAT_B8G8R8A8_UNORM;
-   sdr_tex.desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-   if (!d3d11_init_texture(device, &sdr_tex))
-      goto cleanup;
-
-   /* Populate the UBO with readback-specific values and push. */
-   {
-      const float          prev_it = d3d11->hdr.ubo_values.inverse_tonemap;
-      const float          prev_h  = d3d11->hdr.ubo_values.hdr10;
-      const unsigned       prev_m  = d3d11->hdr.ubo_values.hdr_mode;
-      const float          prev_sc = d3d11->hdr.ubo_values.scanlines;
-      D3D11_MAPPED_SUBRESOURCE mapped_ubo;
-
-      d3d11->hdr.ubo_values.inverse_tonemap = 0.0f;
-      d3d11->hdr.ubo_values.hdr10           = 0.0f;
-      d3d11->hdr.ubo_values.hdr_mode        = hdr_mode;
-      d3d11->hdr.ubo_values.scanlines       = 0.0f;
-
-      if (SUCCEEDED(context->lpVtbl->Map(context,
-                  (ID3D11Resource*)d3d11->hdr.ubo, 0,
-                  D3D11_MAP_WRITE_DISCARD, 0, &mapped_ubo)))
-      {
-         *(dxgi_hdr_uniform_t*)mapped_ubo.pData = d3d11->hdr.ubo_values;
-         context->lpVtbl->Unmap(context,
-               (ID3D11Resource*)d3d11->hdr.ubo, 0);
-      }
-
-      d3d11->hdr.ubo_values.inverse_tonemap = prev_it;
-      d3d11->hdr.ubo_values.hdr10           = prev_h;
-      d3d11->hdr.ubo_values.hdr_mode        = prev_m;
-      d3d11->hdr.ubo_values.scanlines       = prev_sc;
-   }
-
-   /* Bind state: VS / IL / GS from the HDR stock shader, PS from our
-    * readback shader. */
-   context->lpVtbl->IASetInputLayout(context, hdr_shader->layout);
-   context->lpVtbl->VSSetShader(context, hdr_shader->vs, NULL, 0);
-   context->lpVtbl->PSSetShader(context, d3d11->hdr.ps_readback, NULL, 0);
-   context->lpVtbl->GSSetShader(context, hdr_shader->gs, NULL, 0);
-   context->lpVtbl->IASetPrimitiveTopology(context,
-         D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-
-   context->lpVtbl->VSSetConstantBuffers(context, 0, 1, &d3d11->hdr.ubo);
-   context->lpVtbl->PSSetConstantBuffers(context, 0, 1, &d3d11->hdr.ubo);
-   context->lpVtbl->PSSetShaderResources(context, 0, 1, &src_tex.view);
-   context->lpVtbl->PSSetSamplers(context, 0, 1,
-         &d3d11->samplers[RARCH_FILTER_UNSPEC][RARCH_WRAP_DEFAULT]);
-
-   context->lpVtbl->IASetVertexBuffers(context, 0, 1,
-         &d3d11->frame.vbo, &stride, &offset);
-
-   context->lpVtbl->OMSetRenderTargets(context, 1, &sdr_tex.rt_view, NULL);
-   context->lpVtbl->OMSetBlendState(context, d3d11->blend_disable, NULL, 0xFFFFFFFF);
-
-   vp.TopLeftX = 0.0f;
-   vp.TopLeftY = 0.0f;
-   vp.Width    = (float)full_width;
-   vp.Height   = (float)full_height;
-   vp.MinDepth = 0.0f;
-   vp.MaxDepth = 1.0f;
-   sc.left     = 0;
-   sc.top      = 0;
-   sc.right    = (LONG)full_width;
-   sc.bottom   = (LONG)full_height;
-   context->lpVtbl->RSSetViewports(context, 1, &vp);
-   context->lpVtbl->RSSetScissorRects(context, 1, &sc);
-   context->lpVtbl->RSSetState(context, d3d11->scissor_disabled);
-
-   context->lpVtbl->Draw(context, 4, 0);
-
-   /* Unbind SRV before we may read from the same texture as a source
-    * for anything else (and to stop D3D11 complaining about RTV/SRV
-    * aliasing if anything upstream uses the same slot). */
-   {
-      ID3D11ShaderResourceView* null_srv = NULL;
-      context->lpVtbl->PSSetShaderResources(context, 0, 1, &null_srv);
-   }
-
-   /* Staging copy of the SDR RT. */
-   staging_desc                = sdr_tex.desc;
-   staging_desc.MipLevels      = 1;
-   staging_desc.BindFlags      = 0;
-   staging_desc.MiscFlags      = 0;
-   staging_desc.Usage          = D3D11_USAGE_STAGING;
-   staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-   if (FAILED(device->lpVtbl->CreateTexture2D(device, &staging_desc,
-               NULL, &staging_tex)))
-      goto cleanup;
-
-#ifdef __cplusplus
-   staging_tex->lpVtbl->QueryInterface(staging_tex, IID_ID3D11Resource, (void**)&staging_res);
-   sdr_tex.handle->lpVtbl->QueryInterface(sdr_tex.handle, IID_ID3D11Resource, (void**)&sdr_res);
-#else
-   staging_tex->lpVtbl->QueryInterface(staging_tex, &IID_ID3D11Resource, (void**)&staging_res);
-   sdr_tex.handle->lpVtbl->QueryInterface(sdr_tex.handle, &IID_ID3D11Resource, (void**)&sdr_res);
-#endif
-   context->lpVtbl->CopyResource(context, staging_res, sdr_res);
-
-   if (FAILED(context->lpVtbl->Map(context, staging_res, 0,
-               D3D11_MAP_READ, 0, &map)))
-      goto cleanup;
-   mapped = true;
-
-   /* BGRA8 -> BGR24, bottom-up, clamped to viewport. */
-   {
-      const uint8_t* src_row = (const uint8_t*)map.pData + (size_t)map.RowPitch * vp_y;
-      for (y = 0; y < vp_h; y++, src_row += map.RowPitch)
-      {
-         uint8_t* dst = buffer + 3 * (size_t)(vp_h - y - 1) * vp_w;
-         for (x = 0; x < vp_w; x++)
-         {
-            dst[3 * x + 0] = src_row[4 * (x + vp_x) + 0];
-            dst[3 * x + 1] = src_row[4 * (x + vp_x) + 1];
-            dst[3 * x + 2] = src_row[4 * (x + vp_x) + 2];
-         }
-      }
-   }
-   ret = true;
-
-cleanup:
-   if (mapped)
-      context->lpVtbl->Unmap(context, staging_res, 0);
-   if (staging_res)
-      staging_res->lpVtbl->Release(staging_res);
-   if (sdr_res)
-      sdr_res->lpVtbl->Release(sdr_res);
-   if (staging_tex)
-      staging_tex->lpVtbl->Release(staging_tex);
-   d3d11_release_texture(&sdr_tex);
-   d3d11_release_texture(&src_tex);
-   return ret;
-}
-#endif /* HAVE_DXGI_HDR */
-
-#ifdef HAVE_DXGI_HDR
 /* Native HDR screenshot read-back: copies the presented HDR backbuffer
  * raw (no tone-map) and converts to 48-bit RGB via the shared
  * dxgi_hdr_readback_to_rgb16 decoder, mirroring the vulkan and d3d12
@@ -6421,75 +6216,48 @@ static bool d3d11_gfx_read_viewport_hdr(void *data, uint16_t *buffer,
 static bool d3d11_gfx_read_viewport(void* data, uint8_t* buffer, bool is_idle)
 {
    d3d11_video_t* d3d11 = (d3d11_video_t*)data;
-   ID3D11Texture2D* BackBuffer = NULL;
-   DXGISwapChain m_SwapChain;
-   ID3D11Texture2D* BackBufferStagingTexture = NULL;
-   ID3D11Resource* BackBufferStaging = NULL;
-   ID3D11Resource* BackBufferResource = NULL;
+   D3D11Texture2D staging;
    D3D11_TEXTURE2D_DESC StagingDesc;
    D3D11_MAPPED_SUBRESOURCE Map;
    const uint8_t* BackBufferData;
    uint8_t* bufferRow;
+   unsigned slot;
    uint32_t y;
    uint32_t x;
-   bool ret = false;
+   bool ret = true;
    HRESULT hr;
+
+   (void)is_idle;
 
    if (!d3d11)
       return false;
 
-   /* Get the back buffer. */
-   m_SwapChain = d3d11->swapChain;
-#ifdef __cplusplus
-   m_SwapChain->lpVtbl->GetBuffer(m_SwapChain, 0, IID_ID3D11Texture2D, (void**)(&BackBuffer));
-#else
-   m_SwapChain->lpVtbl->GetBuffer(m_SwapChain, 0, &IID_ID3D11Texture2D, (void*)(&BackBuffer));
-#endif
-
-   if (!BackBuffer)
+   /* Nothing captured yet: the frame after recording starts queues
+    * the first copy, and the ring fills over the next few frames. The
+    * recorder treats false as "not this frame" and tries again. */
+   if (!d3d11->record.enable)
       return false;
 
-   if (!is_idle)
-   {
-      video_driver_cached_frame();
-   }
+   slot    = d3d11->record.index; /* the oldest: copied RING frames ago */
+   staging = d3d11->record.staging[slot];
+   if (!d3d11->record.valid[slot] || !staging)
+      return false;
 
-   /* Set the staging desc. */
-   BackBuffer->lpVtbl->GetDesc(BackBuffer, &StagingDesc);
-   StagingDesc.Usage = D3D11_USAGE_STAGING;
-   StagingDesc.BindFlags = 0;
-   StagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-   StagingDesc.MiscFlags = 0;
-
-   /* Create the back buffer staging texture. */
-   hr = d3d11->device->lpVtbl->CreateTexture2D(d3d11->device, &StagingDesc, NULL, &BackBufferStagingTexture);
-   if (FAILED(hr) || !BackBufferStagingTexture)
-   {
-      RARCH_ERR("[D3D11] Screenshot staging texture failed: 0x%08lx.\n", (unsigned long)hr);
-      goto cleanup;
-   }
-
-#ifdef __cplusplus
-   BackBufferStagingTexture->lpVtbl->QueryInterface(BackBufferStagingTexture, IID_ID3D11Resource, (void**)&BackBufferStaging);
-   BackBuffer->lpVtbl->QueryInterface(BackBuffer, IID_ID3D11Resource, (void**)&BackBufferResource);
-#else
-   BackBufferStagingTexture->lpVtbl->QueryInterface(BackBufferStagingTexture, &IID_ID3D11Resource, (void**)&BackBufferStaging);
-   BackBuffer->lpVtbl->QueryInterface(BackBuffer, &IID_ID3D11Resource, (void**)&BackBufferResource);
-#endif
-
-   if (!BackBufferStaging || !BackBufferResource)
-      goto cleanup;
-
-   /* Copy back buffer to back buffer staging. */
-   d3d11->context->lpVtbl->CopyResource(d3d11->context, BackBufferStaging, BackBufferResource);
-
-   /* Map the staging texture for CPU read. */
-   hr = d3d11->context->lpVtbl->Map(d3d11->context, BackBufferStaging, 0, D3D11_MAP_READ, 0, &Map);
+   /* A map that would wait for the GPU is declined instead; the copy
+    * is read on a later frame, never waited for. */
+   hr = d3d11->context->lpVtbl->Map(d3d11->context, (D3D11Resource)staging,
+         0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &Map);
+   if (hr == DXGI_ERROR_WAS_STILL_DRAWING)
+      return false;
    if (FAILED(hr))
    {
-      RARCH_ERR("[D3D11] Screenshot staging map failed: 0x%08lx.\n", (unsigned long)hr);
-      goto cleanup;
+      RARCH_ERR("[D3D11] Recording staging map failed: 0x%08lx.\n", (unsigned long)hr);
+      d3d11->record.valid[slot] = false;
+      return false;
    }
+   d3d11->record.valid[slot] = false;
+
+   staging->lpVtbl->GetDesc(staging, &StagingDesc);
    BackBufferData = (const uint8_t*)Map.pData;
 
    {
@@ -6507,8 +6275,6 @@ static bool d3d11_gfx_read_viewport(void* data, uint8_t* buffer, bool is_idle)
 
       dxgi_readback_clamp_window(StagingDesc.Width, StagingDesc.Height,
             &vp_x, &vp_y, &vp_width, &vp_height);
-
-      ret = true;
 
       switch (StagingDesc.Format)
       {
@@ -6545,19 +6311,11 @@ static bool d3d11_gfx_read_viewport(void* data, uint8_t* buffer, bool is_idle)
 #ifdef HAVE_DXGI_HDR
          case DXGI_FORMAT_R10G10B10A2_UNORM:
          case DXGI_FORMAT_R16G16B16A16_FLOAT:
-            /* HDR10 PQ or scRGB.  Try the GPU tonemap pass first — it's
-             * faster and avoids the per-pixel CPU cost at 4K — and fall
-             * back to the CPU decoder on any failure so HDR screenshots
-             * still work even if the GPU path breaks (driver PSO compile
-             * bug, OOM, etc.). */
-            if (d3d11_gpu_hdr_readback_to_bgr24(
-                     d3d11, BackBufferResource, StagingDesc.Format,
-                     StagingDesc.Width, StagingDesc.Height,
-                     vp_x, vp_y, vp_width, vp_height,
-                     buffer))
-               break;
-
-            RARCH_WARN("[D3D11] GPU HDR readback failed, falling back to CPU.\n");
+            /* HDR10 PQ or scRGB, decoded on the CPU from the staging
+             * copy. The GPU tonemap pass needs a shader-readable
+             * source, which a staging texture is not; the screenshot
+             * path keeps it, this streamed path does not wait on the
+             * GPU for anything. */
             if (!dxgi_hdr_readback_to_bgr24(
                      StagingDesc.Format,
                      Map.pData, Map.RowPitch,
@@ -6576,19 +6334,7 @@ static bool d3d11_gfx_read_viewport(void* data, uint8_t* buffer, bool is_idle)
       }
    }
 
-   d3d11->context->lpVtbl->Unmap(d3d11->context, BackBufferStaging, 0);
-
-   /* Release the backbuffer staging. */
-cleanup:
-   if (BackBufferStaging)
-      BackBufferStaging->lpVtbl->Release(BackBufferStaging);
-   if (BackBufferResource)
-      BackBufferResource->lpVtbl->Release(BackBufferResource);
-   if (BackBufferStagingTexture)
-      BackBufferStagingTexture->lpVtbl->Release(BackBufferStagingTexture);
-   if (BackBuffer)
-      BackBuffer->lpVtbl->Release(BackBuffer);
-
+   d3d11->context->lpVtbl->Unmap(d3d11->context, (D3D11Resource)staging, 0);
    return ret;
 }
 

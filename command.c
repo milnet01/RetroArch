@@ -57,6 +57,8 @@
 #include "autosave.h"
 #include "command.h"
 #include "core_info.h"
+#include "playlist.h"
+#include <queues/task_queue.h>
 #include "cheat_manager.h"
 #include "content.h"
 #include "dynamic.h"
@@ -138,8 +140,10 @@ static bool command_get_arg(const char *tok,
          if (*argument != ' ' && *argument != '\0')
             return false;
 
+         /* past the separating space; a bare command gets "", not the
+          * byte after its terminator */
          if (arg)
-            *arg = argument + 1;
+            *arg = *argument ? argument + 1 : argument;
 
          if (index)
             *index = i;
@@ -216,6 +220,34 @@ static void network_command_reply(command_t *cmd,
       (struct sockaddr*)&netcmd->cmd_source, netcmd->cmd_source_len);
 }
 
+typedef struct
+{
+   struct sockaddr_storage addr;
+   socklen_t addr_len;
+} command_network_dest_t;
+
+static void *network_command_reply_dest(command_t *cmd)
+{
+   command_network_t      *netcmd = (command_network_t*)cmd->userptr;
+   command_network_dest_t *dest   = (command_network_dest_t*)
+      malloc(sizeof(*dest));
+   if (dest)
+   {
+      dest->addr     = netcmd->cmd_source;
+      dest->addr_len = netcmd->cmd_source_len;
+   }
+   return dest;
+}
+
+static void network_command_reply_to(command_t *cmd, void *data,
+   const char *s, size_t len)
+{
+   command_network_t      *netcmd = (command_network_t*)cmd->userptr;
+   command_network_dest_t *dest   = (command_network_dest_t*)data;
+   sendto(netcmd->net_fd, s, len, 0,
+      (struct sockaddr*)&dest->addr, dest->addr_len);
+}
+
 static void network_command_free(command_t *handle)
 {
    command_network_t *netcmd = (command_network_t*)handle->userptr;
@@ -256,7 +288,7 @@ static void command_network_poll(command_t *handle)
    }
 }
 
-command_t* command_network_new(uint16_t port)
+command_t* command_network_new(uint16_t port, const char *bind_address)
 {
    struct addrinfo     *res  = NULL;
    command_t            *cmd = NULL;
@@ -277,21 +309,21 @@ command_t* command_network_new(uint16_t port)
    if (!(netcmd = (command_network_t*)calloc(1, sizeof(command_network_t))))
       goto error;
 
-   /* Bind to loopback only by default. The previous server=NULL bound
-    * via AI_PASSIVE to 0.0.0.0 -- with network_cmd_enable=true that
-    * exposed LOAD_CORE / WRITE_CORE_RAM / READ_CORE_MEMORY (RCE-class
-    * primitives) to anyone on the LAN. If you genuinely need to drive
-    * RetroArch from another host, prefer an SSH local-forward
-    * (`ssh -L 55355:localhost:55355 host`) over re-opening the LAN
-    * socket. A user-facing setting is roadmapped but intentionally not
-    * wired up here -- the safe default is the only fix that ships
-    * universally. */
-   fd = socket_init((void**)&res, port, "127.0.0.1",
+   /* An empty bind address means every interface (NULL server ->
+    * AI_PASSIVE -> 0.0.0.0), which is what this interface has always
+    * done. Anyone on that network can then send LOAD_CORE or
+    * WRITE_CORE_RAM, so users who only drive RetroArch from the same
+    * machine can set network_cmd_bind_address = "127.0.0.1". */
+   if (bind_address && !*bind_address)
+      bind_address = NULL;
+
+   fd = socket_init((void**)&res, port, bind_address,
          SOCKET_TYPE_DATAGRAM, AF_INET);
 
-   RARCH_LOG("[NetCMD] %s %hu (loopback only).\n",
+   RARCH_LOG("[NetCMD] %s %hu (%s).\n",
          msg_hash_to_str(MSG_BRINGING_UP_COMMAND_INTERFACE_ON_PORT),
-         (unsigned short)port);
+         (unsigned short)port,
+         bind_address ? bind_address : "all interfaces");
 
    if (fd < 0)
       goto error;
@@ -299,8 +331,10 @@ command_t* command_network_new(uint16_t port)
    netcmd->net_fd = fd;
    cmd->userptr   = netcmd;
    cmd->poll      = command_network_poll;
-   cmd->replier   = network_command_reply;
-   cmd->destroy   = network_command_free;
+   cmd->replier    = network_command_reply;
+   cmd->reply_dest = network_command_reply_dest;
+   cmd->reply_to   = network_command_reply_to;
+   cmd->destroy    = network_command_free;
 
    if (!socket_nonblock(netcmd->net_fd))
       goto error;
@@ -589,15 +623,54 @@ typedef struct
    int sfd;
    /* Client sockets */
    int userfd[MAX_USER_CONNECTIONS];
+   /* Which connection holds each slot: a closed descriptor's number
+    * is handed out again, so the number alone does not say. */
+   unsigned serial[MAX_USER_CONNECTIONS];
+   unsigned next_serial;
    /* Last received user socket */
    int last_fd;
+   unsigned last_serial;
 } command_uds_t;
+
+typedef struct
+{
+   int fd;
+   unsigned serial;
+} command_uds_dest_t;
 
 static void uds_command_reply(command_t *cmd,
       const char *s, size_t len)
 {
    command_uds_t *subcmd = (command_uds_t*)cmd->userptr;
    write(subcmd->last_fd, s, len);
+}
+
+static void *uds_command_reply_dest(command_t *cmd)
+{
+   command_uds_t      *subcmd = (command_uds_t*)cmd->userptr;
+   command_uds_dest_t *dest   = (command_uds_dest_t*)malloc(sizeof(*dest));
+   if (dest)
+   {
+      dest->fd     = subcmd->last_fd;
+      dest->serial = subcmd->last_serial;
+   }
+   return dest;
+}
+
+/* Only to the connection that asked: gone, the reply is dropped. */
+static void uds_command_reply_to(command_t *cmd, void *data,
+      const char *s, size_t len)
+{
+   int i;
+   command_uds_t      *subcmd = (command_uds_t*)cmd->userptr;
+   command_uds_dest_t *dest   = (command_uds_dest_t*)data;
+   for (i = 0; i < MAX_USER_CONNECTIONS; i++)
+      if (   subcmd->userfd[i] == dest->fd
+          && subcmd->serial[i] == dest->serial)
+      {
+         write(dest->fd, s, len);
+         return;
+      }
 }
 
 static void uds_command_free(command_t *handle)
@@ -641,8 +714,9 @@ static void command_uds_poll(command_t *handle)
 
       if (!err)
       {
-         buf[ret]        = '\0';
-         udscmd->last_fd = fd;
+         buf[ret]            = '\0';
+         udscmd->last_fd     = fd;
+         udscmd->last_serial = udscmd->serial[i];
 
          command_parse_msg(handle, buf);
          /* See command_generation: this object may be gone now. */
@@ -667,6 +741,7 @@ static void command_uds_poll(command_t *handle)
             if (udscmd->userfd[i] < 0)
             {
                udscmd->userfd[i] = fd;
+               udscmd->serial[i] = ++udscmd->next_serial;
                return;
             }
          }
@@ -717,6 +792,8 @@ command_t* command_uds_new(void)
    cmd->userptr         = subcmd;
    cmd->poll            = command_uds_poll;
    cmd->replier         = uds_command_reply;
+   cmd->reply_dest      = uds_command_reply_dest;
+   cmd->reply_to        = uds_command_reply_to;
    cmd->destroy         = uds_command_free;
    return cmd;
 }
@@ -724,6 +801,42 @@ command_t* command_uds_new(void)
 
 
 /* Routines used to invoke retroarch command ... */
+
+/* Runs @name with @arg (NULL or "" for none) as if it had arrived as a
+ * command line on @handle: replies go to @handle's replier, a hotkey
+ * presses on @handle for one frame. For interfaces that receive
+ * commands as structured requests rather than lines.
+ *
+ * Returns: false for an unknown command or one whose handler failed. */
+bool command_run(command_t *handle, const char *name, const char *arg)
+{
+   unsigned i;
+   for (i = 0; i < ARRAY_SIZE(action_map); i++)
+      if (string_is_equal(name, action_map[i].str))
+         return action_map[i].action(handle, arg ? arg : "");
+   for (i = 0; i < ARRAY_SIZE(map); i++)
+      if (string_is_equal(name, map[i].str))
+      {
+         if (map[i].id == RARCH_MENU_TOGGLE)
+            command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+         else
+            handle->state[map[i].id] = true;
+         return true;
+      }
+   return false;
+}
+
+const struct cmd_action_map *command_action_list(size_t *count)
+{
+   *count = ARRAY_SIZE(action_map);
+   return action_map;
+}
+
+const struct cmd_map *command_hotkey_list(size_t *count)
+{
+   *count = ARRAY_SIZE(map);
+   return map;
+}
 
 #ifdef HAVE_NETWORK_CMD
 static bool command_verify(const char *cmd)
@@ -916,47 +1029,78 @@ bool command_save_state_slot(command_t* cmd, const char* arg)
    return ret;
 }
 
+#ifdef HAVE_BSV_MOVIE
+/* The reply owed by a command that returned before it could answer:
+ * PLAY_REPLAY_SLOT's carries the replay handle, which the movie
+ * task's callback installs.  command_owed_reply_poll() sends it once
+ * the task is through.  Dropped, unsent, if the interface that asked
+ * is torn down first (the command generation moves). */
+static struct
+{
+   command_t *cmd;
+   void      *dest;
+   unsigned   gen;
+   bool       owed;
+} command_owed;
+#endif
+
+void command_owed_reply_poll(void)
+{
+#ifdef HAVE_BSV_MOVIE
+   char reply[128];
+
+   if (!command_owed.owed || movie_playback_start_in_progress(NULL))
+      return;
+
+   snprintf(reply, sizeof(reply), "PLAY_REPLAY_SLOT %lld",
+         (long long)movie_playback_start_identifier());
+   command_post_state_loaded();
+
+   if (input_driver_command_generation() == command_owed.gen)
+   {
+      command_t *cmd = command_owed.cmd;
+      if (cmd->reply_to && command_owed.dest)
+         cmd->reply_to(cmd, command_owed.dest, reply, strlen(reply));
+      else
+         cmd->replier(cmd, reply, strlen(reply));
+   }
+   free(command_owed.dest);
+   command_owed.dest = NULL;
+   command_owed.cmd  = NULL;
+   command_owed.owed = false;
+#endif
+}
+
 bool command_play_replay_slot(command_t *cmd, const char *arg)
 {
 #ifdef HAVE_BSV_MOVIE
    char replay_path[16384];
-   char reply[128]              = "";
    unsigned int slot            = (unsigned int)strtoul(arg, NULL, 10);
    bool savestates_enabled      = core_info_current_supports_savestate();
    bool ret                     = false;
    replay_path[0]               = '\0';
-   if (savestates_enabled)
+   /* One playback start at a time: the owed reply names its handle. */
+   if (savestates_enabled && !command_owed.owed)
    {
       size_t info_size;
       runloop_get_replay_path(replay_path, sizeof(replay_path), slot);
 
       info_size          = core_serialize_size();
-      savestates_enabled = (info_size > 0);
+      if (info_size > 0)
+         ret = movie_start_playback(input_state_get_ptr(), replay_path);
    }
-   if (savestates_enabled)
+   if (!ret)
    {
-      ret = movie_start_playback(input_state_get_ptr(), replay_path);
-      if (ret)
-      {
-         input_driver_state_t *input_st = input_state_get_ptr();
-         /* The reply carries the replay handle, which the movie
-          * task's callback installs, so this still waits - but only
-          * for that task.  A NULL condition means "until the queue
-          * is empty", which made a network command block on every
-          * unrelated scan or download in flight. */
-         task_queue_wait(movie_playback_start_in_progress, NULL);
-         if (input_st->bsv_movie_state_next_handle)
-            snprintf(reply, sizeof(reply) - 1, "PLAY_REPLAY_SLOT %lld", (long long)(input_st->bsv_movie_state_next_handle->identifier));
-         else
-            snprintf(reply, sizeof(reply) - 1, "PLAY_REPLAY_SLOT 0");
-         command_post_state_loaded();
-      }
+      cmd->replier(cmd, "", 0);
+      return false;
    }
-   else
-      ret = false;
-
-   cmd->replier(cmd, reply, strlen(reply));
-   return ret;
+   /* Answered from the frame loop once the movie task has installed
+    * the handle, rather than holding the frame until it has. */
+   command_owed.cmd  = cmd;
+   command_owed.dest = cmd->reply_dest ? cmd->reply_dest(cmd) : NULL;
+   command_owed.gen  = input_driver_command_generation();
+   command_owed.owed = true;
+   return true;
 #else
    return false;
 #endif
@@ -1032,15 +1176,11 @@ bool command_load_savefiles(command_t *cmd, const char* arg)
    return ret;
 }
 
-/* Cap nbytes for READ_CORE_RAM / READ_CORE_MEMORY before we use it
- * in `40 + nbytes * 3`. The multiplication is `unsigned int` and
- * wraps at ~1.4G; an attacker-controlled nbytes near 0x55555558
- * would wrap to a tiny alloc with the for-loop below still writing
- * 3 bytes per iteration up to nbytes -- a remote heap-write
- * primitive when the network command socket is reachable. 16 KiB is
- * more than any legitimate read needs (RetroAchievements and
- * netplay-debug use small windows), and well below the integer-
- * overflow threshold. */
+/* Largest byte count READ_CORE_RAM / READ_CORE_MEMORY will serve. The
+ * reply carries 3 characters per byte and goes out as one UDP datagram,
+ * so anything much bigger could not be delivered anyway; the cap also
+ * keeps `nbytes * 3` far from wrapping in unsigned int, which a request
+ * of ~1431655766 bytes did, allocating a few bytes and writing 4 GiB. */
 #define COMMAND_READ_NBYTES_MAX 16384u
 
 #if defined(HAVE_CHEEVOS)
@@ -1058,10 +1198,18 @@ bool command_read_ram(command_t *cmd, const char *arg)
    {
       size_t _len             = 0;
       char *reply_at          = NULL;
-      const uint8_t *data     = NULL;
+      unsigned int avail      = 0;
+      const uint8_t *data     = rcheevos_patch_address_avail(addr, &avail);
+      unsigned int alloc_size;
+      char *reply;
+
+      /* Never read past the end of the region the address lives in. */
+      if (data && nbytes > avail)
+         nbytes = avail;
+
       /* We allocate more than needed, saving 20 bytes is not really relevant */
-      unsigned int alloc_size = 40 + nbytes * 3;
-      char *reply             = (char*)malloc(alloc_size);
+      alloc_size = 40 + nbytes * 3;
+      reply      = (char*)malloc(alloc_size);
       
       if (!reply)
       {
@@ -1073,7 +1221,7 @@ bool command_read_ram(command_t *cmd, const char *arg)
       reply_at                = reply + snprintf(
             reply, alloc_size - 1, "READ_CORE_RAM" " %x", addr);
 
-      if ((data = rcheevos_patch_address(addr)))
+      if (data && nbytes > 0)
       {
          size_t i;
          for (i = 0; i < nbytes; i++)
@@ -1083,7 +1231,7 @@ bool command_read_ram(command_t *cmd, const char *arg)
       }
       else
       {
-         strlcpy_lit(reply_at, " -1\n", sizeof(reply) - strlen(reply));
+         strlcpy_lit(reply_at, " -1\n", alloc_size - (size_t)(reply_at - reply));
          _len = reply_at + STRLEN_CONST(" -1\n") - reply;
       }
       cmd->replier(cmd, reply, _len);
@@ -1092,18 +1240,11 @@ bool command_read_ram(command_t *cmd, const char *arg)
    return true;
 }
 
-/* Cap the byte count for WRITE_CORE_RAM. rcheevos_patch_address
- * returns a pointer with no length, so we cannot bound against the
- * actual region size from here. The legitimate use is short cheat
- * pokes (a few bytes per command). 4096 is generous and prevents
- * unbounded heap-write past the descriptor. */
-#define COMMAND_WRITE_RAM_MAX_BYTES 4096u
-
 bool command_write_ram(command_t *cmd, const char *arg)
 {
    unsigned int addr    = (unsigned int)strtoul(arg, (char**)&arg, 16);
-   uint8_t *data        = (uint8_t *)rcheevos_patch_address(addr);
-   unsigned int written = 0;
+   unsigned int avail   = 0;
+   uint8_t *data        = (uint8_t *)rcheevos_patch_address_avail(addr, &avail);
 
    if (!data)
       return false;
@@ -1114,18 +1255,348 @@ bool command_write_ram(command_t *cmd, const char *arg)
       rcheevos_pause_hardcore();
    }
 
-   while (*arg && written < COMMAND_WRITE_RAM_MAX_BYTES)
+   /* Stop at the end of the region: the payload length is whatever the
+    * sender put in the datagram. */
+   while (*arg && avail)
    {
       *data = strtoul(arg, (char**)&arg, 16);
       data++;
-      written++;
+      avail--;
    }
-   if (written == COMMAND_WRITE_RAM_MAX_BYTES && *arg)
-      RARCH_WARN("[Command] WRITE_CORE_RAM truncated at %u bytes; "
-            "remainder of payload ignored.\n", written);
+   if (*arg)
+      RARCH_WARN("[Command] WRITE_CORE_RAM at %x reached the end of the "
+            "memory region; remainder of the payload ignored.\n", addr);
    return true;
 }
 #endif
+
+/* ---- Queries for clients that browse and launch content --------- */
+
+/* A reply larger than one UDP datagram cannot go back over the network
+ * command port; lists stop short of it and say where to go on. */
+#define COMMAND_LIST_REPLY_MAX 60000
+#define COMMAND_PLAYLIST_PAGE  200
+
+/* LIST_CORES
+ *
+ * The installed cores, one per line: display name, a tab, the path
+ * LOAD_CONTENT takes. The list is already in memory. */
+bool command_list_cores(command_t *cmd, const char *arg)
+{
+   core_info_list_t *list = NULL;
+   size_t i, len = 0;
+   char  *reply;
+
+   if (!(reply = (char*)malloc(COMMAND_LIST_REPLY_MAX + 64)))
+      return false;
+   reply[0] = '\0';
+   if (core_info_get_list(&list) && list)
+      for (i = 0; i < list->count; i++)
+      {
+         const core_info_t *ci = &list->list[i];
+         int n;
+         if (!ci->path)
+            continue;
+         n = snprintf(reply + len, COMMAND_LIST_REPLY_MAX - len, "%s\t%s\n",
+               ci->display_name ? ci->display_name : "", ci->path);
+         if (n < 0 || (size_t)n >= COMMAND_LIST_REPLY_MAX - len)
+         {
+            len += (size_t)snprintf(reply + len, 64, "MORE\n");
+            break;
+         }
+         len += (size_t)n;
+      }
+   if (!len)
+      len = strlcpy(reply, "LIST_CORES none\n", COMMAND_LIST_REPLY_MAX);
+   cmd->replier(cmd, reply, len);
+   free(reply);
+   return true;
+}
+
+/* LIST_PLAYLISTS and GET_PLAYLIST read files, which may be slow, so
+ * they answer from a task: the text is made on the task thread and sent
+ * from the callback, where the asking interface's reply_to takes it
+ * (the reply owed to one sender or one MCP request), or its replier
+ * when its replies all go one way. Dropped if the interfaces were
+ * re-created meanwhile. */
+struct command_query
+{
+   command_t *cmd;
+   void      *dest;
+   unsigned   gen;
+   size_t     first;           /* GET_PLAYLIST: first entry */
+   char      *reply;           /* made by the handler */
+   size_t     reply_len;
+   char       dir[PATH_MAX_LENGTH];
+   char       name[NAME_MAX_LENGTH];
+   bool       list_playlists;
+   /* the playlist format settings, taken on the main thread */
+   bool       old_format;
+   bool       compress;
+   bool       fuzzy_archive_match;
+   bool       portable_paths;
+   char       content_dir[DIR_MAX_LENGTH];
+};
+
+static void command_query_append(struct command_query *q, size_t *cap,
+      const char *s)
+{
+   size_t n = strlen(s);
+   if (!q->reply || q->reply_len + n + 1 > *cap)
+      return;
+   memcpy(q->reply + q->reply_len, s, n + 1);
+   q->reply_len += n;
+}
+
+static void command_query_handler(retro_task_t *task)
+{
+   struct command_query *q = (struct command_query*)task->state;
+   size_t cap              = COMMAND_LIST_REPLY_MAX;
+
+   if ((q->reply = (char*)malloc(cap + 1)))
+      q->reply[0] = '\0';
+
+   if (q->list_playlists)
+   {
+      struct string_list *files = dir_list_new(q->dir, "lpl",
+            false, false, false, false);
+      size_t i;
+      for (i = 0; files && i < files->size; i++)
+      {
+         char line[NAME_MAX_LENGTH + 2];
+         const char *base = path_basename(files->elems[i].data);
+         snprintf(line, sizeof(line), "%s\n", base);
+         if (q->reply_len + strlen(line) + 6 > cap)
+         {
+            command_query_append(q, &cap, "MORE\n");
+            break;
+         }
+         command_query_append(q, &cap, line);
+      }
+      if (files)
+         string_list_free(files);
+      if (!q->reply_len)
+         command_query_append(q, &cap, "LIST_PLAYLISTS none\n");
+   }
+   else
+   {
+      char path[PATH_MAX_LENGTH];
+      playlist_config_t config;
+      playlist_t *pl;
+
+      fill_pathname_join_special(path, q->dir, q->name, sizeof(path));
+      if (!string_ends_with_size(path, ".lpl", strlen(path), 4))
+         strlcat(path, ".lpl", sizeof(path));
+      config.capacity            = COLLECTION_SIZE;
+      config.old_format          = q->old_format;
+      config.compress            = q->compress;
+      config.fuzzy_archive_match = q->fuzzy_archive_match;
+      playlist_config_set_path(&config, path);
+      playlist_config_set_base_content_directory(&config,
+            q->portable_paths ? q->content_dir : NULL);
+
+      if (!path_is_valid(path) || !(pl = playlist_init(&config)))
+         command_query_append(q, &cap, "GET_PLAYLIST ERROR no such playlist\n");
+      else
+      {
+         size_t i, n = playlist_size(pl);
+         for (i = q->first; i < n; i++)
+         {
+            const struct playlist_entry *e = NULL;
+            char line[3 * PATH_MAX_LENGTH];
+            if (i - q->first >= COMMAND_PLAYLIST_PAGE)
+            {
+               snprintf(line, sizeof(line), "MORE %u\n", (unsigned)i);
+               command_query_append(q, &cap, line);
+               break;
+            }
+            playlist_get_index(pl, i, &e);
+            if (!e)
+               continue;
+            snprintf(line, sizeof(line), "%u\t%s\t%s\t%s\n", (unsigned)i,
+                  e->label     ? e->label     : "",
+                  e->path      ? e->path      : "",
+                  e->core_path ? e->core_path : "");
+            if (q->reply_len + strlen(line) + 16 > cap)
+            {
+               snprintf(line, sizeof(line), "MORE %u\n", (unsigned)i);
+               command_query_append(q, &cap, line);
+               break;
+            }
+            command_query_append(q, &cap, line);
+         }
+         if (!q->reply_len)
+            command_query_append(q, &cap, "GET_PLAYLIST empty\n");
+         playlist_free(pl);
+      }
+   }
+   task_set_progress(task, 100);
+   task_set_flags(task, RETRO_TASK_FLG_FINISHED, true);
+}
+
+static void command_query_callback(retro_task_t *task, void *task_data,
+      void *user_data, const char *error)
+{
+   struct command_query *q = (struct command_query*)task->state;
+   if (!q || !q->reply || input_driver_command_generation() != q->gen)
+      return;
+   if (q->cmd->reply_to && q->dest)
+      q->cmd->reply_to(q->cmd, q->dest, q->reply, q->reply_len);
+   else if (!q->cmd->reply_dest)
+      q->cmd->replier(q->cmd, q->reply, q->reply_len);
+}
+
+static void command_query_cleanup(retro_task_t *task)
+{
+   struct command_query *q = (struct command_query*)task->state;
+   if (!q)
+      return;
+   free(q->reply);
+   free(q->dest);
+   free(q);
+   task->state = NULL;
+}
+
+static bool command_query_push(command_t *cmd, bool list_playlists,
+      const char *arg)
+{
+   settings_t           *settings = config_get_ptr();
+   struct command_query *q;
+   retro_task_t         *task;
+
+   if (!(q = (struct command_query*)calloc(1, sizeof(*q))))
+      return false;
+   q->cmd            = cmd;
+   q->gen            = input_driver_command_generation();
+   q->list_playlists = list_playlists;
+   strlcpy(q->dir, settings->paths.directory_playlist, sizeof(q->dir));
+   q->old_format          = settings->bools.playlist_use_old_format;
+   q->compress            = settings->bools.playlist_compression;
+   q->fuzzy_archive_match = settings->bools.playlist_fuzzy_archive_match;
+   q->portable_paths      = settings->bools.playlist_portable_paths;
+   strlcpy(q->content_dir, settings->paths.directory_menu_content,
+         sizeof(q->content_dir));
+   if (!list_playlists)
+   {
+      /* "<name> [first]": the name may hold spaces; a trailing number
+       * is the first entry wanted */
+      const char *sp;
+      while (*arg == ' ')
+         arg++;
+      strlcpy(q->name, arg, sizeof(q->name));
+      if ((sp = strrchr(q->name, ' ')) && sp[1] >= '0' && sp[1] <= '9')
+      {
+         q->first = (size_t)strtoul(sp + 1, NULL, 10);
+         q->name[sp - q->name] = '\0';
+      }
+      if (!*q->name || strchr(q->name, '/') || strchr(q->name, '\\'))
+      {
+         const char *msg = "GET_PLAYLIST ERROR a playlist name, as LIST_PLAYLISTS gives\n";
+         cmd->replier(cmd, msg, strlen(msg));
+         free(q);
+         return false;
+      }
+   }
+   if (!(task = task_init()))
+   {
+      free(q);
+      return false;
+   }
+   /* where the answer goes, taken now: after this command returns the
+    * interface may be answering someone else */
+   q->dest        = cmd->reply_dest ? cmd->reply_dest(cmd) : NULL;
+   task->state    = q;
+   task->handler  = command_query_handler;
+   task->callback = command_query_callback;
+   task->cleanup  = command_query_cleanup;
+   task->flags   |= RETRO_TASK_FLG_MUTE;
+   task_queue_push(task);
+   return true;
+}
+
+/* LIST_PLAYLISTS: the playlist files, one per line, as GET_PLAYLIST
+ * takes them. */
+bool command_list_playlists(command_t *cmd, const char *arg)
+{
+   return command_query_push(cmd, true, arg);
+}
+
+/* GET_PLAYLIST <playlist> [first]: a playlist's entries, one per line:
+ * index, label, content path, core path, tab separated;
+ * COMMAND_PLAYLIST_PAGE at a time, "MORE <next>" when there are more. */
+bool command_get_playlist(command_t *cmd, const char *arg)
+{
+   return command_query_push(cmd, false, arg);
+}
+
+/* One HELP line: name, argument, description, and what it does to
+ * RetroArch, appended to @s at *@len; false when it would not fit. */
+static bool command_help_line(char *s, size_t size, size_t *len,
+      const char *name, const char *arg_desc, const char *desc,
+      unsigned flags)
+{
+   int n = snprintf(s + *len, size - *len, "%s%s%s\t%s%s\n",
+         name,
+         arg_desc ? " " : "", arg_desc ? arg_desc : "",
+         desc ? desc : "",
+           (flags & CMD_INFO_READ_ONLY)   ? " [read-only]"
+         : (flags & CMD_INFO_DESTRUCTIVE) ? " [destructive]"
+         : "");
+   if (n < 0 || (size_t)n >= size - *len)
+      return false;
+   *len += (size_t)n;
+   return true;
+}
+
+/* HELP [command]
+ *
+ * With no argument, every command, one per line: the name, its
+ * argument, a tab, what it does, and [read-only] or [destructive].
+ * Hotkey commands take no argument and press the hotkey for one
+ * frame. With a command name, that command's line alone. */
+bool command_help(command_t *cmd, const char* arg)
+{
+   size_t   i;
+   size_t   _len  = 0;
+   size_t   size  = 256
+      + (ARRAY_SIZE(map) + ARRAY_SIZE(action_map)) * 160;
+   bool     found = false;
+   char    *reply;
+
+   while (arg && *arg == ' ')
+      arg++;
+   if (!(reply = (char*)malloc(size)))
+      return false;
+   reply[0] = '\0';
+
+   for (i = 0; i < ARRAY_SIZE(action_map); i++)
+   {
+      bool noarg = string_is_equal(action_map[i].arg_desc, "No argument");
+      if (arg && *arg && !string_is_equal(arg, action_map[i].str))
+         continue;
+      found = true;
+      if (!command_help_line(reply, size, &_len, action_map[i].str,
+               noarg ? NULL : action_map[i].arg_desc,
+               action_map[i].desc, action_map[i].flags))
+         break;
+   }
+   for (i = 0; i < ARRAY_SIZE(map); i++)
+   {
+      if (arg && *arg && !string_is_equal(arg, map[i].str))
+         continue;
+      found = true;
+      if (!command_help_line(reply, size, &_len, map[i].str, NULL,
+               map[i].desc, map[i].flags))
+         break;
+   }
+   if (!found)
+      _len = (size_t)snprintf(reply, size, "HELP ERROR unknown command %s\n",
+            arg);
+
+   cmd->replier(cmd, reply, _len);
+   free(reply);
+   return found;
+}
 
 bool command_version(command_t *cmd, const char* arg)
 {
@@ -2890,6 +3361,13 @@ void command_event_reinit(const int flags)
          input_st->flags &= ~INP_FLAG_GRAB_MOUSE_STATE;
       return;
    }
+
+   /* A staged content load ends in a reinit of every driver against
+    * the new core: one asked for before then - the old override
+    * unloading, the new core's SET_SYSTEM_AV_INFO - would rebuild
+    * the drivers the stage is about to rebuild again. */
+   if (runloop_is_content_switching())
+      return;
 
 
 

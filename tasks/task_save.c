@@ -195,13 +195,15 @@ static struct
 static struct ram_save_state_buf ram_buf;
 
 static bool save_state_in_background       = false;
-/* See content_load_state_in_progress() for why this is a flag and
- * not a task_queue_find(). */
+/* See content_load_state_in_progress() for why these are flags and
+ * not a task_queue_find().  Save tasks are TASK_TYPE_BLOCKING, so at
+ * most one is in flight. */
 static bool load_state_task_pending        = false;
+static bool save_state_task_pending        = false;
 static bool save_state_disable_undo        = false;
 
 /* Time tracking for automatic savestate interval */
-static time_t last_savestate_automatic_time = 0;
+static retro_time_t last_savestate_automatic_time = 0;
 
 typedef struct rastate_size_info
 {
@@ -393,6 +395,8 @@ static void undo_save_state_cb(retro_task_t *task,
       void *user_data, const char *error)
 {
    save_task_state_t *state = (save_task_state_t*)task_data;
+
+   save_state_task_pending  = false;
 
    /* Wipe the save file buffer as it's intended to be one use only */
    undo_save_buf.path[0]  = '\0';
@@ -1066,7 +1070,8 @@ static bool task_push_undo_save_state(const char *path, void *data, size_t len)
       else
          task->flags       &= ~RETRO_TASK_FLG_MUTE;
 
-      task_queue_push(task);
+      if (task_queue_push(task))
+         save_state_task_pending = true;
 
       return true;
    }
@@ -1673,6 +1678,9 @@ static void save_state_cb(retro_task_t *task,
       void *user_data, const char *error)
 {
    save_task_state_t *state   = (save_task_state_t*)task_data;
+
+   /* Out of the core whichever way this callback exits. */
+   save_state_task_pending    = false;
    /* NULL-check: task_save_handler_finished may fail to alloc
     * the task_data copy on OOM and leave it NULL.  Skip the
     * screenshot hook and free(state) on NULL - free(NULL) is a
@@ -1804,7 +1812,9 @@ static void task_push_save_state(const char *path, void *data, size_t len, bool 
    else
       task->flags               &= ~RETRO_TASK_FLG_MUTE;
 
-   if (!task_queue_push(task))
+   if (task_queue_push(task))
+      save_state_task_pending = true;
+   else
    {
       /* Another blocking task is already active. */
       if (data)
@@ -2156,26 +2166,19 @@ bool content_ram_state_pending(void)
    return ram_buf.to_write_file;
 }
 
-static bool task_save_state_finder(retro_task_t *task, void *user_data)
-{
-   return (task && task->handler == task_save_handler);
-}
-
-/* Returns true if a save state task is in progress */
-/* True while a save state task is in progress.
- *
- * Public because closing content needs to know whether the wait
- * below is going to block before it blocks, so it can say so. */
+/* True from the moment a save state task is pushed until its
+ * main-thread callback has run: the task is inside the core until
+ * then.  A flag, not a finder, for the reason given at
+ * content_load_state_in_progress() below - the close asks from
+ * inside a task handler, where a finder cannot see the save. */
 bool content_save_state_in_progress(void* data)
 {
-   task_finder_data_t find_data;
-
-   find_data.func     = task_save_state_finder;
-   find_data.userdata = data;
-
-   return task_queue_find(&find_data);
+   (void)data;
+   return save_state_task_pending;
 }
 
+/* Blocks until the state task is through.  For the exit, startup and
+ * init-failure paths only; CI keeps it out of menu/ and tasks/. */
 void content_wait_for_save_state_task(void)
 {
    task_queue_wait(content_save_state_in_progress, NULL);
@@ -2207,6 +2210,7 @@ bool content_load_state_in_progress(void* data)
    return load_state_task_pending;
 }
 
+/* As content_wait_for_save_state_task(), for a load. */
 void content_wait_for_load_state_task(void)
 {
    task_queue_wait(content_load_state_in_progress, NULL);
@@ -2528,24 +2532,22 @@ void set_save_state_disable_undo(bool disable)
    save_state_disable_undo = disable;
 }
 
-bool content_save_state_automatic(void)
+bool content_save_state_automatic(retro_time_t now_us)
 {
-   time_t current_time;
    char savestate_path[PATH_MAX_LENGTH];
    settings_t *settings = config_get_ptr();
-   unsigned savestate_automatic_interval = 
+   unsigned savestate_automatic_interval =
       settings->uints.savestate_automatic_interval;
-   
+
    /* Return early if automatic savestate is disabled,
       safety checks already happen in content_auto_save_state() */
    if (savestate_automatic_interval == 0)
       return false;
-   
-   current_time = time(NULL);
-   
-   /* Check how long since last autosavestate */
-   if ((current_time - last_savestate_automatic_time) < 
-       (time_t)savestate_automatic_interval)
+
+   /* Check how long since last autosavestate, against the clock the
+    * frame already read - no time() call of its own per frame. */
+   if ((now_us - last_savestate_automatic_time)
+         < (retro_time_t)savestate_automatic_interval * 1000000)
       return false;
    
    /* Generate the savestate path */
@@ -2563,7 +2565,7 @@ bool content_save_state_automatic(void)
          savestate_path);
    
    /* Update the last savestate time, rinse/repeat */
-   last_savestate_automatic_time = current_time;
+   last_savestate_automatic_time = now_us;
    
    return content_auto_save_state(savestate_path);
 }
