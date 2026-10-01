@@ -1238,6 +1238,24 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   4. Each kept gain becomes a candidate in
      docs/private/upstream-prs/README.md; the user decides on opening.
   Existing perf item RETR-S0068 (HTTP task busy-spin) is folded in.
+  Progress (2026-10-01), perf record on upstream/master 6bf58823c6
+  (ra-pr build), null video unless stated:
+  - Gambatte in-game: the core is ~70% of CPU. The frontend's biggest
+    cost is the frame limiter's spin to the deadline (runloop_iterate,
+    clock_gettime, ~16%). That is a deliberate precision trade, and it
+    engages here only because null video has no vsync. Not a target.
+    Input polling is ~3%, spread thin.
+  - Mega Drive (genesis_plus_gx) with rewind and run-ahead: rewind's
+    find_change_avx2 is 5.6%. A standalone bench of a 2x-unrolled scan
+    gave equal results and 0-25% faster, but a 512 KB scan costs ~0.01 ms
+    of a 16.7 ms frame. Not worth a PR.
+  - Ozone menu, gl driver on the real GPU (ran visibly by mistake):
+    RetroArch plus libc are ~37%. gl_glsl_set_vbo (shader_glsl.c)
+    uploads changed font coords with glBufferData(..., GL_STATIC_DRAW),
+    2.7% of menu time via gl2_raster_font_flush_block. Candidate:
+    GL_STREAM_DRAW. Unmeasured, because measuring needs real video, and no
+    run with a display is proven hidden yet (see project memory
+    headless-test-runs). gl is the default driver on Linux.
   **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
   Kind: perf.
   Source: user-request-2026-10-01.
