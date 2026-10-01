@@ -471,8 +471,19 @@ These are exploitable now and have concrete reproducers.
   _(Fixed `9bf01aabdb` — `SETTING_BOOL` line now uses `default_enable=true, default=DEFAULT_MENU_SHOW_START_SCREEN`. The bespoke "force-write in minimal mode" workaround at the saver site was deleted -- both load and save paths now agree without needing the override.)_
   Kind: implement.
 
-- 🚧 [RETR-S0043] **HIGH — Menu drivers gate setting registration by current driver and never refresh on driver swap.**
+- 🚫 [RETR-S0043] **HIGH — Menu drivers gate setting registration by current driver and never refresh on driver swap.**
   `menu/menu_setting.c:18806, 19016, 19308, 19552, 19833, 20330, 20533, 20804, 20857, 20990` all use `string_is_equal(menu_ident, "xmb")` style gating. After the user changes menu driver mid-session, the setting tree stays from the original driver until restart — XMB-only, ozone-only, materialui-only settings vanish from the UI. Either rebuild the tree on swap or move the gating to a display-time predicate. _(Spec drafted 2026-04-27 → [`docs/private/specs/2026-04-27-menu-driver-swap-design.md`](specs/2026-04-27-menu-driver-swap-design.md). Defers to runloop flag + tree rebuild + snapshot-based fallback on init failure; v1 leaves the 20+ gating sites in place and rebuilds the tree against new `menu_driver` value. ~1-2 days.)_
+  Dropped (2026-10-01): no longer reproducible since the upstream sync.
+  The Menu Driver option only writes the name ("Menu driver to use.
+  (Restart required)", msg_hash_us.h); nothing swaps the menu
+  mid-session. Every menu init, including a driver reinit, runs
+  menu_entries_settings_deinit then menu_entries_init, which rebuilds
+  the settings list with menu_setting_new() from the current
+  menu_driver string (rarch_menu_init, menu_driver.c). That is the same
+  init that picks the driver, so the tree and the driver always match.
+  The 2026-04-27 design (live swap via CMD_EVENT_MENU_REINIT) was never
+  approved; a live swap would be a new feature, not this fix. Read from
+  the code, not run.
   **Layman:** Switching the menu style mid-session leaves some settings missing or stale until the app restarts.
   Kind: fix.
 
@@ -1262,6 +1273,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
     GL_STREAM_DRAW. Unmeasured, because measuring needs real video, and no
     run with a display is proven hidden yet (see project memory
     headless-test-runs). gl is the default driver on Linux.
+  Progress (2026-10-01): GL_STREAM_DRAW measured and landed as
+  734682a8f6 (gl_glsl_set_vbo). A windowless EGL bench on the RX 6600
+  of the font path's pattern gives STREAM 228-236 us/frame against
+  STATIC's 278, and 84-87 us CPU against 99. The menu ran headless on
+  gl with no GL errors. Upstream branch pr/gl-stream-draw, draft
+  pr-gl-stream-draw.md. Rewind scan, plain-C path (what ARM and Pi
+  builds run): 4x unrolled is 37% faster on long unchanged runs but
+  5-10% slower on dense changes, measured on x86 only. Not shipped;
+  retest on ARM if a Pi is available. The AVX2 unroll stays unshipped
+  too (0-25%, pattern-dependent).
   **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
   Kind: perf.
   Source: user-request-2026-10-01.
