@@ -1204,6 +1204,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   docs/private/upstream-prs/README.md, Candidates.
   2026-10-01: #19661 opened, gl GL_STREAM_DRAW (RETR-0016), the first
   performance PR.
+  2026-10-01: RETR-0017's fix opened upstream as #19664
+  (pr/sighandler-safe-exit, 4d77bf497d).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 

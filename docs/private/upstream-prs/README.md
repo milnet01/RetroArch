@@ -14,7 +14,7 @@ user's go-ahead. Checked 2026-10-01.
 | Run-ahead temp core copy: use the temp dir only if it is private | RETR-0006 | Opened 2026-10-01 as RetroArch PR #19660, fixing issue #19632. Draft: [pr-runahead-private-tmpdir.md](pr-runahead-private-tmpdir.md). |
 | `filestream_write_file_atomic` loses both files when the retry fails | RETR-0009 | Issue libretro-common #233 open, no reply. The fix rides in RetroArch PR #19629 (open). |
 | gl driver: upload per-draw coords with `GL_STREAM_DRAW` (performance) | RETR-0016 | Opened 2026-10-01 as RetroArch PR #19661. Measured ~15% less time a frame in the font upload pattern (RX 6600). Draft: [pr-gl-stream-draw.md](pr-gl-stream-draw.md). |
-| Unix signal handler: `_exit`, not `exit`, on the second quit signal, which otherwise can hang at shutdown | RETR-0017 | Same code in upstream master; no issue or PR found 2026-10-01. Fork fix `c2a527778c`. Branch `pr/sighandler-safe-exit` (`4d77bf497d`) ready to open. Draft: [pr-sighandler-safe-exit.md](pr-sighandler-safe-exit.md). |
+| Unix signal handler: `_exit`, not `exit`, on the second quit signal, which otherwise can hang at shutdown | RETR-0017 | Same code in upstream master; no issue or PR found 2026-10-01. Fork fix `c2a527778c`. Opened 2026-10-01 as RetroArch PR #19664 (branch `pr/sighandler-safe-exit`, `4d77bf497d`). Draft: [pr-sighandler-safe-exit.md](pr-sighandler-safe-exit.md). |
 | `linked_list` remove-matching crashes on a NULL callback | RETR-0007 | Issue libretro-common #232; another contributor opened PR #234. Not ours to send. |
 
 ## Branches

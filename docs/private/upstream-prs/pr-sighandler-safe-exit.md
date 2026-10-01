@@ -2,7 +2,7 @@
 
 Branch `pr/sighandler-safe-exit` in `/mnt/Games/Scripts/Linux/ra-pr`, one
 commit on upstream/master `6bf58823c6`. Fork commit `c2a527778c`
-(RETR-0017).
+(RETR-0017). Opened 2026-10-01 as PR #19664.
 
 ## Title
 
