@@ -104,4 +104,9 @@ Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
   functions and variables, `UPPER_SNAKE` for macros/enums, `<subsys>_<name>`
   for driver instances (joypads `<name>_joypad`, HID `<name>_hid`; see §1).
 - No new global state without a subsystem `*_state_get_ptr()` accessor
-  following the existing singleton pattern.
+  following the existing singleton pattern. Global state is any non-`const`
+  object with static storage duration: an `extern` variable, a file-scope
+  `static`, or a function-local `static`. A new field on the subsystem's
+  state struct, reached through its `*_state_get_ptr()`, satisfies this
+  rule. A driver keeps its own state in the instance data its `init`
+  returns instead.
