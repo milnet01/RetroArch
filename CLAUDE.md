@@ -128,7 +128,10 @@ Every other new text follows the parent rule: names, not counts, line numbers or
 This checkout is a libretro/RetroArch fork carrying ongoing audit + refactor work. The fork is operated under a two-branch model that the upstream tree does not mirror:
 
 - **`local/audit-2026-04`** — roadmap + docs branch. `docs/private/ROADMAP.md`, `docs/private/AUDIT-POLICY.md`, `docs/private/specs/`, `docs/private/plans/`, and `docs/private/audit/` live here. All cold-eyes / indie-review / audit-fold-in commits land on this branch.
-- **`local/fixes-2026-09`** — source-fix branch. Its worktree is `/mnt/Games/Scripts/Linux/ra-fixes`; if `git worktree list` does not show it, create it with `git worktree add /mnt/Games/Scripts/Linux/ra-fixes local/fixes-2026-09`. Never under `/tmp`, which is RAM on this machine. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j$(nproc) retroarch`) runs from this worktree.
+- **`local/fixes-2026-09`** — source-fix branch. Its worktree is `/mnt/Games/Scripts/Linux/ra-fixes`; if `git worktree list` does not show it, create it with `git worktree add /mnt/Games/Scripts/Linux/ra-fixes local/fixes-2026-09`. Never under `/tmp`, which is RAM on this machine. cppcheck / clang-tidy / clazy fix bundles commit here. Build verification (`make -j4 retroarch`; RAM is short, so never `-j$(nproc)`) runs from this worktree.
+- **`pr/*`** — upstream-PR branches, worktree `/mnt/Games/Scripts/Linux/ra-pr`. They are cut from upstream `master` and pushed only to open upstream PRs. Their pipeline is libretro's GitHub CI, not ours to mirror.
+
+**The push gate.** GitHub Actions is disabled on the fork, so the only CI is `local-CI.sh` on `local/fixes-2026-09`, run by that worktree's pre-push hook. A push from the docs branch or from `ra-pr` reports "NO LOCAL GATE", and that is expected: docs pushes are documentation-only, and `pr/*` code is checked by libretro's CI on the PR. The three worktrees share one git config, so never set `ants.gate.command` repo-wide.
 
 Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. When asked to "fold in" or "log a bundle", write it through `roadmap_log` on the audit branch — the roadmap store is the source of truth and the file is rendered from it; when asked to fix a finding, switch to the fixes-branch worktree.
 
