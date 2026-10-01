@@ -1180,6 +1180,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   The planned port of the PR code into the fork is cancelled; the fork
   keeps c6d9f37dc7 until the next upstream sync brings 280094a. #19629
   still open, no reviewer reply yet. Website session told.
+  2026-10-01: RETR-0006's fix opened as #19660 (branch
+  pr/runahead-private-tmpdir, 75e4782b78), fixing issue #19632. The
+  user pushed with --no-verify: the pre-push secret scan flagged only
+  upstream's own public commits, reported to the claude-config session.
+  A running list of next candidates is now in
+  docs/private/upstream-prs/README.md, Candidates.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
