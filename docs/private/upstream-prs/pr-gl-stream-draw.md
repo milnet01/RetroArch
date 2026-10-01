@@ -2,7 +2,7 @@
 
 Branch `pr/gl-stream-draw` in `/mnt/Games/Scripts/Linux/ra-pr`, one
 commit on upstream/master `6bf58823c6`. Fork commit `734682a8f6`
-(RETR-0016). Not opened yet.
+(RETR-0016). Opened 2026-10-01 as PR #19661.
 
 ## Title
 

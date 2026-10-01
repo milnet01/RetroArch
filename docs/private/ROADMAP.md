@@ -1197,6 +1197,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   upstream's own public commits, reported to the claude-config session.
   A running list of next candidates is now in
   docs/private/upstream-prs/README.md, Candidates.
+  2026-10-01: #19661 opened, gl GL_STREAM_DRAW (RETR-0016), the first
+  performance PR.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1283,6 +1285,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   5-10% slower on dense changes, measured on x86 only. Not shipped;
   retest on ARM if a Pi is available. The AVX2 unroll stays unshipped
   too (0-25%, pattern-dependent).
+  2026-10-01: GL_STREAM_DRAW opened upstream as #19661
+  (pr/gl-stream-draw).
   **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
   Kind: perf.
   Source: user-request-2026-10-01.
