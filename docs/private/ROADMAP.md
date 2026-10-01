@@ -1132,6 +1132,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   another handle, and a read-only one, both fail with the old contents
   kept and no .tmp left. content_replace_file (task_save.c) was not
   exercised. Posting the result on #19629 waits on the user.
+  Progress (2026-10-01): #19648 merged upstream as 61b0a7eb28, with a
+  maintainer follow-up (3d5e4b5): hand the TLS mode to the backend only
+  for the live settings, because config_save_overrides() loads the base
+  config into a scratch copy. The fork had that bug too; fixed on
+  local/fixes-2026-09 as 4019de3b24 (gate passed, pushed; not run live).
+  #19649 closed: the maintainer landed their own version as 280094a,
+  built on libretro-common's new crypto library and crediting the PR.
+  The planned port of the PR code into the fork is cancelled; the fork
+  keeps c6d9f37dc7 until the next upstream sync brings 280094a. #19629
+  still open, no reviewer reply yet. Website session told.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1593,7 +1603,7 @@ current upstream first, so the player is built on current code.
   Kind: feature.
   Source: user-request-2026-09-25.
 
-- 🚧 [RETR-0005] **INVESTIGATE — core-updater worker may touch http_task after it is freed.**
+- 🚫 [RETR-0005] **INVESTIGATE — core-updater worker may touch http_task after it is freed.**
   The fork fix de0c6000c8 NULLed `http_task` in the completion callback to
   close a use-after-free window. Upstream has since redesigned the
   core-updater threading (70b606ea85, 2f9703049c). Callbacks now run on the
@@ -1618,6 +1628,10 @@ current upstream first, so the player is built on current code.
   b1365e86cd, f5503fb604; issue #19633 closed 2026-09-26). The commit is
   kept locally as tag dropped/RETR-0005-1bfadd67e2 in ra-fixes. Take
   upstream's fix at the next sync, then close this item.
+  Dropped (2026-10-01): upstream fixed the same bug (issue #19633), so
+  the fork's own fix was never pushed. It is kept in ra-fixes as tag
+  dropped/RETR-0005-1bfadd67e2. Upstream's fix reaches the fork at the
+  next upstream sync.
   **Layman:** A download helper might use a finished download's data after it has been cleaned up; check whether upstream's new design still allows it.
   Kind: investigate.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit de0c6000c8.
