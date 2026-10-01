@@ -134,7 +134,8 @@ ACT_IMAGE="catthehacker/ubuntu:act-24.04"
 # being silently uncovered.
 unclassified_workflows() {
     local f b g known
-    for f in "$ROOT"/.github/workflows/*.yml; do
+    for f in "$ROOT"/.github/workflows/*.yml "$ROOT"/.github/workflows/*.yaml; do
+        [ -e "$f" ] || continue          # an unmatched glob stays literal
         b="${f##*/}"; known=0
         for g in "${NATIVE_WORKFLOWS[@]}" "${ACT_WORKFLOWS[@]}"; do
             [ "$b" = "$g" ] && { known=1; break; }
@@ -172,7 +173,7 @@ while [ $# -gt 0 ]; do
             if [ -n "$u" ]; then
                 echo
                 echo "UNCLASSIFIED workflows (in no list above — classify them in local-CI.sh):"
-                printf '  %s\n' $u
+                printf '%s\n' "$u" | sed 's/^/  /'
                 exit 1
             fi
             exit 0 ;;
@@ -210,7 +211,8 @@ echo "branch: $(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
 echo "logs:   $LOGDIR"
 echo "jobs:   ${SELECTED[*]}"
 UNCLASSIFIED="$(unclassified_workflows)"
-[ -n "$UNCLASSIFIED" ] && echo "WARN:   unclassified workflows, run nowhere:" $UNCLASSIFIED
+[ -n "$UNCLASSIFIED" ] && echo "WARN:   unclassified workflows, run nowhere:" \
+    "$(printf '%s\n' "$UNCLASSIFIED" | paste -sd' ')"
 echo
 
 # ---- helpers --------------------------------------------------------------
@@ -387,7 +389,8 @@ act_setup() {
     ACT_SOCK="$LOGDIR/podman.sock"
     podman system service --time=0 "unix://$ACT_SOCK" >"$LOGDIR/podman-service.log" 2>&1 &
     ACT_PID=$!
-    trap '[ -n "$ACT_PID" ] && kill "$ACT_PID" 2>/dev/null' EXIT
+    # The clone and the socket go too, so a kept log directory holds logs only.
+    trap '[ -n "$ACT_PID" ] && kill "$ACT_PID" 2>/dev/null; rm -rf "$LOGDIR/act-src" "$ACT_SOCK"' EXIT
     local _; for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$ACT_SOCK" ] && break; sleep 1; done
     [ -S "$ACT_SOCK" ] || { echo "podman service did not start"; return 1; }
     git clone -q --shared --no-checkout "$ROOT" "$LOGDIR/act-src" \
@@ -397,13 +400,23 @@ act_setup() {
     ACT_SRC="$LOGDIR/act-src"
 }
 
+# act exits 0 when every job is skipped or if-gated off, so a zero exit alone
+# is not a pass: at least one "Job succeeded" line must show a job ran.
 job_act() {
-    local wf="$1"
+    local wf="$1" out rc
     act_setup || return 1
     [ -f "$ACT_SRC/.github/workflows/$wf" ] || { echo "no such workflow at this ref: $wf"; return 1; }
+    out="$LOGDIR/$wf.act.out"
     ( cd "$ACT_SRC" && DOCKER_HOST="unix://$ACT_SOCK" "$ACT_BIN" \
         -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_IMAGE" \
-        --pull=false --container-daemon-socket - --concurrent-jobs 1 )
+        --pull=false --container-daemon-socket - --concurrent-jobs 1 ) 2>&1 | tee "$out"
+    rc=${PIPESTATUS[0]}
+    if [ "$rc" -eq 0 ] && ! grep -q 'Job succeeded' "$out"; then
+        echo "act ran no job in $wf (every job skipped or if-gated off) — not a pass"
+        rc=1
+    fi
+    rm -f "$out"
+    return "$rc"
 }
 
 # ---- driver ---------------------------------------------------------------
@@ -428,9 +441,18 @@ for job in "${SELECTED[@]}"; do
     if [ "$NO_CONTAINER" -eq 1 ] && { [ "$job" = "linux-i686" ] || [ "$job" = "headless-i686" ] || [ -n "$arg" ]; }; then
         echo "-- $job: skipped (--no-container)"; RESULTS+=("SKIP  $job (--no-container)"); continue
     fi
+    # An ACT_WORKFLOWS entry upstream has since deleted is stale, not failing.
+    if [ -n "$arg" ] && ! git -C "$ROOT" cat-file -e "$ARCHIVE_REF:.github/workflows/$arg" 2>/dev/null; then
+        for a in "${ACT_WORKFLOWS[@]}"; do
+            [ "$a" = "$arg" ] || continue
+            echo "-- $job: skipped (not at this ref — stale ACT_WORKFLOWS entry)"
+            RESULTS+=("SKIP  $job (stale ACT_WORKFLOWS entry: $arg not at this ref)")
+            continue 2
+        done
+    fi
     log="$LOGDIR/${arg:-$job}.log"
     printf '>> %-14s ... ' "$job"
-    if "$fn" $arg >"$log" 2>&1; then
+    if "$fn" ${arg:+"$arg"} >"$log" 2>&1; then
         echo "PASS"; RESULTS+=("PASS  $job")
     else
         echo "FAIL  (see $log)"; RESULTS+=("FAIL  $job -> $log")
