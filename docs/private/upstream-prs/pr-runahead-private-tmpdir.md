@@ -1,7 +1,7 @@
 # PR draft — runahead: copy the core only into a private temp dir
 
 Branch `pr/runahead-private-tmpdir` in `/mnt/Games/Scripts/Linux/ra-pr`,
-one commit on upstream/master `6bf58823c6`. Not opened: the user decides.
+one commit on upstream/master `6bf58823c6`. Opened 2026-10-01 as PR #19660.
 Fork commit `30b7dc942f` (RETR-0006). Fixes issue #19632.
 
 ## Title

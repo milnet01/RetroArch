@@ -11,7 +11,7 @@ user's go-ahead. Checked 2026-10-01.
 
 | Fix | Roadmap | Where upstream stands |
 |---|---|---|
-| Run-ahead temp core copy: use the temp dir only if it is private | RETR-0006 | Issue RetroArch #19632 open, no reply. Branch `pr/runahead-private-tmpdir` is ready; draft [pr-runahead-private-tmpdir.md](pr-runahead-private-tmpdir.md). |
+| Run-ahead temp core copy: use the temp dir only if it is private | RETR-0006 | Opened 2026-10-01 as RetroArch PR #19660, fixing issue #19632. Draft: [pr-runahead-private-tmpdir.md](pr-runahead-private-tmpdir.md). |
 | `filestream_write_file_atomic` loses both files when the retry fails | RETR-0009 | Issue libretro-common #233 open, no reply. The fix rides in RetroArch PR #19629 (open). |
 | `linked_list` remove-matching crashes on a NULL callback | RETR-0007 | Issue libretro-common #232; another contributor opened PR #234. Not ours to send. |
 
