@@ -1964,3 +1964,43 @@ current upstream first, so the player is built on current code.
   **Layman:** Bring in the official project's latest week of changes without losing the fork's own fixes.
   Kind: chore.
   Source: user-request-2026-10-01.
+
+- 📋 [RETR-0019] **INVESTIGATE — which smaller fork fixes are worth sending upstream.**
+  A survey on 2026-10-01 compared every fork-only commit with upstream
+  master 6bf58823c6 and found these still present upstream. Each needs
+  its reach confirmed before a PR:
+  - Wii and Xbox controller query bounded by MAX_USERS (16) where the
+    arrays are DEFAULT_MAX_PADS long (0e42361291, xdk half of
+    da97007b66). Console only; nothing here can run it.
+  - GET_LANGUAGE returns true without writing on builds without
+    HAVE_LANGEXTRA, and eight environment callbacks crash on a NULL
+    data pointer (704c6f60ed, runloop.c).
+  - Out-of-memory crash and leak paths (66b353f259, a8dfea395a, uint32s
+    half of 6a28eab352).
+  - Run-ahead buffers sized once while a core's savestate can grow
+    (a9a75afb23); adds a per-frame retro_serialize_size call.
+  - Float loop counter in ST_FLOAT dropdowns (64d851f30f): hangs on a
+    zero step.
+  - S3 SigV4 path escaping, query sorting and credential length
+    (4504dbdeb1, credential[512] from 0ee5762767).
+  - Vulkan overlay free reads images[i] before its NULL check
+    (2a9bfe9462).
+  - The retropad-bind ends of b351c83c4d (menu_setting.c bind_order
+    reads at i-1 / i+1).
+  - Analyzer-requested NULL checks with no reported crash (7e37085a4b,
+    79a41cbd23, 31d62a9002, 74d33ccfa5, 42becd5278, b0b83caa43,
+    468b6d4ec2, 64865cf5a7, 105401e6cd, f980eb31db).
+  The same survey found fork commits upstream has made moot (165c000dc6
+  BPS, d375562255's gfx_animation part); those can go at a sync.
+  **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
+  Kind: investigate.
+  Source: user-request-2026-10-01.
+
+- 📋 [RETR-0020] **INVESTIGATE — upstream's AppStream metainfo stops at release 1.9.11.**
+  Upstream's com.libretro.RetroArch.metainfo.xml lists releases only up
+  to 1.9.11 (2021). Fork commit cfb745a736 backfilled later entries.
+  Before offering it upstream, check each backfilled version and date
+  against upstream's tags (git tag --list 'v1.*' with dates).
+  **Layman:** The official project's software-store listing still shows its 2021 release; the fork has a fuller list that could be offered.
+  Kind: investigate.
+  Source: user-request-2026-10-01.
