@@ -1327,6 +1327,18 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   own code is 0.3-0.4%, and no frontend function reaches 0.1% (top:
   vulkan_font_render_msg, font_cache_get_glyph). No menu target found.
   Two of the runs hung at shutdown, which became RETR-0017 (fixed).
+  Progress (2026-10-01): content scan profiled. `--scan` of 1522 zips
+  (NES, SNES, GBA, Mega Drive copies) against 145 rdbs with 301 core
+  infos, null drivers. core_info_database_supports_content_path ran
+  per file x database x core: string_list_find_elem 35%, and the
+  per-core path_get_extension (strrchr, strchr, path_basename) ~30%.
+  Fix: extension computed once, database list checked first. CPU time
+  1.66-2.17 s before, 0.87-1.01 s after (four alternating runs, machine
+  busy); playlists byte-identical. Branch pr/scan-core-match
+  (b39e072f63), not opened; draft pr-scan-core-match.md. What remains
+  is string_list_find_elem on databases_list, once per core; a cache
+  would remove it but is a larger change. Playlist loading not yet
+  profiled.
   **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
   Kind: perf.
   Source: user-request-2026-10-01.

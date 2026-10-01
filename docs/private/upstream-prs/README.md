@@ -19,6 +19,7 @@ user's go-ahead. Checked 2026-10-01.
 | WebDAV digest login: a fresh cnonce per login instead of the fixed `"1a2b3c4f"` | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19666 (branch `pr/webdav-random-cnonce`, `c76212a34d`), on upstream's `crypto_random_bytes`. Draft: [pr-webdav-random-cnonce.md](pr-webdav-random-cnonce.md). |
 | Screenshot directory: `new_screenshot_dir` tested before it is written when the directory is empty | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19667 (branch `pr/screenshot-dir-init`, `bfa74954e6`). Draft: [pr-screenshot-dir-init.md](pr-screenshot-dir-init.md). |
 | Core options: categories array sized by option count, so more categories than options overflows it | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19668 (branch `pr/core-option-cats-size`, `c5bb0425b1`). Draft: [pr-core-option-cats-size.md](pr-core-option-cats-size.md). |
+| Database scan: compute the file extension once per core-match call, and check the short database list first (performance) | RETR-0016 | Branch `pr/scan-core-match` (`b39e072f63`), not opened. Scan CPU time about halved on 1522 files with 301 cores installed (2026-10-01). Draft: [pr-scan-core-match.md](pr-scan-core-match.md). |
 
 ## Branches
 
