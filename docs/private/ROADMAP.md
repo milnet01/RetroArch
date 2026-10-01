@@ -1219,6 +1219,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   crypto_random_bytes. Tested against a local server that checks the
   digest: master sends cnonce 1a2b3c4f, the branch a new one per run, and
   both logins are accepted.
+  2026-10-01: a survey of all fork-only commits against upstream found
+  two clear candidates, both opened after a valgrind red/green run:
+  #19667 pr/screenshot-dir-init (bfa74954e6; uninitialised
+  new_screenshot_dir, master wrote the PNG into a garbage-named
+  directory, 55 valgrind errors to 0) and #19668 pr/core-option-cats-size
+  (c5bb0425b1; categories array sized by option count, 35 invalid writes
+  to 0 with a four-category one-option test core). The rest of the
+  survey is RETR-0019 and RETR-0020. Open upstream PRs now: #19629,
+  #19660, #19661, #19664, #19666, #19667, #19668; libretro-common #234.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 

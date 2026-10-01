@@ -17,6 +17,8 @@ user's go-ahead. Checked 2026-10-01.
 | Unix signal handler: `_exit`, not `exit`, on the second quit signal, which otherwise can hang at shutdown | RETR-0017 | Same code in upstream master; no issue or PR found 2026-10-01. Fork fix `c2a527778c`. Opened 2026-10-01 as RetroArch PR #19664 (branch `pr/sighandler-safe-exit`, `4d77bf497d`). Draft: [pr-sighandler-safe-exit.md](pr-sighandler-safe-exit.md). |
 | `linked_list` remove-matching crashes on a NULL callback | RETR-0007 | Issue libretro-common #232; another contributor opened PR #234. Not ours to send. |
 | WebDAV digest login: a fresh cnonce per login instead of the fixed `"1a2b3c4f"` | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19666 (branch `pr/webdav-random-cnonce`, `c76212a34d`), on upstream's `crypto_random_bytes`. Draft: [pr-webdav-random-cnonce.md](pr-webdav-random-cnonce.md). |
+| Screenshot directory: `new_screenshot_dir` tested before it is written when the directory is empty | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19667 (branch `pr/screenshot-dir-init`, `bfa74954e6`). Draft: [pr-screenshot-dir-init.md](pr-screenshot-dir-init.md). |
+| Core options: categories array sized by option count, so more categories than options overflows it | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19668 (branch `pr/core-option-cats-size`, `c5bb0425b1`). Draft: [pr-core-option-cats-size.md](pr-core-option-cats-size.md). |
 
 ## Branches
 
