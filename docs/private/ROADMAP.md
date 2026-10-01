@@ -339,7 +339,7 @@ These are the highest-confidence findings — multiple reviewers coming at the c
 
 These are exploitable now and have concrete reproducers.
 
-- 🚧 [RETR-S0030] **CRITICAL — TLS certificate verification effectively disabled.**
+- ✅ [RETR-S0030] **CRITICAL — TLS certificate verification effectively disabled.**
   `libretro-common/net/net_socket_ssl_mbed.c:199` uses `MBEDTLS_SSL_VERIFY_OPTIONAL`; the verify result is logged into a buffer and discarded — connection proceeds against any cert including self-signed. **Every** HTTPS request in cloud sync (Google Drive OAuth + Drive API, S3 SigV4 signing, WebDAVS), cheevos (RetroAchievements API), and online updater is un-authenticated. On hostile WiFi, an MITM captures Google OAuth refresh tokens, AWS secret access keys, and RA credentials. Vendored — fix must go upstream first; a temporary RA-side opt-out with a giant warning would be acceptable. (Not in audit; indie-review only.) _(Spec drafted 2026-04-27 → [`docs/private/specs/2026-04-27-tls-verification-opt-in-design.md`](specs/2026-04-27-tls-verification-opt-in-design.md). Three-mode design (REQUIRED default / OPTIONAL bridging / DISABLED with consent dialog), advanced-tier UI, vendored fix paired with upstream PR. ~2-3 days RA-side; phase 1 alone closes the indie-review concern.)_
   Progress (2026-07-01, Bundle 87 / fixes `436928da68`): secure core landed
   on `local/fixes-2026-04`. The indie-review CRITICAL is closed for the
@@ -368,6 +368,10 @@ These are exploitable now and have concrete reproducers.
   libcheck suites under `libretro-common/test/net/`, and the upstream
   libretro-common PR (Phase 5). Bullet stays 🚧 until those land; the
   exploitable MITM hole itself is closed on this build.
+  Resolved (2026-10-01): the hole is closed. mbedtls verifies by default
+  and fails closed (436928da68); upstream merged it as #19626 and the
+  reload fix as #19648, kept by the fork in 4019de3b24. BearSSL always
+  verifies. The remaining extras moved to RETR-0014.
   **Layman:** Secure web connections don't properly check the server's identity, so a network attacker could impersonate a download server.
   Kind: security.
 
@@ -395,11 +399,17 @@ These are exploitable now and have concrete reproducers.
   `webdav.c:174-280`. _(Fixed `2386e898d4` — factored the `field=<terminator>` pattern into `webdav_parse_quoted_value` which checks `strchr` first, NULL-checks the malloc, and advances ptr only on success (used by realm/nonce/opaque/algo-with-comma; algo-no-comma branch NULL-checks `strdup`). Fixed the `while (*ptr != ',' && *ptr != ',')` typo to `*ptr != ',' && *ptr != '\0'`; guarded the surrounding `ptr++`-past-NUL sites with `if (*ptr) ptr++;`. Replaced the hardcoded cnonce with `webdav_create_cnonce` mixing `time(NULL) | clock() | (uintptr_t)&local | nc` through MD5 to 32 hex chars (not a CSPRNG — libretro-common doesn't wrap one yet — but stops the wire-only replay attack the digest scheme is meant to defend). Added a `parse_fail:` label that calls `webdav_cleanup_digest()` so any partially-populated state is freed on early failure. cnonce is now malloc'd; `webdav_cleanup_digest` frees it.)_
   Kind: implement.
 
-- 🚧 [RETR-S0037] **HIGH — Plaintext credentials in world-readable `retroarch.cfg`.**
+- ✅ [RETR-S0037] **HIGH — Plaintext credentials in world-readable `retroarch.cfg`.**
   `configuration.c:1629, 1634, 1637-1639, 1649, 1722, 1749-1750`: WebDAV password, AWS secret access key, YouTube/Twitch/Facebook stream keys, SMB password, kiosk-mode password, netplay password. Saved as `key = "value"` to a file with default umask (0644). Plus the Google Drive **refresh token** is stored plaintext per `google_drive.c`. _(Bundle 4 — `chmod 0600` mitigation landed in `8aedb937f1`. Secrets-file split + OS-keyring integration still open.)_ Mitigation tier:
   1. `chmod 0600` after `config_file_write` succeeds (one-line, ships immediately)
   2. Move secrets to a separate `retroarch.secrets` file in `~/.local/share/retroarch/secrets/` (longer)
   3. OS-keyring integration via libsecret/Win32 DPAPI/Keychain (longest)
+  Resolved (2026-10-01): tiers 1 and 2 are done. retroarch.cfg is chmod
+  0600 (8aedb937f1), and since the upstream sync every key the item
+  listed, Google Drive's refresh token included, is written to
+  retroarch-keychain.cfg and stripped from retroarch.cfg
+  (config_sensitive_keys, config_save_credentials). Read from the code,
+  not run live. Tier 3, the OS password store, moved to RETR-0015.
   **Layman:** Account passwords are saved in plain text in a settings file other users on the machine can read.
   Kind: security.
 
@@ -410,6 +420,34 @@ These are exploitable now and have concrete reproducers.
 - 🚫 [RETR-S0152] **HIGH — Heap-buffer-overflow class in HTTP failure loggers.**
   _(Verified resolved-stale 2026-04-25 while triaging Bundle 16. Current `s3_log_http_failure` (s3.c:788-799) uses the safe `%.*s` length-bounded printf form, with an explicit comment documenting why `data->data[data->len]=0` is a one-byte heap overflow. The reviewer's reference to s3.c:1633-1640 is also safe in current code: the multipart-initiate path malloc's `data->len + 1`, memcpy's `data->len` bytes, and writes the terminator on the **newly-allocated** buffer (`response_xml[data->len] = '\0'`), not on `data->data`. A `net_http_data_to_cstring` helper would still be valuable defence-in-depth (the antipattern is easy to re-introduce) but no concrete site to fix today.)_
   Kind: implement.
+
+- 📋 [RETR-0014] **TLS — finish RETR-S0030's extras: warning on Disabled, BearSSL opt-out, tests.**
+  Split from RETR-S0030 on 2026-10-01, whose security hole is closed.
+  What its spec (docs/private/specs/2026-04-27-tls-verification-opt-in-design.md)
+  still lists:
+  - A one-time consent dialog when the user picks Disabled (spec D3).
+  - An on-screen notice and an upgrade note (spec Phase 4).
+  - BearSSL ignores Optional and Disabled and always verifies
+    (net_socket_ssl_bear.c). Safe, but the setting does nothing there.
+  - libcheck tests under libretro-common/test/net/.
+  libretro-common is vendored, so the BearSSL change and the tests go
+  upstream (docs/private/upstream-prs/README.md, Candidates).
+  **Layman:** Small extras for the secure-connection setting: a warning before turning checks off, and tests.
+  Kind: enhancement.
+  Source: split from RETR-S0030 2026-10-01.
+  Lanes: network.
+
+- 💭 [RETR-0015] **CREDENTIALS — keep passwords in the OS password store instead of a file.**
+  Split from RETR-S0037 on 2026-10-01 (its tier 3). Secrets now live in
+  retroarch-keychain.cfg, made owner-only by path_set_private
+  (configuration.c, config_save_credentials). An OS store (libsecret,
+  Windows DPAPI, macOS Keychain) would also keep them from other programs
+  running as the same user. Needs a design: three platform backends and a
+  fallback for consoles. Upstream's choice; best raised there first.
+  **Layman:** Passwords could go in the computer's own password vault rather than a private settings file.
+  Kind: security.
+  Source: split from RETR-S0037 2026-10-01.
+  Lanes: config, security.
 
 ### 🛡 Tier 2 — hardening sweep (correctness, not exploitability)
 
@@ -1744,7 +1782,7 @@ current upstream first, so the player is built on current code.
   Source: in-session-2026-09-26 (local-gate.md conformer pass for claude-fd).
   Lanes: build, ci.
 
-- 📋 [RETR-0013] **GATE — local-CI.sh's act runner can report PASS having run nothing, and misses .yaml workflows.**
+- ✅ [RETR-0013] **GATE — local-CI.sh's act runner can report PASS having run nothing, and misses .yaml workflows.**
   Cold read of bdc7811fd4 (RETR-0011) by claude-2a, 2026-09-26. Fix in
   local-CI.sh on local/fixes-2026-09, only when no local-CI.sh run is in
   progress (bash reads a script as it runs, so an edit corrupts a live run).
@@ -1764,6 +1802,12 @@ current upstream first, so the player is built on current code.
   - D7 (no fix planned): under --worktree the clone checks out a dangling
     stash commit reached through alternates. git gc keeps unreachable
     objects for two weeks by default, so a run cannot lose it.
+  Resolved (2026-10-01): 795a631e77 on local/fixes-2026-09 fixes D1-D6.
+  An act run with no "Job succeeded" line fails; .yaml workflows are
+  classified; the EXIT trap removes the clone and socket; a stale
+  ACT_WORKFLOWS entry reports SKIP; an empty workflows directory lists
+  nothing; the call and name output are quoted. Each was checked in a
+  scratch repo; the pre-push gate passed all five jobs. D7 needs no fix.
   **Layman:** The new option that runs the extra test jobs could say "passed" when it actually ran nothing, and it overlooks one spelling of workflow file names.
   Kind: review-fix.
   Source: peer-review claude-2a 2026-09-26 (bdc7811fd4).

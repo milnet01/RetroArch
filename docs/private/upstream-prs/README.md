@@ -1,9 +1,19 @@
 # Upstream contributions — drafts (RETR-S0115)
 
 Drafted 2026-09-26 for libretro/RetroArch and libretro/libretro-common.
-**Nothing here has been pushed or opened yet.** The user has pre-approved
-opening them and will not review; the next session reviews each branch
-against the checklist below, then pushes and opens.
+Both batches below are opened; RETR-S0115 records how each one ended.
+Fixes that could go upstream next are under "Candidates".
+
+## Candidates — not yet opened
+
+Opening a PR is public under the user's account, so each needs the
+user's go-ahead. Checked 2026-10-01.
+
+| Fix | Roadmap | Where upstream stands |
+|---|---|---|
+| Run-ahead temp core copy: unguessable name, exclusive create, in libretro-common's VFS copy | RETR-0006 | Issue RetroArch #19632 open, no reply. No PR yet; ours would be the fix. |
+| `filestream_write_file_atomic` loses both files when the retry fails | RETR-0009 | Issue libretro-common #233 open, no reply. The fix rides in RetroArch PR #19629 (open). |
+| `linked_list` remove-matching crashes on a NULL callback | RETR-0007 | Issue libretro-common #232; another contributor opened PR #234. Not ours to send. |
 
 ## Branches
 
