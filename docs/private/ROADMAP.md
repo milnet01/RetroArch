@@ -602,8 +602,13 @@ These are exploitable now and have concrete reproducers.
   `task_queue.c:106-141`. Re-entrancy hazard if the callback ever calls `task_get_title` etc. — no current implementation does, but the API contract isn't documented. _(Bundle 80 — closed `5729e8a83c` on `local/fixes-2026-04`. Documented the contract inline at the `slock_lock(property_lock)` site: `property_lock` is held across BOTH the `msg_push` callback and the `task->progress_cb` call; slocks are non-recursive, so neither callback may invoke any `task_get_`/`task_set_` accessor (they re-acquire `property_lock` → self-deadlock). Confirmed no current callback does. Comment-only; no behaviour change.)_
   Kind: implement.
 
-- 📋 [RETR-S0068] **TASKS — `task_http_iterate_transfer` busy-spins with `retro_sleep(1)`.**
+- ✅ [RETR-S0068] **TASKS — `task_http_iterate_transfer` busy-spins with `retro_sleep(1)`.**
   `tasks/task_http.c:113-114`. Acknowledged FIXME. Switch to event-driven `select`/`poll` on the underlying socket.
+  Resolved (2026-10-01) upstream: libretro 4ee4e9ebc4 (2026-09-14) replaced
+  the retro_sleep(1) with net_http_wait() on the socket when the task queue
+  is threaded; 55a729d44a (2026-09-15) does the same during DNS resolution.
+  Both are in local/fixes-2026-09. No fork change; not an upstream-PR
+  candidate.
   **Layman:** Downloads wake up every millisecond to check for data instead of waiting properly, wasting CPU.
   Kind: perf.
 
