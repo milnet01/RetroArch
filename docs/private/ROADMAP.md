@@ -1900,3 +1900,20 @@ current upstream first, so the player is built on current code.
   Kind: review-fix.
   Source: peer-review claude-2a 2026-09-26 (bdc7811fd4).
   Lanes: build, ci.
+
+- ✅ [RETR-0017] **UNIX — a second quit signal during shutdown can hang RetroArch instead of forcing it to quit.**
+  `frontend_unix_sighandler` (frontend/drivers/platform_unix.c) calls
+  exit(1) on the second signal. exit() frees memory, so a signal that
+  lands inside free() deadlocks on the allocator's lock. Found when two
+  menu profiles under perf hung at shutdown; core dumps showed
+  frontend_unix_sighandler -> exit -> _int_free over core_info_free.
+  Fix: _exit(1). Repro (null video, second SIGINT on "Unloading core..."):
+  8 hangs in 20 before, 0 in 20 after. Same code in upstream master; no
+  upstream issue or PR found 2026-10-01. Fix c2a527778c.
+  Shipped (2026-10-01): c2a527778c pushed to local/fixes-2026-09; all
+  five local gate jobs passed. Listed as an upstream-PR candidate in
+  docs/private/upstream-prs/README.md.
+  **Layman:** Pressing Ctrl+C twice, or a launcher stopping RetroArch twice, could freeze it while closing instead of making it quit at once.
+  Kind: fix.
+  Source: in-session-2026-10-01 (RETR-0016 perf runs).
+  Lanes: frontend.
