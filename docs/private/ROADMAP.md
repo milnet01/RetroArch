@@ -1292,6 +1292,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   too (0-25%, pattern-dependent).
   2026-10-01: GL_STREAM_DRAW opened upstream as #19661
   (pr/gl-stream-draw).
+  Progress (2026-10-01): XMB on vulkan and on gl, and Ozone on vulkan,
+  profiled under hidden Xvfb with software rendering (lavapipe/llvmpipe),
+  upstream build a89e65076e. The renderer is 98-99% of CPU; RetroArch's
+  own code is 0.3-0.4%, and no frontend function reaches 0.1% (top:
+  vulkan_font_render_msg, font_cache_get_glyph). No menu target found.
+  Two of the runs hung at shutdown, which became RETR-0017 (fixed).
   **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
   Kind: perf.
   Source: user-request-2026-10-01.
