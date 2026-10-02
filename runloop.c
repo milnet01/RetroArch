@@ -1654,9 +1654,6 @@ bool runloop_environment_cb(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_SET_VARIABLES:
          RARCH_LOG("[Environ] SET_VARIABLES.\n");
 
-         if (!data)
-            return false;
-
          {
             core_option_manager_t *new_vars = NULL;
 
