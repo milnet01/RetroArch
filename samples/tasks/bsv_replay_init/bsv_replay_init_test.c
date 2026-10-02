@@ -90,14 +90,28 @@
  *             one skipped with a larger declared size.  Each must fail or skip without freeing,
  *             overrunning or over-reporting cur_save; run under the
  *             sweep's ASan build to catch the memory errors.  Also: a
- *             header cut short records no size (valgrind shows the
- *             uninitialised read), a load leaves last_save_size describing last_save, and a
+ *             header cut short records no size (the sweep's valgrind
+ *             run shows the uninitialised read), a load leaves last_save_size describing last_save, and a
  *             legacy checkpoint frame too large to allocate ends the
  *             movie without reading into a NULL buffer.
  *  statestream  (STATESTREAM=1 builds only) damaged deduplicated
  *             checkpoints: an encoded length past the stored bytes, a
  *             superblock sequence longer than the previous one, and
  *             a superblock or block index that was never defined.
+ *  index_gc, index_interval1, index_pop  (STATESTREAM) the block
+ *             index: a lookup of a collected block, a commit interval
+ *             of 1 from the header, and objects freed when popped.
+ *  header_sizes, no_index, decode_fail_ends  (STATESTREAM) header
+ *             block sizes the index cannot hold are refused; a
+ *             statestream checkpoint with no index fails; a checkpoint
+ *             that fails to decode ends the movie.
+ *  timeline_inputs, state_replay_len  a savestate's replay compared
+ *             or loaded: an over-long input count, and a replay length
+ *             larger than its savestate block, are refused.
+ *  event_capacity  recording stages no more events than a frame holds.
+ *  seek_no_checkpoint, checkpoint_seek  seeking with no checkpoint
+ *             fails; a checkpoint size of 2^63 or more never seeks
+ *             backwards.
  */
 
 #include <stdio.h>
