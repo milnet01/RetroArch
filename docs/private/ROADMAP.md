@@ -2190,6 +2190,16 @@ current upstream first, so the player is built on current code.
   lane is ASan red with upstream's code and make sweep is green with the
   fix. Draft: docs/private/upstream-prs/pr-replay-index-gc.md.
   Recommendation: open it as a separate PR stacked on #19685.
+  Progress (2026-10-02): the dedup-after-load question is closed, not
+  a bug, by reading the code (no test). The writer compares against
+  last_save only when cur_save_valid is true at entry, and the only
+  assignments of true are in the writer (bsv_movie_write_deduped_state's
+  end, and bsv_movie_write_checkpoint's swap). Loading a state while
+  recording goes through bsv_movie_scan_from_start, which sets it false;
+  the decoder never sets it true. So the first checkpoint after a load
+  hashes every block and rebuilds superblock_seq. Same on upstream/master.
+  Side effect, perf only: the decoder's skip for an unchanged superblock
+  also needs cur_save_valid, so it never fires during playback.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
