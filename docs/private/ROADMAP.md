@@ -1255,6 +1255,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Progress (2026-10-02): #19685 opened (pr/replay-checkpoint-dedup,
   5d702ed87d), six more damaged-checkpoint fixes, stacked on #19683
   (RETR-0019). Draft: docs/private/upstream-prs/pr-replay-checkpoint-dedup.md.
+  2026-10-02: #19689 opened, AppStream metainfo releases 1.20.0 to
+  1.22.2 (RETR-0020). #19683 and #19685 CI still running at the time.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2142,7 +2144,7 @@ current upstream first, so the player is built on current code.
   Kind: investigate.
   Source: user-request-2026-10-01.
 
-- 📋 [RETR-0020] **INVESTIGATE — upstream's AppStream metainfo stops at release 1.9.11.**
+- ✅ [RETR-0020] **INVESTIGATE — upstream's AppStream metainfo stops at release 1.9.11.**
   Upstream's com.libretro.RetroArch.metainfo.xml lists releases only up
   to 1.9.11 (2021). Fork commit cfb745a736 backfilled later entries.
   Before offering it upstream, check each backfilled version and date
@@ -2155,6 +2157,8 @@ current upstream first, so the player is built on current code.
   feature list under a "1.22.1" heading, but the code is in the v1.22.0
   tag, so the metainfo keeps it under 1.22.0. appstreamcli validate
   passes. Upstream PR not opened; the user decides.
+  Resolved (2026-10-02): offered upstream as libretro/RetroArch#19689
+  (branch pr/metainfo-releases, 8d88874b47), with the user's go-ahead.
   **Layman:** The official project's software-store listing still shows its 2021 release; the fork has a fuller list that could be offered.
   Kind: investigate.
   Source: user-request-2026-10-01.

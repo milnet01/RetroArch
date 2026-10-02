@@ -26,6 +26,7 @@ user's go-ahead. Checked 2026-10-01.
 | `GET_LANGUAGE` returns true without writing when `HAVE_LANGEXTRA` is off | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19682 (branch `pr/get-language-default`, `8f9c5f5869`). Draft: [pr-get-language-default.md](pr-get-language-default.md). |
 | Damaged replay checkpoint: double free, overrun, and a size larger than the buffer | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19683 (branch `pr/replay-checkpoint-bounds`, `e99abce20f`); fork fix `aab917b1d2`. Draft: [pr-replay-checkpoint-bounds.md](pr-replay-checkpoint-bounds.md). |
 | Damaged replay checkpoint: six more (statestream over-read, `superblock_seq` overflow, undefined index, `last_save_size`, legacy frame allocation, uninitialised size) | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19685 (branch `pr/replay-checkpoint-dedup`, `5d702ed87d`), stacked on #19683; fork fixes `5faedc02c4`, `2d368a11a3`. Draft: [pr-replay-checkpoint-dedup.md](pr-replay-checkpoint-dedup.md). |
+| AppStream metainfo: add releases 1.20.0 to 1.22.2 (upstream stops at 1.9.11) | RETR-0020 | Opened 2026-10-02 as RetroArch PR #19689 (branch `pr/metainfo-releases`, `8d88874b47`); fork commits `cfb745a736`, `13602e0689`. Draft: [pr-metainfo-releases.md](pr-metainfo-releases.md). |
 
 ## Branches
 
