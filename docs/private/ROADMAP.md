@@ -2114,6 +2114,21 @@ current upstream first, so the player is built on current code.
   later ones; the legacy REPLAY_TOKEN_CHECKPOINT_FRAME branch frees
   cur_save and leaves cur_save_size stale; last_save_size is not tied to
   last_save's real size, and the write path swaps it into cur_save_size.
+  Progress (2026-10-02): the four older replay weak spots checked
+  against the code; all real, plus a fifth. Fixed on
+  local/fixes-2026-09 as 5faedc02c4 (local-CI.sh 5/5 PASS):
+  NONE+STATESTREAM over-read; superblock_seq overflow (now tracked
+  by superblock_seq_len); a sequence or superblock naming an index
+  the file never defined (NULL read); load set last_save_size from
+  cur_save; legacy CHECKPOINT_FRAME read into a failed allocation.
+  samples/tasks/bsv_replay_init gains a STATESTREAM=1 build in `make
+  sweep` and a "statestream" lane; each fix reverted alone fails it.
+  Not fixed, unverified: after a load while recording,
+  superblock_seq describes cur_save but the writer compares against
+  last_save, so dedup could reuse wrong blocks (corrupt output, not
+  a memory error); uint32s_index_get's garbage-collected log loop
+  starts at additions[RBUF_LEN] (one past the end). Same code
+  upstream; not yet sent.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
