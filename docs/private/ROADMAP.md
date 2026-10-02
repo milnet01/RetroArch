@@ -1267,6 +1267,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   "CI Linux TSan [sample suites]" failure is upstream's: that workflow
   was added in bfb6bb0a58 and its own master run failed the same way
   (rh264/rh265 lossless tests).
+  2026-10-02: CI checked on #19683, #19685, #19689 and #19691. All
+  pass except "TSan, the threaded sample suites" on #19685, #19689 and
+  #19691; that workflow's own master run (bfb6bb0a58) and another
+  contributor's PR fail it too, so it is not ours. #19683's run predates
+  the workflow. None merged yet.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2178,6 +2183,13 @@ current upstream first, so the player is built on current code.
   (pr/menu-selection-bounds, df07c52ced), user approved. Open from this
   item: the replay index fix ecd66eb3c7 is not yet offered upstream; the
   unverified dedup-after-load question stands.
+  Progress (2026-10-02): the replay index fix is ready to offer
+  upstream, not pushed or opened (awaiting the user's pick). Branch
+  pr/replay-index-gc (28d8ecbc23) in ra-pr, stacked on #19685 because
+  the test needs its STATESTREAM=1 build. On that branch the index_gc
+  lane is ASan red with upstream's code and make sweep is green with the
+  fix. Draft: docs/private/upstream-prs/pr-replay-index-gc.md.
+  Recommendation: open it as a separate PR stacked on #19685.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.

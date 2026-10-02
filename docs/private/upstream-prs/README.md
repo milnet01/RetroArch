@@ -28,6 +28,7 @@ user's go-ahead. Checked 2026-10-01.
 | Damaged replay checkpoint: six more (statestream over-read, `superblock_seq` overflow, undefined index, `last_save_size`, legacy frame allocation, uninitialised size) | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19685 (branch `pr/replay-checkpoint-dedup`, `5d702ed87d` + CI fix `f99ba62444`), stacked on #19683; fork fixes `5faedc02c4`, `2d368a11a3`. Draft: [pr-replay-checkpoint-dedup.md](pr-replay-checkpoint-dedup.md). |
 | AppStream metainfo: add releases 1.20.0 to 1.22.2 (upstream stops at 1.9.11) | RETR-0020 | Opened 2026-10-02 as RetroArch PR #19689 (branch `pr/metainfo-releases`, `8d88874b47`); fork commits `cfb745a736`, `13602e0689`. Draft: [pr-metainfo-releases.md](pr-metainfo-releases.md). |
 | Menu: selection past the entry list in `ozone_selection_changed` and xmb's imageviewer update (#18797's remaining reads); not reproduced | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19691 (branch `pr/menu-selection-bounds`, `df07c52ced`); fork commit `73c7a9c0e3`. Draft: [pr-menu-selection-bounds.md](pr-menu-selection-bounds.md). |
+| Replay index: a lookup of a garbage-collected block reads one past the additions log | RETR-0019 | Not opened; awaiting the user's pick. Branch `pr/replay-index-gc` (`28d8ecbc23`), stacked on #19685, local only; fork fix `ecd66eb3c7`. Draft: [pr-replay-index-gc.md](pr-replay-index-gc.md). |
 
 ## Branches
 
