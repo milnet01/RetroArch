@@ -526,6 +526,8 @@ bool bsv_movie_handle_read_input_event(bsv_movie_t *movie,
 bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
       uint8_t encoding,replay_checkpoint_behavior checkpoint_behavior)
 {
+   /* exit: records size only once the whole header has been read;
+    * a short read can leave part of it filled in. */
    uint32_t compressed_encoded_size, encoded_size, size;
    input_driver_state_t *input_st = input_state_get_ptr();
    uint8_t *compressed_data = NULL, *encoded_data = NULL;
@@ -534,6 +536,7 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
                sizeof(uint32_t)) != sizeof(uint32_t))
    {
       RARCH_ERR("[Replay] Replay truncated before uncompressed unencoded size\n");
+      size = 0;
       ret = false;
       goto exit;
    }
@@ -541,6 +544,7 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
                sizeof(uint32_t)) != sizeof(uint32_t))
    {
       RARCH_ERR("[Replay] Replay truncated before uncompressed encoded size\n");
+      size = 0;
       ret = false;
       goto exit;
    }
@@ -548,6 +552,7 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
                sizeof(uint32_t)) != sizeof(uint32_t))
    {
       RARCH_ERR("[Replay] Replay truncated before compressed encoded size\n");
+      size = 0;
       ret = false;
       goto exit;
    }
@@ -709,7 +714,7 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
     * leaves cur_save NULL, and the next call re-allocates), and never
     * above what the buffer holds: a skipped checkpoint allocates
     * nothing. */
-   if (handle->cur_save && size <= handle->cur_save_size)
+   if (handle->cur_save && size && size <= handle->cur_save_size)
       handle->cur_save_size = size;
    /* last_save_size stays: it describes last_save, which loading
     * does not touch and the recorder later swaps back in. */

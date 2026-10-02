@@ -90,7 +90,8 @@
  *             one skipped with a larger declared size.  Each must fail or skip without freeing,
  *             overrunning or over-reporting cur_save; run under the
  *             sweep's ASan build to catch the memory errors.  Also: a
- *             load leaves last_save_size describing last_save, and a
+ *             header cut short records no size (valgrind shows the
+ *             uninitialised read), a load leaves last_save_size describing last_save, and a
  *             legacy checkpoint frame too large to allocate ends the
  *             movie without reading into a NULL buffer.
  *  statestream  (STATESTREAM=1 builds only) damaged deduplicated
@@ -526,6 +527,23 @@ static void lane_checkpoint(void)
    CHECK(h->checkpoint_ready, "intact checkpoint not ready");
    CHECK(h->cur_save && h->cur_save_size == 64
          && !memcmp(h->cur_save, buf + 12, 64), "intact checkpoint contents");
+   bsv_movie_free(h);
+
+   /* Cut short inside its size words: no size was read, so none may be
+    * recorded.  Run under valgrind to see the uninitialised read. */
+   input_st.bsv_movie_state.flags = 0;
+   h   = checkpoint_handle(buf, 8, 8, 8, 0);
+   intfstream_close(h->file);
+   free(h->file);
+   h->file = intfstream_open_memory(buf, RETRO_VFS_FILE_ACCESS_READ,
+         RETRO_VFS_FILE_ACCESS_HINT_NONE, 2);
+   h->cur_save      = (uint8_t*)calloc(16, 1);
+   h->cur_save_size = 16;
+   ret = bsv_movie_load_checkpoint(h, REPLAY_CHECKPOINT2_COMPRESSION_NONE,
+         REPLAY_CHECKPOINT2_ENCODING_RAW, REPLAY_CPBEHAVIOR_DESERIALIZE);
+   CHECK(!ret, "checkpoint with a cut-short header loaded");
+   CHECK(h->cur_save_size == 16, "cur_save_size %u after a cut-short header",
+         (unsigned)h->cur_save_size);
    bsv_movie_free(h);
 
    /* Loading resizes cur_save only; last_save_size must go on
