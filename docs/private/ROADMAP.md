@@ -2200,6 +2200,17 @@ current upstream first, so the player is built on current code.
   hashes every block and rebuilds superblock_seq. Same on upstream/master.
   Side effect, perf only: the decoder's skip for an unchanged superblock
   also needs cur_save_valid, so it never fires during playback.
+  Progress (2026-10-02): audit since 3df84da461 (check-code --tree,
+  review-code two lanes, review-tests, verify-delivery). Fixed on
+  local/fixes-2026-09: 30ef35574d, replay file parsing (commit interval
+  1, header sizes, missing indexes, timeline input count, savestate
+  replay length, event capacity, pop leak, checkpoint-before result,
+  backwards seeks, failed decode ends playback) with ten new harness
+  lanes, valgrind in the sweep, STATESTREAM in CI and the sweep in
+  local-CI; 33eef2765b, menu_entry_get bound for every caller plus
+  Ozone's restored tab selection. Each replay lane red first, sweep
+  4/4 green. Queued: RETR-0022 to RETR-0025. All of these exist
+  upstream too; offering them is the user's pick.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
@@ -2222,3 +2233,67 @@ current upstream first, so the player is built on current code.
   **Layman:** The official project's software-store listing still shows its 2021 release; the fork has a fuller list that could be offered.
   Kind: investigate.
   Source: user-request-2026-10-01.
+
+- 📋 [RETR-0022] **REPLAY — statestream decoder leaks and unchecked reads left from the 2026-10-02 review.**
+  Not fixed in 30ef35574d (each needs its own read of the rmsgpack API):
+  - bsv_movie_reset_playback leaks buf on a short read of a v0/v1 state.
+  - bsv_movie_read_deduped_state leaks the rmsgpack item on each wrong
+    type or length, leaves item uninitialised before the first read, and
+    never checks rmsgpack_dom_read_with's return; whether a failed read
+    leaves freed pointers in item is unverified.
+  - The write path (write_deduped_state, write_checkpoint's encode
+    buffer) never checks its allocations.
+  **Layman:** A few rarely-hit error paths in replay loading leak memory or trust a failed read; tidy them so a broken replay file cannot cause odd behaviour.
+  Kind: fix.
+  Source: review-code-2026-10-02 lane-01 R14 R16.
+
+- 📋 [RETR-0023] **REPLAY — two behaviour decisions from the 2026-10-02 review: short replay copy, header byte order.**
+  1. replay_get_serialized_data logs a short copy of the replay into a
+     savestate and still returns true, so the savestate is saved with a
+     truncated replay. Recommendation: return false so the save fails
+     visibly; the cost is a failed save where today a damaged one is
+     written.
+  2. The header's checkpoint-config word is written and read in native
+     byte order (task_movie.c, bsvmovie.c reset_playback), unlike every
+     other header field. Recommendation: leave it; changing it changes
+     the file format, and with the defaults a mismatch reads as interval
+     0, which is harmless.
+  **Layman:** Two choices about replay files need the owner's call: whether a savestate with a cut-short replay should be refused, and whether to fix how one header field is stored.
+  Kind: investigate.
+  Source: review-code-2026-10-02 lane-01 R17 R18.
+
+- 📋 [RETR-0024] **CORE OPTIONS / SCAN — two open questions from the 2026-10-02 review.**
+  1. runloop.c RETRO_ENVIRONMENT_SET_VARIABLES frees the existing core
+     options before building new ones, so NULL data (or an init failure)
+     leaves the core with none. libretro.h says the call returns true
+     with NULL data and does not say what NULL means. Needs the intended
+     meaning settled; reordering is cheap once it is.
+  2. task_database.c runs the core-info gate before the zip main-entry
+     block, so a top-level .zip skips any database whose cores do not list
+     zip. Unverified whether the gate's position (not only its order
+     against the size walk) is new; database_scan_test's zip member
+     passes because its fixture core lists zip.
+  **Layman:** Check whether a core can lose its options by sending an empty list, and whether zipped games skip a database they should match.
+  Kind: investigate.
+  Source: review-code-2026-10-02 lane-02 M3 M4.
+
+- 📋 [RETR-0025] **AUDIT — triage the 2026-10-02 whole-tree check-code findings by class.**
+  Measured 2026-10-02 on local/fixes-2026-09 at 73c7a9c0e3, default
+  preset, scope.txt applied: clang-tidy 36,228 (signed-bitwise 24,885,
+  narrowing 3,188, reserved-identifier 2,765, swappable-params 2,456,
+  macro-parentheses 2,025, ...; clang-analyzer 138, NullDereference 96 of
+  them); cppcheck 7,369 (const* and variableScope classes lead;
+  nullPointerOutOfMemory 137, uninitvar 27, arrayIndexOutOfBoundsCond 8);
+  semgrep 26 after aggregate.py (use-after-free 4: dispserv_x11.c,
+  webdav.c, mcp_server.c, task_save.c). None was spot-checked. The
+  hits on lines changed since 3df84da461 are style only (signed-bitwise,
+  assignment-in-if, constVariablePointer).
+  Recommendation: read the clang-analyzer and semgrep classes first,
+  then record one suppressions.md line per misread class; treat the big
+  style classes as one decision, not a fix list.
+  Config drift seen: audit-config.json pins clang-tidy --quiet (hides
+  findings) and semgrep p/c (errors on C++ headers), and names
+  local/fixes-2026-04 as the fixes branch.
+  **Layman:** The automatic code scanners flagged many thousands of spots, almost all style; sort them by kind, record the false alarms once, and fix any real bugs among the rare kinds.
+  Kind: audit-fix.
+  Source: check-code-tree-2026-10-02.
