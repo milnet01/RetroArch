@@ -2147,6 +2147,14 @@ current upstream first, so the player is built on current code.
   to 1.9.11 (2021). Fork commit cfb745a736 backfilled later entries.
   Before offering it upstream, check each backfilled version and date
   against upstream's tags (git tag --list 'v1.*' with dates).
+  Progress (2026-10-02): checked the five backfilled entries. Every date
+  matches its upstream tag and GitHub release; each item appears in
+  upstream CHANGES.md. One error fixed in 13602e0689: 1.20.0 claimed
+  Vulkan adaptive vsync, which was reverted (#15004) before v1.20.0 and
+  shipped in 1.21.0. Note for an upstream PR: CHANGES.md files the 1.22.0
+  feature list under a "1.22.1" heading, but the code is in the v1.22.0
+  tag, so the metainfo keeps it under 1.22.0. appstreamcli validate
+  passes. Upstream PR not opened; the user decides.
   **Layman:** The official project's software-store listing still shows its 2021 release; the fork has a fuller list that could be offered.
   Kind: investigate.
   Source: user-request-2026-10-01.
