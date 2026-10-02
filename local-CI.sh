@@ -308,7 +308,10 @@ job_samples_tasks() {
 
       cd "$w/samples/tasks/http"
       make clean all SANITIZER=address && test -x http_method_match_test
-      timeout 60 ./http_method_match_test && echo "[pass] http_method_match_test" )
+      timeout 60 ./http_method_match_test && echo "[pass] http_method_match_test"
+
+      cd "$w/samples/tasks/bsv_replay_init"
+      make sweep && echo "[pass] bsv_replay_init_test sweep" )
 }
 
 # Linux-libretro-common-samples.yml :: samples  (ubuntu-latest, native)

@@ -1418,7 +1418,7 @@ static bool content_load_rastate1(unsigned char* input, size_t len)
 #else
          bool frame_is_reversed         = false;
 #endif
-         if (frame_is_reversed || replay_set_serialized_data((void*)input))
+         if (frame_is_reversed || replay_set_serialized_data((void*)input, block_size))
             seen_replay = true;
          else
             return false;
@@ -1446,7 +1446,7 @@ static bool content_load_rastate1(unsigned char* input, size_t len)
       bool frame_is_reversed = false;
 #endif
       if (!seen_replay && !frame_is_reversed)
-         replay_set_serialized_data(NULL);
+         replay_set_serialized_data(NULL, 0);
    }
 #endif
 
@@ -1481,7 +1481,7 @@ bool content_deserialize_state(const void *s, size_t len)
          bool frame_is_reversed = false;
 #endif
          if (!frame_is_reversed)
-            replay_set_serialized_data(NULL);
+            replay_set_serialized_data(NULL, 0);
       }
 #endif
    }
