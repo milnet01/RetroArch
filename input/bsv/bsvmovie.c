@@ -591,7 +591,18 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
 
    if (  compression == REPLAY_CHECKPOINT2_COMPRESSION_NONE
          && encoding == REPLAY_CHECKPOINT2_ENCODING_RAW)
+   {
+      /* Zero-copy: the read lands in cur_save, so a damaged file
+       * must not say it holds more than cur_save can take. */
+      if (compressed_encoded_size > handle->cur_save_size)
+      {
+         RARCH_ERR("[Replay] Checkpoint larger than its state, terminating movie\n");
+         input_st->bsv_movie_state.flags |= BSV_FLAG_MOVIE_END;
+         ret = false;
+         goto exit;
+      }
       compressed_data = handle->cur_save;
+   }
    else
       compressed_data = (uint8_t*)malloc(compressed_encoded_size);
    if (intfstream_read(handle->file, compressed_data,
@@ -651,6 +662,13 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
    switch (encoding)
    {
       case REPLAY_CHECKPOINT2_ENCODING_RAW:
+         if (encoded_size > handle->cur_save_size)
+         {
+            RARCH_ERR("[Replay] Checkpoint larger than its state, terminating movie\n");
+            input_st->bsv_movie_state.flags |= BSV_FLAG_MOVIE_END;
+            ret = false;
+            goto exit;
+         }
          size = encoded_size;
          /* If decompression wasn't zerocopy, need to copy here;
             otherwise decoding is also free */
@@ -679,14 +697,18 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
    handle->checkpoint_ready = true;
  exit:
    /* Only record the size once a buffer backs it (the OOM path above
-    * leaves cur_save NULL, and the next call re-allocates). */
-   if (handle->cur_save)
+    * leaves cur_save NULL, and the next call re-allocates), and never
+    * above what the buffer holds: a skipped checkpoint allocates
+    * nothing. */
+   if (handle->cur_save && size <= handle->cur_save_size)
       handle->cur_save_size = size;
    handle->last_save_size = handle->cur_save_size;
 
-   if (compressed_data)
+   /* On the zero-copy path these alias cur_save, which the handle
+    * still owns. */
+   if (compressed_data && compressed_data != handle->cur_save)
       free(compressed_data);
-   if (encoded_data)
+   if (encoded_data && encoded_data != handle->cur_save)
       free(encoded_data);
    return ret;
 }
