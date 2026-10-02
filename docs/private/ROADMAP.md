@@ -1257,6 +1257,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (RETR-0019). Draft: docs/private/upstream-prs/pr-replay-checkpoint-dedup.md.
   2026-10-02: #19689 opened, AppStream metainfo releases 1.20.0 to
   1.22.2 (RETR-0020). #19683 and #19685 CI still running at the time.
+  2026-10-02: #19685 CI "samples/tasks" failed: its ASan step lacked
+  allocator_may_return_null=1, so the unallocatable legacy-checkpoint
+  case aborted. Fixed in f99ba62444 (fork 04868b553f), reproduced red
+  and checked green locally. Its "samples/gfx" failure was upstream code
+  mid-change (retro_atomic_exchange_int); master's later run passed.
+  #19683 is fully green.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 

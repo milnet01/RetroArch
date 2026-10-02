@@ -1,10 +1,20 @@
 # PR draft — damaged replay checkpoint: six more memory errors
 
 Branch `pr/replay-checkpoint-dedup` in `/mnt/Games/Scripts/Linux/ra-pr`,
-stacked on `pr/replay-checkpoint-bounds` (#19683): one commit,
-`5d702ed87d`, on `e99abce20f` (RETR-0019). Opened 2026-10-02 as
+stacked on `pr/replay-checkpoint-bounds` (#19683): `5d702ed87d` on
+`e99abce20f` (RETR-0019). Opened 2026-10-02 as
 libretro/RetroArch#19685. The fork fixes are `5faedc02c4` and
 `2d368a11a3` on `local/fixes-2026-09`.
+
+Second commit `f99ba62444`, pushed 2026-10-02 (fork `04868b553f`): the
+CI step running `bsv_replay_init_test` under ASan lacked
+`allocator_may_return_null=1`, so the "Build and run samples/tasks"
+check failed with allocation-size-too-big on the legacy-frame case.
+The step now sets it, as the samples/gfx steps do. Reproduced with
+CI's old options, then passing with the new ones. The same run's
+"Build and run samples/gfx" failure was an implicit
+`retro_atomic_exchange_int` declaration in upstream's code at that
+moment; master's later samples/gfx run passed.
 
 ## Title
 
