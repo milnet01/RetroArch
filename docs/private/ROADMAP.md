@@ -1272,6 +1272,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   #19691; that workflow's own master run (bfb6bb0a58) and another
   contributor's PR fail it too, so it is not ours. #19683's run predates
   the workflow. None merged yet.
+  2026-10-02: two more candidates logged in
+  docs/private/upstream-prs/README.md, both live on upstream master
+  20df49def8, both awaiting the user's pick. (1) Replay file parsing
+  hardening, fork 30ef35574d; recommended as one PR with
+  pr/replay-index-gc, stacked on #19685. (2) Menu selection bounds,
+  fork 33eef2765b; recommended as a second commit on #19691. The
+  replay-index-gc PR was approved but its gh pr create was refused by
+  this session's auto-mode classifier; the branch is pushed.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
