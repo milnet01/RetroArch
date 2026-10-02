@@ -121,7 +121,7 @@
           <li>QT: Build with Qt6</li>
           <li>RECORDING: New WAV audio-only recording driver</li>
           <li>VIDEO: Pixel-perfect integer scaling improvements with axis options and smart mode; viewport bias offset</li>
-          <li>VIDEO/VULKAN: Adaptive vsync; prefer IMMEDIATE mode without vsync; fix freezes on suboptimal swapchain</li>
+          <li>VIDEO/VULKAN: Prefer IMMEDIATE mode without vsync; fix freezes on suboptimal swapchain</li>
         </ul>
       </description>
     </release>
