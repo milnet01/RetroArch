@@ -25,6 +25,7 @@ user's go-ahead. Checked 2026-10-01.
 | Allocations written through unchecked (menu init, screenshot task, replay checkpoint, replay index) | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19681 (branch `pr/oom-null-checks`, `b8c508c438`). Draft: [pr-oom-null-checks.md](pr-oom-null-checks.md). |
 | `GET_LANGUAGE` returns true without writing when `HAVE_LANGEXTRA` is off | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19682 (branch `pr/get-language-default`, `8f9c5f5869`). Draft: [pr-get-language-default.md](pr-get-language-default.md). |
 | Damaged replay checkpoint: double free, overrun, and a size larger than the buffer | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19683 (branch `pr/replay-checkpoint-bounds`, `e99abce20f`); fork fix `aab917b1d2`. Draft: [pr-replay-checkpoint-bounds.md](pr-replay-checkpoint-bounds.md). |
+| Damaged replay checkpoint: six more (statestream over-read, `superblock_seq` overflow, undefined index, `last_save_size`, legacy frame allocation, uninitialised size) | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19685 (branch `pr/replay-checkpoint-dedup`, `5d702ed87d`), stacked on #19683; fork fixes `5faedc02c4`, `2d368a11a3`. Draft: [pr-replay-checkpoint-dedup.md](pr-replay-checkpoint-dedup.md). |
 
 ## Branches
 

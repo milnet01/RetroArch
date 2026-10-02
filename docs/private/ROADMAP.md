@@ -1252,6 +1252,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   passed. The maintainer was reworking the core updater that day (e.g.
   fa36171d92, completion flags atomic). No action. If #19683's run
   fails on the same race, comment that on the PR; no fix from us.
+  Progress (2026-10-02): #19685 opened (pr/replay-checkpoint-dedup,
+  5d702ed87d), six more damaged-checkpoint fixes, stacked on #19683
+  (RETR-0019). Draft: docs/private/upstream-prs/pr-replay-checkpoint-dedup.md.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2129,6 +2132,12 @@ current upstream first, so the player is built on current code.
   a memory error); uint32s_index_get's garbage-collected log loop
   starts at additions[RBUF_LEN] (one past the end). Same code
   upstream; not yet sent.
+  Progress (2026-10-02): a cold read of 5faedc02c4 found a sixth: a
+  checkpoint header cut short left size unread (or half-read) and the
+  exit block used it. Fixed on local/fixes-2026-09 as 2d368a11a3
+  (valgrind red before, clean after; local-CI.sh 5/5 PASS). All six
+  opened upstream as #19685 (pr/replay-checkpoint-dedup, 5d702ed87d),
+  stacked on #19683, user approved.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
