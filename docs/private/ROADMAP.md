@@ -2032,6 +2032,30 @@ current upstream first, so the player is built on current code.
     468b6d4ec2, 64865cf5a7, 105401e6cd, f980eb31db).
   The same survey found fork commits upstream has made moot (165c000dc6
   BPS, d375562255's gfx_animation part); those can go at a sync.
+  Progress (2026-10-02): reach checked against upstream/master
+  861bd6a089. Real and reachable in upstream:
+  - S3 path encoder leaves & = ? unencoded (s3.c), built on Apple
+    (pkg/apple/BaseConfig.xcconfig HAVE_S3); a key with & likely fails
+    SigV4 (not tested against a server).
+  - Turbo Bind right-press reads input_config_bind_order[24]
+    (setting_action_right_retropad_bind; range max is
+    RARCH_ANALOG_BIND_LIST_END-1). Left side not reachable from the menu;
+    a hand-edited input_turbo_bind of 24+ still over-reads on Left (not
+    fixed in the fork either).
+  - GET_LANGUAGE writes nothing without HAVE_LANGEXTRA (DOS, PPC Mac).
+  - NULL deref on OOM: menu_driver.c driver_data writes before the
+    check; task_screenshot.c task_init unchecked; bsvmovie.c save buffer
+    malloc unchecked; uint32s_index.c calloc/realloc unchecked.
+  Not worth sending (unreachable or spec-defensive): vulkan_overlay_free,
+  float dropdown loops (no zero step reaches a dropdown; drift below
+  half_step), gx/xdk query_pad (no caller), S3 query sort (all queries
+  already canonical), S3 credential size, run-ahead size re-query
+  (libretro.h forbids growth; adds a per-frame call), env-callback NULL
+  guards other than SET_VARIABLES. task_overlay leak already fixed
+  upstream; Qt UIntRadioButtons already fixed upstream.
+  Fork regression found: 704c6f60ed returns false from SET_VARIABLES on
+  NULL data; libretro.h says it returns true even if data is NULL, and
+  upstream already handles NULL safely. Remove the guard.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
