@@ -1237,6 +1237,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   #19661 and #19666 on 2026-10-01, with no review comments. #19629,
   #19660, #19664 and libretro-common #234 still open, no maintainer
   reply. #19678 opened (pr/scan-core-match, RETR-0016).
+  Progress (2026-10-02): #19678 (scan core-match) merged the
+  same day it opened. Opened #19679 (Turbo Bind bounds), #19680 (S3 key
+  encoding), #19681 (unchecked allocations) and #19682 (GET_LANGUAGE
+  without HAVE_LANGEXTRA), each one commit on upstream/master
+  861bd6a089, built with make -j4 and cold-read clean before opening.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1357,6 +1362,20 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: perf.
   Source: user-request-2026-10-01.
   Lanes: perf.
+
+- 💭 [RETR-0021] **INVESTIGATE — RetroArch has no self-updater.**
+  Checked 2026-10-02 at the user's request. The Online Updater fetches
+  cores, core info, assets, autoconfig profiles, cheats, databases,
+  overlays and shaders from the buildbot (DEFAULT_BUILDBOT_SERVER_URL in
+  config.def.h); nothing replaces the RetroArch binary and nothing checks
+  for a newer version. A Windows-only Qt "update RetroArch" option was
+  added in 4baecf84ca (2018) and removed in b1f6fa4a2a (2021, "remove
+  updateretroarch.cpp"); its three MENU_ENUM_LABEL_VALUE_QT_UPDATE_RETROARCH_*
+  strings remain in msg_hash.h unused. Updating is left to the package
+  manager, Flatpak, Steam or store. No action unless the user asks.
+  **Layman:** RetroArch can update its emulators and add-ons, but not itself; updating the program is left to whatever installed it.
+  Kind: investigate.
+  Source: user-request-2026-10-02.
 
 ### 📝 Cold-eyes 2026-07-04
 
@@ -2056,6 +2075,15 @@ current upstream first, so the player is built on current code.
   Fork regression found: 704c6f60ed returns false from SET_VARIABLES on
   NULL data; libretro.h says it returns true even if data is NULL, and
   upstream already handles NULL safely. Remove the guard.
+  Progress (2026-10-02): the four real bugs are opened upstream
+  as #19679-#19682; the fork SET_VARIABLES regression is fixed on
+  local/fixes-2026-09 as bed516aaf6. GET_LANGUAGE reach is wider than
+  first noted: Makefile.ctr, .psp1, .ps2, .ngc, .psl1ght and .emscripten
+  never set HAVE_LANGEXTRA. New finding, not sent: in
+  bsv_movie_load_checkpoint on the zero-copy path compressed_data is
+  handle->cur_save, so a truncated read frees cur_save at exit: and
+  leaves it dangling (use-after-free / double free on a damaged replay
+  file). Present upstream and in the fork.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.

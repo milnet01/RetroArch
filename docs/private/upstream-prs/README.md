@@ -19,7 +19,11 @@ user's go-ahead. Checked 2026-10-01.
 | WebDAV digest login: a fresh cnonce per login instead of the fixed `"1a2b3c4f"` | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19666 (branch `pr/webdav-random-cnonce`, `c76212a34d`), on upstream's `crypto_random_bytes`. Draft: [pr-webdav-random-cnonce.md](pr-webdav-random-cnonce.md). |
 | Screenshot directory: `new_screenshot_dir` tested before it is written when the directory is empty | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19667 (branch `pr/screenshot-dir-init`, `bfa74954e6`). Draft: [pr-screenshot-dir-init.md](pr-screenshot-dir-init.md). |
 | Core options: categories array sized by option count, so more categories than options overflows it | RETR-S0115 | Opened 2026-10-01 as RetroArch PR #19668 (branch `pr/core-option-cats-size`, `c5bb0425b1`). Draft: [pr-core-option-cats-size.md](pr-core-option-cats-size.md). |
-| Database scan: compute the file extension once per core-match call, and check the short database list first (performance) | RETR-0016 | Branch `pr/scan-core-match` (`f79e1bf804`), not opened. Scan CPU time about halved on 1522 files with 301 cores installed (2026-10-01). Draft: [pr-scan-core-match.md](pr-scan-core-match.md). |
+| Database scan: compute the file extension once per core-match call, and check the short database list first (performance) | RETR-0016 | Opened 2026-10-02 as RetroArch PR #19678 (branch `pr/scan-core-match`, `f79e1bf804`); merged the same day. Scan CPU time about halved on 1522 files with 301 cores installed (2026-10-01). Draft: [pr-scan-core-match.md](pr-scan-core-match.md). |
+| Turbo Bind left/right read past `input_config_bind_order` | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19679 (branch `pr/turbo-bind-bounds`, `366b950d75`). Draft: [pr-turbo-bind-bounds.md](pr-turbo-bind-bounds.md). |
+| S3 cloud sync: `&`, `=` and `?` left unencoded in the object key | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19680 (branch `pr/s3-path-encode`, `f33971784b`). Draft: [pr-s3-path-encode.md](pr-s3-path-encode.md). |
+| Allocations written through unchecked (menu init, screenshot task, replay checkpoint, replay index) | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19681 (branch `pr/oom-null-checks`, `b8c508c438`). Draft: [pr-oom-null-checks.md](pr-oom-null-checks.md). |
+| `GET_LANGUAGE` returns true without writing when `HAVE_LANGEXTRA` is off | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19682 (branch `pr/get-language-default`, `8f9c5f5869`). Draft: [pr-get-language-default.md](pr-get-language-default.md). |
 
 ## Branches
 

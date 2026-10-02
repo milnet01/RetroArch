@@ -2,7 +2,7 @@
 
 Branch `pr/scan-core-match` in `/mnt/Games/Scripts/Linux/ra-pr`, one
 commit on upstream/master `6bf58823c6`: `f79e1bf804` (RETR-0016). Opened
-2026-10-02 as libretro/RetroArch#19678.
+2026-10-02 as libretro/RetroArch#19678; merged the same day.
 
 ## Title
 
