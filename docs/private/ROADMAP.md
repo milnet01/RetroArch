@@ -1346,6 +1346,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Progress (2026-10-02): scan fix opened upstream as #19678 and
   cherry-picked onto local/fixes-2026-09 as 15602156a1; make -j4
   clean, local-CI.sh five jobs PASS. Next: profile playlist loading.
+  Progress (2026-10-02): playlist loading profiled, no target.
+  Harness: playlist_init + playlist_free in a loop, linked against the
+  fixes-branch release objects (15602156a1). Scan playlists, 1-598
+  entries: 0.005-0.352 ms CPU per load. Synthetic 5000 / 20000 / 80000
+  entries: 2.8 / 10.0 / 47.6 ms, linear at about 0.5-0.6 us per entry.
+  perf at 80000: rjson_next 32%, playlist_parse_step 11%, strcmp 7%,
+  malloc/free about 14% combined; no single hotspot worth a patch.
   **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
   Kind: perf.
   Source: user-request-2026-10-01.
