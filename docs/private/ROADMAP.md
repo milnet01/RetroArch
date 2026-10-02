@@ -1244,6 +1244,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   861bd6a089, built with make -j4 and cold-read clean before opening.
   2026-10-02: opened #19683, replay checkpoint double free and
   overrun (RETR-0019, fork aab917b1d2). Merges cleanly with #19681.
+  2026-10-02: the failed "CI Linux samples/tasks" run on #19678
+  (run 36973077387, f79e1bf804) is not ours: a ThreadSanitizer data race
+  in task_update_installed_cores_handler (tasks/task_core_updater.c,
+  update_installed_scan_test). Master failed the same way before it
+  (runs 36971932804, 36969136139), and one master run in between
+  passed. The maintainer was reworking the core updater that day (e.g.
+  fa36171d92, completion flags atomic). No action. If #19683's run
+  fails on the same race, comment that on the PR; no fix from us.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
