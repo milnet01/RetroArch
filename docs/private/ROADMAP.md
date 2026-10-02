@@ -2084,6 +2084,16 @@ current upstream first, so the player is built on current code.
   handle->cur_save, so a truncated read frees cur_save at exit: and
   leaves it dangling (use-after-free / double free on a damaged replay
   file). Present upstream and in the fork.
+  Progress (2026-10-02): replay checkpoint bug fixed on
+  local/fixes-2026-09 as aab917b1d2 (local-CI.sh 5/5 PASS). Three
+  defects in bsv_movie_load_checkpoint, all from a damaged replay: the
+  zero-copy truncated read double-freed cur_save; a stored or decoded
+  length above the state size overran cur_save; a skipped checkpoint set
+  cur_save_size above the buffer. New "checkpoint" lane in
+  samples/tasks/bsv_replay_init failed each way under ASan before the
+  fix and passes after; each fix hunk reverted alone fails it. Not
+  covered by a test: the RAW memcpy overrun reached through zlib/zstd.
+  Same code upstream; not yet sent.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
