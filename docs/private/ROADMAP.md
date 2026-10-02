@@ -1242,6 +1242,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   encoding), #19681 (unchecked allocations) and #19682 (GET_LANGUAGE
   without HAVE_LANGEXTRA), each one commit on upstream/master
   861bd6a089, built with make -j4 and cold-read clean before opening.
+  2026-10-02: opened #19683, replay checkpoint double free and
+  overrun (RETR-0019, fork aab917b1d2). Merges cleanly with #19681.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2094,6 +2096,16 @@ current upstream first, so the player is built on current code.
   fix and passes after; each fix hunk reverted alone fails it. Not
   covered by a test: the RAW memcpy overrun reached through zlib/zstd.
   Same code upstream; not yet sent.
+  Progress (2026-10-02): the replay checkpoint fix is opened
+  upstream as #19683 (pr/replay-checkpoint-bounds, e99abce20f), user
+  approved. A cold read of it found no defect. It raised older issues
+  near it, not yet checked: with NONE compression and STATESTREAM
+  encoding, bsv_movie_read_deduped_state reads encoded_size bytes from a
+  buffer of compressed_encoded_size (over-read on a damaged file);
+  superblock_seq is calloc'd with the first length and written up to
+  later ones; the legacy REPLAY_TOKEN_CHECKPOINT_FRAME branch frees
+  cur_save and leaves cur_save_size stale; last_save_size is not tied to
+  last_save's real size, and the write path swaps it into cur_save_size.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.

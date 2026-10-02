@@ -24,6 +24,7 @@ user's go-ahead. Checked 2026-10-01.
 | S3 cloud sync: `&`, `=` and `?` left unencoded in the object key | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19680 (branch `pr/s3-path-encode`, `f33971784b`). Draft: [pr-s3-path-encode.md](pr-s3-path-encode.md). |
 | Allocations written through unchecked (menu init, screenshot task, replay checkpoint, replay index) | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19681 (branch `pr/oom-null-checks`, `b8c508c438`). Draft: [pr-oom-null-checks.md](pr-oom-null-checks.md). |
 | `GET_LANGUAGE` returns true without writing when `HAVE_LANGEXTRA` is off | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19682 (branch `pr/get-language-default`, `8f9c5f5869`). Draft: [pr-get-language-default.md](pr-get-language-default.md). |
+| Damaged replay checkpoint: double free, overrun, and a size larger than the buffer | RETR-0019 | Opened 2026-10-02 as RetroArch PR #19683 (branch `pr/replay-checkpoint-bounds`, `e99abce20f`); fork fix `aab917b1d2`. Draft: [pr-replay-checkpoint-bounds.md](pr-replay-checkpoint-bounds.md). |
 
 ## Branches
 
