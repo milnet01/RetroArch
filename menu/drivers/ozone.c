@@ -12467,7 +12467,9 @@ static void ozone_selection_changed(ozone_handle_t *ozone, bool allow_animation)
    bool menu_show_sublabels   = settings->bools.menu_show_sublabels;
    bool menu_current_sel_only = settings->bools.menu_show_sublabels_current_selection_only;
 
-   if (!selection_buf)
+   /* selection_ptr can exceed the list size: a selection remembered
+    * per tab is restored after the playlist shrank (cf. #18797). */
+   if (!selection_buf || new_selection >= selection_buf->size)
       return;
 
    node                       = (ozone_node_t*)selection_buf->list[new_selection].userdata;
