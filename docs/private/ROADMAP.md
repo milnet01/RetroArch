@@ -1233,6 +1233,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   comments or reviews. CI: #19660 and #19661 green; #19666-#19668
   still running. #19664's one failure is CI webOS, a GitHub HTTP 500
   downloading the webOS SDK, not the change.
+  Progress (2026-10-02): LibretroAdmin merged #19668, #19667,
+  #19661 and #19666 on 2026-10-01, with no review comments. #19629,
+  #19660, #19664 and libretro-common #234 still open, no maintainer
+  reply. #19678 opened (pr/scan-core-match, RETR-0016).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1339,6 +1343,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   is string_list_find_elem on databases_list, once per core; a cache
   would remove it but is a larger change. Playlist loading not yet
   profiled.
+  Progress (2026-10-02): scan fix opened upstream as #19678 and
+  cherry-picked onto local/fixes-2026-09 as 15602156a1; make -j4
+  clean, local-CI.sh five jobs PASS. Next: profile playlist loading.
   **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
   Kind: perf.
   Source: user-request-2026-10-01.
