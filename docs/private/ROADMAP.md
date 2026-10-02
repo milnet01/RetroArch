@@ -1263,6 +1263,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   and checked green locally. Its "samples/gfx" failure was upstream code
   mid-change (retro_atomic_exchange_int); master's later run passed.
   #19683 is fully green.
+  2026-10-02: #19691 opened (menu selection bounds, RETR-0019). #19689's
+  "CI Linux TSan [sample suites]" failure is upstream's: that workflow
+  was added in bfb6bb0a58 and its own master run failed the same way
+  (rh264/rh265 lossless tests).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2168,6 +2172,12 @@ current upstream first, so the player is built on current code.
   #18797 fixes (8cbd0f1eac, b2610c8264) guarded two other reads. Same
   unchecked read in xmb_set_thumbnail_content's imageviewer branch, the
   twin of b2610c8264's ozone fix.
+  Progress (2026-10-02): the ozone/xmb selection finding is fixed on
+  local/fixes-2026-09 as 73c7a9c0e3 (local-CI.sh 5/5 PASS; build only,
+  not reproduced) and opened upstream as #19691
+  (pr/menu-selection-bounds, df07c52ced), user approved. Open from this
+  item: the replay index fix ecd66eb3c7 is not yet offered upstream; the
+  unverified dedup-after-load question stands.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
