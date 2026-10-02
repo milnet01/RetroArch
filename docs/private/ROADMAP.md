@@ -2146,6 +2146,28 @@ current upstream first, so the player is built on current code.
   (valgrind red before, clean after; local-CI.sh 5/5 PASS). All six
   opened upstream as #19685 (pr/replay-checkpoint-dedup, 5d702ed87d),
   stacked on #19683, user approved.
+  Progress (2026-10-02): the analyzer NULL-check tail (7e37085a4b,
+  79a41cbd23, 31d62a9002, 74d33ccfa5, 42becd5278, b0b83caa43,
+  468b6d4ec2, 64865cf5a7, 105401e6cd, f980eb31db) checked against
+  upstream/master bfb6bb0a58: nothing to send. Every hunk is defensive
+  (the state cannot occur: menu_list_new allocates menu_stack[0] and
+  selection_buf[0] or frees the list; oss_init returns before error:;
+  the thumbnail task checks task->state on entry), a suppression, or
+  already fixed upstream (vulkan font width, wayland drop). Five commit
+  messages overstate their case. OOM-only: if rarch_menu_init fails
+  after driver init, driver_data stays set with a NULL list.
+  Fixed instead: uint32s_index_get's garbage-collected log loop read
+  additions[RBUF_LEN] (heap over-read when the log is full) and printed
+  a uint64_t with %ld; ecd66eb3c7 with an index_gc lane, ASan red
+  before, green after.
+  New finding, not fixed, not reproduced (needs the Ozone GUI, and
+  RetroArch runs headless only): ozone_selection_changed indexes
+  selection_buf->list[selection_ptr] unchecked. ozone_tab_set_selection
+  restores a saved per-tab selection, so a playlist that shrank (the
+  #18797 refresh-from-sidebar case) can index past the list. Upstream's
+  #18797 fixes (8cbd0f1eac, b2610c8264) guarded two other reads. Same
+  unchecked read in xmb_set_thumbnail_content's imageviewer branch, the
+  twin of b2610c8264's ozone fix.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
