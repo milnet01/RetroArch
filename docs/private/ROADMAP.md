@@ -1516,6 +1516,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   being replaced; the stable 7z layouts match the spec. Upstream CI
   2026-10-03: #19695 queued; #19691's one failure is a threaded-video
   d3d12 WARP timing check, not ours (PR touches menu files only).
+  Progress (2026-10-03): spec review loop 2 done, spec cap reached; spec
+  accepted. Four findings fixed: HAVE_SSL in the build gate, AppImage
+  staging cleaned at start-up, file operations behind an injected table
+  so the sample can test them, Accept header dropped. Measured on
+  wintest: `start "" /wait` waits for the silent installer. Next: build
+  on local/fixes-2026-09.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.

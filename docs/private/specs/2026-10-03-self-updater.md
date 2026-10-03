@@ -1,7 +1,7 @@
 <!-- ants-spec-format: 1 -->
 # RETR-0021 — Let RetroArch update itself on Windows and as a Linux AppImage
 
-**Status:** spec draft (2026-10-03).
+**Status:** accepted (2026-10-03).
 **Kind:** implement.
 **Source:** ROADMAP RETR-0021 (user request 2026-10-02; scope and design decisions 2026-10-03).
 **Target:** `local/fixes-2026-09` on the fork; one upstream PR once it is built and tested there (user's instruction).
@@ -45,6 +45,7 @@ A new `HAVE_SELF_UPDATER` in `qb/config.params.sh`, default `yes`, forced to `no
 
 - `HAVE_NETWORKING` and `HAVE_ONLINE_UPDATER` are `yes` (so a Steam build, which `qb/config.libs.sh` already sets to `ONLINE_UPDATER no`, has no self-updater);
 - `HAVE_7ZIP` is `yes` (`qb/config.params.sh`), since every archive in §4.5 is a `.7z`;
+- `HAVE_SSL` is `yes` once `qb/config.libs.sh` has resolved its `auto`, since every request in §4.8 is HTTPS;
 - the target is Win32 desktop on x86 or x86_64, or Linux on x86_64 — the only stable builds the buildbot publishes for these channels.
 
 UWP (`uwp/`, `pkg/msvc-uwp`) does not build through `./configure` and never defines it. New sources go into `Makefile.common` under `HAVE_SELF_UPDATER`. They are not added to `griffin/griffin.c`: no console target qualifies.
@@ -53,10 +54,10 @@ UWP (`uwp/`, `pkg/msvc-uwp`) does not build through `./configure` and never defi
 
 | File | Holds |
 |------|-------|
-| `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format. Everything here is testable without a network or a Windows machine. |
+| `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format, the restart target (§4.6), the start-up cleanup, the Windows replace-and-rollback loop and the AppImage swap. The last three do their file operations (rename, remove, set mode, list a folder) through a table of function pointers the caller passes; production passes one backed by the real calls, and the tests pass one that wraps the real calls and can fail a chosen one. Everything here is testable without a network or a Windows machine. |
 | `struct self_update_endpoints` in `self_update.h` | The test seam: the GitHub API base URL, the buildbot base URL and whether the TLS-mode gate applies. Production code passes `self_update_endpoints_default` — the two §4.8 hosts, gate on — and nothing else. Only `samples/tasks/self_update/` passes another one, pointing at its local plain-HTTP server with the gate off. |
 | `tasks/task_self_update.c` | The check task and the download-and-apply task, built on `task_push_http_transfer_with_user_agent`, `task_push_http_download_file` and the archive API (`file_archive_*`). |
-| `frontend/drivers/platform_win32.c`, `frontend/drivers/platform_unix.c` | The two platform hooks: launching the installer after exit (Windows) and the restart target (AppImage). |
+| `frontend/drivers/platform_win32.c`, `frontend/drivers/platform_unix.c` | The two platform hooks: launching the installer after exit (Windows), and restarting into the target `self_update.c` returns (AppImage). |
 
 ### 4.3 Install kind
 
@@ -83,7 +84,6 @@ Measured on Windows 10 22H2, stable 1.22.2 `RetroArch-Win64-setup.exe`, 2026-10-
 ```
 GET https://api.github.com/repos/libretro/RetroArch/releases/latest
 User-Agent: RetroArch/<PACKAGE_VERSION>
-Accept: application/vnd.github+json
 ```
 
 Parsed with `rjson`: `tag_name`, `draft`, `prerelease`. A release is offered only when `draft` and `prerelease` are both `false`, `tag_name` parses, and that version is greater than `PACKAGE_VERSION` (`version.all`).
@@ -139,7 +139,9 @@ Before asking the user, the check task issues a HEAD for the file it will downlo
 1. Download to staging; verify per §4.5. If the directory is not writable, stop before downloading and say so.
 2. Extract the `.AppImage` member (or take the bare file) as `staging/new.AppImage`; give it the old file's permission bits; flush it to disk.
 3. `rename()` it over `$APPIMAGE`. The running copy keeps its already-mounted image (measured 2026-10-03 with stable 1.22.2: the process kept running and its mounted `usr/bin/` stayed readable after the rename).
-4. Write the pending marker, remove staging, offer *Restart now*. Restart executes `$APPIMAGE`. The existing restart in `frontend_unix_set_fork` takes its target from `fill_pathname_application_path`, which reads `/proc/<pid>/exe` — inside an AppImage that is the binary in the old mounted image, so it would restart the old version.
+4. Write the pending marker, remove staging, offer *Restart now*. Restart executes `$APPIMAGE`.
+
+A leftover `.retroarch-update/` beside `$APPIMAGE` is deleted at start-up, as on Windows. The existing restart in `frontend_unix_set_fork` takes its target from `fill_pathname_application_path`, which reads `/proc/<pid>/exe` — inside an AppImage that is the binary in the old mounted image, so it would restart the old version.
 
 ### 4.7 Confirming the result
 
@@ -164,7 +166,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Breaks when:* a Flatpak or Snap whose environment carries `APPIMAGE` is classed `APPIMAGE`, or a copied installer folder is classed `WIN_INSTALLER` from `uninstall.exe` alone.
 
 - **INV-2** — A Steam build, and any target outside §4.1's list, compiles the feature out.
-  *Test:* manual recipe: `./configure --enable-steam` then `grep HAVE_SELF_UPDATER config.mk` shows it off; so does `./configure --disable-7zip`; a plain Linux x86_64 configure shows it on.
+  *Test:* manual recipe: `./configure --enable-steam` then `grep HAVE_SELF_UPDATER config.mk` shows it off; so do `./configure --disable-7zip` and `./configure --disable-ssl`; a plain Linux x86_64 configure shows it on.
   *Breaks when:* `qb/config.libs.sh` derives `HAVE_SELF_UPDATER` before the Steam block turns `ONLINE_UPDATER` off.
 
 - **INV-3** — Versions compare numerically, part by part, up to four parts, missing parts counting as 0.
@@ -208,7 +210,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Breaks when:* the restart uses `fill_pathname_application_path` and comes back as the old build.
 
 - **INV-13** — A failed or abandoned update leaves the installed program as it was and removes its staging folder.
-  *Test:* lanes `checksum` and `replace` assert staging is gone after each failure row; lane `cleanup` plants `*.retroarch-old` files and both staging folders and asserts the start-up cleanup removes all three.
+  *Test:* lanes `checksum` and `replace` assert staging is gone after each failure row; lane `cleanup` plants `*.retroarch-old` files and each kind's staging folder (the two Windows ones and the AppImage one) and asserts the start-up cleanup removes them all.
   *Breaks when:* a staging folder or `.retroarch-old` file survives a failure and is never removed.
 
 ## 6. Failure modes
@@ -230,7 +232,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 
 ## 7. Tests
 
-- `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`, the policy file compiled with a stub settings struct, and a local HTTP server thread like `get_list_refresh_flags_test.c` uses for the network lanes. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` (INV-5), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13). Wired into `samples/Makefile`'s `check`.
+- `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`. The policy lanes compile `self_update.c` with a stub settings struct. The network lanes (`startup`, `checksum`) link the real `tasks/task_self_update.c`, `tasks/task_http.c`, `task_queue.c` and `net_http.c`, stub the frontend symbols, and serve from a local HTTP server thread — the shape of `samples/tasks/core_updater/Makefile.refresh_flags` and its `get_list_refresh_flags_test.c`. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` (INV-5), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13). Wired into `samples/Makefile`'s `check`.
 - `samples/tasks/http/` — one new lane for the HTTPS-to-HTTP redirect guard (INV-5).
 - Each lane is run once against a deliberately broken build of the rule it tests (the fixture's named rule removed) and must fail there before it is trusted.
 - Manual, on `wintest` (Windows 10): INV-10 both routes, a portable update, and a portable update while a DLL is held open by another process (INV-9's real-world case). Manual, on Linux: INV-12's AppImage recipe. INV-2's configure recipe.
