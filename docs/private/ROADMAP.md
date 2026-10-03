@@ -1504,6 +1504,18 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   outside the silent target folder opens the installer visibly, with
   a note naming the folder to pick. Releases since 2023 come 2-6
   months apart; versions can have four parts (1.16.0.3).
+  2026-10-03 spec: docs/private/specs/2026-10-03-self-updater.md
+  (write-spec; loop log docs/private/reviews/2026-10-03-self-updater-loop-log.md).
+  review-contract loop 1 done (b8d98cf93a): 8 fixed, 2 dismissed.
+  Loop 2 of 2 owed: rebuild the packet from disk (code windows from
+  the ra-fixes worktree; last packet and fix ledger saved in
+  ~/.local/share/claude-handoff/retroarch-self-updater-*-2026-10-03.*),
+  two cold lanes via ~/.claude/tools/neutral-lane, then fix, log row 2,
+  commit, and set the spec Status to accepted. Measured too: renaming a
+  loaded DLL works on Windows; a running AppImage survives its file
+  being replaced; the stable 7z layouts match the spec. Upstream CI
+  2026-10-03: #19695 queued; #19691's one failure is a threaded-video
+  d3d12 WARP timing check, not ours (PR touches menu files only).
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
