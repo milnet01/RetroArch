@@ -1280,6 +1280,21 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   fork 33eef2765b; recommended as a second commit on #19691. The
   replay-index-gc PR was approved but its gh pr create was refused by
   this session's auto-mode classifier; the branch is pushed.
+  2026-10-03 check (gh): merged 2026-10-02 by LibretroAdmin: #19679
+  (Turbo Bind bounds), #19681 (unchecked allocations). #19680 (S3 key
+  encoding) closed but landed as 5c34f32 with our authorship. #19682
+  closed: bug confirmed, fixed differently on master (reports the
+  stored language, English, instead of returning false). Still open,
+  no maintainer comments: #19629, #19660, #19664, #19683, #19685,
+  #19689, #19691. CI: #19664's failure is a webOS SDK download HTTP
+  500. #19689 and #19691 fail TSan only on upstream's rh264/rh265
+  tests. Correction to 2026-10-02: #19685 also fails TSan in our own
+  bsv_replay_init_test, the unallocatable legacy-checkpoint lane.
+  tools/tsan-samples.sh (new upstream, bfb6bb0a58) runs it without
+  allocator_may_return_null=1, so TSan aborts on the 1<<62 malloc
+  instead of returning NULL. Needs a fix pushed to
+  pr/replay-checkpoint-dedup; waits on the user. The replay-index-gc
+  PR is still not opened.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
