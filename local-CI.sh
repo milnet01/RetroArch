@@ -287,31 +287,48 @@ job_c89() {
 # Linux-samples-tasks.yml :: samples-tasks  (ubuntu-latest, native)
 job_samples_tasks() {
     local w; w="$(mktemp -d "$LOGDIR/stasks.XXXX")"; export_tree "$w"
+    # One command per line: set -e does not stop on a failure in the first
+    # half of `a && b`, so `./test && echo pass` could never fail the job.
     ( set -e
       cd "$w/samples/tasks/database"
-      make clean all && test -x database_task
+      make clean all
+      test -x database_task
       rc=0; ./database_task >/dev/null 2>&1 || rc=$?
       [ "$rc" -ne 0 ] || { echo "database_task no-args expected non-zero, got 0"; exit 1; }
       echo "[pass] database_task no-args exit=$rc"
 
       cd "$w/samples/tasks/decompress"
-      make clean all && test -x archive_name_safety_test
-      timeout 60 ./archive_name_safety_test && echo "[pass] archive_name_safety_test"
+      make clean all
+      timeout 60 ./archive_name_safety_test
+      echo "[pass] archive_name_safety_test"
 
       cd "$w/samples/tasks/cloudsync"
-      make clean all && test -x cloudsync_path_safety_test
-      timeout 60 ./cloudsync_path_safety_test && echo "[pass] cloudsync_path_safety_test"
+      make clean all
+      timeout 60 ./cloudsync_path_safety_test
+      echo "[pass] cloudsync_path_safety_test"
 
       cd "$w/samples/tasks/natt_desc"
-      make clean all && test -x natt_desc_parse_test
-      timeout 60 ./natt_desc_parse_test && echo "[pass] natt_desc_parse_test"
+      make clean all
+      timeout 60 ./natt_desc_parse_test
+      echo "[pass] natt_desc_parse_test"
 
       cd "$w/samples/tasks/http"
-      make clean all SANITIZER=address && test -x http_method_match_test
-      timeout 60 ./http_method_match_test && echo "[pass] http_method_match_test"
+      make clean all SANITIZER=address
+      timeout 60 ./http_method_match_test
+      echo "[pass] http_method_match_test"
+      make -f Makefile.limits clean
+      make -f Makefile.limits SANITIZER=address,undefined
+      timeout 60 ./http_limits_test
+      echo "[pass] http_limits_test"
+
+      cd "$w/samples/tasks/self_update"
+      make clean all SANITIZER=address,undefined
+      timeout 120 ./self_update_test
+      echo "[pass] self_update_test"
 
       cd "$w/samples/tasks/bsv_replay_init"
-      make sweep && echo "[pass] bsv_replay_init_test sweep" )
+      make sweep
+      echo "[pass] bsv_replay_init_test sweep" )
 }
 
 # Linux-libretro-common-samples.yml :: samples  (ubuntu-latest, native)
@@ -455,7 +472,12 @@ for job in "${SELECTED[@]}"; do
     fi
     log="$LOGDIR/${arg:-$job}.log"
     printf '>> %-14s ... ' "$job"
-    if "$fn" ${arg:+"$arg"} >"$log" 2>&1; then
+    # Called outside an if: inside one, bash ignores set -e in the job and
+    # everything it runs, so a job's `( set -e ...)` would stop on nothing
+    # and only its last command could fail it.
+    "$fn" ${arg:+"$arg"} >"$log" 2>&1
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
         echo "PASS"; RESULTS+=("PASS  $job")
     else
         echo "FAIL  (see $log)"; RESULTS+=("FAIL  $job -> $log")
