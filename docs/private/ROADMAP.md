@@ -1302,6 +1302,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   it; plain and ASan+UBSan builds pass. CI had not started on the new
   head when checked. pr/replay-index-gc is stacked on the old head
   f99ba62444 and needs a rebase onto 27d2ba37f9 before it is opened.
+  2026-10-03 (user-approved): pr/replay-index-gc rebased onto
+  27d2ba37f9 (index fix now 8651a11c1e), plus the replay parsing
+  hardening (fork 30ef35574d, without local-CI.sh) as 0f89f8be55.
+  Force-pushed with a lease and opened as #19694, stacked on #19685.
+  Replay test passes plain, ASan+UBSan, STATESTREAM ASan and TSan;
+  make -j4 clean. Menu bounds (fork 33eef2765b) added to #19691 as
+  45d7548f2b, PR body updated. On a --disable-qt build,
+  menu_playlist_nav_test passes, and fails lane_entry_past_end with the
+  menu_driver.c change reverted. Open upstream: #19629, #19660, #19664,
+  #19683, #19685, #19689, #19691, #19694.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
