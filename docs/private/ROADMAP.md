@@ -1522,6 +1522,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   so the sample can test them, Accept header dropped. Measured on
   wintest: `start "" /wait` waits for the silent installer. Next: build
   on local/fixes-2026-09.
+  Progress (2026-10-03): build started. The net_http.c redirect guard
+  (spec §4.8, INV-5) is ec4d20f509 on local/fixes-2026-09: an https
+  request redirected to http:// now fails; its lane in
+  samples/tasks/http/http_limits_test.c was red first, then green, with
+  ASan+UBSan clean. Release signing proposal drafted for upstream in
+  docs/private/upstream-prs/issue-signed-releases.md (not posted): a
+  signed <file>.sha256 per stable file, ECDSA P-256, checked with
+  libretro-common/crypto's existing x509_verify_ecdsa_digest. Round trip
+  tested 2026-10-03: an openssl signature is accepted; an edited
+  checksum or a different key is rejected.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
