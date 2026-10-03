@@ -31,6 +31,7 @@ user's go-ahead. Checked 2026-10-01.
 | Replay index: a lookup of a garbage-collected block reads one past the additions log | RETR-0019 | Opened 2026-10-03 as RetroArch PR #19694 (branch `pr/replay-index-gc`, `8651a11c1e`), stacked on #19685; fork fix `ecd66eb3c7`. Draft: [pr-replay-index-gc.md](pr-replay-index-gc.md). Closed 2026-10-03: the maintainer's c6f3adb51a fixed it. |
 | Replay file parsing hardening: commit interval 1, unbounded header block sizes, statestream with no index, timeline input count, savestate replay length, event capacity, pop leak, checkpoint-before result, backwards seeks, failed decode ends playback | RETR-0019 | Opened 2026-10-03 as RetroArch PR #19695 (branch `pr/replay-parsing`, `65f7674a8b`), rebuilt on upstream master with the three surviving #19685 fixes; fork `30ef35574d`. It first rode in #19694, now closed. Body: the PR itself. |
 | Menu: `menu_entry_get` bounded for every caller (XMB database-manager and Explore branches), and Ozone's restored tab selection clamped | RETR-0019 | Added 2026-10-03 as the second commit of RetroArch PR #19691 (`45d7548f2b`); fork `33eef2765b`. Its playlist_nav lane fails without the fix on a `--disable-qt` build. |
+| `net_http`: a redirect from `https` to `http` ends the transfer with an error instead of dropping TLS | RETR-0021 | Opened 2026-10-03 as RetroArch PR #19696 (branch `pr/net-http-redirect-tls`, `6ede9a842b`); fork fix `ec4d20f509`. Its `http_limits_test` lane fails without the guard on upstream master `e5c48508a3`. Body: the PR itself. |
 
 ## Branches
 

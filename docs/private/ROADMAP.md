@@ -1532,6 +1532,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   libretro-common/crypto's existing x509_verify_ecdsa_digest. Round trip
   tested 2026-10-03: an openssl signature is accepted; an edited
   checksum or a different key is rejected.
+  Progress (2026-10-03): the redirect guard went upstream on its own as
+  RetroArch PR #19696 (branch pr/net-http-redirect-tls, 6ede9a842b),
+  approved by the user. User decisions the same day: signature checking
+  is added only once upstream publishes a key; the signing proposal is
+  posted with the self-updater PR.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
