@@ -151,6 +151,7 @@ HAVE_FLAC=no               # Link against libFLAC (unused by default; FLAC decod
 HAVE_RMP3=yes            # Compile in Dr. MP3 support
 HAVE_RFLAC=yes           # Native FLAC decode support
 HAVE_ONLINE_UPDATER=yes    # Disable the online updater
+HAVE_SELF_UPDATER=yes      # Update RetroArch itself (Windows and the Linux AppImage; needs networking, the online updater, 7z and SSL)
 HAVE_UPDATE_CORES=yes      # Disable downloading cores with online updater
 HAVE_UPDATE_CORE_INFO=yes  # Disable downloading cores info with online updater
 HAVE_UPDATE_ASSETS=yes     # Disable downloading assets with online updater

@@ -2452,6 +2452,13 @@ ifeq ($(HAVE_NETWORKING), 1)
       OBJ += tasks/task_core_updater.o
    endif
 
+   # Gated by configure (qb/config.libs.sh): never a console target,
+   # so griffin does not list it.
+   ifeq ($(HAVE_SELF_UPDATER), 1)
+      DEFINES += -DHAVE_SELF_UPDATER
+      OBJ += self_update.o
+   endif
+
    ifneq ($(findstring Linux,$(OS)),)
       HAVE_CLOUDSYNC = 1
    endif

@@ -1091,3 +1091,33 @@ else
       echo "SMB support enabled (system libsmb2)"
    fi
 fi
+
+# The self-updater: only where every step of it can run (an HTTPS
+# request, a .7z archive) and only on a target libretro publishes
+# stable builds for: Windows on x86 or x86_64, Linux on x86_64.  Runs
+# after the Steam block, which turns the online updater off, and after
+# SSL's auto has resolved.
+check_enabled NETWORKING SELF_UPDATER 'self-updater' 'Networking is' false
+check_enabled ONLINE_UPDATER SELF_UPDATER 'self-updater' 'The online updater is' false
+check_enabled 7ZIP SELF_UPDATER 'self-updater' '7z support is' false
+check_enabled SSL SELF_UPDATER 'self-updater' 'SSL is' false
+if [ "$HAVE_SELF_UPDATER" != 'no' ]; then
+   case "$OS" in
+      Win32) self_update_cond='defined(__x86_64__) || defined(__i386__)' ;;
+      Linux) self_update_cond='defined(__x86_64__)' ;;
+      *)     self_update_cond='0' ;;
+   esac
+   printf %s\\n "#if !($self_update_cond)" \
+      '#error no stable RetroArch build for this target' \
+      '#endif' \
+      'int main(void) { return 0; }' > "$TEMP_C"
+   printf %s 'Checking for a target with stable RetroArch builds ... '
+   if $(printf %s "$CC") -o "$TEMP_EXE" "$TEMP_C" \
+         $(printf %s "$CFLAGS $LDFLAGS") >>config.log 2>&1; then
+      printf %s\\n 'yes'
+   else
+      printf %s\\n 'no'
+      HAVE_SELF_UPDATER=no
+   fi
+   rm -f -- "$TEMP_C" "$TEMP_EXE"
+fi
