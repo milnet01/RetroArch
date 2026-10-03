@@ -1295,6 +1295,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   instead of returning NULL. Needs a fix pushed to
   pr/replay-checkpoint-dedup; waits on the user. The replay-index-gc
   PR is still not opened.
+  2026-10-03 (user-approved): #19685's TSan fix pushed to
+  pr/replay-checkpoint-dedup as 27d2ba37f9. bsv_replay_init_test sets
+  allocator_may_return_null=1 via __tsan_default_options. Run as
+  tools/tsan-samples.sh runs it: fails without the change, passes with
+  it; plain and ASan+UBSan builds pass. CI had not started on the new
+  head when checked. pr/replay-index-gc is stacked on the old head
+  f99ba62444 and needs a rebase onto 27d2ba37f9 before it is opened.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
