@@ -1474,6 +1474,36 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   yes. Stable releases only. Needs a spec (docs/private/specs/) before
   code: it spans the menu, network tasks, install detection and
   platform file replacement. Sequenced after the replay PR cleanup.
+  2026-10-03 research (buildbot, GitHub API, repo): newest stable 1.22.2
+  at buildbot /stable/<ver>/; Windows ships RetroArch-Win64-setup.exe
+  (NSIS, unsigned) and portable RetroArch.7z; the AppImage is inside
+  linux/x86_64/RetroArch.7z. No checksums, no signatures, no stable
+  RetroArch_update.7z (nightly only), no latest-version file; GitHub
+  releases/latest gives tag v1.22.2. HTTP is served unredirected.
+  User decisions 2026-10-03: (1) HTTPS with certificate checking
+  forced, refuse if the user disabled it; use upstream checksums if
+  ever published, and ask upstream for them. (2) An installer install
+  updates by running the new official installer silently. (3) A
+  portable Windows update replaces program files only (exe, DLLs,
+  filters, platforms), never config, saves or assets. (4) Accept the
+  full-size download, show its size before asking; ask upstream for a
+  small stable update pack and a bare AppImage, used when present.
+  Version comes from GitHub releases/latest, files from the buildbot.
+  2026-10-03 Windows 10 test (wintest, stable 1.22.2 Win64 setup,
+  cleaned up after): silent /S installs to C:\RetroArch-Win64 and
+  ignores /D= (checked twice); uninstall key is
+  HKLM\SOFTWARE\WOW6432Node\...\Uninstall\RetroArch with
+  UninstallString <dir>\uninstall.exe and DisplayVersion 1.22.2.0.
+  The installer does not restart RetroArch. A silent re-install kept
+  retroarch.cfg and user files in shaders\ and assets\; it replaces a
+  file only when its copy is newer (old-dated stand-ins replaced, a
+  file edited today kept). If retroarch.exe is in use when reached,
+  it is skipped and the installer still exits 0. Windows allows
+  renaming a running exe and writing a new file under its name, but
+  not deleting it. User decision 2026-10-03: an installer install
+  outside the silent target folder opens the installer visibly, with
+  a note naming the folder to pick. Releases since 2023 come 2-6
+  months apart; versions can have four parts (1.16.0.3).
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
