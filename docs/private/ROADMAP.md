@@ -1444,7 +1444,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: user-request-2026-10-01.
   Lanes: perf.
 
-- 💭 [RETR-0021] **INVESTIGATE — RetroArch has no self-updater.**
+- 📋 [RETR-0021] **FEATURE — Self-updater for Windows and the Linux AppImage (stable releases, asks before updating).**
   Checked 2026-10-02 at the user's request. The Online Updater fetches
   cores, core info, assets, autoconfig profiles, cheats, databases,
   overlays and shaders from the buildbot (DEFAULT_BUILDBOT_SERVER_URL in
@@ -1454,8 +1454,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   updateretroarch.cpp"); its three MENU_ENUM_LABEL_VALUE_QT_UPDATE_RETROARCH_*
   strings remain in msg_hash.h unused. Updating is left to the package
   manager, Flatpak, Steam or store. No action unless the user asks.
-  **Layman:** RetroArch can update its emulators and add-ons, but not itself; updating the program is left to whatever installed it.
-  Kind: investigate.
+  User decision 2026-10-03: build a self-updater, fully worked out
+  on the fork first, then send it upstream as one PR. Scope: Windows
+  (installer and portable) and the Linux AppImage only; never Flathub,
+  Snap, Steam, app stores or distro packages. Behaviour: a "check for
+  RetroArch update" item in the Online Updater plus an optional
+  start-up check, off by default; it updates only when the user says
+  yes. Stable releases only. Needs a spec (docs/private/specs/) before
+  code: it spans the menu, network tasks, install detection and
+  platform file replacement. Sequenced after the replay PR cleanup.
+  **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
+  Kind: feature.
   Source: user-request-2026-10-02.
 
 ### 📝 Cold-eyes 2026-07-04
