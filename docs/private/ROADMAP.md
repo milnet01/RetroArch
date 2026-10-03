@@ -1312,6 +1312,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   menu_playlist_nav_test passes, and fails lane_entry_past_end with the
   menu_driver.c change reverted. Open upstream: #19629, #19660, #19664,
   #19683, #19685, #19689, #19691, #19694.
+  2026-10-03: #19683, #19685 and #19694 now conflict with upstream
+  master in input/bsv/bsvmovie.c (and uint32s_index.c for #19694), so
+  GitHub runs no CI on #19685 or #19694. On 2026-10-02 LibretroAdmin landed five replay
+  commits of their own: d7c14a0ac8 (checkpoint sizes held to the
+  header, #19683's subject), c6f3adb51a (undefined index refused,
+  superblock_seq_len, no-layout replay refused, and the additions[len-1]
+  lookup that is #19694's first fix), b12ae7c1ee (statestream
+  allocation failures, uint32s_index_new NULL), 82d728d59e, 35080c9ffc.
+  None cites our PRs, and none of our PRs has a comment. Much of #19683,
+  #19685 and #19694 is likely now redundant; which fixes are still live
+  on master is not yet checked. Awaiting the user's decision.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
