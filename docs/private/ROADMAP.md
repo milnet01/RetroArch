@@ -1537,6 +1537,24 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   approved by the user. User decisions the same day: signature checking
   is added only once upstream publishes a key; the signing proposal is
   posted with the self-updater PR.
+  Progress (2026-10-03): policy core and build gate on
+  local/fixes-2026-09. 8995c20769: self_update.c/.h (kind, version,
+  release offer, TLS gate, URLs, Windows program set, replace and
+  rollback, marker, AppImage swap, start-up cleanup; file work through
+  an injected table) and samples/tasks/self_update (nine lanes, 114
+  checks; red first; 22 deliberate rule breakages each fail their lane;
+  ASan+UBSan clean; C89 and C++98 clean). Spec folded back in 1ca13830d8 (impl row
+  in the loop log). 6a47b8e3a1: HAVE_SELF_UPDATER in
+  qb/config.params.sh and qb/config.libs.sh plus Makefile.common; INV-2
+  recipe checked in a scratch tree (on for plain Linux x86_64 and MinGW
+  x64; off for steam, no 7z, no SSL, no networking, no online updater).
+  RetroArch itself not yet built with the feature. Next: the
+  start-up-check setting. This fork generates setting registrations:
+  read tools/settings_migrate_group.py and tools/gen_lbl_str.py and
+  mirror settings/settings_def_updater_extract.h (included from
+  configuration.c, msg_hash.h, intl/msg_hash_us.h, intl/msg_hash_us.c,
+  menu/menu_setting.c) before editing by hand. Then
+  tasks/task_self_update.c and the startup and checksum lanes (spec §7).
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
@@ -2445,3 +2463,20 @@ current upstream first, so the player is built on current code.
   **Layman:** The automatic code scanners flagged many thousands of spots, almost all style; sort them by kind, record the false alarms once, and fix any real bugs among the rare kinds.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02.
+
+- ✅ [RETR-0027] **GATE — local-CI.sh's samples-tasks job could fail only on its last step.**
+  Found 2026-10-03 while adding the self-updater lanes (RETR-0021). The
+  driver ran each job as `if "$fn"; then`, and bash ignores set -e inside
+  an if condition, so job_samples_tasks's `( set -e ...)` stopped on
+  nothing; its `./test && echo pass` lines also never stop under set -e.
+  Only the last step (the replay sweep) could fail the job. The other jobs
+  judge their own result or run in a separate shell, so they were sound.
+  Fixed in 953464cab8 on local/fixes-2026-09: the job is called outside
+  an if, and the tasks job runs one command per line; it also runs
+  http_limits_test and self_update_test now. Proof: with self_update.c's
+  TLS gate broken on purpose, the job passed before and fails after. A
+  full run with the fix passed all five jobs, so no test had been failing
+  unseen. User approved the fix 2026-10-03.
+  **Layman:** The fork's push checks ran several tests that could never actually block a push; now any failing test does.
+  Kind: fix.
+  Source: in-session-2026-10-03.
