@@ -1323,6 +1323,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   None cites our PRs, and none of our PRs has a comment. Much of #19683,
   #19685 and #19694 is likely now redundant; which fixes are still live
   on master is not yet checked. Awaiting the user's decision.
+  2026-10-03 (user-approved): what is still live of the replay work
+  is rebuilt on upstream master a1dfb374d1 as one commit, 65f7674a8b on
+  pr/replay-parsing, opened as #19695 (mergeable, CI started). It keeps
+  the parsing hardening and three #19685 fixes (last_save_size, legacy
+  frame allocation, failed-decode cur_save_valid). It drops what the
+  maintainer's d7c14a0ac8 / c6f3adb51a already fixed, and updates the
+  verbatim copy in bsv_checkpoint_bounds_test. All replay suites pass
+  (plain, ASan, STATESTREAM, TSan). Reverting each hunk alone turns a
+  lane red for 14; seven are not caught by any lane, and the PR body
+  lists them. #19683, #19685 and #19694 closed with a note pointing at
+  #19695.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1466,6 +1477,20 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
+
+- 📋 [RETR-0026] **FEATURE — Cheats: offer the exact-match cheat file for the running game and open it directly.**
+  User request 2026-10-03. Today the user must download cheats from the
+  Online Updater, start the game, open the Quick Menu, open Cheats, pick
+  the system from a long list, then the game from a longer one, before
+  toggling cheats. Wanted: RetroArch detects a cheat file that exactly
+  matches the loaded ROM, tells the user, and opens the enable/disable
+  view for it directly. Build and test it fully on the fork first, then
+  send it upstream as one PR. Design questions (how "exact match" is
+  decided, and whether the notice is automatic) go to the user when
+  work starts.
+  **Layman:** When a cheat file exists for the game you are playing, RetroArch should say so and take you straight to switching cheats on and off, instead of making you dig through long lists.
+  Kind: feature.
+  Source: user-request-2026-10-03.
 
 ### 📝 Cold-eyes 2026-07-04
 
