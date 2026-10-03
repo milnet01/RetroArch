@@ -1544,7 +1544,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   an injected table) and samples/tasks/self_update (nine lanes, 114
   checks; red first; 22 deliberate rule breakages each fail their lane;
   ASan+UBSan clean; C89 and C++98 clean). Spec folded back in 1ca13830d8 (impl row
-  in the loop log). 6a47b8e3a1: HAVE_SELF_UPDATER in
+  in the loop log). f1bfbdb7f0: HAVE_SELF_UPDATER in
   qb/config.params.sh and qb/config.libs.sh plus Makefile.common; INV-2
   recipe checked in a scratch tree (on for plain Linux x86_64 and MinGW
   x64; off for steam, no 7z, no SSL, no networking, no online updater).
