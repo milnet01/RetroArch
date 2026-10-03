@@ -44,6 +44,7 @@ One choice was mine, stated so it can be overturned: the latest version comes fr
 A new `HAVE_SELF_UPDATER` in `qb/config.params.sh`, default `yes`, forced to `no` by `qb/config.libs.sh` unless all of these hold:
 
 - `HAVE_NETWORKING` and `HAVE_ONLINE_UPDATER` are `yes` (so a Steam build, which `qb/config.libs.sh` already sets to `ONLINE_UPDATER no`, has no self-updater);
+- `HAVE_7ZIP` is `yes` (`qb/config.params.sh`), since every archive in §4.5 is a `.7z`;
 - the target is Win32 desktop on x86 or x86_64, or Linux on x86_64 — the only stable builds the buildbot publishes for these channels.
 
 UWP (`uwp/`, `pkg/msvc-uwp`) does not build through `./configure` and never defines it. New sources go into `Makefile.common` under `HAVE_SELF_UPDATER`. They are not added to `griffin/griffin.c`: no console target qualifies.
@@ -53,6 +54,7 @@ UWP (`uwp/`, `pkg/msvc-uwp`) does not build through `./configure` and never defi
 | File | Holds |
 |------|-------|
 | `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format. Everything here is testable without a network or a Windows machine. |
+| `struct self_update_endpoints` in `self_update.h` | The test seam: the GitHub API base URL, the buildbot base URL and whether the TLS-mode gate applies. Production code passes `self_update_endpoints_default` — the two §4.8 hosts, gate on — and nothing else. Only `samples/tasks/self_update/` passes another one, pointing at its local plain-HTTP server with the gate off. |
 | `tasks/task_self_update.c` | The check task and the download-and-apply task, built on `task_push_http_transfer_with_user_agent`, `task_push_http_download_file` and the archive API (`file_archive_*`). |
 | `frontend/drivers/platform_win32.c`, `frontend/drivers/platform_unix.c` | The two platform hooks: launching the installer after exit (Windows) and the restart target (AppImage). |
 
@@ -72,7 +74,7 @@ enum self_update_kind
 The decision is a pure function of injected facts, so both platforms' rules are tested on Linux:
 
 - **Linux.** `APPIMAGE` is set, is an absolute path, names a regular file, and neither `FLATPAK_ID` nor `SNAP` is set → `APPIMAGE`. Anything else → `NONE`. This is positive detection: the AppImage runtime sets `APPIMAGE` and nothing else does, so a distro package, a Flatpak, a Snap or a source build reaches `NONE` without being recognised by name. No source file reads any of these variables today (`grep -rn 'APPIMAGE\|FLATPAK_ID\|"SNAP"' --include=*.c . | grep -v deps/` → no output).
-- **Windows.** `uninstall.exe` sits beside `retroarch.exe` **and** the uninstall key's `UninstallString` names that same file → an installer install. Else → `WIN_PORTABLE`. The key is `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\RetroArch` in `HKLM`, read through the 32-bit registry view (`KEY_WOW64_32KEY`), which is where the 32-bit NSIS installer writes it on 64-bit Windows (measured below). An installer install is `WIN_INSTALLER` only when the build is x86_64 and the folder is `%SystemDrive%\RetroArch-Win64`; every other installer install is `WIN_INSTALLER_VISIBLE`. The x86 installer's silent folder was not measured, so x86 installer installs always take the visible route until it is (§14).
+- **Windows.** `uninstall.exe` sits beside `retroarch.exe` **and** the uninstall key's `UninstallString` names that same file → an installer install. Else → `WIN_PORTABLE`. The key is `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\RetroArch` in `HKLM`, read through the 32-bit registry view (`KEY_WOW64_32KEY`), which is where the 32-bit NSIS installer writes it on 64-bit Windows (measured below). An installer install is `WIN_INSTALLER` only when the build is x86_64 and the folder is `C:\RetroArch-Win64`, the one folder measured; every other installer install is `WIN_INSTALLER_VISIBLE`. The x86 installer's silent folder was not measured, so x86 installer installs always take the visible route until it is (§14).
 
 Measured on Windows 10 22H2, stable 1.22.2 `RetroArch-Win64-setup.exe`, 2026-10-03 (RETR-0021 body): silent `/S` installs to `C:\RetroArch-Win64` and ignores `/D=`; the key is `HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\RetroArch` with `UninstallString C:\RetroArch-Win64\uninstall.exe` and `DisplayVersion 1.22.2.0`; the installer's top-level files are the portable archive's plus `uninstall.exe`.
 
@@ -84,11 +86,13 @@ User-Agent: RetroArch/<PACKAGE_VERSION>
 Accept: application/vnd.github+json
 ```
 
-Parsed with `rjson`: `tag_name`, `draft`, `prerelease`. A release is offered only when `draft` and `prerelease` are both `false`, `tag_name` is `v` (optional) followed by two to four dot-separated decimal numbers, and that version is greater than `PACKAGE_VERSION` (`version.all`).
+Parsed with `rjson`: `tag_name`, `draft`, `prerelease`. A release is offered only when `draft` and `prerelease` are both `false`, `tag_name` parses, and that version is greater than `PACKAGE_VERSION` (`version.all`).
 
 ```c
-/* 0 on success; parts beyond those present are 0. Rejects empty
- * parts, signs, non-digits, more than four parts, any part > 65535. */
+/* 0 on success; parts beyond those present are 0. Accepts one
+ * optional leading 'v', then two to four dot-separated decimal
+ * parts. Rejects empty parts, signs, other non-digits, fewer than
+ * two or more than four parts, any part > 65535. */
 int self_update_version_parse(const char *s, unsigned out[4]);
 /* -1, 0, 1. */
 int self_update_version_cmp(const unsigned a[4], const unsigned b[4]);
@@ -106,7 +110,7 @@ Base `https://buildbot.libretro.com/stable/<version>/`, `<version>` without the 
 | `WIN_INSTALLER*` | — | `windows/x86_64/RetroArch-Win64-setup.exe` or `windows/x86/RetroArch-Win32-setup.exe` | The whole file |
 | `APPIMAGE` | `linux/x86_64/RetroArch-Linux-x86_64.AppImage` | `linux/x86_64/RetroArch.7z` | The one member at depth two ending `.AppImage` |
 
-`<arch>` is `x86_64` or `x86`. For every file downloaded, `<url>.sha256` is fetched first (D5): 200 → its first 64 hex digits are the expected SHA-256, checked with `sha256_stream_init` / `_update` / `_final` (`libretro-common/include/lrc_hash.h`) as the file streams; 404 → no checksum; any other result → the update stops.
+`<arch>` is `x86_64` or `x86`. For every file downloaded, `<url>.sha256` is fetched first (D5): 200 → its first 64 hex digits are the expected SHA-256, checked by reading the finished staging file back in chunks through `sha256_stream_init` / `_update` / `_final` (`libretro-common/include/lrc_hash.h`) — `task_push_http_download_file` writes straight to disk and offers no per-chunk hook; 404 → no checksum; any other result → the update stops.
 
 Before asking the user, the check task issues a HEAD for the file it will download and shows its `Content-Length` (D8).
 
@@ -120,7 +124,7 @@ Before asking the user, the check task issues a HEAD for the file it will downlo
 4. If any step fails, undo every rename already made, in reverse, and report the failure.
 5. Write the pending marker (§4.7), remove staging, and offer *Restart now*. The restart uses the `retroarch.exe` path captured **before** step 3: after the rename, the process's reported path still names the original file (measured: `Get-Process` reported the original name after a rename), so the captured path is the one that now holds the new build.
 
-`*.retroarch-old` files and a leftover `.retroarch-update\` are deleted at start-up.
+`*.retroarch-old` files, a leftover `.retroarch-update\` and a leftover `%TEMP%\retroarch-update\` (the installer route's staging, below) are deleted at start-up; a file still in use is left for the next start.
 
 **Windows installer.** RetroArch cannot run the installer itself and stay open: the installer skips a `retroarch.exe` it cannot open and still exits 0 (measured 2026-10-03). So:
 
@@ -134,8 +138,8 @@ Before asking the user, the check task issues a HEAD for the file it will downlo
 
 1. Download to staging; verify per §4.5. If the directory is not writable, stop before downloading and say so.
 2. Extract the `.AppImage` member (or take the bare file) as `staging/new.AppImage`; give it the old file's permission bits; flush it to disk.
-3. `rename()` it over `$APPIMAGE`. The running copy keeps its already-mounted image.
-4. Write the pending marker, remove staging, offer *Restart now*. Restart executes `$APPIMAGE`. The existing restart in `frontend_unix_set_fork` takes its target from `fill_pathname_application_path`, which reads `/proc/self/exe` — inside an AppImage that is the binary in the old mounted image, so it would restart the old version.
+3. `rename()` it over `$APPIMAGE`. The running copy keeps its already-mounted image (measured 2026-10-03 with stable 1.22.2: the process kept running and its mounted `usr/bin/` stayed readable after the rename).
+4. Write the pending marker, remove staging, offer *Restart now*. Restart executes `$APPIMAGE`. The existing restart in `frontend_unix_set_fork` takes its target from `fill_pathname_application_path`, which reads `/proc/<pid>/exe` — inside an AppImage that is the binary in the old mounted image, so it would restart the old version.
 
 ### 4.7 Confirming the result
 
@@ -143,7 +147,7 @@ The pending marker is `self_update.pending` in the config directory, two lines: 
 
 ### 4.8 TLS
 
-Every request the updater makes goes to `https://api.github.com/` or `https://buildbot.libretro.com/` and nowhere else. None is made unless `settings->uints.tls_verify_mode` is `TLS_VERIFY_REQUIRED` (`network/tls_config.h`); otherwise the updater says certificate checking must be on and stops (D5). A redirect that leaves HTTPS ends the transfer with an error: `net_http.c` gains that guard for every caller, and it goes upstream as its own small PR before this one (§2 item 4).
+In every build outside `samples/`, every request the updater issues is built from `self_update_endpoints_default`: `https://api.github.com/` or `https://buildbot.libretro.com/`. A redirect from either to another HTTPS host is followed, and that host's certificate is verified like any other. None is made unless `settings->uints.tls_verify_mode` is `TLS_VERIFY_REQUIRED` (`network/tls_config.h`); otherwise the updater says certificate checking must be on and stops (D5). A redirect that leaves HTTPS ends the transfer with an error: `net_http.c` gains that guard for every caller, and it goes upstream as its own small PR before this one (§2 item 4).
 
 ### 4.9 Menu and settings
 
@@ -160,27 +164,27 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Breaks when:* a Flatpak or Snap whose environment carries `APPIMAGE` is classed `APPIMAGE`, or a copied installer folder is classed `WIN_INSTALLER` from `uninstall.exe` alone.
 
 - **INV-2** — A Steam build, and any target outside §4.1's list, compiles the feature out.
-  *Test:* manual recipe: `./configure --enable-steam` then `grep HAVE_SELF_UPDATER config.mk` shows it off; a plain Linux x86_64 configure shows it on.
+  *Test:* manual recipe: `./configure --enable-steam` then `grep HAVE_SELF_UPDATER config.mk` shows it off; so does `./configure --disable-7zip`; a plain Linux x86_64 configure shows it on.
   *Breaks when:* `qb/config.libs.sh` derives `HAVE_SELF_UPDATER` before the Steam block turns `ONLINE_UPDATER` off.
 
 - **INV-3** — Versions compare numerically, part by part, up to four parts, missing parts counting as 0.
-  *Test:* lane `version`: `1.9.0 < 1.22.2`; `1.22.2 = 1.22.2.0`; `1.16.0 < 1.16.0.3`; `v1.22.2` parses; `1.22`, `1.2.3.4` parse; `1.2.3.4.5`, `1..2`, `1.2a`, `-1.2`, `""`, `1.70000` are rejected. Fixture isolates the parser and comparator.
+  *Test:* lane `version`: `1.9.0 < 1.22.2`; `1.22.2 = 1.22.2.0`; `1.16.0 < 1.16.0.3`; `v1.22.2` parses; `1.22`, `1.2.3.4` parse; `1`, `vv1.2`, `1.2.3.4.5`, `1..2`, `1.2a`, `-1.2`, `""`, `1.70000` are rejected. Fixture isolates the parser and comparator.
   *Breaks when:* strings are compared as text (`1.9.0` > `1.22.2`), or a fourth part is dropped (`1.16.0.3` = `1.16.0`).
 
 - **INV-4** — A release is offered only when it is not a draft, not a prerelease, has a valid tag, and is newer than `PACKAGE_VERSION`.
   *Test:* lane `release`: JSON fixtures for each failing condition and one passing one, each differing from the passing one in exactly that field. Fixture isolates the offer rule; JSON that fails to parse is its own fixture.
   *Breaks when:* `prerelease: true` is offered, or an equal or older tag is offered.
 
-- **INV-5** — No update request is made unless `tls_verify_mode` is `TLS_VERIFY_REQUIRED`, every request URL starts with one of the two hosts of §4.8, and a redirect to a non-HTTPS URL fails the transfer.
-  *Test:* lane `tls` asserts the URL builder only ever returns those two prefixes and that the check refuses to start under `TLS_VERIFY_OPTIONAL` and `TLS_VERIFY_DISABLED`; `samples/tasks/http` gains a lane that hands the redirect step an HTTPS request and an `http://` `Location` and asserts the transfer ends in error, while the same request with an `https://` `Location` is followed — so the fixture isolates the scheme rule, not redirects as such. Each fixture isolates one of the three clauses.
+- **INV-5** — With `self_update_endpoints_default`, no update request is made unless `tls_verify_mode` is `TLS_VERIFY_REQUIRED`, every URL the updater builds starts with one of the two hosts of §4.8, and a redirect to a non-HTTPS URL fails the transfer.
+  *Test:* lane `tls`, using `self_update_endpoints_default` and never the test endpoints, asserts every URL built for each install kind starts with one of those two prefixes and that the check refuses to start under `TLS_VERIFY_OPTIONAL` and `TLS_VERIFY_DISABLED`; `samples/tasks/http` gains a lane that hands the redirect step an HTTPS request and an `http://` `Location` and asserts the transfer ends in error, while the same request with an `https://` `Location` is followed — so the fixture isolates the scheme rule, not redirects as such. Each fixture isolates one of the three clauses.
   *Breaks when:* the mode gate is skipped for the start-up check, or `net_http_redirect` follows an `https`→`http` redirect.
 
 - **INV-6** — Nothing is downloaded or changed on disk before the user selects **Update Now**; the start-up check only notifies.
-  *Test:* lane `startup`: run the start-up check against a local server offering a newer release; assert one notification and no download task in the queue.
+  *Test:* lane `startup`: run the start-up check, through test endpoints (§4.2), against a local server offering a newer release; assert one notification and no download task in the queue.
   *Breaks when:* the start-up check chains into the download task.
 
 - **INV-7** — When `<url>.sha256` answers 200, a file whose SHA-256 differs is never installed; only a 404 counts as "no checksum"; any other answer stops the update.
-  *Test:* lane `checksum` with a local server: matching hash → proceeds; wrong hash → stops, staging removed; 404 → proceeds; 500 → stops. The 500 row isolates the "only 404 means absent" rule.
+  *Test:* lane `checksum` with a local server, through test endpoints (§4.2): matching hash → proceeds; wrong hash → stops, staging removed; 404 → proceeds; 500 → stops. The 500 row isolates the "only 404 means absent" rule.
   *Breaks when:* a failed checksum fetch is treated as "no checksum published".
 
 - **INV-8** — A Windows portable update writes only the program set of §4.6.
@@ -200,11 +204,11 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Breaks when:* an installer that skipped the locked executable leaves the user believing the update succeeded.
 
 - **INV-12** — An AppImage update replaces `$APPIMAGE` by a rename in its own directory, keeps the old file's permission bits, and a restart executes `$APPIMAGE`.
-  *Test:* lane `appimage` in a temporary directory with a stand-in file of mode 0750; after the apply step the path holds the new bytes with mode 0750, and the restart target function returns the `APPIMAGE` value rather than `/proc/self/exe`. Manual recipe: run a stable AppImage renamed to an older version string, update it, restart, and read the version in Information.
+  *Test:* lane `appimage` in a temporary directory with a stand-in file of mode 0750; after the apply step the path holds the new bytes with mode 0750, and the restart target function returns the `APPIMAGE` value rather than `/proc/<pid>/exe`. Manual recipe: run a stable AppImage renamed to an older version string, update it, restart, and read the version in Information.
   *Breaks when:* the restart uses `fill_pathname_application_path` and comes back as the old build.
 
 - **INV-13** — A failed or abandoned update leaves the installed program as it was and removes its staging folder.
-  *Test:* lanes `checksum` and `replace` assert staging is gone after each failure row; lane `cleanup` plants `*.retroarch-old` files and a staging folder and asserts the start-up cleanup removes both.
+  *Test:* lanes `checksum` and `replace` assert staging is gone after each failure row; lane `cleanup` plants `*.retroarch-old` files and both staging folders and asserts the start-up cleanup removes all three.
   *Breaks when:* a staging folder or `.retroarch-old` file survives a failure and is never removed.
 
 ## 6. Failure modes
@@ -284,7 +288,7 @@ Rows live in `../reviews/2026-10-03-self-updater-loop-log.md`.
 ## 13. Resource cost
 
 - Disk, temporary: one downloaded file in staging (stable 1.22.2: Win64 `RetroArch.7z` 202,509,078 B; Win64 setup 209,037,907 B; Linux `RetroArch.7z` 179,361,448 B — buildbot listing, 2026-10-03) plus the extracted program set. Staging is removed on success and on failure.
-- Memory: downloads stream to disk (`task_push_http_download_file`), hashing streams (`sha256_stream_*`), extraction works member by member. No step holds a whole download in memory.
+- Memory: downloads stream to disk (`task_push_http_download_file`), hashing reads the staging file back in chunks (`sha256_stream_*`), extraction works member by member. No step holds a whole download in memory.
 - Network: one small JSON request per check, one HEAD per candidate file, then one download. The start-up check, when on, runs once per start; GitHub allows 60 unauthenticated requests an hour per address. Source: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
 - No new dependencies.
 
