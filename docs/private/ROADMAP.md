@@ -2474,7 +2474,7 @@ current upstream first, so the player is built on current code.
   Kind: fix.
   Source: review-code-2026-10-02 lane-01 R14 R16.
 
-- 📋 [RETR-0023] **REPLAY — two behaviour decisions from the 2026-10-02 review: short replay copy, header byte order.**
+- ✅ [RETR-0023] **REPLAY — two behaviour decisions from the 2026-10-02 review: short replay copy, header byte order.**
   1. replay_get_serialized_data logs a short copy of the replay into a
      savestate and still returns true, so the savestate is saved with a
      truncated replay. Recommendation: return false so the save fails
@@ -2485,6 +2485,22 @@ current upstream first, so the player is built on current code.
      other header field. Recommendation: leave it; changing it changes
      the file format, and with the defaults a mismatch reads as interval
      0, which is harmless.
+  Decided 2026-10-05 (user), both still live on upstream master
+  1e9dec8d32. 1: return false on a short copy. Both callers in
+  task_save.c already drop the replay block on false and keep the save,
+  as for the existing frame-counter refusal, so the cost is a savestate
+  without its replay, not a failed save as stated above. 2: swap the
+  checkpoint-config word like every other header field. Only the Unix
+  Makefile and emscripten enable HAVE_STATESTREAM, and the swap is a
+  no-op on little-endian, so only a big-endian Linux recording changes.
+  Both go to one upstream PR, then the fork.
+  Resolved 2026-10-05: upstream PR #19714
+  (pr/replay-serialize-byteorder, 8d3298ba21), fork 740ff95143 on
+  local/fixes-2026-09. Lane serialize_short fails without the fix
+  (128 / 256 bytes copied, copy accepted) and passes with it in both
+  trees. The byte-order lanes pass on little-endian with or without the
+  fix and were not run on a big-endian machine. local-CI.sh: all Linux
+  jobs PASS.
   **Layman:** Two choices about replay files need the owner's call: whether a savestate with a cut-short replay should be refused, and whether to fix how one header field is stored.
   Kind: investigate.
   Source: review-code-2026-10-02 lane-01 R17 R18.
