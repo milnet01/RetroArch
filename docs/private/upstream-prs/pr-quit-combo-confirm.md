@@ -1,6 +1,6 @@
 # PR: runloop: the quit controller combo counts once per press
 
-Opened 2026-10-05 as libretro/RetroArch #19711, branch `pr/quit-combo-confirm` (`796ebb9518`), on upstream master `e6ba0e6e2f`.
+Opened 2026-10-05 as libretro/RetroArch #19711, branch `pr/quit-combo-confirm` (`fc7f0d2f49`), on upstream master `e6ba0e6e2f`.
 
 ## Body
 

@@ -1361,6 +1361,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   796ebb9518, on master e6ba0e6e2f. Red then green with the test joypad
   driver (headless); C89_BUILD=1 clean. Draft:
   docs/private/upstream-prs/pr-quit-combo-confirm.md.
+  2026-10-05: #19711's commit amended to fc7f0d2f49 (was 796ebb9518)
+  to carry the Co-Authored-By line; code unchanged. User force-pushed.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
