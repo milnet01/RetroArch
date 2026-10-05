@@ -1343,6 +1343,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   needs a rebase), #19660 and #19664 (both merge cleanly; #19664's one
   failed check is a webOS SDK download HTTP 500 in upstream CI, not our
   code). Issues #19632, libretro-common #232 and #233 open, no replies.
+  2026-10-05: #19629 rebased onto master (fc668d5f04, user-approved).
+  task_save.c keeps our temp-file block over master's new hand-over of
+  the state to the callback. file_stream.c takes master's version:
+  c24fd90825 fixed libretro-common #233 upstream, so the PR no longer
+  changes it. Full -j4 build clean; headless 2048 run replaced the state
+  by rename twice and saved .srm on quit, no .tmp left. PR body updated.
+  Mergeable; upstream CI running.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
