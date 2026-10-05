@@ -6,7 +6,7 @@
   "indie_review_partition": "docs/private/audit/indie-review-partition.md",
   "incremental_anchor": "master",
   "current_audit_branch": "local/audit-2026-04",
-  "current_fixes_branch": "local/fixes-2026-04",
+  "current_fixes_branch": "local/fixes-2026-09",
 
   "tools": {
     "cppcheck": {
@@ -18,6 +18,13 @@
         "--suppress=missingIncludeSystem",
         "--suppress=unusedFunction",
         "--suppress=unknownMacro",
+        "--suppress=constVariablePointer",
+        "--suppress=constParameterCallback",
+        "--suppress=constParameterPointer",
+        "--suppress=constVariable",
+        "--suppress=variableScope",
+        "--suppress=unreachableSwitchCase",
+        "--suppress=unusedStructMember",
         "--suppressions-list=.cppcheck-suppress.txt",
         "--inline-suppr",
         "--xml",
@@ -37,11 +44,11 @@
     "clang-tidy": {
       "command": "clang-tidy",
       "requires": ["compile_commands.json"],
-      "regenerate_compile_db": "bear -- make -j$(nproc)",
-      "checks": "bugprone-*,clang-analyzer-core.*,clang-analyzer-security.*,clang-analyzer-unix.*,-clang-analyzer-deadcode.*",
+      "regenerate_compile_db": "bear -- make -j4",
+      "checks": "bugprone-*,clang-analyzer-core.*,clang-analyzer-security.*,clang-analyzer-unix.*,-clang-analyzer-deadcode.*,-bugprone-signed-bitwise,-bugprone-narrowing-conversions,-bugprone-easily-swappable-parameters,-bugprone-macro-parentheses,-bugprone-reserved-identifier,-bugprone-assignment-in-if-condition,-bugprone-implicit-widening-of-multiplication-result,-bugprone-multi-level-implicit-pointer-conversion,-bugprone-switch-missing-default-case",
+      "checks_excluded_why": "The nine bugprone checks above flagged ~36,000 sites on 2026-10-02, all upstream code style (signed bit operations, narrowing, naming, macro shape). Dropped by decision 2026-10-05 (RETR-0025) so the rare classes stay readable. The cppcheck --suppress entries for const*, variableScope, unreachableSwitchCase and unusedStructMember were dropped on the same decision.",
       "flags": [
-        "-format-style=none",
-        "--quiet"
+        "-format-style=none"
       ],
       "scope_apply": true,
       "scope_format": "post-filter compile_commands.json",
@@ -67,13 +74,13 @@
         "--skip-unknown-extensions"
       ],
       "configs": [
-        "p/c",
         "p/security-audit"
       ],
       "scope_apply": true,
       "scope_format": "--exclude <subtree>",
       "max_findings_before_aggregate": 200,
       "known_issues": [
+        "p/c is not used: it errors on every C++ header in the tree (seen on the 2026-10-02 run).",
         "The 2026-04-25 run reported 332 parse errors across the C dialect; rerun with a pinned semgrep version (>=1.50) and re-evaluate. Until then, the double-free cluster (29 sites) is a documented FP class — see suppressions.md S9."
       ]
     },

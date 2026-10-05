@@ -2532,7 +2532,7 @@ current upstream first, so the player is built on current code.
   Kind: investigate.
   Source: review-code-2026-10-02 lane-02 M3 M4.
 
-- 📋 [RETR-0025] **AUDIT — triage the 2026-10-02 whole-tree check-code findings by class.**
+- ✅ [RETR-0025] **AUDIT — triage the 2026-10-02 whole-tree check-code findings by class.**
   Measured 2026-10-02 on local/fixes-2026-09 at 73c7a9c0e3, default
   preset, scope.txt applied: clang-tidy 36,228 (signed-bitwise 24,885,
   narrowing 3,188, reserved-identifier 2,765, swappable-params 2,456,
@@ -2549,6 +2549,17 @@ current upstream first, so the player is built on current code.
   Config drift seen: audit-config.json pins clang-tidy --quiet (hides
   findings) and semgrep p/c (errors on C++ headers), and names
   local/fixes-2026-04 as the fixes branch.
+  Resolved 2026-10-05: triage done against 740ff95143, every finding
+  given a disposition in
+  docs/private/reviews/close-findings-2026-10-05-retr-0025.md.
+  semgrep 26: all noise. clang-analyzer 138 and the five rare cppcheck
+  classes: eight defects normal use reaches (RETR-0028, fixing now),
+  out-of-memory paths (RETR-0029), console-only and low-impact
+  (RETR-0030); the rest read and dismissed, new noise classes in
+  suppressions.md. Mid-frequency classes not read: RETR-0031. Style
+  classes dropped from audit-config.json by user decision 2026-10-05;
+  the config drift (--quiet, p/c, fixes branch, -j) fixed in the same
+  commit.
   **Layman:** The automatic code scanners flagged many thousands of spots, almost all style; sort them by kind, record the false alarms once, and fix any real bugs among the rare kinds.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02.
@@ -2569,3 +2580,72 @@ current upstream first, so the player is built on current code.
   **Layman:** The fork's push checks ran several tests that could never actually block a push; now any failing test does.
   Kind: fix.
   Source: in-session-2026-10-03.
+
+- 🚧 [RETR-0028] **FIX — eight defects from the RETR-0025 triage that normal use reaches.**
+  Verified 2026-10-05 on local/fixes-2026-09 at 740ff95143.
+  1. input/input_driver.c turbo clear: input_remap_ids[port][turbo_bind]
+     with the default turbo_bind -1 (two sites; upstream has it too).
+  2. playlist.c playlist_push_new_entry: entries[0].attr thumbnail bits
+     19-23 never reset, so a new entry inherits or gets garbage flags.
+  3. gfx/drivers_shader/glslang_util.c: scratch leaks on both include
+     cache-hit returns.
+  4. gfx/gfx_thumbnail.c gfx_savestate_thumbnail_get_path: strdup'd
+     state_name never freed.
+  5. tasks/task_translation.c BMP branch: unchecked malloc, and width x
+     height from the server reply never checked against its length.
+  6. menu/menu_displaylist.c content info: content_path NULL-checked a
+     few lines up, then dereferenced unguarded.
+  7. audio/drivers/pipewire.c mic open: error path dereferences NULL mic.
+  8. gfx/drivers_shader/shader_gl3.c gl3_cross_compile_program: link
+     failure with an empty info log returns the unlinked program.
+  Ledger: docs/private/reviews/close-findings-2026-10-05-retr-0025.md.
+  **Layman:** Fix eight real bugs the code scanners found that a normal user can run into, from a turbo-button misread to a translation-service image the app trusts too much.
+  Kind: audit-fix.
+  Source: check-code-tree-2026-10-02 via RETR-0025.
+
+- 📋 [RETR-0029] **FIX — out-of-memory paths that crash or corrupt instead of failing, from RETR-0025.**
+  Verified 2026-10-05; reached only when an allocation fails.
+  shader_gl3.c gl3_chain_new and shader_vulkan.c slang_chain_new return
+  a chain whose passes were never allocated; video_driver.c
+  realloc_checked returns true when malloc fails; vulkan.c keeps a
+  buffer node whose vkMapMemory failed; uint32s_index.c RBUF_PUSH drops
+  copy and desyncs objects from counts; menu_setting.c
+  config_string_options leaks owned values; input_keymaps.c rlut calloc
+  unchecked before an indexed write; gl2.c/gl3.c get_context before the
+  NULL check; ui_win32_companion.c realloc straight into paths;
+  rsx_gfx.c rsxMemalign unchecked. The other ~94 cppcheck
+  nullPointerOutOfMemory rows are plain crash-on-OOM and are not queued.
+  Not fixed now: user chose the normal-use defects first (2026-10-05).
+  Ledger: docs/private/reviews/close-findings-2026-10-05-retr-0025.md.
+  **Layman:** Make a dozen places fail cleanly when the machine runs out of memory instead of crashing or writing to the wrong place.
+  Kind: audit-fix.
+  Source: check-code-tree-2026-10-02 via RETR-0025.
+
+- 📋 [RETR-0030] **FIX — console-only and low-impact defects from RETR-0025.**
+  Verified 2026-10-05. ctr_gfx.c ctr_load_texture dereferences a NULL
+  image from a failed 3DS wallpaper load (better: NULL guard in
+  video_driver_texture_load); vita_pib shacccgpatch.c strlen of an
+  uninitialised log, plus pointer arithmetic on &shader writing the
+  caller's stack; ps2_gfx.c font allocs unchecked; save.c struct tm
+  uninitialised when localtime fails; net_retropad_core.c shift by an
+  unchecked JSON value; tools/ps3 crypt.c uint8 shifted past 31.
+  Unsure: input_driver.c input_key_pressed NULL joypad, no in-tree caller.
+  Hazard: the console ones cannot be built or run here.
+  Ledger: docs/private/reviews/close-findings-2026-10-05-retr-0025.md.
+  **Layman:** Fix smaller bugs the scanners found that only show up on game consoles or in rare test and tool cases.
+  Kind: audit-fix.
+  Source: check-code-tree-2026-10-02 via RETR-0025.
+
+- 📋 [RETR-0031] **AUDIT — triage the mid-frequency scanner classes RETR-0025 did not read.**
+  RETR-0025 read clang-analyzer, semgrep and five rare cppcheck classes
+  only. Unread: cppcheck objectIndex, duplicateCondition,
+  unsignedLessThanZero, invalidPointerCast, invalidPrintfArgType_*,
+  arithOperationsOnVoidPointer, knownConditionTrueFalse; clang-tidy
+  bugprone unhandled-code-paths, unchecked-string-to-number-conversion,
+  assignment-in-selection-statement, integer-division,
+  suspicious-string-compare, branch-clone and the single-digit bugprone
+  classes. Results in /mnt/Games/claude-scratch/audit-1002/ (scratch,
+  may be gone; re-run with docs/private/audit/audit-config.json).
+  **Layman:** Read the scanner warnings of the middle-sized kinds that nobody has looked at yet, since a few of them can hide real bugs.
+  Kind: audit-fix.
+  Source: check-code-tree-2026-10-02 via RETR-0025.

@@ -76,6 +76,8 @@ When a suppression entry says "verified resolved-stale," the underlying issue do
 
 **Status:** ✅ Implemented — Bundle 34 close. Permanent suppression class.
 
+**2026-10-05 (RETR-0025):** the same shape was read and confirmed at `core_option_manager.c`, `gfx/drivers_shader/shader_gl3.c`, `gfx/drivers_shader/slang_process.c`, `gfx/video_shader_parse.c` and `menu/drivers/rgui_bitmapfont.c`, and under semgrep's `use-after-free` rule at `tasks/task_save.c`. `aggregate.py`'s S9 path list does not name them, so they still reach triage.
+
 ---
 
 ### S12 — JNI-callback missingReturn FPs (cppcheck)
@@ -132,6 +134,23 @@ When a suppression entry says "verified resolved-stale," the underlying issue do
 **Action:** Inline-suppress when the cppcheck-suppress file is introduced. Do not refactor `push_entry` solely to satisfy the analyzer — the function is correct.
 
 **Status:** 🔄 Deferred (Bundle 28 triage).
+
+---
+
+### Classes read and dismissed in RETR-0025 (2026-10-05)
+
+Each was read site by site on `local/fixes-2026-09` at 740ff95143. Per-site reasons: `docs/private/reviews/close-findings-2026-10-05-retr-0025.md`.
+
+- **`SETTINGS_LIST_APPEND` `*list` assumed NULL** (clang-analyzer `core.NullDereference`, `menu/menu_setting.c`). `*list` comes from a NULL-checked malloc and is only replaced after a successful realloc.
+- **`menu_st->entries.list` assumed NULL in a menu driver callback** (clang-analyzer `core.NullDereference`; rgui, materialui, ozone). The list exists for as long as the driver's callbacks can run.
+- **The address of an array member treated as possibly NULL** (clang-analyzer, e.g. `settings->arrays.menu_driver`).
+- **libwayland list frees** (clang-analyzer `unix.Malloc` use-after-free in the `wayland_common.c` files). `wl_list_remove` unlinks the node before `free`; the analyzer cannot see into libwayland.
+- **`wl_list_for_each` iterator "uninitialised"** (cppcheck `uninitvar`, same files). The macro assigns the iterator before the body; cppcheck has no `wayland-util.h`.
+- **Freed and reallocated on the next line** (semgrep `use-after-free`: `dispserv_x11.c`, `webdav.c`, `mcp_server.c`). The flagged write goes to the new buffer.
+
+**Action:** hand-triage drop on the next run. None is in `aggregate.py`.
+
+**Status:** 💭 Recorded, not automated.
 
 ---
 
