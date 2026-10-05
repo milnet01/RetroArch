@@ -1334,6 +1334,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   lane red for 14; seven are not caught by any lane, and the PR body
   lists them. #19683, #19685 and #19694 closed with a note pointing at
   #19695.
+  Checked 2026-10-05: #19691 (menu selection bounds) and #19689
+  (metainfo releases) merged. #19695 (replay parsing) and #19696
+  (net_http https-to-http redirect) were closed by LibretroAdmin after
+  landing our commits on master under our authorship (ee8a24a447,
+  217c50838e); the maintainer added follow-up 73dde88f91. Still open:
+  #19629 (now conflicts with master in file_stream.c and task_save.c,
+  needs a rebase), #19660 and #19664 (both merge cleanly; #19664's one
+  failed check is a webOS SDK download HTTP 500 in upstream CI, not our
+  code). Issues #19632, libretro-common #232 and #233 open, no replies.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
