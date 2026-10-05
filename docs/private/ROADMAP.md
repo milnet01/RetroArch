@@ -1355,6 +1355,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2026-10-03. Residual named in the comment: under a frontend VFS
   (filestream_rename_cb), a failed retry after the delete still loses
   both files; offered a patch if the maintainer wants it.
+  2026-10-05: opened RetroArch PR #19711 (user-approved), fixing upstream
+  issue #19642: the quit controller combo skipped Confirm Quit because
+  it counts on every held frame. Branch pr/quit-combo-confirm,
+  796ebb9518, on master e6ba0e6e2f. Red then green with the test joypad
+  driver (headless); C89_BUILD=1 clean. Draft:
+  docs/private/upstream-prs/pr-quit-combo-confirm.md.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
