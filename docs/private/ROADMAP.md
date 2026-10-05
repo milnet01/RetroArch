@@ -2505,7 +2505,7 @@ current upstream first, so the player is built on current code.
   Kind: investigate.
   Source: review-code-2026-10-02 lane-01 R17 R18.
 
-- 📋 [RETR-0024] **CORE OPTIONS / SCAN — two open questions from the 2026-10-02 review.**
+- ✅ [RETR-0024] **CORE OPTIONS / SCAN — two open questions from the 2026-10-02 review.**
   1. runloop.c RETRO_ENVIRONMENT_SET_VARIABLES frees the existing core
      options before building new ones, so NULL data (or an init failure)
      leaves the core with none. libretro.h says the call returns true
@@ -2516,6 +2516,18 @@ current upstream first, so the player is built on current code.
      zip. Unverified whether the gate's position (not only its order
      against the size walk) is new; database_scan_test's zip member
      passes because its fixture core lists zip.
+  Resolved 2026-10-05, checked against upstream master 1e9dec8d32, no
+  code change. (1) Holds upstream: SET_VARIABLES deinits the old
+  options first, and core_option_manager_new_vars returns NULL for NULL
+  vars, so NULL data clears them. A build failure with non-NULL data
+  needs out-of-memory or an empty options path (no config path at all).
+  libretro.h says only that the call returns true when data is NULL.
+  User decision 2026-10-05: treat NULL as "clear", leave it. (2) Not
+  new: the gate dates from fc1f2cdcf4 (2016, scan only databases whose
+  cores support the extension). fbe3d2b246 (2026-09-10) moved it ahead
+  of the size walk only, playlist output byte-identical; 8acbe4ab8c
+  (2026-10-02) cached the claims. A top-level zip skipping databases
+  whose cores do not list zip is the intended behaviour.
   **Layman:** Check whether a core can lose its options by sending an empty list, and whether zipped games skip a database they should match.
   Kind: investigate.
   Source: review-code-2026-10-02 lane-02 M3 M4.
