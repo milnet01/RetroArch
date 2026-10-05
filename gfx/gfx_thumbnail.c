@@ -3740,6 +3740,8 @@ void gfx_savestate_thumbnail_get_path(
 {
    size_t _len;
    playlist_t *playlist = playlist_get_cached();
+   /* Holds the path state_name points into, when it is built here */
+   void *owned          = NULL;
 
    if (!s || !len)
       return;
@@ -3802,9 +3804,8 @@ void gfx_savestate_thumbnail_get_path(
          dir_set(RARCH_DIR_CURRENT_SAVEFILE, old_savefile_dir);
          dir_set(RARCH_DIR_CURRENT_SAVESTATE, old_savestate_dir);
 
-         state_name = strdup(new_path);
-      
-         free(pb);
+         state_name = new_path;
+         owned      = pb;
       }
    }
 #endif /* HAVE_MENU */
@@ -3833,7 +3834,10 @@ void gfx_savestate_thumbnail_get_path(
    {
       int n = snprintf(s + _len, len - _len, "%d", state_slot);
       if (n < 0)
+      {
+         free(owned);
          return;
+      }
       _len += (size_t)n;
       if (_len >= len)
          _len = len - 1;
@@ -3846,4 +3850,5 @@ void gfx_savestate_thumbnail_get_path(
    }
 
    strlcpy(s + _len, FILE_PATH_PNG_EXTENSION, len - _len);
+   free(owned);
 }
