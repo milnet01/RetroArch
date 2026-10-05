@@ -2441,7 +2441,7 @@ current upstream first, so the player is built on current code.
   Kind: investigate.
   Source: user-request-2026-10-01.
 
-- 🚧 [RETR-0022] **REPLAY — statestream decoder leaks and unchecked reads left from the 2026-10-02 review.**
+- ✅ [RETR-0022] **REPLAY — statestream decoder leaks and unchecked reads left from the 2026-10-02 review.**
   Not fixed in 30ef35574d (each needs its own read of the rmsgpack API):
   - bsv_movie_reset_playback leaks buf on a short read of a v0/v1 state.
   - bsv_movie_read_deduped_state leaks the rmsgpack item on each wrong
@@ -2464,6 +2464,12 @@ current upstream first, so the player is built on current code.
   under ASan before the fix and pass after; all other lanes pass.
   Left: open the upstream PR (needs the user's yes), and cherry-pick onto
   local/fixes-2026-09 (not yet tried; the fork's bsvmovie.c may differ).
+  Resolved 2026-10-05: upstream PR #19713 (pr/replay-decoder-leaks,
+  bccfa40615). Fork efecb54cc8 on local/fixes-2026-09: source change
+  applied unchanged; the fork has no samples/tasks/bsv_statestream, so
+  the wrong_type lane rides only in the PR. In the fork v1_short_state
+  leaks 64 bytes under ASan without the fix and passes with it; the
+  bsv_replay_init sweep is clean; local-CI.sh: all Linux jobs PASS.
   **Layman:** A few rarely-hit error paths in replay loading leak memory or trust a failed read; tidy them so a broken replay file cannot cause odd behaviour.
   Kind: fix.
   Source: review-code-2026-10-02 lane-01 R14 R16.
