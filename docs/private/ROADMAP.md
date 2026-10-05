@@ -421,7 +421,7 @@ These are exploitable now and have concrete reproducers.
   _(Verified resolved-stale 2026-04-25 while triaging Bundle 16. Current `s3_log_http_failure` (s3.c:788-799) uses the safe `%.*s` length-bounded printf form, with an explicit comment documenting why `data->data[data->len]=0` is a one-byte heap overflow. The reviewer's reference to s3.c:1633-1640 is also safe in current code: the multipart-initiate path malloc's `data->len + 1`, memcpy's `data->len` bytes, and writes the terminator on the **newly-allocated** buffer (`response_xml[data->len] = '\0'`), not on `data->data`. A `net_http_data_to_cstring` helper would still be valuable defence-in-depth (the antipattern is easy to re-introduce) but no concrete site to fix today.)_
   Kind: implement.
 
-- 📋 [RETR-0014] **TLS — finish RETR-S0030's extras: warning on Disabled, BearSSL opt-out, tests.**
+- ✅ [RETR-0014] **TLS — finish RETR-S0030's extras: warning on Disabled, BearSSL opt-out, tests.**
   Split from RETR-S0030 on 2026-10-01, whose security hole is closed.
   What its spec (docs/private/specs/2026-04-27-tls-verification-opt-in-design.md)
   still lists:
@@ -432,6 +432,18 @@ These are exploitable now and have concrete reproducers.
   - libcheck tests under libretro-common/test/net/.
   libretro-common is vendored, so the BearSSL change and the tests go
   upstream (docs/private/upstream-prs/README.md, Candidates).
+  Resolved 2026-10-05, re-scoped with the user. Upstream had moved on:
+  the default TLS client is now upstream's built-in one, which honours
+  all three modes; BearSSL is an opt-in system library, no longer
+  bundled; and samples/network/tls_retro/local_server_test.sh tests
+  Required and Optional. So the BearSSL opt-out, the libcheck tests and
+  the upgrade popup are dropped as covered or no longer worth it, and
+  the consent dialog is dropped because RetroArch has no Yes/No modal.
+  Built: a once-per-session on-screen notice for a refused certificate
+  and for Disabled mode, in network/tls_log.c. Fork dd9de469f0;
+  upstream PR #19712 (pr/tls-verify-notices, 5f8d278ce4). Tested
+  headless against a local self-signed server: Required shows the
+  notice once over four failures, Disabled once, Optional none.
   **Layman:** Small extras for the secure-connection setting: a warning before turning checks off, and tests.
   Kind: enhancement.
   Source: split from RETR-S0030 2026-10-01.

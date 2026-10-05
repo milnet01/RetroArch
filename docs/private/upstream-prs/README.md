@@ -33,6 +33,7 @@ user's go-ahead. Checked 2026-10-01.
 | Menu: `menu_entry_get` bounded for every caller (XMB database-manager and Explore branches), and Ozone's restored tab selection clamped | RETR-0019 | Added 2026-10-03 as the second commit of RetroArch PR #19691 (`45d7548f2b`); fork `33eef2765b`. Its playlist_nav lane fails without the fix on a `--disable-qt` build. |
 | `net_http`: a redirect from `https` to `http` ends the transfer with an error instead of dropping TLS | RETR-0021 | Opened 2026-10-03 as RetroArch PR #19696 (branch `pr/net-http-redirect-tls`, `6ede9a842b`); fork fix `ec4d20f509`. Its `http_limits_test` lane fails without the guard on upstream master `e5c48508a3`. Body: the PR itself. |
 | Quit controller combo skips Confirm Quit: the combo counts on every held frame, so one press is also the second | RETR-S0115 | Upstream issue #19642, no replies. Opened 2026-10-05 as RetroArch PR #19711 (branch `pr/quit-combo-confirm`, `fc7f0d2f49`). Reproduced on master with the test joypad driver. Draft: [pr-quit-combo-confirm.md](pr-quit-combo-confirm.md). |
+| TLS: a once-per-session on-screen notice when a certificate is refused, and when verification is Disabled | RETR-0014 | Follow-up to #19626. Opened 2026-10-05 as RetroArch PR #19712 (branch `pr/tls-verify-notices`, `5f8d278ce4`); fork `dd9de469f0`. Tested headless against a local self-signed server in all three modes. Body: the PR itself. |
 
 ## Branches
 
