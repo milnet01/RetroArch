@@ -1350,6 +1350,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   changes it. Full -j4 build clean; headless 2048 run replaced the state
   by rename twice and saved .srm on quit, no .tmp left. PR body updated.
   Mergeable; upstream CI running.
+  2026-10-05: closed libretro-common #233 with a comment (user-approved):
+  fixed for the built-in VFS by c24fd90825, resynced to libretro-common
+  2026-10-03. Residual named in the comment: under a frontend VFS
+  (filestream_rename_cb), a failed retry after the delete still loses
+  both files; offered a patch if the maintainer wants it.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
