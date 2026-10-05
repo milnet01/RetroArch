@@ -2441,7 +2441,7 @@ current upstream first, so the player is built on current code.
   Kind: investigate.
   Source: user-request-2026-10-01.
 
-- 📋 [RETR-0022] **REPLAY — statestream decoder leaks and unchecked reads left from the 2026-10-02 review.**
+- 🚧 [RETR-0022] **REPLAY — statestream decoder leaks and unchecked reads left from the 2026-10-02 review.**
   Not fixed in 30ef35574d (each needs its own read of the rmsgpack API):
   - bsv_movie_reset_playback leaks buf on a short read of a v0/v1 state.
   - bsv_movie_read_deduped_state leaks the rmsgpack item on each wrong
@@ -2450,6 +2450,20 @@ current upstream first, so the player is built on current code.
     leaves freed pointers in item is unverified.
   - The write path (write_deduped_state, write_checkpoint's encode
     buffer) never checks its allocations.
+  Progress 2026-10-05, checked against upstream master 5b04bb6729.
+  Already fixed upstream: rmsgpack_dom_read_with now sets the item to
+  RDT_NULL and frees it on failure, so the uninitialised-item and
+  freed-pointer worries are gone; b12ae7c1ee checks the write path's
+  buffers. The zstd/zlib encode callocs are unchecked but not a bug: a
+  zstd lane with every allocation failing in turn passed before any fix.
+  Still real, now fixed with tests on branch pr/replay-decoder-leaks
+  (bccfa40615, cut from upstream master, pushed to the fork): the v0/v1
+  short-state leak in bsv_movie_reset_playback, and the item leaked on
+  each wrong-type refusal in bsv_movie_read_deduped_state. New lanes
+  v1_short_state (bsv_replay_init) and wrong_type (bsv_statestream) leak
+  under ASan before the fix and pass after; all other lanes pass.
+  Left: open the upstream PR (needs the user's yes), and cherry-pick onto
+  local/fixes-2026-09 (not yet tried; the fork's bsvmovie.c may differ).
   **Layman:** A few rarely-hit error paths in replay loading leak memory or trust a failed read; tidy them so a broken replay file cannot cause odd behaviour.
   Kind: fix.
   Source: review-code-2026-10-02 lane-01 R14 R16.
