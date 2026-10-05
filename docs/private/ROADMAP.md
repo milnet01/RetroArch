@@ -2581,7 +2581,7 @@ current upstream first, so the player is built on current code.
   Kind: fix.
   Source: in-session-2026-10-03.
 
-- 🚧 [RETR-0028] **FIX — eight defects from the RETR-0025 triage that normal use reaches.**
+- ✅ [RETR-0028] **FIX — eight defects from the RETR-0025 triage that normal use reaches.**
   Verified 2026-10-05 on local/fixes-2026-09 at 740ff95143.
   1. input/input_driver.c turbo clear: input_remap_ids[port][turbo_bind]
      with the default turbo_bind -1 (two sites; upstream has it too).
@@ -2599,6 +2599,18 @@ current upstream first, so the player is built on current code.
   8. gfx/drivers_shader/shader_gl3.c gl3_cross_compile_program: link
      failure with an empty info log returns the unlinked program.
   Ledger: docs/private/reviews/close-findings-2026-10-05-retr-0025.md.
+  Resolved 2026-10-05: all eight fixed on local/fixes-2026-09 in
+  a3424c3d6e; make -j4 rc 0; local-CI all five jobs PASS (c89 included).
+  Item 5 also fixed the scaler stepping through the server's image by
+  the frame width and handing on the frame with the image's size, the
+  same trust in the reply's dimensions. Red-first for item 2 only:
+  samples/playlist lane_push_starts_without_thumbnail_flags failed
+  unfixed (inherited flags 0xf) and passes fixed. The other seven had
+  no red run: no harness here links their files. Sweep: no rename or
+  constant changed; no doc names the changed behaviour; CHANGES.md not
+  touched (fork work). Upstream master 1e9dec8d32: item 1 already
+  guarded there for -1, the other seven are still present there, so
+  they are upstream PR candidates (RETR-S0115).
   **Layman:** Fix eight real bugs the code scanners found that a normal user can run into, from a turbo-button misread to a translation-service image the app trusts too much.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
