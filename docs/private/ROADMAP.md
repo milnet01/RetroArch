@@ -1388,6 +1388,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (pipewire mic NULL), #19740 (glslang scratch leak) and #19741
   (savestate thumbnail strdup leak) merged 2026-10-08. Still open:
   #19738, #19739, #19742, #19743, #19712, #19713, #19714.
+  2026-10-08: opened eight RetroArch PRs from RETR-0029's out-of-memory
+  fixes, one defect each, on upstream master 5d6fbbee8f: #19744 gl3 chain
+  passes, #19745 vulkan chain passes, #19746 realloc_checked, #19747
+  vulkan unmapped buffer node, #19748 keysym table calloc, #19749 gl2/gl3
+  init NULL check, #19750 win32 Add Files realloc (mingw syntax check
+  only), #19751 rsx rsxMemalign (not compiled). Linux branches built with
+  make -j4, no warnings in their files. The ninth, config_string_options,
+  was not sent: upstream's new static-buffer callers make the fix wrong
+  there. Rows in docs/private/upstream-prs/README.md.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2657,6 +2666,13 @@ current upstream first, so the player is built on current code.
   its callers still apply SETTINGS_ACTION_SET to list index - 1, the
   previous entry; rsx_gfx.c's other rsxMemalign caller near the menu
   texture upload is unchecked too.
+  2026-10-08: config_string_options fix taken back out in 03ecd6a73a.
+  Upstream master 5d6fbbee8f now has callers passing static buffers
+  (settings_build_input_hotkey), which clear SD_FREE_FLAG_VALUES after
+  the call, so the free would hit a static buffer once a sync brings them
+  in. The leak on that out-of-memory path stays; a fix needs the caller to
+  say whether it hands over ownership. The other eight sent upstream as
+  RetroArch PRs #19744-#19751 (RETR-S0115).
   **Layman:** Make a dozen places fail cleanly when the machine runs out of memory instead of crashing or writing to the wrong place.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
