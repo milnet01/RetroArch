@@ -2630,7 +2630,7 @@ current upstream first, so the player is built on current code.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
 
-- 📋 [RETR-0029] **FIX — out-of-memory paths that crash or corrupt instead of failing, from RETR-0025.**
+- ✅ [RETR-0029] **FIX — out-of-memory paths that crash or corrupt instead of failing, from RETR-0025.**
   Verified 2026-10-05; reached only when an allocation fails.
   shader_gl3.c gl3_chain_new and shader_vulkan.c slang_chain_new return
   a chain whose passes were never allocated; video_driver.c
@@ -2644,6 +2644,19 @@ current upstream first, so the player is built on current code.
   nullPointerOutOfMemory rows are plain crash-on-OOM and are not queued.
   Not fixed now: user chose the normal-use defects first (2026-10-05).
   Ledger: docs/private/reviews/close-findings-2026-10-05-retr-0025.md.
+  Resolved 2026-10-08: nine sites fixed on local/fixes-2026-09 in
+  1e6aa76481. make -j4 rc 0, the eight Linux files with no warnings;
+  ui_win32_companion.c syntax-checked clean with mingw; rsx_gfx.c not
+  compiled (no PS3 toolchain). Local CI all five jobs PASS (c89
+  included). No red run: no harness here links these files or can force
+  the allocation failures. uint32s_index.c not touched: upstream fixed
+  it in b12ae7c1ee and 35080c9ffc, so it arrives with the next sync.
+  Upstream master 0e741ea810 still has the other nine, so they are
+  upstream PR candidates (RETR-S0115).
+  Left alone, outside this item: after config_string_options fails,
+  its callers still apply SETTINGS_ACTION_SET to list index - 1, the
+  previous entry; rsx_gfx.c's other rsxMemalign caller near the menu
+  texture upload is unchecked too.
   **Layman:** Make a dozen places fail cleanly when the machine runs out of memory instead of crashing or writing to the wrong place.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
