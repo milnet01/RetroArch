@@ -1375,6 +1375,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   docs/private/upstream-prs/pr-quit-combo-confirm.md.
   2026-10-05: #19711's commit amended to fc7f0d2f49 (was 796ebb9518)
   to carry the Co-Authored-By line; code unchanged. User force-pushed.
+  2026-10-08: opened seven RetroArch PRs from RETR-0028's fixes, one
+  defect each, on upstream master 38d7bdf492: #19737 pipewire mic NULL,
+  #19738 content info NULL path, #19739 gl3 empty link log, #19740
+  glslang scratch leak, #19741 savestate thumbnail strdup leak, #19742
+  playlist push thumbnail flags (lane red on master, green fixed),
+  #19743 translation BMP bounds (body explains the stride and frame-size
+  changes). Each built with make -j4, no warnings in its file. Turbo
+  skipped: upstream already guards -1. Rows in
+  docs/private/upstream-prs/README.md.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2611,6 +2620,8 @@ current upstream first, so the player is built on current code.
   touched (fork work). Upstream master 1e9dec8d32: item 1 already
   guarded there for -1, the other seven are still present there, so
   they are upstream PR candidates (RETR-S0115).
+  2026-10-08: the seven still live upstream sent as RetroArch PRs
+  #19737-#19743 (RETR-S0115).
   **Layman:** Fix eight real bugs the code scanners found that a normal user can run into, from a turbo-button misread to a translation-service image the app trusts too much.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
