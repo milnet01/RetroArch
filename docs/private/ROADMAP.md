@@ -1397,6 +1397,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   make -j4, no warnings in their files. The ninth, config_string_options,
   was not sent: upstream's new static-buffer callers make the fix wrong
   there. Rows in docs/private/upstream-prs/README.md.
+  Checked 2026-10-08, later: #19738 (content info NULL path), #19739
+  (glcore empty link log), #19742 (playlist thumbnail flags) and #19743
+  (translation BMP bounds) merged, so all seven RETR-0028 PRs are in.
+  No maintainer comments on any open PR. Still open: #19629, #19660,
+  #19664, #19712, #19713, #19714 and #19744-#19751.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
