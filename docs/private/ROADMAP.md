@@ -1384,6 +1384,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   changes). Each built with make -j4, no warnings in its file. Turbo
   skipped: upstream already guards -1. Rows in
   docs/private/upstream-prs/README.md.
+  Checked 2026-10-08: #19711 (quit combo) merged 2026-10-07. #19737
+  (pipewire mic NULL), #19740 (glslang scratch leak) and #19741
+  (savestate thumbnail strdup leak) merged 2026-10-08. Still open:
+  #19738, #19739, #19742, #19743, #19712, #19713, #19714.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
