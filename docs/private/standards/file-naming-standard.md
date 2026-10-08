@@ -47,8 +47,8 @@ insert the `extern` + array entry in the registry.
 ## 3. Version-string files (lockstep — change together or not at all)
 
 The version lives in `version.all` (a C/Make/shell polyglot). Every file in
-the lockstep set is updated in one commit. The repo-root `CLAUDE.md`
-§ Versioning & release notes defines that set by a search, which
+the lockstep set is updated in one commit.
+[`codebase-guide.md`](../codebase-guide.md) § Versioning & release notes defines that set by a search, which
 finds `version.all`, `version.dtd`, `com.libretro.RetroArch.metainfo.xml`
 and the platform manifests under `pkg/`.
 
@@ -60,8 +60,8 @@ the set by hand (or add the recipe first).
 
 ## 4. Settings
 
-A new user-visible setting spans many files. The repo-root `CLAUDE.md`
-§ Configuration owns the search that finds every one of them.
+A new user-visible setting spans many files.
+[`codebase-guide.md`](../codebase-guide.md) § Configuration owns the search that finds every one of them.
 
 Translatable strings are keyed by enum in `intl/msg_hash_*.h`; only the
 `us` file is hand-edited — the rest come from Crowdin.
