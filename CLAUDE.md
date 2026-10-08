@@ -12,7 +12,7 @@ Hand-rolled `qb` shell script (`./configure` -> `qb/qb.*.sh`) produces `config.h
 
 ```sh
 ./configure                 # detects libs; --help for flags; generates config.h, config.mk
-make -j$(nproc)             # builds ./retroarch
+make -j4                    # builds ./retroarch
 make V=1 DEBUG=1            # verbose / -O0 -g / separate obj-unix/debug/ tree
 ```
 
