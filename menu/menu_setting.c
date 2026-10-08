@@ -2624,7 +2624,11 @@ static void config_string_options(
    /* Capacity check lives here now instead of inlined at every
     * call site - the wrappers below are plain calls. */
    if (!SETTINGS_LIST_APPEND(list, list_info))
+   {
+      /* The entry would have owned values; nothing will free it now. */
+      free((void*)values);
       return;
+   }
 
    (*list)[list_info->index++] = setting_string_setting_options(
          ST_STRING_OPTIONS,
