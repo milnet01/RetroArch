@@ -1413,6 +1413,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   ARM64 failed at git checkout. So #19744's gl3_chain_alloc test never
   ran in upstream CI. #19714 merged with its CI still queued. Still
   open: #19629, #19660, #19664 (webOS fail is the NDK download), #19712.
+  2026-10-09 (user-approved): opened five RetroArch PRs from RETR-0030's
+  fixes, one defect each, on upstream master 9312a11000: #19757 3DS
+  ctr_load_texture NULL image, #19758 PS2 font allocations, #19759
+  Network RetroPad test-file shift (red/green under UBSan), #19760
+  save.c recovery struct tm, #19761 Vita shader log. #19759 and #19760
+  built with make -j4, no warnings in their files; the console three
+  were not compiled. Not sent: the ps3py crypt.c fix, since that module
+  builds only against Python 2. Rows in docs/private/upstream-prs/README.md.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2735,7 +2743,7 @@ current upstream first, so the player is built on current code.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
 
-- 📋 [RETR-0032] **FIX — Vita shader patch writes its compile flags into the caller's stack.**
+- 💭 [RETR-0032] **FIX — Vita shader patch writes its compile flags into the caller's stack.**
   gfx/drivers_context/vita_pib/src/shacccgpatch.c,
   pglPlatformShaderCompiler_CustomPatch: *(int*)(&shader + 0x30) and
   (&shader + 0x1d) index from the address of the parameter, so they
@@ -2746,6 +2754,11 @@ current upstream first, so the player is built on current code.
   and the data pointer at 0x20. Needs the PIB record layout and a Vita
   run before any change; deleting the writes is the other candidate.
   Deferred from RETR-0030 (its logShaccCg half was fixed).
+  Parked 2026-10-09 (user agreed): no Vita to test on, and an emulator
+  would not settle it, since the PIB path needs system files dumped from
+  a real Vita. The default Makefile.vita build uses GXM (HAVE_GXM := 1);
+  this file is built only with HAVE_VITAGLES=1. Pick up if someone with
+  a Vita can test it.
   **Layman:** A Vita graphics helper writes two status values to the wrong memory; fixing it safely needs a real Vita to test on.
   Kind: audit-fix.
   Source: RETR-0030 close-findings 2026-10-09.
