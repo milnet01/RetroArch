@@ -1456,6 +1456,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   gh api --allow-escape-sequences
   repos/libretro/RetroArch/actions/jobs/<id>/logs (gh run view has no
   such flag in gh 2.100.0).
+  Checked 2026-10-09 (later still): merged by LibretroAdmin on
+  2026-10-09: #19660 (run-ahead private temp dir) and #19664 (_exit on
+  the second quit signal) at 09:18 UTC, and #19712 (TLS notices) at
+  09:35. No PR of ours is open upstream now.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
