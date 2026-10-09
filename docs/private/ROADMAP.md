@@ -1443,6 +1443,19 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Opened as #19770 (pr/drm-dumbfb-failure, 7d56d84c5b) on upstream master
   cfbc895b78; the harness is red on master's file and green on the
   branch. Row in docs/private/upstream-prs/README.md.
+  Checked 2026-10-09 (later): merged by LibretroAdmin on 2026-10-09:
+  #19629 (crash-safe saving, open since 2026-09-26), #19757-#19761,
+  #19763-#19769 and #19770. Still open: #19660, #19664, #19712, no
+  comments or reviews. The failed checks on these PRs are not ours:
+  Windows ARM64 (MSVC) on #19629, #19758 and #19759 failed at checkout
+  because the PR had merged and its merge ref was gone; Compile Matrix
+  (vulkan.c atomic error) and Linux samples (gl3_shader_status_test
+  missing GL/gl.h) on #19757 and #19760 fail on upstream master itself
+  (9312a11000, b4109477cb) and on other contributors' branches; webOS
+  on #19664 is GitHub's HTTP 500 downloading the SDK (2026-10-01). Logs:
+  gh api --allow-escape-sequences
+  repos/libretro/RetroArch/actions/jobs/<id>/logs (gh run view has no
+  such flag in gh 2.100.0).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2208,6 +2221,7 @@ current upstream first, so the player is built on current code.
   temp file whenever the destination is gone, so one complete copy always
   survives. Checked against filestream_write_file_atomic on
   local/fixes-2026-09. The upstream merge is tracked on RETR-S0115.
+  2026-10-09: #19629, which carries this fix, merged upstream.
   **Layman:** A shared save helper meant to prevent half-written files can, in a rare failure, delete both the old file and the new one.
   Kind: fix.
   Source: sync review 2026-09-25 (core lane).
@@ -2877,6 +2891,7 @@ current upstream first, so the player is built on current code.
   jobs pass. Not run on DRM hardware. Not yet offered upstream.
   2026-10-09: opened upstream as RetroArch PR #19770 with the user's
   approval (see RETR-S0115).
+  2026-10-09: #19770 merged upstream by LibretroAdmin.
   **Layman:** Two scanner-found bugs whose fix changes behaviour, so each needs a choice or a hardware check first.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0031.
