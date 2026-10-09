@@ -2846,7 +2846,7 @@ current upstream first, so the player is built on current code.
   Source: check-code-tree-2026-10-02 via RETR-0031.
   Lanes: tasks, gfx, menu, frontend, midi, ui/qt.
 
-- 📋 [RETR-0035] **FIX — two RETR-0031 defects that need a decision before the edit.**
+- ✅ [RETR-0035] **FIX — two RETR-0031 defects that need a decision before the edit.**
   - drm_gfx.c modeset_create_dumbfb returns 0 when mmap fails and
     ignores its three ioctls. Both callers only log, so the driver then
     writes into MAP_FAILED. The fix must carry the failure out of
@@ -2861,6 +2861,16 @@ current upstream first, so the player is built on current code.
   modeset_create_dumbfb failure out so the driver fails to start rather
   than writing into MAP_FAILED). The GTF rounding item is split out and
   parked as RETR-0036.
+  Shipped 2026-10-09 on local/fixes-2026-09 as 5f0dae0253 (drm_gfx
+  item; the GTF item is RETR-0036). modeset_create_dumbfb checks its
+  three ioctls and mmap, undoes what it made, and returns -1;
+  drm_surface_setup returns bool and frees the surface on failure;
+  drm_frame returns false, the menu path skips the frame, and init_drm
+  fails so the driver does not start. Red/green with an ASan+UBSan
+  harness that fakes drmIoctl and wraps mmap (in
+  /mnt/Games/claude-scratch/retr-0035/). drm_gfx.o built with
+  HAVE_PLAIN_DRM=1 MISSING_DECLS=1, no new warnings. Local CI: all five
+  jobs pass. Not run on DRM hardware. Not yet offered upstream.
   **Layman:** Two scanner-found bugs whose fix changes behaviour, so each needs a choice or a hardware check first.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0031.
