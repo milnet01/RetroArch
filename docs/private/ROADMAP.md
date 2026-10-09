@@ -2693,7 +2693,7 @@ current upstream first, so the player is built on current code.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
 
-- 📋 [RETR-0030] **FIX — console-only and low-impact defects from RETR-0025.**
+- ✅ [RETR-0030] **FIX — console-only and low-impact defects from RETR-0025.**
   Verified 2026-10-05. ctr_gfx.c ctr_load_texture dereferences a NULL
   image from a failed 3DS wallpaper load (better: NULL guard in
   video_driver_texture_load); vita_pib shacccgpatch.c strlen of an
@@ -2704,6 +2704,19 @@ current upstream first, so the player is built on current code.
   Unsure: input_driver.c input_key_pressed NULL joypad, no in-tree caller.
   Hazard: the console ones cannot be built or run here.
   Ledger: docs/private/reviews/close-findings-2026-10-05-retr-0025.md.
+  Resolved 2026-10-09 on local/fixes-2026-09, one commit each; local CI
+  passed all five jobs. Fixed: ctr_load_texture sizes the image after its
+  own NULL check (d166a27b52; the ledger's guard in
+  video_driver_texture_load was rejected, it passes NULL on to every
+  driver by design); vita_pib logShaccCg starts the log empty
+  (f32cb76d73); ps2_font_init checks its three allocations (31d46752e0);
+  save.c zeroes the recovery file's struct tm (2c95d6a70e); net_retropad
+  refuses a test-file button past bit 31 (e407c237f4, red/green headless
+  under UBSan with button 40); ps3py manipulate widens before shifting
+  (e2918feb97, red/green harness). Not compiled: 3DS, Vita, PS2, no
+  toolchains here. Queued: the &shader stack writes, RETR-0032.
+  Dismissed: input_key_pressed has no caller on fork or upstream master.
+  Neighbouring defects the sweep found: RETR-0033.
   **Layman:** Fix smaller bugs the scanners found that only show up on game consoles or in rare test and tool cases.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
@@ -2721,3 +2734,36 @@ current upstream first, so the player is built on current code.
   **Layman:** Read the scanner warnings of the middle-sized kinds that nobody has looked at yet, since a few of them can hide real bugs.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
+
+- 📋 [RETR-0032] **FIX — Vita shader patch writes its compile flags into the caller's stack.**
+  gfx/drivers_context/vita_pib/src/shacccgpatch.c,
+  pglPlatformShaderCompiler_CustomPatch: *(int*)(&shader + 0x30) and
+  (&shader + 0x1d) index from the address of the parameter, so they
+  write 0xC0 and 0x74 bytes up the caller's stack on 32-bit Vita.
+  Same lines in SonicMastr/Pigs-In-A-Blanket master (343459751a).
+  Hazard: the obvious repair, shader + 0x30 / shader + 0x1d, is wrong:
+  the 0x1d int write is unaligned and overlaps the shader type at 0x1c
+  and the data pointer at 0x20. Needs the PIB record layout and a Vita
+  run before any change; deleting the writes is the other candidate.
+  Deferred from RETR-0030 (its logShaccCg half was fixed).
+  **Layman:** A Vita graphics helper writes two status values to the wrong memory; fixing it safely needs a real Vita to test on.
+  Kind: audit-fix.
+  Source: RETR-0030 close-findings 2026-10-09.
+  Lanes: gfx/vita.
+
+- 📋 [RETR-0033] **FIX — neighbouring defects found while closing RETR-0030.**
+  Found by the sweep, not by the scanner; none fixed here.
+  - net_retropad_core.c: 1 << 31 on signed int, undefined in C. It
+    fires on every frame the pad screen is drawn (retropad_buttons up
+    to 31, and input_state bits 16 + i*8 + 7). 1U fixes each; UBSan
+    shift-base shows it on any headless run.
+  - ps2_gfx.c ps2_font_free: reads font->texture->Clut and ->Mem before
+    testing font->texture, and never frees font itself.
+  - vita_pib shacccgpatch.c logShaccCg: sprintf of an unbounded compiler
+    message into a 0x1024 stack buffer, and each diagnostic overwrites
+    the one before.
+  All three are still on upstream master as of 2026-10-09.
+  **Layman:** Three small bugs spotted next to the RETR-0030 fixes, left for their own pass.
+  Kind: audit-fix.
+  Source: RETR-0030 close-findings 2026-10-09 sweep.
+  Lanes: cores/net_retropad, gfx/ps2, gfx/vita.
