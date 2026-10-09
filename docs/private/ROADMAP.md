@@ -2729,7 +2729,7 @@ current upstream first, so the player is built on current code.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
 
-- 📋 [RETR-0031] **AUDIT — triage the mid-frequency scanner classes RETR-0025 did not read.**
+- ✅ [RETR-0031] **AUDIT — triage the mid-frequency scanner classes RETR-0025 did not read.**
   RETR-0025 read clang-analyzer, semgrep and five rare cppcheck classes
   only. Unread: cppcheck objectIndex, duplicateCondition,
   unsignedLessThanZero, invalidPointerCast, invalidPrintfArgType_*,
@@ -2739,6 +2739,14 @@ current upstream first, so the player is built on current code.
   suspicious-string-compare, branch-clone and the single-digit bugprone
   classes. Results in /mnt/Games/claude-scratch/audit-1002/ (scratch,
   may be gone; re-run with docs/private/audit/audit-config.json).
+  Resolved 2026-10-09. All 1,129 de-duplicated rows read on
+  local/fixes-2026-09 at e2918feb97; every real verdict re-read by hand
+  on the fork and upstream master. Eight defects queued as RETR-0034,
+  two needing a decision as RETR-0035; the rest dismissed as tool noise
+  (suppressions.md, RETR-0031 section). One class shortcut: 146
+  knownConditionTrueFalse rows of a pointer to a global tested for NULL
+  were judged by message pattern, about 15 read.
+  Ledger: docs/private/reviews/close-findings-2026-10-09-retr-0031.md.
   **Layman:** Read the scanner warnings of the middle-sized kinds that nobody has looked at yet, since a few of them can hide real bugs.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0025.
@@ -2780,3 +2788,45 @@ current upstream first, so the player is built on current code.
   Kind: audit-fix.
   Source: RETR-0030 close-findings 2026-10-09 sweep.
   Lanes: cores/net_retropad, gfx/ps2, gfx/vita.
+
+- 📋 [RETR-0034] **FIX — defects found reading the RETR-0031 scanner classes.**
+  Verified 2026-10-09 on the fork and upstream master; all eight are
+  still on upstream.
+  - task_screenshot.c screenshot_rotate: indexes a uint32_t buffer by
+    pixel number. A 2-byte-per-pixel frame overruns its calloc by up to
+    2N bytes; a 4-byte frame writes element N. Raw path with a rotating
+    core.
+  - ntsc.c: x + t < 0 on an unsigned; left-edge taps read the last pixel.
+  - modeline_core.c modeline_parse: a user modeline with htotal 0
+    divides by zero.
+  - shader_gl3.c: push constant buffer calloc'd at its std430 size, the
+    flattened glUniform4fv reads it rounded up to 16.
+  - winmm_midi.c: unwind loop while (--i <= 0) on an unsigned.
+  - xmb.c: two animation switches with no default leave the entry's
+    duration and easing uninitialised.
+  - platform_unix.c: /proc/acpi battery parse tests endptr before strtol
+    sets it, so the percentage is never read.
+  - ui_qt_widgets.cpp FloatSlider::paintEvent: integer division compared
+    with a float, re-setting the slider on every paint.
+  Hazard: winmm is Windows-only and the Qt slider needs a Qt build.
+  Ledger: docs/private/reviews/close-findings-2026-10-09-retr-0031.md.
+  **Layman:** Fix eight bugs the scanner warnings led to, the worst a screenshot of a rotated game writing past its memory.
+  Kind: audit-fix.
+  Source: check-code-tree-2026-10-02 via RETR-0031.
+  Lanes: tasks, gfx, menu, frontend, midi, ui/qt.
+
+- 📋 [RETR-0035] **FIX — two RETR-0031 defects that need a decision before the edit.**
+  - drm_gfx.c modeset_create_dumbfb returns 0 when mmap fails and
+    ignores its three ioctls. Both callers only log, so the driver then
+    writes into MAP_FAILED. The fix must carry the failure out of
+    drm_surface_setup, which returns void.
+  - modeline_core.c GTF sync width: integer division truncates before
+    modeline_round_near, giving a sync up to 8 px narrower than GTF's
+    round-to-nearest. The fix changes every generated modeline; check it
+    on a CRT or against Switchres first.
+  Both are on upstream master as of 2026-10-09.
+  Ledger: docs/private/reviews/close-findings-2026-10-09-retr-0031.md.
+  **Layman:** Two scanner-found bugs whose fix changes behaviour, so each needs a choice or a hardware check first.
+  Kind: audit-fix.
+  Source: check-code-tree-2026-10-02 via RETR-0031.
+  Lanes: gfx/drm, gfx/modeline.

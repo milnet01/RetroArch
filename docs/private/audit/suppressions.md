@@ -152,6 +152,20 @@ Each was read site by site on `local/fixes-2026-09` at 740ff95143. Per-site reas
 
 **Status:** 💭 Recorded, not automated.
 
+### Classes read and dismissed in RETR-0031 (2026-10-09)
+
+Each was read on `local/fixes-2026-09` at e2918feb97. Per-class reasons: `docs/private/reviews/close-findings-2026-10-09-retr-0031.md`.
+
+- **`drm_ctx.c` `timings_fields`** (cppcheck `objectIndex`). An array of pointers to separate fields, never indexed past one.
+- **`VIDEO_SCALE_PACK` / `VIDEO_SCALE_PUT_W`** (cppcheck `unsignedLessThanZero`). The macro has no `< 0` test.
+- **`GENERAL_SETTING` expansions in `configuration.c`** (cppcheck `duplicateCondition`). Literal flags tested by the macro.
+- **`knownConditionTrueFalse`** where a feature, platform or stub is folded to a constant by the scan's configuration, or a pointer to a global is tested for NULL.
+- **clang-tidy `branch-clone`, `assignment-in-selection-statement`, `unhandled-code-paths`, `unchecked-string-to-number-conversion`, `integer-division`.** Read in full once; style apart from the sites RETR-0034 and RETR-0035 hold.
+
+**Action:** hand-triage drop on the next run. None is in `aggregate.py`.
+
+**Status:** 💭 Recorded, not automated.
+
 ---
 
 ## Verified resolved-stale (do not re-flag)
