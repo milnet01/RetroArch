@@ -1421,6 +1421,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   built with make -j4, no warnings in their files; the console three
   were not compiled. Not sent: the ps3py crypt.c fix, since that module
   builds only against Python 2. Rows in docs/private/upstream-prs/README.md.
+  2026-10-09: user approved opening all seven RETR-0034 fixes upstream,
+  one defect per PR. Branches cut in ra-pr from upstream master
+  cfbc895b78 with the fork commit cherry-picked, all clean:
+  pr/screenshot-rotate-bpp, pr/modeline-zero-total,
+  pr/ntsc-left-edge-taps, pr/winmm-midi-unwind,
+  pr/xmb-animation-default, pr/acpi-battery-parse,
+  pr/qt-floatslider-compare. Not yet reworded, built or pushed.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2839,7 +2846,23 @@ current upstream first, so the player is built on current code.
     on a CRT or against Switchres first.
   Both are on upstream master as of 2026-10-09.
   Ledger: docs/private/reviews/close-findings-2026-10-09-retr-0031.md.
+  User decision 2026-10-09: fix the drm_gfx item (carry the
+  modeset_create_dumbfb failure out so the driver fails to start rather
+  than writing into MAP_FAILED). The GTF rounding item is split out and
+  parked as RETR-0036.
   **Layman:** Two scanner-found bugs whose fix changes behaviour, so each needs a choice or a hardware check first.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0031.
   Lanes: gfx/drm, gfx/modeline.
+
+- 💭 [RETR-0036] **MODELINE — GTF sync width truncates before rounding.**
+  modeline_core.c: h_sync_width_percent * h_total_pixels / 100 / 8 is
+  integer division before modeline_round_near, so the sync is up to 8 px
+  narrower than GTF's round-to-nearest. Still on upstream master.
+  Parked by the user 2026-10-09: the fix changes every generated
+  modeline and no CRT is here to check it on.
+  Ledger: docs/private/reviews/close-findings-2026-10-09-retr-0031.md.
+  **Layman:** CRT video modes get a slightly narrower sync pulse than the standard says; parked until it can be checked on a CRT.
+  Kind: audit-fix.
+  Source: RETR-0035 split, user decision 2026-10-09.
+  Lanes: gfx/modeline.
