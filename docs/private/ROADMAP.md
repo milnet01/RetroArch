@@ -1439,6 +1439,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   "../midi_driver.h", which fa876218d1 moved to the root; it compiles
   only with an extra include path. Not raised upstream. Rows in
   docs/private/upstream-prs/README.md.
+  2026-10-09: user approved sending RETR-0035's drm_gfx fix upstream.
+  Opened as #19770 (pr/drm-dumbfb-failure, 7d56d84c5b) on upstream master
+  cfbc895b78; the harness is red on master's file and green on the
+  branch. Row in docs/private/upstream-prs/README.md.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2871,6 +2875,8 @@ current upstream first, so the player is built on current code.
   /mnt/Games/claude-scratch/retr-0035/). drm_gfx.o built with
   HAVE_PLAIN_DRM=1 MISSING_DECLS=1, no new warnings. Local CI: all five
   jobs pass. Not run on DRM hardware. Not yet offered upstream.
+  2026-10-09: opened upstream as RetroArch PR #19770 with the user's
+  approval (see RETR-S0115).
   **Layman:** Two scanner-found bugs whose fix changes behaviour, so each needs a choice or a hardware check first.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0031.
