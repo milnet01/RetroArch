@@ -1460,6 +1460,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2026-10-09: #19660 (run-ahead private temp dir) and #19664 (_exit on
   the second quit signal) at 09:18 UTC, and #19712 (TLS notices) at
   09:35. No PR of ours is open upstream now.
+  Checked 2026-10-09 (evening): no reply on any PR or issue is newer
+  than 2026-10-03. The README now records the outcome of every opened PR;
+  thirteen rows and the first-batch table had none. Failed checks on
+  the three PRs merged today are not ours: msvc ARM64 on #19660 and
+  #19712 could not fetch the merge ref after the merge, and webOS on
+  #19664 is GitHub's HTTP 500. Upstream master has no finished CI run
+  since 09:08 UTC: every run was cancelled by the next push, none
+  failed. RETR-0033's vita_pib fix is pushed as pr/vita-shader-log-bound
+  (84b20a1dda) and approved by the user; gh pr create was refused by
+  this session's permission check, so the user opens it.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
