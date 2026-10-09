@@ -1402,6 +1402,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (translation BMP bounds) merged, so all seven RETR-0028 PRs are in.
   No maintainer comments on any open PR. Still open: #19629, #19660,
   #19664, #19712, #19713, #19714 and #19744-#19751.
+  Checked 2026-10-09: all eight RETR-0029 PRs merged, #19747 on
+  2026-10-08 and #19744-#19746, #19748-#19751 on 2026-10-09. #19713 and
+  #19714 (replay) merged 2026-10-09. No reviews or maintainer comments.
+  CI failures on them all trace to upstream master, not our changes:
+  record_driver.c thread_wrapper_active compile error (DOS, Emscripten),
+  video_thread_state_check on recording_dump_frame, a TSan race in
+  vulkan_get_flags, thread_elevation sample, and gl3_shader_status
+  failing on a missing GL/gl.h (also red on master 5d6fbbee8f). Windows
+  ARM64 failed at git checkout. So #19744's gl3_chain_alloc test never
+  ran in upstream CI. #19714 merged with its CI still queued. Still
+  open: #19629, #19660, #19664 (webOS fail is the NDK download), #19712.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
