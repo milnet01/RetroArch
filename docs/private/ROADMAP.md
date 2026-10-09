@@ -2789,7 +2789,7 @@ current upstream first, so the player is built on current code.
   Source: RETR-0030 close-findings 2026-10-09 sweep.
   Lanes: cores/net_retropad, gfx/ps2, gfx/vita.
 
-- 📋 [RETR-0034] **FIX — defects found reading the RETR-0031 scanner classes.**
+- ✅ [RETR-0034] **FIX — defects found reading the RETR-0031 scanner classes.**
   Verified 2026-10-09 on the fork and upstream master; all eight are
   still on upstream.
   - task_screenshot.c screenshot_rotate: indexes a uint32_t buffer by
@@ -2810,6 +2810,19 @@ current upstream first, so the player is built on current code.
     with a float, re-setting the slider on every paint.
   Hazard: winmm is Windows-only and the Qt slider needs a Qt build.
   Ledger: docs/private/reviews/close-findings-2026-10-09-retr-0031.md.
+  Resolved 2026-10-09 on local/fixes-2026-09, one commit each,
+  15d5ca8a58..1e3936617a; local CI passed all five jobs. Fixed:
+  screenshot_rotate copies bpp bytes per pixel (15d5ca8a58, ASan
+  red/green at bpp 2 and 4, every rotation checked exact); modeline_parse
+  refuses a zero htotal or vtotal (8572c6a744, red FPE); ntsc signed
+  left-edge taps and phase (e60f563268, red colour bleed); winmm unwind
+  counts down with i-- > 0 (47ec6f33db, red/green under wine); xmb
+  animation switches default to case 0 (ab2df8784a); /proc/acpi battery
+  parses before testing endptr, maximum > 0 (0d566bece7, red -1, green
+  75); Qt FloatSlider float comparison (1e3936617a). No red run for xmb
+  or Qt. Withdrawn: the shader_gl3 push constant over-read; filter-chain
+  passes compile with flatten false, so the flattened upload never runs
+  (ledger correction).
   **Layman:** Fix eight bugs the scanner warnings led to, the worst a screenshot of a rotated game writing past its memory.
   Kind: audit-fix.
   Source: check-code-tree-2026-10-02 via RETR-0031.

@@ -88,3 +88,14 @@ suspicious-string-compare (27) and the small bugprone classes (57 rows,
   unreachable `build_list[i].checked = ...` statement after a `break`,
   left when 3e97ef9e4a removed its case labels; dead code, harmless.
 - falsified: none.
+
+## Correction, 2026-10-09, while fixing RETR-0034
+
+F4 is withdrawn: dismissed, not reachable. Its verification checked the
+allocation and the read size, not whether the read runs. Every
+filter-chain pass is compiled by `gl3_cross_compile_program` with
+`flatten` false, which leaves `flat_push_vertex` and
+`flat_push_fragment` at -1, so the `glUniform4fv` branch never runs for
+a pass. The flattened programs are the quad and `gl3.c` pipelines,
+which never touch a pass's push constant buffer. Upstream master passes
+false as well. RETR-0034 closed with seven fixes.
