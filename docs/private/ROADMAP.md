@@ -1428,6 +1428,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   pr/ntsc-left-edge-taps, pr/winmm-midi-unwind,
   pr/xmb-animation-default, pr/acpi-battery-parse,
   pr/qt-floatslider-compare. Not yet reworded, built or pushed.
+  2026-10-09: the seven RETR-0034 fixes opened upstream, one defect
+  each, on upstream master cfbc895b78, commits reworded to upstream
+  style: #19763 screenshot rotation, #19764 modeline zero total, #19765
+  ntsc left-edge taps, #19766 winmm MIDI unwind, #19767 xmb animation
+  default, #19768 /proc/acpi battery parse, #19769 Qt FloatSlider
+  compare. Each built: make -j4 for five (Qt 6 on for #19769), the
+  filter Makefile for ntsc, mingw for winmm; no warnings in the changed
+  files. Found while building: upstream winmm_midi.c includes
+  "../midi_driver.h", which fa876218d1 moved to the root; it compiles
+  only with an extra include path. Not raised upstream. Rows in
+  docs/private/upstream-prs/README.md.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
