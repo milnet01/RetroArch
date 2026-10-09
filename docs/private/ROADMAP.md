@@ -2812,7 +2812,7 @@ current upstream first, so the player is built on current code.
   Source: RETR-0030 close-findings 2026-10-09.
   Lanes: gfx/vita.
 
-- 📋 [RETR-0033] **FIX — neighbouring defects found while closing RETR-0030.**
+- ✅ [RETR-0033] **FIX — neighbouring defects found while closing RETR-0030.**
   Found by the sweep, not by the scanner; none fixed here.
   - net_retropad_core.c: 1 << 31 on signed int, undefined in C. It
     fires on every frame the pad screen is drawn (retropad_buttons up
@@ -2824,6 +2824,23 @@ current upstream first, so the player is built on current code.
     message into a 0x1024 stack buffer, and each diagnostic overwrites
     the one before.
   All three are still on upstream master as of 2026-10-09.
+  Shipped 2026-10-09 on local/fixes-2026-09, one commit each; local
+  CI passed all five jobs. Correction to the line above: two of the
+  three were already fixed on upstream master by later commits on our
+  own merged PRs, so the fork ports upstream's code.
+  - net_retropad c2775fbb8b: 1U shifts, as upstream 206144523a (#19759).
+    Red/green under UBSan with a minimal frontend holding the right
+    stick down: "left shift of 1 by 31 places" before, clean after.
+  - ps2 26285695ba: ps2_font_free, as upstream ab0732b895 (#19758),
+    plus the gsKit_TexManager_free stub line. ASan on x86 against the
+    PS2 stubs: SEGV before, clean and leak-free after.
+  - vita_pib 014773125c: logShaccCg takes the buffer size and appends
+    each diagnostic. ASan: stack-buffer-overflow and one diagnostic
+    kept before; both kept, bounded, after. Still live upstream
+    (df16ef193c), so this one is an upstream PR candidate.
+  ps2 and vita were not built with their toolchains or run on hardware.
+  Harnesses: /mnt/Games/claude-scratch/retr-0033/. A further vita_pib
+  defect found here is RETR-0037.
   **Layman:** Three small bugs spotted next to the RETR-0030 fixes, left for their own pass.
   Kind: audit-fix.
   Source: RETR-0030 close-findings 2026-10-09 sweep.
@@ -2912,3 +2929,18 @@ current upstream first, so the player is built on current code.
   Kind: audit-fix.
   Source: RETR-0035 split, user decision 2026-10-09.
   Lanes: gfx/modeline.
+
+- 📋 [RETR-0037] **FIX — vita_pib shader patch writes its success flags onto the stack, not into the shader.**
+  gfx/drivers_context/vita_pib/src/shacccgpatch.c,
+  pglPlatformShaderCompiler_CustomPatch: `*(int*)(&shader + 0x30)` and
+  `*(int*)(&shader + 0x1d)` offset the address of the `shader`
+  parameter, in pointer-sized steps, so they write past it on the stack.
+  Every neighbouring write uses `shader + 0x..` instead. Also: a compile
+  with no program data never calls sceShaccCgDestroyCompileOutput, and
+  an unknown diagnostic level prints an uninitialised diagnosticLevel.
+  Same code on upstream master df16ef193c. Not fixed; the right offsets
+  need checking against the PIB source or a Vita, which we do not have.
+  **Layman:** The Vita shader compiler patch writes two status values to the wrong memory, next to where it meant to.
+  Kind: audit-fix.
+  Source: RETR-0033 fix pass 2026-10-09.
+  Lanes: gfx/vita.
