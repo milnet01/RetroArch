@@ -1040,7 +1040,8 @@ void FloatSlider::onValueChanged(int value)
 
 void FloatSlider::paintEvent(QPaintEvent *event)
 {
-   if (value() / m_precision != *m_value)
+   /* The same float division onValueChanged stores */
+   if ((float)value() / m_precision != *m_value)
    {
       blockSignals(true);
 
