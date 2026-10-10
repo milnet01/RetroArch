@@ -555,7 +555,7 @@ These are exploitable now and have concrete reproducers.
   _(Fixed `9bf01aabdb` — added `assert(count <= SETTINGS_*_COUNT_MAX)` at the exit of every `populate_settings_*` function (bool/int/uint/float/size/array/path). The 514th `SETTING_BOOL` now produces an immediate assert in debug builds; release builds compile out the check but the invariant is documented in code.)_
   Kind: implement.
 
-- 📋 [RETR-0012] **Run the Vulkan driver under Khronos synchronization validation.**
+- ✅ [RETR-0012] **Run the Vulkan driver under Khronos synchronization validation.**
   Run retroarch with the Vulkan video driver (gfx/drivers/vulkan.c and
   gfx/common/vulkan_common.c) under the Khronos validation layer with
   VK_VALIDATION_VALIDATE_SYNC=true, across menu, core run, shaders and
@@ -564,6 +564,24 @@ These are exploitable now and have concrete reproducers.
   validation never reported. It did NOT catch every barrier gap; that
   project's missing compute barriers were found only by a cold read.
   File each reported hazard as its own fix item.
+  Done 2026-10-10 on lavapipe (Mesa 26.2.4), Khronos layer 1.4.363,
+  Xvfb :97 with a stripped environment; the layer's own startup report
+  lists Synchronization enabled. Upstream master 2cc7f3a037 found two:
+  - gfx_display_vk_draw's viewport y computed unsigned and wrapped to 2^32
+    for an element past the top (VUID-VkViewport-y-01776, XMB). PR #19788,
+    fork 5213c670fc.
+  - the streamed texture's PREINITIALIZED to GENERAL barrier covered only
+    fragment reads, while the slang frame-history copy reads it by
+    transfer (SYNC-HAZARD-READ-AFTER-WRITE). PR #19789, fork ef1f69d7a2.
+  With both, clean: XMB, Ozone, RGUI and MaterialUI menus (each frame
+  captured to prove the menu ran), and the 2048 core with a two-pass
+  preset reading OriginalHistory1 and PassFeedback0. Not covered:
+  fast-forward (the stdin FAST_FORWARD was sent; nothing logged shows it
+  took effect), a hardware-rendered Vulkan core (none installed), and
+  any hardware GPU. Harness: /mnt/Games/claude-scratch/retr-0012/run.sh.
+  Seen in passing: input_joypad_driver = "null" falls back to udev. Not
+  a bug: upstream issue #10794 settled it as intended (closed
+  2026-06-25).
   **Layman:** A free switch in the graphics debugging tools finds timing bugs in the Vulkan video code that normal checks miss.
   Kind: test.
   Source: peer-tip ut-ants-c5 2026-09-26.
@@ -1480,6 +1498,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   root since 2021, and every real build finds the drivers'
   "../midi_driver.h" through a one-level -I path. Not a bug; nothing to
   send.
+  2026-10-10: RETR-0012's two Vulkan findings opened as #19788
+  (pr/vulkan-viewport-signed-y, viewport y) and #19789
+  (pr/vulkan-streamed-copy-sync, streamed texture barrier), user approved.
+  Open now: #19786, #19787, #19788, #19789.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
