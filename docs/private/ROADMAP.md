@@ -1474,6 +1474,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (pr/vita-shader-log-bound, 84b20a1dda); checks queued at opening.
   Upstream master CI has finished runs again since 09:07 UTC on
   2026-10-10, through 2cc7f3a037, and none failed.
+  2026-10-10: RETR-0037's compile-output leak opened as #19787
+  (pr/vita-shader-compile-leak, 50057b8d35). Correction to the 2026-10-09
+  note: fa876218d1 did not move midi_driver.h. It has been at the tree
+  root since 2021, and every real build finds the drivers'
+  "../midi_driver.h" through a one-level -I path. Not a bug; nothing to
+  send.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2252,6 +2258,12 @@ current upstream first, so the player is built on current code.
   first SIGTERM into a normal quit. Unverified at runtime. RetroDB's
   launch spec uses the network QUIT command on macOS meanwhile. Fix: give
   the Darwin frontend the same one-shot handler, and test on macOS.
+  Checked 2026-10-10 against upstream master 2cc7f3a037: still live.
+  The quit flag the Unix handler sets is read only by each video
+  driver's window check (x11_common.c, wayland_common.c, drm_ctx.c and
+  others), so a fix spans platform_darwin.m and every Mac video context
+  (Cocoa GL, Metal, Vulkan). None of that compiles here, and nothing
+  here can run it. Blocked until a Mac is available.
   **Layman:** On a Mac, when RetroDB closes a game the normal way, in-game saves may not be written first.
   Kind: fix.
   Source: in-session-2026-09-26 retrodb-e7 launch-spec question.
@@ -2954,6 +2966,15 @@ current upstream first, so the player is built on current code.
   an unknown diagnostic level prints an uninitialised diagnosticLevel.
   Same code on upstream master df16ef193c. Not fixed; the right offsets
   need checking against the PIB source or a Vita, which we do not have.
+  Progress 2026-10-10: the failed-compile leak is fixed. Fork 5a02c4d5be
+  on local/fixes-2026-09; upstream PR #19787 (pr/vita-shader-compile-leak,
+  50057b8d35), user approved. Red then green under LeakSanitizer on
+  master's file and the branch (/mnt/Games/claude-scratch/retr-0037/).
+  The unknown diagnostic level is left: the compiler reports only the
+  three levels the switch handles. The &shader offsets are still open.
+  The original PIB repository (SonicMastr/Pigs-In-A-Blanket) is archived
+  and carries the same writes, so it does not settle them; that needs a
+  Vita.
   **Layman:** The Vita shader compiler patch writes two status values to the wrong memory, next to where it meant to.
   Kind: audit-fix.
   Source: RETR-0033 fix pass 2026-10-09.
