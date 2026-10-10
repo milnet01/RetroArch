@@ -2273,11 +2273,15 @@ static struct vk_texture vulkan_create_texture(vk_t *vk,
          begin_info.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
          begin_info.pInheritanceInfo = NULL;
          vkBeginCommandBuffer(staging, &begin_info);
+         /* Transfer too: a shader preset's frame history copies the
+          * frame out of this texture with no barrier of its own */
          VULKAN_IMAGE_LAYOUT_TRANSITION(staging, tex.image,
                VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_GENERAL,
-               VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+               VK_ACCESS_HOST_WRITE_BIT,
+               VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
                VK_PIPELINE_STAGE_HOST_BIT,
-               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+               | VK_PIPELINE_STAGE_TRANSFER_BIT);
          vkEndCommandBuffer(staging);
          vulkan_submit_deferred_cmd(vk, staging, NULL,
                VK_NULL_HANDLE, VK_NULL_HANDLE);
