@@ -1502,6 +1502,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (pr/vulkan-viewport-signed-y, viewport y) and #19789
   (pr/vulkan-streamed-copy-sync, streamed texture barrier), user approved.
   Open now: #19786, #19787, #19788, #19789.
+  Progress (2026-10-10): CI finished on #19786, #19787 and #19788, all
+  green. #19789 is green except one check: the threaded-video harness
+  on Vulkan under TSan failed its "x11 grabbed mouse" input lane (a
+  poll sent 4 X requests). That lane does not touch texture creation,
+  and the same lane failed on an upstream master push (run
+  38032280421), so it is a flaky upstream test, not this change.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
