@@ -1470,6 +1470,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   failed. RETR-0033's vita_pib fix is pushed as pr/vita-shader-log-bound
   (84b20a1dda) and approved by the user; gh pr create was refused by
   this session's permission check, so the user opens it.
+  2026-10-10: RETR-0033's vita_pib fix opened as #19786
+  (pr/vita-shader-log-bound, 84b20a1dda); checks queued at opening.
+  Upstream master CI has finished runs again since 09:07 UTC on
+  2026-10-10, through 2cc7f3a037, and none failed.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
