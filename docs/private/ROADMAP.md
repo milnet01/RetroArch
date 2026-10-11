@@ -1508,6 +1508,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   poll sent 4 X requests). That lane does not touch texture creation,
   and the same lane failed on an upstream master push (run
   38032280421), so it is a flaky upstream test, not this change.
+  Checked 2026-10-11: all four merged by LibretroAdmin on 2026-10-10:
+  #19788 at 13:10 UTC (3eab59f633), #19789 at 16:50 (614248a1c4),
+  #19786 at 20:26 (907804283f) and #19787 at 20:27 (b0dc5c2624). No
+  review comments. No PR of ours is open upstream now. Website session
+  told the same day.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
