@@ -1513,6 +1513,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   #19786 at 20:26 (907804283f) and #19787 at 20:27 (b0dc5c2624). No
   review comments. No PR of ours is open upstream now. Website session
   told the same day.
+  2026-10-11: RETR-0007 opened as #19806 (pr/linked-list-null-matches).
+  Open now: #19806.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2233,7 +2235,7 @@ current upstream first, so the player is built on current code.
   Kind: security.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit 92d8e97cd5.
 
-- 📋 [RETR-0007] **UPSTREAM — libretro-common linked_list_remove_*_matching crashes on a NULL callback.**
+- ✅ [RETR-0007] **UPSTREAM — libretro-common linked_list_remove_*_matching crashes on a NULL callback.**
   The fork's 00e6d85 guarded `linked_list_remove_first_matching` and
   `linked_list_remove_all_matching` against a NULL `matches` callback. The
   upstream sync kept upstream's vendored libretro-common unchanged, and
@@ -2241,6 +2243,12 @@ current upstream first, so the player is built on current code.
   upstream, with the fork's regression test (also dropped in the sync:
   `3a6278b` END_TEST macros and `31e000b` tmpnam in the tests are the same
   class). A candidate for the RETR-S0115 upstreaming batch.
+  Resolved 2026-10-11: the guard is back in the fork as 5405079571 on
+  local/fixes-2026-09 (local-CI 5/5 PASS), with three regression tests,
+  remove_{first,last,all}_matching_function_null, and the header
+  comments. Sent upstream as RetroArch PR #19806
+  (pr/linked-list-null-matches, a61a24625b, on master f5fba98599). The new tests are an
+  ASan SEGV on master (89 of 92 pass) and pass with the fix (92 of 92).
   **Layman:** A shared helper library crashes if it is asked to remove list items without being told how to match them; the fix belongs in the original project.
   Kind: fix.
   Source: upstream-sync 2026-09-25 (RETR-0003), fork commit 00e6d85.
