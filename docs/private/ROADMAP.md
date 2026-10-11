@@ -1515,6 +1515,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   told the same day.
   2026-10-11: RETR-0007 opened as #19806 (pr/linked-list-null-matches).
   Open now: #19806.
+  Candidate, found 2026-10-11, not yet the user's pick: on upstream
+  master f5fba98599, `make -f libretro-common/Makefile.test unit-tests`
+  stops at test/formats/test_rwebm_audio, which fails to link here:
+  "undefined reference to symbol 'exp@@GLIBC_2.29'", libm "DSO missing
+  from command line". Its link line lacks -lm. A one-line Makefile.test
+  fix; every test program before it passes.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
