@@ -1528,6 +1528,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   flagging raac_huff_build in raac.c (2160 bytes), a file the PR does
   not touch; our Linked List suite in that job passed 92/92. Website
   session told. No upstream PR of ours is open.
+  2026-10-15 (user-approved): the test_rwebm_audio -lm fix opened as
+  #19835 (pr/makefile-test-rwebm-lm, 9f9b423ac1, on upstream master
+  b2538f1249). Red on master here: undefined reference to exp; green
+  with the fix: unit-tests exits 0. #19835 is our only open upstream PR.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
