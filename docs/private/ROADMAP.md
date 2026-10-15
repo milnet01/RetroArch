@@ -1532,6 +1532,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   #19835 (pr/makefile-test-rwebm-lm, 9f9b423ac1, on upstream master
   b2538f1249). Red on master here: undefined reference to exp; green
   with the fix: unit-tests exits 0. #19835 is our only open upstream PR.
+  2026-10-15: opened #19836, #19837 and #19838 (RETR-0019,
+  user-approved). Open now: #19835 to #19838.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2603,6 +2605,15 @@ current upstream first, so the player is built on current code.
   Low value, not recommended: ps3py manipulate shift, task_overlay OOM
   leak, v4l2 sample core calloc, retroarch.cfg chmod 0600 (a policy
   change). Sending any is the user's pick.
+  Progress (2026-10-15, user-approved): all three opened upstream on
+  master b2538f1249. #19836 gx query_pad bound (pr/gx-query-pad-bound,
+  c3d63acc5d): UBSan index 4 out of bounds before, clean after, x86 with
+  libogc v3.1.0 headers. #19837 unsigned shifts
+  (pr/shift-bit31-unsigned, 88830c6693): turbo_pressed now uint32_t;
+  three -Wshift-overflow=2 warnings before, none after; netplay by
+  reading. #19838 allocation checks (pr/core-option-runahead-oom,
+  4300e8d302): not reproduced. Each passed a full make -j4. Nothing else
+  from the 2026-10-15 survey is worth sending.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
