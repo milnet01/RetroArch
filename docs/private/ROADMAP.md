@@ -2588,6 +2588,21 @@ current upstream first, so the player is built on current code.
   Ozone's restored tab selection. Each replay lane red first, sweep
   4/4 green. Queued: RETR-0022 to RETR-0025. All of these exist
   upstream too; offering them is the user's pick.
+  Progress (2026-10-15): every fork-only source commit on
+  local/fixes-2026-09 not named in docs/private/upstream-prs/README.md
+  was checked against upstream master b2538f1249. Nearly all are already
+  upstream, tooling, or not defects. Still live upstream and worth
+  sending, checked by reading upstream: (1) gx_joypad_query_pad tests
+  pad < MAX_USERS (16) but pad_type has DEFAULT_MAX_PADS (4 on GEKKO)
+  entries, so pads 4-15 read past it (fork 0e42361291); (2) 1 << 31 on
+  int: the netplay input-share resolve loops (bit < 32) and the turbo
+  sign-bit flag in input_driver.c, turbo_pressed being int32_t (fork
+  7d4c1a008d); (3) small unchecked allocations: core_option_manager
+  value_hash in parse_variable and parse_option, runahead
+  input_state_list after mylist_create (fork 1d8ea8b7d8, 0b68c2dc6f).
+  Low value, not recommended: ps3py manipulate shift, task_overlay OOM
+  leak, v4l2 sample core calloc, retroarch.cfg chmod 0600 (a policy
+  change). Sending any is the user's pick.
   **Layman:** Some of the fork's smaller fixes might help the official project too; check which are worth sending.
   Kind: investigate.
   Source: user-request-2026-10-01.
