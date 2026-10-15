@@ -1,5 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
+<!-- ants-roadmap-id-high-water: RETR=37 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1521,6 +1522,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   "undefined reference to symbol 'exp@@GLIBC_2.29'", libm "DSO missing
   from command line". Its link line lacks -lm. A one-line Makefile.test
   fix; every test program before it passes.
+  2026-10-15: #19806 (RETR-0007, linked_list NULL matches) merged
+  2026-10-11. CI: 115 pass; the one failure, "Build and run
+  libretro-common/Makefile.test", is upstream's tools/stack_budget.py
+  flagging raac_huff_build in raac.c (2160 bytes), a file the PR does
+  not touch; our Linked List suite in that job passed 92/92. Website
+  session told. No upstream PR of ours is open.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
