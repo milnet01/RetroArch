@@ -2172,6 +2172,35 @@ const r7z_entry_t *r7z_archive_entry(const r7z_archive_t *a, uint32_t index)
    return &a->entries[index];
 }
 
+int r7z_archive_folder_info(const r7z_archive_t *a, uint32_t folder,
+      uint64_t *unpack_size, uint64_t *pack_size, uint32_t *num_coders)
+{
+   const folder_t *f;
+   uint32_t        pk;
+   uint32_t        k;
+   uint64_t        sum = 0;
+
+   if (!a || !unpack_size || !pack_size || !num_coders
+         || folder >= a->num_folders)
+      return R7Z_ERROR_PARAM;
+
+   f = &a->folders[folder];
+
+   /* Packed streams are numbered across folders in file order, so this
+    * folder's first one follows every earlier folder's. The parser
+    * bounded each against the archive length and their running total,
+    * so the sum cannot wrap. */
+   for (pk = 0, k = 0; k < folder; k++)
+      pk += a->folders[k].num_pack;
+   for (k = 0; k < f->num_pack && pk + k < a->num_pack; k++)
+      sum += a->pack_sizes[pk + k];
+
+   *unpack_size = f->unpack_size;
+   *pack_size   = sum;
+   *num_coders  = f->num_coders;
+   return R7Z_OK;
+}
+
 
 /* --------------------------------------------------------------------
  * Resumable folder decode
@@ -2953,7 +2982,8 @@ int r7z_archive_extract_slice(r7z_archive_t *a, uint32_t index,
 
    if (res == R7Z_ERROR_UNSUPPORTED)
    {
-      /* A shape the slicer will not take, BCJ2 today. Decode it whole:
+      /* A shape the slicer will not take: a BCJ2 coder without four
+       * inputs. Decode it whole:
        * correct, and the caller sees one long call rather than many
        * short ones. */
       uint8_t *folder_data;

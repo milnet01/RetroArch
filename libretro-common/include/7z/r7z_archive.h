@@ -144,6 +144,26 @@ const r7z_entry_t *r7z_archive_entry(const r7z_archive_t *a,
       uint32_t index);
 
 /**
+ * r7z_archive_folder_info:
+ * @a           : opened archive
+ * @folder      : folder (solid block) index, as r7z_entry_t carries it
+ * @unpack_size : receives the folder's decoded size
+ * @pack_size   : receives the sum of the folder's packed streams
+ * @num_coders  : receives the number of coders in the folder's chain
+ *
+ * Reports one folder's sizes as the archive header records them,
+ * without decoding anything. A caller can use them to judge the
+ * memory a decode will need: extracting a member decodes its whole
+ * folder, and a folder of more than one coder holds an intermediate
+ * buffer besides its output.
+ *
+ * Returns: R7Z_OK, or R7Z_ERROR_PARAM when an argument is NULL or
+ * @folder is past the last folder.
+ */
+int r7z_archive_folder_info(const r7z_archive_t *a, uint32_t folder,
+      uint64_t *unpack_size, uint64_t *pack_size, uint32_t *num_coders);
+
+/**
  * r7z_archive_extract_slice:
  * @a          : opened archive
  * @index      : entry index
@@ -161,8 +181,10 @@ const r7z_entry_t *r7z_archive_entry(const r7z_archive_t *a,
  * Requesting a different entry mid-decode abandons the pending work,
  * so callers should finish one entry before starting another.
  *
- * Folders whose coder chain this cannot slice (BCJ2) fall back to
- * decoding whole, so a single call may still block for that shape.
+ * A BCJ2 folder is sliced one input at a time: each call decodes one
+ * of its four inputs whole, so a single call may still block for as
+ * long as its largest input takes. A folder shape the slicer does not
+ * take falls back to decoding whole in one call.
  *
  * Returns: R7Z_OK when the entry is ready, R7Z_PENDING when more calls
  * are needed, or a negative R7Z_ERROR_* code.
