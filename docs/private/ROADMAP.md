@@ -1687,7 +1687,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: user-request-2026-10-01.
   Lanes: perf.
 
-- 📋 [RETR-0021] **FEATURE — Self-updater for Windows and the Linux AppImage (stable releases, asks before updating).**
+- 🚧 [RETR-0021] **FEATURE — Self-updater for Windows and the Linux AppImage (stable releases, asks before updating).**
   Checked 2026-10-02 at the user's request. The Online Updater fetches
   cores, core info, assets, autoconfig profiles, cheats, databases,
   overlays and shaders from the buildbot (DEFAULT_BUILDBOT_SERVER_URL in
@@ -1817,6 +1817,23 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   decode_folder_slice slices them; fix it in the PR that adds
   r7z_archive_folder_info. Next: build the apply step on ra-fixes
   (spec 4.5-4.7), starting with r7z_archive_folder_info and its test.
+  Progress (2026-10-20, later): the apply step is built on
+  local/fixes-2026-09. e2f9518fdd r7z_archive_folder_info and its
+  INV-15 test (also fixes the stale BCJ2 comment); d616eb91b6
+  self_update_memory_ok and lane memory (INV-14); 70bf505274 start-up
+  cleanup and marker report, real file operations, net lane realfs;
+  3aeb3bdcf2 the apply task (sha256, download, per-block memory check,
+  blocks one at a time with a reopen, AppImage swap, Windows replace),
+  net lanes checksum and archive; c3a152c28e installer route (run.cmd,
+  lane runcmd) and the AppImage restart into $APPIMAGE; 4257087ede the
+  Update RetroArch page with Update Now and Restart RetroArch. One
+  difference from spec 4.9: the page opens at once and fills in when
+  the check answers, so "up to date" shows on the page too. Not yet
+  run: the page in a live menu; an update end to end against the real
+  buildbot; the Windows routes on wintest (INV-10, a portable update,
+  a DLL held open); a real AppImage restart (INV-12). Gap: the
+  libretro-common samples CI job runs an allowlist, and neither r7z
+  test is on it. Next: the manual recipes, then the upstream PR.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
