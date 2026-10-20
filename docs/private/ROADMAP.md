@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=40 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=41 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1787,6 +1787,19 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   configuration.c, msg_hash.h, intl/msg_hash_us.h, intl/msg_hash_us.c,
   menu/menu_setting.c) before editing by hand. Then
   tasks/task_self_update.c and the startup and checksum lanes (spec §7).
+  2026-10-20: the check half is built: dab9d538f8 (task, menu entry,
+  start-up setting, network lanes), and c97721716a wires the network
+  lanes into local-CI.sh. Spec amended for D10 (5dc5df0296). Loop 3 of
+  review-contract (docs 9721f77217) fixed 3 findings and surfaced 2. The
+  real 7z peak is about 770 MB (Linux) and 0.75-0.9 GB (Win64), not 600
+  MB, because r7z also holds the packed block. r7z_archive.h exposes no
+  block size. User decisions the same day: D10 stands at the real size;
+  take block sizes from the entry list, counting the whole archive as
+  the packed size (no r7z API change). Next: amend spec 4.5/INV-14/13
+  with that counting rule (one block at a time; reopen the archive
+  between blocks; twice the unpacked size for a BCJ2 block; on Windows
+  the smaller of physical and process-virtual memory). Gate it with
+  review-contract (fresh orchestrator), then build the apply step.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
@@ -1875,6 +1888,35 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** When you pick a core to run a game, RetroArch should only offer cores that emulate that game's console, not every core you have installed.
   Kind: feature.
   Source: user-request-2026-10-20.
+
+- 🚧 [RETR-0041] **FIX — Content Downloader never marks a downloaded archive, because auto-extract deletes it.**
+  User report 2026-10-20 with a screenshot: in DOOM, prboom.wad shows
+  [#] and "Doom (Shareware).zip" does not, though both were downloaded.
+  Root cause, checked on the user's install: the [#] marker
+  (DISPLAYLIST_CORE_CONTENT in menu_displaylist.c, upstream #19113,
+  067bb2ee17) tests <core_assets_directory>/<category>/<entry name>.
+  With core_updater_auto_extract_archive on (default), the zip is
+  extracted and deleted. Its members are Doom/doom1.wad and
+  Doom/prboom.wad, so the result is downloads/DOOM/Doom/, and nothing
+  on disk carries the entry's name. Upstream bug, present on master.
+  Fix direction: record each finished download in its category folder
+  and let the marker read that record; the folder name cannot be
+  predicted from the entry name. Downloads made before the fix are not
+  in the record. Pairs with RETR-0039, which needs the same record for
+  Core System Files. Upstream PR after the fork.
+  2026-10-20: fixed on the fork, df271733a8 (local/fixes-2026-09,
+  pushed; local CI five jobs PASS). cb_generic_download records each
+  finished Content Downloader file in <category>/.downloaded; the list
+  marks an entry on disk or recorded (menu/menu_content_downloads.c).
+  Lane samples/menu/content_downloads: 12 checks, 4 red against a stub
+  of the old rule, all green with the fix, also under ASan+UBSan; wired
+  into local-CI.sh samples-tasks. Not verified in a real menu download.
+  Downloads made before the fix stay unmarked until downloaded again.
+  Next: the user re-downloads Doom (Shareware).zip in the fork's menu to
+  confirm [#]; then an upstream PR (user approval per PR).
+  **Layman:** The Content Downloader says a zip you already downloaded is missing, because RetroArch unpacks the zip and throws it away, and then looks for the zip.
+  Kind: fix.
+  Source: user-report-2026-10-20.
 
 ### 📝 Cold-eyes 2026-07-04
 
