@@ -41,6 +41,7 @@
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
 
+#include "../command.h"
 #include "../configuration.h"
 #include "../msg_hash.h"
 #include "../runloop.h"
@@ -692,6 +693,7 @@ typedef struct self_update_apply
    bool has_expected;
    bool has_folder;           /* a block has been decoded */
    bool from_archive;         /* a .7z, not the bare file */
+   bool quit;                 /* the installer waits for RetroArch to exit */
 } self_update_apply_t;
 
 static void self_update_apply_free(self_update_apply_t *state)
@@ -909,6 +911,102 @@ static bool self_update_write_member(const char *path,
    return filestream_write_file(path, data, (int64_t)len);
 }
 
+static void self_update_write_marker(const self_update_apply_t *state)
+{
+   char marker[PATH_MAX_LENGTH];
+   char text[64];
+
+   fill_pathname_join_special(marker, state->config_dir,
+         SELF_UPDATE_MARKER, sizeof(marker));
+   if (     !self_update_marker_format(text, sizeof(text),
+               state->version, state->kind)
+         || !filestream_write_file(marker, text, (int64_t)strlen(text)))
+      RARCH_WARN("[Self Update] Could not write %s.\n", marker);
+}
+
+/* Windows portable: the program set replaces the old one, or nothing
+ * does.  AppImage: the new file is renamed over $APPIMAGE. */
+static const char *self_update_install_files(self_update_apply_t *state)
+{
+#ifdef _WIN32
+   char exe_dir[PATH_MAX_LENGTH];
+
+   *exe_dir = '\0';
+   if (     !fill_pathname_application_dir(exe_dir, sizeof(exe_dir))
+         || !*exe_dir)
+      return "cannot find the RetroArch folder";
+   if (self_update_replace(&su_fileops, exe_dir, state->payload,
+            (const char *const*)state->rel, state->num_members) != 0)
+      return "a program file is in use; nothing was changed";
+#else
+   char fresh[PATH_MAX_LENGTH];
+   const char *appimage = getenv("APPIMAGE");
+   int fd;
+
+   if (state->from_archive)
+      fill_pathname_join_special(fresh, state->payload,
+            "new.AppImage", sizeof(fresh));
+   else
+      strlcpy(fresh, state->download, sizeof(fresh));
+   /* On disk before it replaces the running AppImage. */
+   if ((fd = open(fresh, O_RDONLY)) >= 0)
+   {
+      fsync(fd);
+      close(fd);
+   }
+   if (     !appimage || !*appimage
+         || self_update_appimage_swap(&su_fileops, fresh, appimage) != 0)
+      return "cannot replace the AppImage";
+#endif
+   return NULL;
+}
+
+/* The installer cannot run while RetroArch is open: it skips a locked
+ * retroarch.exe and still reports success.  So run.cmd waits for this
+ * process to exit, then runs it (spec §4.6). */
+static const char *self_update_launch_installer(self_update_apply_t *state)
+{
+#ifdef _WIN32
+   char exe[PATH_MAX_LENGTH];
+   char script[PATH_MAX_LENGTH];
+   char cmdline[PATH_MAX_LENGTH + 32];
+   char text[PATH_MAX_LENGTH * 4 + 512];
+   size_t len;
+   wchar_t *wcmd;
+   STARTUPINFOW si;
+   PROCESS_INFORMATION pi;
+   BOOL started;
+
+   *exe = '\0';
+   fill_pathname_application_path(exe, sizeof(exe));
+   fill_pathname_join_special(script, state->staging, "run.cmd",
+         sizeof(script));
+   if (     !*exe
+         || !(len = self_update_run_cmd_format(text, sizeof(text),
+               (unsigned long)GetCurrentProcessId(), state->download,
+               state->kind == SELF_UPDATE_KIND_WIN_INSTALLER, exe))
+         || !filestream_write_file(script, text, (int64_t)len))
+      return "cannot prepare the installer";
+
+   snprintf(cmdline, sizeof(cmdline), "cmd.exe /c \"%s\"", script);
+   if (!(wcmd = utf8_to_utf16_string_alloc(cmdline)))
+      return "out of memory";
+   memset(&si, 0, sizeof(si));
+   si.cb = sizeof(si);
+   memset(&pi, 0, sizeof(pi));
+   started = CreateProcessW(NULL, wcmd, NULL, NULL, FALSE,
+         CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+   free(wcmd);
+   if (!started)
+      return "cannot start the installer";
+   CloseHandle(pi.hThread);
+   CloseHandle(pi.hProcess);
+   return NULL;
+#else
+   return "no installer on this platform";
+#endif
+}
+
 /* NULL when this call's work is done, else the reason to stop. */
 static const char *self_update_apply_step(self_update_apply_t *state,
       bool *finished)
@@ -1036,48 +1134,25 @@ static const char *self_update_apply_step(self_update_apply_t *state,
 
       case SELF_UPDATE_STAGE_INSTALL:
          {
-            char marker[PATH_MAX_LENGTH];
-            char text[64];
+            const char *err;
             const char *staging[1];
-#ifdef _WIN32
-            char exe_dir[PATH_MAX_LENGTH];
 
-            *exe_dir = '\0';
-            if (     !fill_pathname_application_dir(exe_dir, sizeof(exe_dir))
-                  || !*exe_dir)
-               return "cannot find the RetroArch folder";
-            if (self_update_replace(&su_fileops, exe_dir, state->payload,
-                     (const char *const*)state->rel, state->num_members) != 0)
-               return "a program file is in use; nothing was changed";
-#else
-            char fresh[PATH_MAX_LENGTH];
-            const char *appimage = getenv("APPIMAGE");
-            int fd;
-
-            if (state->from_archive)
-               fill_pathname_join_special(fresh, state->payload,
-                     "new.AppImage", sizeof(fresh));
-            else
-               strlcpy(fresh, state->download, sizeof(fresh));
-            /* On disk before it replaces the running AppImage. */
-            if ((fd = open(fresh, O_RDONLY)) >= 0)
+            /* The installer route quits RetroArch and leaves staging for
+             * the next start: run.cmd and the installer run from it. */
+            if (     state->kind == SELF_UPDATE_KIND_WIN_INSTALLER
+                  || state->kind == SELF_UPDATE_KIND_WIN_INSTALLER_VISIBLE)
             {
-               fsync(fd);
-               close(fd);
+               self_update_write_marker(state);
+               if ((err = self_update_launch_installer(state)))
+                  return err;
+               state->quit = true;
+               *finished   = true;
+               return NULL;
             }
-            if (     !appimage || !*appimage
-                  || self_update_appimage_swap(&su_fileops, fresh,
-                     appimage) != 0)
-               return "cannot replace the AppImage";
-#endif
-            fill_pathname_join_special(marker, state->config_dir,
-                  SELF_UPDATE_MARKER, sizeof(marker));
-            if (     !self_update_marker_format(text, sizeof(text),
-                        state->version, state->kind)
-                  || !filestream_write_file(marker, text,
-                        (int64_t)strlen(text)))
-               RARCH_WARN("[Self Update] Could not write %s.\n", marker);
 
+            if ((err = self_update_install_files(state)))
+               return err;
+            self_update_write_marker(state);
             staging[0] = state->staging;
             self_update_cleanup(&su_fileops, NULL, staging, 1);
             *finished = true;
@@ -1129,6 +1204,35 @@ static void cb_self_update_applied(retro_task_t *task, void *task_data,
       self_update_apply_failed(state, state->error);
       return;
    }
+#ifdef _WIN32
+   if (state->quit)
+   {
+      char dir[PATH_MAX_LENGTH];
+
+      /* The visible installer starts in another folder; the user has
+       * to pick this one, so it is said where it cannot be missed. */
+      if (state->kind == SELF_UPDATE_KIND_WIN_INSTALLER_VISIBLE)
+      {
+         wchar_t *wmsg;
+
+         *dir = '\0';
+         fill_pathname_application_dir(dir, sizeof(dir));
+         snprintf(msg, sizeof(msg),
+               msg_hash_to_str(MSG_SELF_UPDATE_INSTALLER_FOLDER), dir);
+         if ((wmsg = utf8_to_utf16_string_alloc(msg)))
+         {
+            MessageBoxW(NULL, wmsg, L"RetroArch", MB_OK | MB_ICONINFORMATION);
+            free(wmsg);
+         }
+      }
+      else
+         self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_CLOSING));
+      self_update_apply_free(state);
+      self_update_apply_running = false;
+      command_event(CMD_EVENT_QUIT, NULL);
+      return;
+   }
+#endif
    snprintf(msg, sizeof(msg),
          msg_hash_to_str(MSG_SELF_UPDATE_INSTALLED), state->version);
    self_update_notify(msg);
@@ -1243,9 +1347,7 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
    self_update_apply_t *state;
    settings_t *settings = config_get_ptr();
 
-   /* The installer route is not built yet. */
-   if (     (kind != SELF_UPDATE_KIND_APPIMAGE
-            && kind != SELF_UPDATE_KIND_WIN_PORTABLE)
+   if (     kind == SELF_UPDATE_KIND_NONE
          || !version || !*version || !config_dir
          || self_update_apply_running || self_update_check_running)
       return false;
@@ -1259,7 +1361,9 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
    if (!(state = (self_update_apply_t*)calloc(1, sizeof(*state))))
       return false;
    state->kind         = kind;
-   state->from_archive = !(preferred && kind == SELF_UPDATE_KIND_APPIMAGE);
+   /* An installer is run whole; the bare AppImage is the file itself. */
+   state->from_archive =    kind == SELF_UPDATE_KIND_WIN_PORTABLE
+                         || (kind == SELF_UPDATE_KIND_APPIMAGE && !preferred);
    strlcpy(state->version, version, sizeof(state->version));
    strlcpy(state->config_dir, config_dir, sizeof(state->config_dir));
 

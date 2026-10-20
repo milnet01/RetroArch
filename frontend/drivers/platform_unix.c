@@ -91,6 +91,10 @@
 #include "../../menu/menu_entries.h"
 #else
 #include "../../command.h"
+#ifdef HAVE_SELF_UPDATER
+#include "../../self_update.h"
+#include "../../tasks/tasks_internal.h"
+#endif
 #endif
 
 #include "platform_unix.h"
@@ -3928,9 +3932,17 @@ static bool frontend_unix_set_fork(enum frontend_fork fork_mode)
 
          {
             char executable_path[PATH_MAX_LENGTH] = {0};
+            const char *target = executable_path;
             fill_pathname_application_path(executable_path,
                   sizeof(executable_path));
-            path_set(RARCH_PATH_CORE, executable_path);
+#ifdef HAVE_SELF_UPDATER
+            /* Inside an AppImage the process image is the binary in the
+             * mounted image, which an update has since replaced; the
+             * AppImage file holds the current build. */
+            target = self_update_restart_target(task_self_update_kind(),
+                  getenv("APPIMAGE"), executable_path);
+#endif
+            path_set(RARCH_PATH_CORE, target);
          }
          command_event(CMD_EVENT_QUIT, NULL);
          break;

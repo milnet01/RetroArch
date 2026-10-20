@@ -444,6 +444,57 @@ bool self_update_memory_ok(uint64_t avail, uint64_t archive_size,
    return avail == 0 || avail >= sum;
 }
 
+/* ---- installer route --------------------------------------------- */
+
+/* Copies @path for a batch file: '%' doubled.  False when it does not
+ * fit, or holds a character a quoted batch argument cannot carry. */
+static bool su_batch_path(char *s, size_t len, const char *path)
+{
+   size_t n = 0;
+   for (; *path; path++)
+   {
+      if (*path == '"' || *path == '\r' || *path == '\n')
+         return false;
+      if (n + 2 >= len)
+         return false;
+      if (*path == '%')
+         s[n++] = '%';
+      s[n++] = *path;
+   }
+   s[n] = '\0';
+   return true;
+}
+
+size_t self_update_run_cmd_format(char *s, size_t len, unsigned long pid,
+      const char *setup, bool silent, const char *exe)
+{
+   char q_setup[PATH_MAX_LENGTH * 2];
+   char q_exe[PATH_MAX_LENGTH * 2];
+
+   if (!s || !len)
+      return 0;
+   *s = '\0';
+   if (     !setup || !exe
+         || !su_batch_path(q_setup, sizeof(q_setup), setup)
+         || !su_batch_path(q_exe, sizeof(q_exe), exe))
+      return 0;
+   /* chcp 65001: the paths are UTF-8.  tasklist prints no line holding
+    * the ID once the process is gone; ping is the one wait that needs
+    * no console input. */
+   return su_fit(s, len, snprintf(s, len,
+         "@echo off\r\n"
+         "chcp 65001 >NUL\r\n"
+         ":wait\r\n"
+         "tasklist /FI \"PID eq %lu\" /NH | find \" %lu \" >NUL\r\n"
+         "if not errorlevel 1 (\r\n"
+         "   ping -n 2 127.0.0.1 >NUL\r\n"
+         "   goto wait\r\n"
+         ")\r\n"
+         "start \"\" /wait \"%s\"%s\r\n"
+         "start \"\" \"%s\"\r\n",
+         pid, pid, q_setup, silent ? " /S" : "", q_exe));
+}
+
 /* ---- marker and restart ------------------------------------------ */
 
 size_t self_update_marker_format(char *s, size_t len,

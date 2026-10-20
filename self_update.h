@@ -149,6 +149,14 @@ bool self_update_memory_ok(uint64_t avail, uint64_t archive_size,
       uint64_t pack_size, uint64_t unpack_size, unsigned num_coders,
       uint64_t largest_member, uint64_t *need);
 
+/* Windows installer route, spec §4.6: the run.cmd that waits until
+ * process @pid has exited, runs @setup (with /S when @silent), waits
+ * for it, then starts @exe.  CRLF line endings; '%' in a path is
+ * doubled so the batch file does not expand it.  Returns 0 when it
+ * does not fit or a path holds a '"' or a line break. */
+size_t self_update_run_cmd_format(char *s, size_t len, unsigned long pid,
+      const char *setup, bool silent, const char *exe);
+
 /* The restart target: $APPIMAGE for an AppImage, else @exe_path, the
  * executable path captured before any file was replaced. */
 const char *self_update_restart_target(enum self_update_kind kind,

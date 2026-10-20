@@ -11,6 +11,8 @@
  *   appimage     INV-12
  *   cleanup      INV-13's start-up removal
  *   memory       INV-14's sum
+ *   runcmd       INV-10's run.cmd: waits on the process, /S only when
+ *                silent, '%' in a path doubled
  *
  *   ./self_update_test            every lane
  *   ./self_update_test <lane>     one lane
@@ -790,11 +792,47 @@ static void lane_memory(void)
          "memory: the margin pushing past 64 bits -> refused");
 }
 
+/* ---- runcmd ------------------------------------------------------ */
+
+static void lane_runcmd(void)
+{
+   char buf[4096];
+   const char *setup = "C:\\Users\\Me\\AppData\\Local\\Temp\\retroarch-update\\RetroArch-Win64-setup.exe";
+   const char *exe   = "C:\\RetroArch-Win64\\retroarch.exe";
+
+   check(self_update_run_cmd_format(buf, sizeof(buf), 4242, setup, true, exe) > 0
+         && strstr(buf, "tasklist /FI \"PID eq 4242\" /NH | find \" 4242 \"")
+         && strstr(buf, "goto wait"),
+         "runcmd: waits until the RetroArch process is gone");
+   check(strstr(buf, "start \"\" /wait \"C:\\Users\\Me\\AppData\\Local\\Temp\\retroarch-update\\RetroArch-Win64-setup.exe\" /S\r\n") != NULL,
+         "runcmd: silent route passes /S");
+   check(strstr(buf, "goto wait") < strstr(buf, "start \"\" /wait"),
+         "runcmd: the installer starts only after the wait");
+   check(strstr(buf, "start \"\" \"C:\\RetroArch-Win64\\retroarch.exe\"\r\n") != NULL
+         && strstr(buf, "/wait") < strstr(buf, "retroarch.exe\""),
+         "runcmd: RetroArch starts after the installer ends");
+
+   check(self_update_run_cmd_format(buf, sizeof(buf), 7, setup, false, exe) > 0
+         && strstr(buf, "RetroArch-Win64-setup.exe\"\r\n") && !strstr(buf, "/S"),
+         "runcmd: visible route passes no /S");
+
+   check(self_update_run_cmd_format(buf, sizeof(buf), 7,
+            "C:\\100%\\setup.exe", true, "C:\\a%b%\\retroarch.exe") > 0
+         && strstr(buf, "\"C:\\100%%\\setup.exe\"")
+         && strstr(buf, "\"C:\\a%%b%%\\retroarch.exe\""),
+         "runcmd: '%' in a path is doubled");
+   check(self_update_run_cmd_format(buf, sizeof(buf), 7,
+            "C:\\x\"y\\setup.exe", true, exe) == 0 && buf[0] == '\0',
+         "runcmd: a '\"' in a path is refused");
+   check(self_update_run_cmd_format(buf, 64, 7, setup, true, exe) == 0,
+         "runcmd: too long for the buffer -> 0");
+}
+
 static const struct { const char *name; void (*fn)(void); } lanes[] = {
    { "kind", lane_kind }, { "version", lane_version }, { "release", lane_release },
    { "tls", lane_tls }, { "program_set", lane_program_set }, { "replace", lane_replace },
    { "marker", lane_marker }, { "appimage", lane_appimage }, { "cleanup", lane_cleanup },
-   { "memory", lane_memory } };
+   { "memory", lane_memory }, { "runcmd", lane_runcmd } };
 
 int main(int argc, char **argv)
 {

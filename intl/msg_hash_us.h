@@ -31773,6 +31773,14 @@ MSG_HASH(
    "RetroArch cannot write to %s, so it cannot update itself there."
    )
 MSG_HASH(
+   MSG_SELF_UPDATE_CLOSING,
+   "RetroArch will close to install the update, then start again."
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_INSTALLER_FOLDER,
+   "RetroArch will close and open the installer. In the installer, choose this folder: %s"
+   )
+MSG_HASH(
    MSG_LATEST_CORE_INSTALLED,
    "Latest version already installed: "
    )
