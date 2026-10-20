@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=39 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=40 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1853,6 +1853,26 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Find what each page already knows about a finished download, and
   whether the partial marking is a bug in the existing code.
   **Layman:** The list of core support files should show which ones you already have, the way the core list does.
+  Kind: feature.
+  Source: user-request-2026-10-20.
+
+- 📋 [RETR-0040] **FEATURE — Core choice for a game lists only the cores for that game's system.**
+  User request 2026-10-20. When choosing a core for a game, every
+  installed core should not be offered; only the relevant ones. The user
+  accepts that this relies on cores declaring their systems properly.
+  Checked 2026-10-20 in local/fixes-2026-09: the "load with core" list
+  already filters by file extension
+  (core_info_list_get_supported_cores, menu_displaylist.c), but an
+  extension is weak evidence: .zip, .bin, .cue and .chd are claimed by
+  cores for many systems. A playlist entry knows its system (db_name,
+  e.g. "Nintendo - Super Nintendo Entertainment System.lpl"), and each
+  core's .info lists its databases. Matching those two would narrow the
+  list to the system. Unchecked: which screen the user was on (Set Core
+  Association, reached through action_ok_set_core_association, or Load
+  Content's core list), and what to show when no core declares the
+  system (probably fall back to today's list with a note). Pairs with
+  RETR-0038. Build on the fork, then one upstream PR.
+  **Layman:** When you pick a core to run a game, RetroArch should only offer cores that emulate that game's console, not every core you have installed.
   Kind: feature.
   Source: user-request-2026-10-20.
 
