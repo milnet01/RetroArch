@@ -2229,6 +2229,21 @@ current upstream first, so the player is built on current code.
   few frames of input flushing after the menu opens or closes, when it is
   dropped silently. Advised: resend QUIT once if the player is still
   alive about a second later. Runtime-unverified.
+  2026-10-20, from retrodb-f2: RetroDB launches the fork today through
+  /mnt/Emulators/Multi-System/RetroArch/retroarch-fork.sh with
+  -L "{retroarch_core}" "{rom}" and no --config; the wrapper sets HOME to
+  the AppImage's .home, so the AppImage's retroarch.cfg is used. Still
+  unverified in RetroDB's runs: the SIGTERM SRAM flush and
+  quit_on_close_content=2. No release tag needed yet for the bundle kit.
+  Nothing is owed from the fork until then.
+  2026-10-20: retrodb-f2 reported a SIGSEGV in
+  x11_display_server_get_screen_orientation when XOpenDisplay fails. The
+  wrapper's binary, /mnt/Games/Scripts/Linux/RetroArch/retroarch (an
+  untracked build in this checkout), dated from 2026-05-18 (6570277331),
+  before the NULL-Display guard (294a51d1f4, upstream #19294). Red: old
+  binary exit 139. Green: local/fixes-2026-09 5405079571 exits 1 with
+  "Cannot open video driver". That build replaced it; the old one is kept
+  as retroarch.2026-05-18-6570277331.OLD.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
