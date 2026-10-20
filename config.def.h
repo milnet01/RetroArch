@@ -1710,6 +1710,7 @@
 
 #define DEFAULT_NETWORK_BUILDBOT_AUTO_EXTRACT_ARCHIVE true
 #define DEFAULT_NETWORK_BUILDBOT_SHOW_EXPERIMENTAL_CORES false
+#define DEFAULT_SELF_UPDATE_CHECK_ON_STARTUP false
 
 /* Automatically create a backup whenever a core is
  * updated via the online updater

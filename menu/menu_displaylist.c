@@ -13147,6 +13147,14 @@ unsigned menu_displaylist_build_list(
                         false) == 0)
                   count++;
             }
+
+#ifdef HAVE_SELF_UPDATER
+            if (     task_self_update_kind() != SELF_UPDATE_KIND_NONE
+                  && MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
+                     MENU_ENUM_LABEL_SELF_UPDATE_CHECK_ON_STARTUP,
+                     PARSE_ONLY_BOOL, false) == 0)
+               count++;
+#endif
          }
          break;
       case DISPLAYLIST_MENU_SOUNDS_LIST:
@@ -16653,6 +16661,16 @@ static bool menu_displaylist_ctl_internal(
                         MENU_ENUM_LABEL_DOWNLOAD_CORE_CONTENT_DIRS,
                         MENU_SETTING_ACTION, 0, 0, NULL))
                   count++;
+
+#ifdef HAVE_SELF_UPDATER
+               /* Hidden, with no request ever made, unless this is an
+                * install the updater can replace. */
+               if (     task_self_update_kind() != SELF_UPDATE_KIND_NONE
+                     && MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
+                        MENU_ENUM_LABEL_SELF_UPDATE,
+                        PARSE_ACTION, false) == 0)
+                  count++;
+#endif
 
 #ifdef HAVE_ONLINE_UPDATER
                if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,

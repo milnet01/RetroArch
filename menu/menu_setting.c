@@ -11835,6 +11835,7 @@ static const setting_desc_t mm_desc_11[] = {
 static const setting_desc_t mm_desc_12[] = {
 /* GENERATED: rows come from settings_def_menu_main_lists_4.h in order. */
 #include "../settings/settings_def_menu_main_lists_4.h"
+#include "../settings/settings_def_self_update_action.h"
 };
 
 #ifdef HAVE_BLUETOOTH
@@ -13111,6 +13112,7 @@ static const setting_desc_t chv_desc_1[] = {
 static const setting_desc_t core_updater_desc_0[] = {
 /* GENERATED: rows come from settings_def_updater_extract.h in order. */
 #include "../settings/settings_def_updater_extract.h"
+#include "../settings/settings_def_self_update.h"
 };
 #endif
 

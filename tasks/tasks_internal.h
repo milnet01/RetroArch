@@ -39,6 +39,10 @@
 #include "../core_updater_list.h"
 #endif
 
+#if defined(HAVE_SELF_UPDATER)
+#include "../self_update.h"
+#endif
+
 #include "../playlist.h"
 
 /* Required for task_push_core_backup() */
@@ -148,6 +152,22 @@ void *task_push_webdav_move(const char *url, const char *dest, bool mute, const 
       retro_task_callback_t cb, void *userdata);
 void *task_push_webdav_copy(const char *url, const char *dest, bool mute, const char *headers,
       retro_task_callback_t cb, void *userdata);
+
+#ifdef HAVE_SELF_UPDATER
+/* The install kind, decided once from this platform's facts. */
+enum self_update_kind task_self_update_kind(void);
+
+/* Checks for a newer stable release.  @quiet is the start-up check:
+ * it reports only a newer release and never sizes the download.
+ * Returns false when no check was started. */
+bool task_push_self_update_check(bool quiet);
+
+/* The same check against @ep for an install of @kind.  Only the test
+ * harness calls this; production code goes through the function above,
+ * which passes self_update_endpoints_default. */
+bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
+      enum self_update_kind kind, bool quiet);
+#endif
 
 bool task_push_bluetooth_scan(retro_task_callback_t cb);
 

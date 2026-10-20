@@ -2545,6 +2545,7 @@ MSG_HASH(MENU_ENUM_SUBLABEL_##T, sub)
 #define S_ACTION_EX_NS(T, n, sd, ok, rp, c, us) \
 MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
 #include "../settings/settings_def_menu_main_lists_4.h"
+#include "../settings/settings_def_self_update_action.h"
 #undef S_BOOL
 #undef S_BOOL_NS
 #undef S_BOOL_H
@@ -21755,6 +21756,7 @@ MSG_HASH(MENU_ENUM_SUBLABEL_##T, sub)
 #define S_FLOAT_NS(f, T, n, d, rnd, sd, df, c, mn, mx, st, ok, rp, us) \
 MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
 #include "../settings/settings_def_updater_extract.h"
+#include "../settings/settings_def_self_update.h"
 #undef S_BOOL
 #undef S_BOOL_NS
 #undef S_UINT
@@ -31709,6 +31711,34 @@ MSG_HASH(
 MSG_HASH(
    MSG_CORE_LIST_FAILED,
    "Failed to retrieve core list!"
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_CHECKING,
+   "Checking for RetroArch updates..."
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_UP_TO_DATE,
+   "RetroArch %s is up to date."
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_AVAILABLE,
+   "RetroArch %s is available (%s download)."
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_AVAILABLE_STARTUP,
+   "RetroArch %s is available. Go to Online Updater > Update RetroArch."
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_NOT_YET_AVAILABLE,
+   "RetroArch %s is not available for download yet."
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_CHECK_FAILED,
+   "Could not check for RetroArch updates: %s"
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_TLS_REQUIRED,
+   "Updating RetroArch needs \"TLS Certificate Verification\" set to \"Required\"."
    )
 MSG_HASH(
    MSG_LATEST_CORE_INSTALLED,

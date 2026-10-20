@@ -26367,6 +26367,7 @@ enum msg_hash_enums
 #define S_ACTION_EX_H(T, n, sd, ok, rp, c, us, sub) MENU_LBL_H(T),
 #define S_ACTION_EX_NS_H(T, n, sd, ok, rp, c, us) MENU_LBL_H(T),
 #include "settings/settings_def_updater_extract.h"
+#include "settings/settings_def_self_update.h"
 #undef S_BOOL
 #undef S_BOOL_NS
 #undef S_BOOL_H
@@ -27420,6 +27421,15 @@ enum msg_hash_enums
    /* Core updater */
    MENU_LABEL(UPDATE_INSTALLED_CORES),
    MENU_LABEL(SWITCH_INSTALLED_CORES_PFD),
+
+   /* Self-updater */
+   MSG_SELF_UPDATE_CHECKING,
+   MSG_SELF_UPDATE_UP_TO_DATE,
+   MSG_SELF_UPDATE_AVAILABLE,
+   MSG_SELF_UPDATE_AVAILABLE_STARTUP,
+   MSG_SELF_UPDATE_NOT_YET_AVAILABLE,
+   MSG_SELF_UPDATE_CHECK_FAILED,
+   MSG_SELF_UPDATE_TLS_REQUIRED,
 
    MSG_FETCHING_CORE_LIST,
    MSG_CORE_LIST_FAILED,
@@ -29586,6 +29596,7 @@ enum msg_hash_enums
 #define S_ACTION_EX_H(T, n, sd, ok, rp, c, us, sub) MENU_LBL_H(T),
 #define S_ACTION_EX_NS_H(T, n, sd, ok, rp, c, us) MENU_LBL_H(T),
 #include "settings/settings_def_menu_main_lists_4.h"
+#include "settings/settings_def_self_update_action.h"
 #undef S_BOOL
 #undef S_BOOL_NS
 #undef S_UINT

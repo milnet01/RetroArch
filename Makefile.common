@@ -2456,7 +2456,8 @@ ifeq ($(HAVE_NETWORKING), 1)
    # so griffin does not list it.
    ifeq ($(HAVE_SELF_UPDATER), 1)
       DEFINES += -DHAVE_SELF_UPDATER
-      OBJ += self_update.o
+      OBJ += self_update.o \
+             tasks/task_self_update.o
    endif
 
    ifneq ($(findstring Linux,$(OS)),)

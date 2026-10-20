@@ -1,0 +1,82 @@
+# Network lanes for the self-updater's check task: the start-up check
+# never asks for the file, the menu check sizes it (small file first,
+# full archive on a 404), and the TLS gate and the install kind refuse
+# before any request.  Links the real tasks/task_self_update.c,
+# self_update.c, tasks/task_http.c, task_queue.c and net_http.c against
+# a loopback server; only the frontend singletons are stubbed, in the
+# test source.
+#
+#   make -f Makefile.net check
+#   make -f Makefile.net check SANITIZER=address,undefined
+#   ./self_update_net_test <lane>
+
+TARGET  := self_update_net_test
+CORE_DIR := ../../..
+LIBRETRO_COMM_DIR := $(CORE_DIR)/libretro-common
+
+SOURCES := \
+	self_update_net_test.c \
+	$(CORE_DIR)/tasks/task_self_update.c \
+	$(CORE_DIR)/self_update.c \
+	$(CORE_DIR)/tasks/task_http.c \
+	$(LIBRETRO_COMM_DIR)/queues/task_queue.c \
+	$(LIBRETRO_COMM_DIR)/net/net_http.c \
+	$(LIBRETRO_COMM_DIR)/net/net_compat.c \
+	$(LIBRETRO_COMM_DIR)/net/net_socket.c \
+	$(LIBRETRO_COMM_DIR)/formats/json/rjson.c \
+	$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
+	$(LIBRETRO_COMM_DIR)/compat/compat_strldup.c \
+	$(LIBRETRO_COMM_DIR)/compat/compat_strcasestr.c \
+	$(LIBRETRO_COMM_DIR)/compat/compat_posix_string.c \
+	$(LIBRETRO_COMM_DIR)/compat/fopen_utf8.c \
+	$(LIBRETRO_COMM_DIR)/string/stdstring.c \
+	$(LIBRETRO_COMM_DIR)/string/rstrtod.c \
+	$(LIBRETRO_COMM_DIR)/lists/string_list.c \
+	$(LIBRETRO_COMM_DIR)/file/file_path.c \
+	$(LIBRETRO_COMM_DIR)/file/file_path_io.c \
+	$(LIBRETRO_COMM_DIR)/file/retro_dirent.c \
+	$(LIBRETRO_COMM_DIR)/streams/file_stream.c \
+	$(LIBRETRO_COMM_DIR)/vfs/vfs_implementation.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_utf.c \
+	$(LIBRETRO_COMM_DIR)/features/features_cpu.c \
+	$(LIBRETRO_COMM_DIR)/rthreads/rthreads.c \
+	$(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c \
+	$(LIBRETRO_COMM_DIR)/time/rtime.c
+
+# Objects go under obj/, never beside the shared sources: another
+# sample's sanitizer build leaves its objects there, and reusing one
+# links in a runtime this build did not ask for.
+OBJDIR := obj
+OBJS   := $(addprefix $(OBJDIR)/,$(notdir $(SOURCES:.c=.o)))
+vpath %.c $(sort $(dir $(SOURCES)))
+
+CFLAGS  += -Wall -Wsign-compare -std=gnu99 -g -O1 -fno-omit-frame-pointer \
+           -I$(LIBRETRO_COMM_DIR)/include -I$(CORE_DIR) -I$(CORE_DIR)/deps \
+           -DHAVE_THREADS -DHAVE_NETWORKING -DRARCH_INTERNAL \
+           -DHAVE_SELF_UPDATER
+LIBS    += -lpthread -lm
+
+ifneq ($(SANITIZER),)
+   CFLAGS  := -fsanitize=$(SANITIZER) $(CFLAGS)
+   LDFLAGS := -fsanitize=$(SANITIZER) $(LDFLAGS)
+endif
+
+all: $(TARGET)
+
+$(OBJDIR)/%.o: %.c | $(OBJDIR)
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+$(OBJDIR):
+	mkdir -p $@
+
+$(TARGET): $(OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS) $(LIBS)
+
+check: $(TARGET)
+	./$(TARGET)
+
+clean:
+	rm -f $(TARGET)
+	rm -rf $(OBJDIR)
+
+.PHONY: all check clean

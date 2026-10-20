@@ -164,6 +164,10 @@ enum event_command
    /* Resolve cloud sync conflicts by keeping server files */
    CMD_EVENT_CLOUD_SYNC_RESOLVE_KEEP_SERVER,
 #endif
+#ifdef HAVE_SELF_UPDATER
+   /* Check for a newer stable RetroArch */
+   CMD_EVENT_SELF_UPDATE_CHECK,
+#endif
    /* Shutdown the OS */
    CMD_EVENT_SHUTDOWN,
    /* Reboot the OS */

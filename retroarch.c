@@ -5257,6 +5257,11 @@ bool command_event(enum event_command cmd, void *data)
          task_push_cloud_sync_resolve_keep_server();
          break;
 #endif
+#ifdef HAVE_SELF_UPDATER
+      case CMD_EVENT_SELF_UPDATE_CHECK:
+         task_push_self_update_check(false);
+         break;
+#endif
       case CMD_EVENT_MENU_RESET_TO_DEFAULT_CONFIG:
          config_set_defaults(global_get_ptr(), config_get_ptr());
          break;
@@ -6824,6 +6829,10 @@ int rarch_main(int argc, char *argv[], void *data)
 #ifdef HAVE_CLOUDSYNC
    if (settings->uints.cloud_sync_sync_mode == CLOUD_SYNC_MODE_AUTOMATIC)
       task_push_cloud_sync();
+#endif
+#ifdef HAVE_SELF_UPDATER
+   if (settings->bools.self_update_check_on_startup)
+      task_push_self_update_check(true);
 #endif
 #ifdef HAVE_LAKKA
    sd_notify(0, "READY=1");

@@ -2348,6 +2348,7 @@ static struct config_bool_setting *populate_settings_bool(
 #include "settings/settings_def_saving.h"
 #include "settings/settings_def_notification_positions.h"
 #include "settings/settings_def_menu_main_lists_4.h"
+#include "settings/settings_def_self_update_action.h"
 #include "settings/settings_def_menu_main_lists_3.h"
 #ifdef HAVE_MENU
 #ifdef HAVE_MATERIALUI
@@ -2618,6 +2619,7 @@ static struct config_bool_setting *populate_settings_bool(
 #include "settings/settings_def_updater_backup.h"
 #include "settings/settings_def_updater_experimental.h"
 #include "settings/settings_def_updater_extract.h"
+#include "settings/settings_def_self_update.h"
 #include "settings/settings_def_gamemode.h"
 #include "settings/settings_def_sustained_performance.h"
 #ifdef HAVE_MENU
@@ -3070,6 +3072,7 @@ static struct config_float_setting *populate_settings_float(
 #include "settings/settings_def_saving.h"
 #include "settings/settings_def_notification_positions.h"
 #include "settings/settings_def_menu_main_lists_4.h"
+#include "settings/settings_def_self_update_action.h"
 #include "settings/settings_def_menu_main_lists_3.h"
 #ifdef HAVE_MENU
 #ifdef HAVE_MATERIALUI
@@ -3340,6 +3343,7 @@ static struct config_float_setting *populate_settings_float(
 #include "settings/settings_def_updater_backup.h"
 #include "settings/settings_def_updater_experimental.h"
 #include "settings/settings_def_updater_extract.h"
+#include "settings/settings_def_self_update.h"
 #include "settings/settings_def_gamemode.h"
 #include "settings/settings_def_sustained_performance.h"
 #ifdef HAVE_MENU
@@ -3757,6 +3761,7 @@ static struct config_uint_setting *populate_settings_uint(
 #include "settings/settings_def_saving.h"
 #include "settings/settings_def_notification_positions.h"
 #include "settings/settings_def_menu_main_lists_4.h"
+#include "settings/settings_def_self_update_action.h"
 #include "settings/settings_def_menu_main_lists_3.h"
 #ifdef HAVE_MENU
 #ifdef HAVE_MATERIALUI
@@ -4027,6 +4032,7 @@ static struct config_uint_setting *populate_settings_uint(
 #include "settings/settings_def_updater_backup.h"
 #include "settings/settings_def_updater_experimental.h"
 #include "settings/settings_def_updater_extract.h"
+#include "settings/settings_def_self_update.h"
 #include "settings/settings_def_gamemode.h"
 #include "settings/settings_def_sustained_performance.h"
 #ifdef HAVE_MENU
@@ -4489,6 +4495,7 @@ static struct config_int_setting *populate_settings_int(
 #include "settings/settings_def_saving.h"
 #include "settings/settings_def_notification_positions.h"
 #include "settings/settings_def_menu_main_lists_4.h"
+#include "settings/settings_def_self_update_action.h"
 #include "settings/settings_def_menu_main_lists_3.h"
 #ifdef HAVE_MENU
 #ifdef HAVE_MATERIALUI
@@ -4759,6 +4766,7 @@ static struct config_int_setting *populate_settings_int(
 #include "settings/settings_def_updater_backup.h"
 #include "settings/settings_def_updater_experimental.h"
 #include "settings/settings_def_updater_extract.h"
+#include "settings/settings_def_self_update.h"
 #include "settings/settings_def_gamemode.h"
 #include "settings/settings_def_sustained_performance.h"
 #ifdef HAVE_MENU
@@ -5084,6 +5092,7 @@ static struct config_int_setting *populate_settings_int(
 #include "settings/settings_def_saving.h"
 #include "settings/settings_def_notification_positions.h"
 #include "settings/settings_def_menu_main_lists_4.h"
+#include "settings/settings_def_self_update_action.h"
 #include "settings/settings_def_menu_main_lists_3.h"
 #ifdef HAVE_MENU
 #ifdef HAVE_MATERIALUI
@@ -5354,6 +5363,7 @@ static struct config_int_setting *populate_settings_int(
 #include "settings/settings_def_updater_backup.h"
 #include "settings/settings_def_updater_experimental.h"
 #include "settings/settings_def_updater_extract.h"
+#include "settings/settings_def_self_update.h"
 #include "settings/settings_def_gamemode.h"
 #include "settings/settings_def_sustained_performance.h"
 #ifdef HAVE_MENU

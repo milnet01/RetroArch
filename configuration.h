@@ -941,6 +941,9 @@ typedef struct settings
       bool network_buildbot_show_experimental_cores;
       bool network_on_demand_thumbnails;
       bool core_updater_auto_backup;
+#ifdef HAVE_SELF_UPDATER
+      bool self_update_check_on_startup;
+#endif
 
       /* UI */
       bool ui_menubar_enable;
