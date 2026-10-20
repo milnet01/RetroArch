@@ -330,6 +330,12 @@ job_samples_tasks() {
       timeout 120 ./self_update_net_test
       echo "[pass] self_update_net_test"
 
+      cd "$w/samples/menu/content_downloads"
+      make clean
+      make SANITIZER=address,undefined
+      timeout 60 ./content_downloads_test
+      echo "[pass] content_downloads_test"
+
       cd "$w/samples/tasks/bsv_replay_init"
       make sweep
       echo "[pass] bsv_replay_init_test sweep" )
