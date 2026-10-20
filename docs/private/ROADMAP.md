@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=37 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=38 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1809,6 +1809,22 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** When a cheat file exists for the game you are playing, RetroArch should say so and take you straight to switching cheats on and off, instead of making you dig through long lists.
   Kind: feature.
   Source: user-request-2026-10-03.
+
+- 📋 [RETR-0038] **FEATURE — Core Downloader: show which system each core is for.**
+  User request 2026-10-20, with a screenshot of the Core Downloader
+  (Ozone). Each entry shows the core's name and a "License:" line only.
+  Some names carry the system ("Watara - Supervision (Potator)"); others
+  do not ("Vircon32", "VirtualXT", "WASM-4"). Some show a bare file name
+  ("vita3k_libretro.so.zip", "xenia_edge_libretro.so.zip"), so no core
+  info was found for them. Wanted: each entry names the system it runs.
+  Unchecked: where the list gets its labels (core_updater_list.c, from
+  the core info files) and whether the info files carry a system field
+  for all of these. The bare-file-name entries may need the info files
+  fixed upstream (libretro-core-info). Build on the fork, then one
+  upstream PR, as with RETR-0026.
+  **Layman:** The list of cores to download should say which console or computer each one emulates, not just its name and licence.
+  Kind: feature.
+  Source: user-request-2026-10-20.
 
 ### 📝 Cold-eyes 2026-07-04
 
