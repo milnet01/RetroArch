@@ -608,13 +608,19 @@ These are exploitable now and have concrete reproducers.
   `set_thumbnail_content` (declared at `menu_driver.h:411` pre-strip, dispatched nowhere — every call used the local static), `update_thumbnail_path` (dispatched at `menu_cbs_scan.c:164-170`, every driver registered NULL → dispatch was dead), `list_prepend` (no driver filled, no caller dispatched), `navigation_increment` / `navigation_decrement` (dispatched 4× in `menu_driver.c`, every driver NULL). _(Bundle 46 — fixed in `6f59dc0558` on `local/fixes-2026-04`. Stripped 5 slot declarations from `menu_ctx_driver_t` (header) + 25 entries from the 5 driver vtable initialisers (ozone/xmb/rgui/materialui/null) + the 5 dead dispatch sites (4 nav in `menu_driver.c`, 1 update_thumbnail_path block in `menu_cbs_scan.c`). Static functions `ozone_set_thumbnail_content` and `xmb_set_thumbnail_content` retained — they are called directly inside their own files. Trimmed 2 stale function-name lines from a doc-comment in `gfx/gfx_thumbnail.h` since the wrapper functions they named (`menu_driver_set_thumbnail_content`, `menu_driver_update_thumbnail_path`) had been removed long ago. Net -59 lines across 8 files. Build clean.)_
   Kind: implement.
 
-- 📋 [RETR-S0060] **MENU — `materialui.c` is 12 231 lines with author-marked module boundaries.**
+- 🚫 [RETR-S0060] **MENU — `materialui.c` is 12 231 lines with author-marked module boundaries.**
   Themes (~1200 lines), 5 view-types' compute/render triples, navigation, gestures. Author already drew the boundaries with banner comments. Same applies to `xmb.c` and `ozone.c`.
+  User decision 2026-10-20: dropped. A fork-only rewrite of a large
+  upstream file conflicts on every re-sync, against RETR-S0115's drift
+  goal. May return as an upstream proposal.
   **Layman:** The touch-style menu's code is one huge file that would be easier to maintain split along the sections its author already marked.
   Kind: refactor.
 
-- 📋 [RETR-S0061] **MENU — Per-driver gating in `menu_displaylist.c` is the coupling smell.**
+- 🚫 [RETR-S0061] **MENU — Per-driver gating in `menu_displaylist.c` is the coupling smell.**
   ~30 `string_is_equal(menu_ident, "...")` branches across menu_displaylist/menu_setting/menu_cbs_*. A capability-flag set on `menu_ctx_driver_t` (`flags & MENU_DRV_HAS_SIDEBAR_TABS`) would let each driver self-describe.
+  User decision 2026-10-20: dropped. A fork-only rewrite of a large
+  upstream file conflicts on every re-sync, against RETR-S0115's drift
+  goal. May return as an upstream proposal.
   **Layman:** Shared menu code checks which menu style is active by name instead of letting each style describe itself, which makes changes fragile.
   Kind: refactor.
 
@@ -626,13 +632,19 @@ These are exploitable now and have concrete reproducers.
   Audio:429-461, input:5044-5077, menu:4620-4648, video:3012-3034. ~120 lines of duplication that boils down to one `static bool generic_driver_select(label, prefix, &state_field, drivers[], verbosity)`. The shared helper already exists (`driver_find_index` in `retroarch.c:1262`); the wrappers are the duplication. _(Bundle 53 — closed `f980df5d63` on `local/fixes-2026-04`. Survey at fix-time found nine sites with the same canonical "Couldn't find any X / available are: ... / default to first" RARCH_ERR/RARCH_LOG_OUTPUT/RARCH_WARN block, not four — the indie-review note had only listed the four largest. Hoisted the failure-path log block into `driver_log_unknown(label, prefix, drv, verbosity_enabled)` in `retroarch.c` (declaration in `driver.h`) and reused the existing `find_driver_nonempty()` registry to enumerate idents — no need for each call site to know the concrete `driver_t` type. Updated all nine callers: audio, microphone, input, video, menu, location, camera, bluetooth, wifi, record (the `*_driver_find_driver` pattern minus cloud_sync, which keeps its own variant since its fallback target is `"null"` rather than first-driver, plus an extra "only log if user named one" guard). Format normalized at the same time: `menu_driver_find_driver`'s "couldn't find" went from RARCH_WARN to RARCH_ERR (intentional severity bump to match the other 9 subsystems); `menu` and `microphone` lost a stray trailing period; `microphone` lost a redundant inner null-check inside a loop already guarded by the same expression. No control-flow change at any call site — assignment, fallback, and return-value behavior preserved verbatim. Net diff +70/-124 across 10 files (audio_driver, bluetooth_driver, camera_driver, driver.h, video_driver, input_driver, menu_driver, wifi_driver, record_driver, retroarch). Build clean, binary smoke-tests OK. Single source of truth for the format if it needs to change again.)_
   Kind: implement.
 
-- 📋 [RETR-S0064] **DRIVER PATTERN — Three different "null driver" philosophies in one repo.**
+- 🚫 [RETR-S0064] **DRIVER PATTERN — Three different "null driver" philosophies in one repo.**
   `audio_null` is all-NULL (relies on every callsite NULL-checking); `input_null`/`video_null`/`menu_ctx_null` stub everything (removes that whole bug class). Pick one — preferably stub-everything — and apply it. Removes a class of "did the caller remember to NULL-check?" bugs by construction.
+  User decision 2026-10-20: dropped. A fork-only rewrite across upstream
+  drivers conflicts on every re-sync, against RETR-S0115's drift goal.
+  May return as an upstream proposal.
   **Layman:** The do-nothing fallback drivers are written three different ways; one consistent approach would prevent crashes and confusion.
   Kind: refactor.
 
-- 📋 [RETR-S0065] **CONFIG — Boilerplate sprawl: 26 030 lines `menu_setting.c` + 7 725 lines `configuration.c` for a 4-touchpoint contract.**
+- 🚫 [RETR-S0065] **CONFIG — Boilerplate sprawl: 26 030 lines `menu_setting.c` + 7 725 lines `configuration.c` for a 4-touchpoint contract.**
   A table-driven approach (already partially used at `menu_setting.c:11608-11671` for bool entries) would let `populate_settings_*`, the menu list, and the load/save paths share one declarative table per type. ~3000 lines of duplication and the entire H1/H4 zombie/drift class go away by construction.
+  User decision 2026-10-20: dropped. A fork-only rewrite of large
+  upstream files conflicts on every re-sync, against RETR-S0115's drift
+  goal. May return as an upstream proposal.
   **Layman:** Adding one setting means editing several huge files by hand; a table-driven approach would cut that repetition.
   Kind: refactor.
 
@@ -1589,7 +1601,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: chore.
   Source: peer-session claude-72 ci-gate sweep 2026-09-25.
 
-- 📋 [RETR-0016] **PERF — measured performance pass, for upstream PRs.**
+- ✅ [RETR-0016] **PERF — measured performance pass, for upstream PRs.**
   User request 2026-10-01: a performance pass, then PRs upstream for the
   gains, done as token-cheaply as possible. Method:
   1. Measure, don't read: run retroarch on real content (gambatte, a
@@ -1661,6 +1673,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   entries: 2.8 / 10.0 / 47.6 ms, linear at about 0.5-0.6 us per entry.
   perf at 80000: rjson_next 32%, playlist_parse_step 11%, strcmp 7%,
   malloc/free about 14% combined; no single hotspot worth a patch.
+  User decision 2026-10-20: closed. Every main area measured; #19661
+  (GL_STREAM_DRAW) and #19678 (scan core match) sent upstream. The
+  plain-C rewind unroll waits on an ARM board; retest only if a Pi turns
+  up.
   **Layman:** Find where RetroArch actually spends its time, speed those parts up, and offer the gains to the official project.
   Kind: perf.
   Source: user-request-2026-10-01.
@@ -1780,6 +1796,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   send it upstream as one PR. Design questions (how "exact match" is
   decided, and whether the notice is automatic) go to the user when
   work starts.
+  Design answers 2026-10-20. Notice: a "Cheats for this game" entry at
+  the top of the Quick Menu, no pop-up (user's choice). Match: by name,
+  the way the cheat packs are named (user deferred to me): the cheat
+  file's name equals the game's name, looked up in the cheat folder for
+  the running system.
   **Layman:** When a cheat file exists for the game you are playing, RetroArch should say so and take you straight to switching cheats on and off, instead of making you dig through long lists.
   Kind: feature.
   Source: user-request-2026-10-03.
