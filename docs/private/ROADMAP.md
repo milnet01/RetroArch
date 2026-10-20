@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=38 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=39 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1823,6 +1823,19 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   fixed upstream (libretro-core-info). Build on the fork, then one
   upstream PR, as with RETR-0026.
   **Layman:** The list of cores to download should say which console or computer each one emulates, not just its name and licence.
+  Kind: feature.
+  Source: user-request-2026-10-20.
+
+- 📋 [RETR-0039] **FEATURE — Core System Files Downloader: mark the files already downloaded.**
+  User request 2026-10-20, with a screenshot of Online Updater > Core
+  System Files Downloader (Ozone): entries such as Dolphin.zip and
+  PPSSPP.zip show no marker, while the Core Downloader marks installed
+  cores with [#]. Wanted: the same marker here for files already in the
+  system folder. Unchecked: how "already downloaded" can be known, since
+  a zip unpacks into files and folders under the system directory and
+  leaves no record of itself. Pairs with RETR-0038. Build on the fork,
+  then one upstream PR.
+  **Layman:** The list of core support files should show which ones you already have, the way the core list does.
   Kind: feature.
   Source: user-request-2026-10-20.
 

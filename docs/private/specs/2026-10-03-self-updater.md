@@ -34,6 +34,7 @@ Recorded in RETR-0021's body; each made by the user.
 | D7 | A portable Windows update replaces program files only — never config, saves or assets. | 2026-10-03 |
 | D8 | Accept the full-size download; show its size before asking. Ask upstream for a small stable update package and a bare AppImage, and use them when they exist. | 2026-10-03 |
 | D9 | An installer install outside the folder the silent installer targets opens the installer visibly, with a note naming the folder to pick. | 2026-10-03 |
+| D10 | Accept a peak of about 600 MB while unpacking the stable `.7z`; check free memory first and stop with a message when it is short. | 2026-10-20 |
 
 One choice was mine, stated so it can be overturned: the latest version comes from GitHub's release API and the files from the buildbot (§8 says why).
 
@@ -54,9 +55,9 @@ UWP (`uwp/`, `pkg/msvc-uwp`) does not build through `./configure` and never defi
 
 | File | Holds |
 |------|-------|
-| `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format, the restart target (§4.6), the start-up cleanup, the Windows replace-and-rollback loop and the AppImage swap. The last three, and reading and removing the pending marker at start-up, do their file operations (exists, rename, remove, make a folder, get and set mode, list a folder, read a small file) through a table of function pointers the caller passes; production passes one backed by the real calls, and the tests pass one that wraps the real calls and can fail a chosen one. Everything here is testable without a network or a Windows machine. |
+| `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format, the restart target (§4.6), the start-up cleanup, the Windows replace-and-rollback loop, the AppImage swap and the memory rule (§4.5). The last three, and reading and removing the pending marker at start-up, do their file operations (exists, rename, remove, make a folder, get and set mode, list a folder, read a small file) through a table of function pointers the caller passes; production passes one backed by the real calls, and the tests pass one that wraps the real calls and can fail a chosen one. Everything here is testable without a network or a Windows machine. |
 | `struct self_update_endpoints` in `self_update.h` | The test seam: the GitHub API base URL, the buildbot base URL and whether the TLS-mode gate applies. Production code passes `self_update_endpoints_default` — the two §4.8 hosts, gate on — and nothing else. Only `samples/tasks/self_update/` passes another one, pointing at its local plain-HTTP server with the gate off. |
-| `tasks/task_self_update.c` | The check task and the download-and-apply task, built on `task_push_http_transfer_with_user_agent`, `task_push_http_download_file` and the archive API (`file_archive_*`). |
+| `tasks/task_self_update.c` | The check task and the download-and-apply task, built on `task_push_http_transfer_with_user_agent`, `task_push_http_download_file` and the 7z reader (`r7z_archive_*`, `libretro-common/include/7z/r7z_archive.h`), which reports each entry's block and size. It also reads available memory: `MemAvailable` from `/proc/meminfo` on Linux, `GlobalMemoryStatusEx` on Windows. |
 | `frontend/drivers/platform_win32.c`, `frontend/drivers/platform_unix.c` | The two platform hooks: launching the installer after exit (Windows), and restarting into the target `self_update.c` returns (AppImage). |
 
 ### 4.3 Install kind
@@ -113,6 +114,13 @@ Base `https://buildbot.libretro.com/stable/<version>/`, `<version>` without the 
 `<arch>` is `x86_64` or `x86`. For every file downloaded, `<url>.sha256` is fetched first (D5): 200 → its first 64 hex digits are the expected SHA-256, checked by reading the finished staging file back in chunks through `sha256_stream_init` / `_update` / `_final` (`libretro-common/include/lrc_hash.h`) — `task_push_http_download_file` writes straight to disk and offers no per-chunk hook; 404 → no checksum; any other result → the update stops.
 
 Before asking the user, the check task issues a HEAD for the file it will download and shows its `Content-Length` (D8).
+
+**Memory (D10).** A `.7z` is read whole into memory, and `r7z_archive_extract_slice` decodes the whole solid block holding a member into one buffer. Stable 1.22.2, measured 2026-10-20 with `7z l -slt`:
+
+- The Linux `RetroArch.7z` (179,361,448 B) is one block, 410,409,118 B unpacked, holding the 10,390,008 B AppImage.
+- The Win64 `RetroArch.7z` (202,509,078 B) has two blocks, 380,484,561 B and 161,415,485 B unpacked. The program set has members in both.
+
+After opening the archive and before decoding anything, the apply task reads available memory. It stops unless that is at least the archive size, plus the largest unpacked block holding a needed member, plus the largest needed member, plus 64 MiB. Where available memory cannot be read, it proceeds. Reading the archive comes before the check; its size is the download size the user saw before agreeing (D8).
 
 ### 4.6 Applying the update
 
@@ -213,6 +221,10 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Test:* lanes `checksum` and `replace` assert staging is gone after each failure row; lane `cleanup` plants `*.retroarch-old` files and each kind's staging folder (the two Windows ones and the AppImage one) and asserts the start-up cleanup removes them all.
   *Breaks when:* a staging folder or `.retroarch-old` file survives a failure and is never removed.
 
+- **INV-14** — No member of a `.7z` is decoded unless available memory, where the platform reports it, covers the archive size, plus the largest unpacked block holding a needed member, plus the largest needed member, plus 64 MiB.
+  *Test:* lane `memory`: `self_update_memory_ok` with available memory one byte below that sum → refused; equal to it → allowed; not reported (0) → allowed; sizes whose sum overflows 64 bits → refused. Fixture isolates the arithmetic; reading the figure on each platform is not covered.
+  *Breaks when:* the check counts the archive alone, or a sum that wraps reads as small.
+
 ## 6. Failure modes
 
 | Assumption broken | What happens |
@@ -227,12 +239,13 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 | Installer reaches `retroarch.exe` before the process is gone | Prevented by the wait in `run.cmd`; caught by the marker if it happens anyway. |
 | Some other caller relied on an `https`→`http` redirect | It now fails where it used to succeed over plain HTTP. The guard is in `net_http.c` for every caller (§4.8), so this is a deliberate behaviour change, stated in its own upstream PR. |
 | Restart fails | The update is installed; the next manual start runs it and the marker check confirms it. |
+| Not enough free memory to unpack (INV-14) | Stops before decoding; staging removed; the message names the memory needed. |
 | A nightly build whose `PACKAGE_VERSION` equals the last stable | Told it is up to date; a nightly is never replaced by an equal or older stable. |
 | A user renamed their AppImage to include a version | The file keeps the user's name and now holds the new build. |
 
 ## 7. Tests
 
-- `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`. The policy lanes compile `self_update.c` alone: it reads no settings, and the TLS gate takes the `tls_verify_mode` value as an argument. The network lanes (`startup`, `checksum`) link the real `tasks/task_self_update.c`, `tasks/task_http.c`, `task_queue.c` and `net_http.c`, stub the frontend symbols, and serve from a local HTTP server thread — the shape of `samples/tasks/core_updater/Makefile.refresh_flags` and its `get_list_refresh_flags_test.c`. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` (INV-5), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13). Wired into `samples/Makefile`'s `check`.
+- `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`. The policy lanes compile `self_update.c` alone: it reads no settings, and the TLS gate takes the `tls_verify_mode` value as an argument. The network lanes (`startup`, `checksum`) link the real `tasks/task_self_update.c`, `tasks/task_http.c`, `task_queue.c` and `net_http.c`, stub the frontend symbols, and serve from a local HTTP server thread — the shape of `samples/tasks/core_updater/Makefile.refresh_flags` and its `get_list_refresh_flags_test.c`. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` (INV-5), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13), `memory` (INV-14). Wired into `samples/Makefile`'s `check`.
 - `samples/tasks/http/` — one new lane for the HTTPS-to-HTTP redirect guard (INV-5).
 - Each lane is run once against a deliberately broken build of the rule it tests (the fixture's named rule removed) and must fail there before it is trusted.
 - Manual, on `wintest` (Windows 10): INV-10 both routes, a portable update, and a portable update while a DLL is held open by another process (INV-9's real-world case). Manual, on Linux: INV-12's AppImage recipe. INV-2's configure recipe.
@@ -247,6 +260,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 - **Replace files in an installer install directly.** Often needs admin rights, and Windows' installed-programs entry would keep the old version (D6).
 - **Overwrite `retroarch.exe` in place on Windows.** A running executable cannot be opened for writing or deleted; it can only be renamed (measured).
 - **A separate updater helper executable.** A new build target to ship in every package. The portable route needs no helper (rename), and the installer route needs only a wait, which `cmd.exe` provides.
+- **A low-memory 7z unpacker, or updating only from small files.** Rejected by the user on 2026-10-20 (D10). The first is a large new decoder to save a few seconds' peak. The second never updates today, since no small stable file is published.
 - **Revive the removed Qt updater.** Qt-only, Windows-only, nightly-only, plain HTTP and no restart; upstream removed it wanting a non-Qt method, which this is.
 
 ## 9. Out of scope
@@ -274,6 +288,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 | INV-11 | lane `marker` |
 | INV-12 | **Partial:** lane `appimage` covers the rename, mode and restart target; a real AppImage restart is manual |
 | INV-13 | lanes `checksum`, `replace`, `cleanup` |
+| INV-14 | lane `memory` |
 | D7 (never writes config, saves or assets) | lane `program_set` (Windows); the AppImage route writes one file by construction |
 
 ## 11. Cross-doc impact
@@ -290,7 +305,7 @@ Rows live in `../reviews/2026-10-03-self-updater-loop-log.md`.
 ## 13. Resource cost
 
 - Disk, temporary: one downloaded file in staging (stable 1.22.2: Win64 `RetroArch.7z` 202,509,078 B; Win64 setup 209,037,907 B; Linux `RetroArch.7z` 179,361,448 B — buildbot listing, 2026-10-03) plus the extracted program set. Staging is removed on success and on failure.
-- Memory: downloads stream to disk (`task_push_http_download_file`), hashing reads the staging file back in chunks (`sha256_stream_*`), extraction works member by member. No step holds a whole download in memory.
+- Memory: downloads stream to disk (`task_push_http_download_file`), hashing reads the staging file back in chunks (`sha256_stream_*`). Unpacking a `.7z` holds the whole archive and one whole solid block in memory at once: about 600 MB at peak for stable 1.22.2 on either platform (§4.5, D10).
 - Network: one small JSON request per check, one HEAD per candidate file, then one download. The start-up check, when on, runs once per start; GitHub allows 60 unauthenticated requests an hour per address. Source: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
 - No new dependencies.
 
