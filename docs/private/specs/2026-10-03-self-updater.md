@@ -17,7 +17,7 @@ A RetroArch that was downloaded from libretro as a Windows installer, a Windows 
 1. **Nothing updates the program.** The Online Updater downloads cores, core info, assets, cheats, databases, overlays and shaders from the buildbot (`DEFAULT_BUILDBOT_SERVER_URL`, `DEFAULT_BUILDBOT_ASSETS_SERVER_URL` in `config.def.h`). Nothing fetches a newer `retroarch` binary and nothing checks for one. A user on a portable copy or an AppImage only learns of a release by visiting the website.
 2. **The last attempt was removed broken.** `ui/drivers/qt/updateretroarch.cpp` (added `4baecf84ca`, removed `b1f6fa4a2a`, upstream PR #12023: *"Not working atm. Will be replaced by a non qt specific method later"*) was Windows-only, nightly-only, downloaded over plain HTTP with no integrity check, and never restarted the program. Its three strings, `MENU_ENUM_LABEL_VALUE_QT_UPDATE_RETROARCH_NIGHTLY` / `_FINISHED` / `_FAILED` in `msg_hash.h`, are still declared and referenced by no `.c`, `.cpp` or `.m` file (`grep -rn QT_UPDATE_RETROARCH --include=*.c --include=*.cpp --include=*.m .` → no output).
 3. **Upstream publishes no integrity data for stable builds.** Checked 2026-10-03: `https://buildbot.libretro.com/stable/1.22.2/windows/x86_64/RetroArch.7z.sha256` → 404; the 1.22.2 Win64 installer has no Authenticode signature; the AppImage's `.upd_info`, `.sha256_sig` and `.sig_key` sections are empty; `http://buildbot.libretro.com/stable/1.22.2/` answers 200 without redirecting to HTTPS. The only defence available today is a verified TLS connection.
-4. **The HTTP client follows a redirect from `https` to `http`.** `net_http_redirect` in `libretro-common/net/net_http.c` rebuilds the request from the `Location` URL and sets `state->ssl` from that URL's scheme, so a redirect silently drops TLS. For an updater that is a downgrade path to an unauthenticated binary.
+4. **The HTTP client followed a redirect from `https` to `http`.** `net_http_redirect` in `libretro-common/net/net_http.c` rebuilt the request from the `Location` URL and set `state->ssl` from that URL's scheme, so a redirect silently dropped TLS. For an updater that is a downgrade path to an unauthenticated binary. Fixed on the fork by `ec4d20f509` and upstream by `217c50838e` (PR #19696).
 
 ## 3. Scope decisions (agreed with the user)
 
@@ -55,7 +55,7 @@ UWP (`uwp/`, `pkg/msvc-uwp`) does not build through `./configure` and never defi
 
 | File | Holds |
 |------|-------|
-| `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format, the restart target (§4.6), the start-up cleanup, the Windows replace-and-rollback loop, the AppImage swap and the memory rule (§4.5). The last three, and reading and removing the pending marker at start-up, do their file operations (exists, rename, remove, make a folder, get and set mode, list a folder, read a small file) through a table of function pointers the caller passes; production passes one backed by the real calls, and the tests pass one that wraps the real calls and can fail a chosen one. Everything here is testable without a network or a Windows machine. |
+| `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format, the memory rule (§4.5), the restart target (§4.6), the start-up cleanup, the Windows replace-and-rollback loop and the AppImage swap. The last three, and reading and removing the pending marker at start-up, do their file operations (exists, rename, remove, make a folder, get and set mode, list a folder, read a small file) through a table of function pointers the caller passes; production passes one backed by the real calls, and the tests pass one that wraps the real calls and can fail a chosen one. Everything here is testable without a network or a Windows machine. |
 | `struct self_update_endpoints` in `self_update.h` | The test seam: the GitHub API base URL, the buildbot base URL and whether the TLS-mode gate applies. Production code passes `self_update_endpoints_default` — the two §4.8 hosts, gate on — and nothing else. Only `samples/tasks/self_update/` passes another one, pointing at its local plain-HTTP server with the gate off. |
 | `tasks/task_self_update.c` | The check task and the download-and-apply task, built on `task_push_http_transfer_with_user_agent`, `task_push_http_download_file` and the 7z reader (`r7z_archive_*`, `libretro-common/include/7z/r7z_archive.h`), which reports each entry's block and size. It also reads available memory: `MemAvailable` from `/proc/meminfo` on Linux, `GlobalMemoryStatusEx` on Windows. |
 | `frontend/drivers/platform_win32.c`, `frontend/drivers/platform_unix.c` | The two platform hooks: launching the installer after exit (Windows), and restarting into the target `self_update.c` returns (AppImage). |
@@ -157,7 +157,7 @@ The pending marker is `self_update.pending` in the config directory, two lines: 
 
 ### 4.8 TLS
 
-In every build outside `samples/`, every request the updater issues is built from `self_update_endpoints_default`: `https://api.github.com/` or `https://buildbot.libretro.com/`. A redirect from either to another HTTPS host is followed, and that host's certificate is verified like any other. None is made unless `settings->uints.tls_verify_mode` is `TLS_VERIFY_REQUIRED` (`network/tls_config.h`); otherwise the updater says certificate checking must be on and stops (D5). A redirect that leaves HTTPS ends the transfer with an error: `net_http.c` gains that guard for every caller, and it goes upstream as its own small PR before this one (§2 item 4).
+In every build outside `samples/`, every request the updater issues is built from `self_update_endpoints_default`: `https://api.github.com/` or `https://buildbot.libretro.com/`. A redirect from either to another HTTPS host is followed, and that host's certificate is verified like any other. None is made unless `settings->uints.tls_verify_mode` is `TLS_VERIFY_REQUIRED` (`network/tls_config.h`); otherwise the updater says certificate checking must be on and stops (D5). A redirect that leaves HTTPS ends the transfer with an error: `net_http.c` has that guard for every caller, upstream already (§2 item 4).
 
 ### 4.9 Menu and settings
 
@@ -170,7 +170,7 @@ In every build outside `samples/`, every request the updater issues is built fro
 The *Test:* paths below are created by this work; none runs yet. Each names the rule its fixture isolates.
 
 - **INV-1** — The kind is `NONE` unless the positive evidence of §4.3 is present; with `NONE` there is no menu entry, no start-up check and no network request.
-  *Test:* `samples/tasks/self_update/self_update_test.c` lane `kind`: a table of injected environments — `APPIMAGE` unset; set but relative; set to a directory; set with `FLATPAK_ID` also set; set with `SNAP` also set; set and valid. Only the last yields `APPIMAGE`. Windows rows: no `uninstall.exe`; `uninstall.exe` with no key; key naming another folder; key matching in `C:\RetroArch-Win64` on x86_64; matching elsewhere; matching on x86. Fixture isolates the kind decision only.
+  *Test:* `samples/tasks/self_update/self_update_test.c` lane `kind`: a table of injected environments — `APPIMAGE` unset; set but relative; set to a directory; set with `FLATPAK_ID` also set; set with `SNAP` also set; set and valid. Only the last yields `APPIMAGE`. Windows rows: no `uninstall.exe`; `uninstall.exe` with no key; key naming another folder; key matching in `C:\RetroArch-Win64` on x86_64; matching elsewhere; matching on x86. Fixture isolates the kind decision only. Network lane `none`: the check for kind `NONE` is refused and makes no request.
   *Breaks when:* a Flatpak or Snap whose environment carries `APPIMAGE` is classed `APPIMAGE`, or a copied installer folder is classed `WIN_INSTALLER` from `uninstall.exe` alone.
 
 - **INV-2** — A Steam build, and any target outside §4.1's list, compiles the feature out.
@@ -186,7 +186,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Breaks when:* `prerelease: true` is offered, or an equal or older tag is offered.
 
 - **INV-5** — With `self_update_endpoints_default`, no update request is made unless `tls_verify_mode` is `TLS_VERIFY_REQUIRED`, every URL the updater builds starts with one of the two hosts of §4.8, and a redirect to a non-HTTPS URL fails the transfer.
-  *Test:* lane `tls`, using `self_update_endpoints_default` and never the test endpoints, asserts every URL built for each install kind starts with one of those two prefixes and that the check refuses to start under `TLS_VERIFY_OPTIONAL` and `TLS_VERIFY_DISABLED`; `samples/tasks/http` gains a lane that hands the redirect step an HTTPS request and an `http://` `Location` and asserts the transfer ends in error, while the same request with an `https://` `Location` is followed — so the fixture isolates the scheme rule, not redirects as such. Each fixture isolates one of the three clauses.
+  *Test:* lane `tls`, using `self_update_endpoints_default` and never the test endpoints, asserts every URL built for each install kind starts with one of those two prefixes and that the check refuses to start under `TLS_VERIFY_OPTIONAL` and `TLS_VERIFY_DISABLED`; network lane `tlsgate` pushes the check with `self_update_endpoints_default` under both modes and asserts it is refused before any request; `samples/tasks/http`'s `http_limits_test` hands the redirect step an HTTPS request and an `http://` `Location` and asserts the transfer ends in error, while the same request with an `https://` `Location` is followed — so the fixture isolates the scheme rule, not redirects as such. Each fixture isolates one of the three clauses.
   *Breaks when:* the mode gate is skipped for the start-up check, or `net_http_redirect` follows an `https`→`http` redirect.
 
 - **INV-6** — Nothing is downloaded or changed on disk before the user selects **Update Now**; the start-up check only notifies.
@@ -245,8 +245,8 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 
 ## 7. Tests
 
-- `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`. The policy lanes compile `self_update.c` alone: it reads no settings, and the TLS gate takes the `tls_verify_mode` value as an argument. The network lanes (`startup`, `checksum`) link the real `tasks/task_self_update.c`, `tasks/task_http.c`, `task_queue.c` and `net_http.c`, stub the frontend symbols, and serve from a local HTTP server thread — the shape of `samples/tasks/core_updater/Makefile.refresh_flags` and its `get_list_refresh_flags_test.c`. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` (INV-5), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13), `memory` (INV-14). Wired into `samples/Makefile`'s `check`.
-- `samples/tasks/http/` — one new lane for the HTTPS-to-HTTP redirect guard (INV-5).
+- `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`. The policy lanes compile `self_update.c` alone: it reads no settings, and the TLS gate takes the `tls_verify_mode` value as an argument. The network lanes (`startup`, `tlsgate`, `none`, `checksum`; `self_update_net_test.c`, built by `Makefile.net`) link the real `tasks/task_self_update.c`, `tasks/task_http.c`, `task_queue.c` and `net_http.c`, stub the frontend symbols, and serve from a local HTTP server thread — the shape of `samples/tasks/core_updater/Makefile.refresh_flags` and its `get_list_refresh_flags_test.c`. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` and `tlsgate` (INV-5), `none` (INV-1), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13), `memory` (INV-14). Wired into `samples/Makefile`'s `check`.
+- `samples/tasks/http/` — `http_limits_test` covers the HTTPS-to-HTTP redirect guard (INV-5).
 - Each lane is run once against a deliberately broken build of the rule it tests (the fixture's named rule removed) and must fail there before it is trusted.
 - Manual, on `wintest` (Windows 10): INV-10 both routes, a portable update, and a portable update while a DLL is held open by another process (INV-9's real-world case). Manual, on Linux: INV-12's AppImage recipe. INV-2's configure recipe.
 - Not covered by any test: that GitHub keeps `releases/latest` meaning "newest non-prerelease, non-draft". The parser re-checks both flags so a change there is refused rather than trusted.
@@ -275,11 +275,11 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 
 | Rule | What catches a breach |
 |------|----------------------|
-| INV-1 | `samples/tasks/self_update` lane `kind` |
+| INV-1 | `samples/tasks/self_update` lanes `kind`, `none` |
 | INV-2 | **nothing** automatic — a manual configure recipe |
 | INV-3 | lane `version` |
 | INV-4 | lane `release` |
-| INV-5 | lane `tls`; `samples/tasks/http` redirect lane |
+| INV-5 | lanes `tls`, `tlsgate`; `samples/tasks/http` `http_limits_test` |
 | INV-6 | lane `startup` |
 | INV-7 | lane `checksum` |
 | INV-8 | lane `program_set` |
@@ -294,8 +294,8 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 ## 11. Cross-doc impact
 
 - `CHANGES.md` `# Future`: one user-visible entry when the feature lands on the PR branch.
-- `docs/private/ROADMAP.md`: RETR-0021 progress notes; a separate item if the redirect guard goes upstream on its own.
-- `docs/private/upstream-prs/README.md`: the redirect-guard PR and the self-updater PR, when opened.
+- `docs/private/ROADMAP.md`: RETR-0021 progress notes.
+- `docs/private/upstream-prs/README.md`: the self-updater PR, when opened; the redirect-guard PR is recorded there.
 - No other spec binds the code this changes. `docs/private/specs/2026-04-27-tls-verification-opt-in-design.md` defines `tls_verify_mode`, which this reads and does not change.
 
 ## 12. Cold-eyes loop log
