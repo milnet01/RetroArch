@@ -325,6 +325,10 @@ job_samples_tasks() {
       make clean all SANITIZER=address,undefined
       timeout 120 ./self_update_test
       echo "[pass] self_update_test"
+      make -f Makefile.net clean
+      make -f Makefile.net SANITIZER=address,undefined
+      timeout 120 ./self_update_net_test
+      echo "[pass] self_update_net_test"
 
       cd "$w/samples/tasks/bsv_replay_init"
       make sweep
