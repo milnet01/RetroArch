@@ -1807,6 +1807,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   reader gains one read-only function reporting each block's unpacked
   size, packed size and coder count; the memory check uses those real
   numbers. The function goes upstream with the self-updater PR.
+  Progress (2026-10-20): spec amended for the real-figure memory
+  check (cbd4a3ca55): r7z_archive_folder_info (unpacked size, packed
+  size, coder count), a check before each block, blocks decoded one at a
+  time with the archive reopened between them, INV-14 rewritten, INV-15
+  added. review-contract loop 4 (186b9655c6): 3 fixed, 0 surfaced; the
+  gate is clear. For the upstream PR: r7z_archive.h's comment on
+  r7z_archive_extract_slice says BCJ2 folders decode whole, but
+  decode_folder_slice slices them; fix it in the PR that adds
+  r7z_archive_folder_info. Next: build the apply step on ra-fixes
+  (spec 4.5-4.7), starting with r7z_archive_folder_info and its test.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
