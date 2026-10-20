@@ -31749,6 +31749,30 @@ MSG_HASH(
    "The update to RetroArch %s did not finish. RetroArch is still %s."
    )
 MSG_HASH(
+   MSG_SELF_UPDATE_DOWNLOADING,
+   "Downloading RetroArch %s"
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_INSTALLING,
+   "Installing RetroArch %s"
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_INSTALLED,
+   "RetroArch %s is installed. Restart RetroArch to use it."
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_FAILED,
+   "RetroArch was not updated: %s"
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_NO_MEMORY,
+   "not enough free memory to unpack it (%u MB needed)"
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_NOT_WRITABLE,
+   "RetroArch cannot write to %s, so it cannot update itself there."
+   )
+MSG_HASH(
    MSG_LATEST_CORE_INSTALLED,
    "Latest version already installed: "
    )

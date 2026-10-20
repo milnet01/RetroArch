@@ -19,6 +19,12 @@
  *   tlsgate   the shipping endpoints with certificate checking not
  *             required: refused before any request
  *   none      an install the updater cannot replace: no request
+ *   checksum  Update Now on the bare AppImage, the .sha256 answering
+ *             200 matching, 200 not matching, 404 and 500: installed,
+ *             refused, installed, refused before the download; staging
+ *             gone and the old file intact after each refusal
+ *   archive   Update Now on RetroArch.7z: the AppImage member at depth
+ *             two is unpacked and installed, a deeper one is ignored
  *   realfs    the shipping file-operation table, on a scratch folder:
  *             the start-up cleanup empties a staging folder without
  *             following a link out of it, the AppImage swap keeps the
@@ -32,6 +38,7 @@
 
 #include <boolean.h>
 #include <retro_miscellaneous.h>
+#include <lrc_hash.h>
 #include <queues/task_queue.h>
 #include <net/net_compat.h>
 #include <net/net_socket.h>
@@ -89,6 +96,12 @@ const char *msg_hash_to_str(enum msg_hash_enums msg)
       case MSG_SELF_UPDATE_NOT_YET_AVAILABLE: return "notyet %s";
       case MSG_SELF_UPDATE_CHECK_FAILED:      return "failed %s";
       case MSG_SELF_UPDATE_TLS_REQUIRED:      return "tlsrequired";
+      case MSG_SELF_UPDATE_INSTALLED:         return "installed %s";
+      case MSG_SELF_UPDATE_FAILED:            return "notupdated %s";
+      case MSG_SELF_UPDATE_NO_MEMORY:         return "nomemory %u";
+      case MSG_SELF_UPDATE_NOT_WRITABLE:      return "notwritable %s";
+      case MSG_SELF_UPDATE_DOWNLOADING:       return "downloading %s";
+      case MSG_SELF_UPDATE_INSTALLING:        return "installing %s";
       default:                                break;
    }
    return "other";
@@ -125,6 +138,10 @@ struct lane_cfg
    int release_status;
    int small_status;     /* HEAD of the bare AppImage */
    int full_status;      /* HEAD of RetroArch.7z */
+   int sha_status;       /* GET of either file's .sha256 */
+   const char *sha_body;
+   const char *file_body; /* GET of either file */
+   size_t file_len;
 };
 
 static struct lane_cfg cfg;
@@ -132,6 +149,8 @@ static retro_atomic_int_t n_release;
 static retro_atomic_int_t n_small;
 static retro_atomic_int_t n_full;
 static retro_atomic_int_t n_other;
+static retro_atomic_int_t n_sha;
+static retro_atomic_int_t n_get;
 
 #define SMALL_SIZE 1048576u /* reported as "1.0 MB" */
 
@@ -139,12 +158,25 @@ static retro_atomic_int_t srv_fd;
 static sthread_t *srv_thread  = NULL;
 static volatile int srv_port  = 0;
 
+static void send_all(int cfd, const char *p, size_t n)
+{
+   while (n)
+   {
+      ssize_t k = send(cfd, p, n, 0);
+      if (k <= 0)
+         return;
+      p += k;
+      n -= (size_t)k;
+   }
+}
+
 static void answer(int cfd, const char *rbuf)
 {
    char head[256];
    const char *body = "";
    int status       = 404;
    unsigned len     = 0;
+   size_t body_len  = 0;
    bool is_head     = strncmp(rbuf, "HEAD ", 5) == 0;
    const char *eol  = strstr(rbuf, " HTTP/");
    size_t line      = eol ? (size_t)(eol - rbuf) : strlen(rbuf);
@@ -161,6 +193,22 @@ static void answer(int cfd, const char *rbuf)
       status = cfg.release_status;
       body   = cfg.release;
       len    = (unsigned)strlen(body);
+   }
+   else if (!is_head && strstr(path, ".sha256"))
+   {
+      retro_atomic_fetch_add_int(&n_sha, 1);
+      status = cfg.sha_status;
+      body   = status == 200 ? cfg.sha_body : "";
+      len    = (unsigned)strlen(body);
+   }
+   else if (!is_head && (strstr(path, "/RetroArch-Linux-x86_64.AppImage")
+            || strstr(path, "/RetroArch.7z")))
+   {
+      retro_atomic_fetch_add_int(&n_get, 1);
+      status   = cfg.file_body ? 200 : 404;
+      body     = cfg.file_body ? cfg.file_body : "";
+      body_len = cfg.file_body ? cfg.file_len : 0;
+      len      = (unsigned)body_len;
    }
    else if (is_head && strstr(path, "/RetroArch-Linux-x86_64.AppImage"))
    {
@@ -180,10 +228,12 @@ static void answer(int cfd, const char *rbuf)
    snprintf(head, sizeof(head),
          "HTTP/1.1 %d X\r\nContent-Length: %u\r\n"
          "Connection: close\r\n\r\n", status, len);
-   send(cfd, head, strlen(head), 0);
+   send_all(cfd, head, strlen(head));
    /* A HEAD reply's Content-Length describes the GET; it has no body. */
-   if (!is_head && *body)
-      send(cfd, body, strlen(body), 0);
+   if (!is_head && body_len)
+      send_all(cfd, body, body_len);
+   else if (!is_head && *body)
+      send_all(cfd, body, strlen(body));
 }
 
 static void server_thread(void *unused)
@@ -278,6 +328,12 @@ static void reset(const char *release, int release_status,
    retro_atomic_store_release_int(&n_small, 0);
    retro_atomic_store_release_int(&n_full, 0);
    retro_atomic_store_release_int(&n_other, 0);
+   retro_atomic_store_release_int(&n_sha, 0);
+   retro_atomic_store_release_int(&n_get, 0);
+   cfg.sha_status = 404;
+   cfg.sha_body   = "";
+   cfg.file_body  = NULL;
+   cfg.file_len   = 0;
    notice_count = 0;
    memset(notices, 0, sizeof(notices));
    stub_settings.uints.tls_verify_mode = TLS_VERIFY_REQUIRED;
@@ -437,6 +493,163 @@ static void lane_none(void)
    CHECK(retro_atomic_load_acquire_int(&n_release) == 0, "no request");
 }
 
+/* ---- Update Now --------------------------------------------------
+ * A stand-in AppImage in a scratch folder; $APPIMAGE points at it, so
+ * staging is the scratch folder's .retroarch-update. */
+
+static char up_root[64];
+static char up_app[128];
+static char up_stage[128];
+static char up_marker[160];
+
+static void up_setup(void)
+{
+   FILE *f;
+   snprintf(up_root, sizeof(up_root), "su_apply_%ld", (long)getpid());
+   snprintf(up_app, sizeof(up_app), "%s/RetroArch.AppImage", up_root);
+   snprintf(up_stage, sizeof(up_stage), "%s/.retroarch-update", up_root);
+   snprintf(up_marker, sizeof(up_marker), "%s/self_update.pending", up_root);
+   mkdir(up_root, 0755);
+   if ((f = fopen(up_app, "wb")))
+   {
+      fputs("old build", f);
+      fclose(f);
+   }
+   chmod(up_app, 0750);
+   remove(up_marker);
+   setenv("APPIMAGE", up_app, 1);
+}
+
+static void up_teardown(void)
+{
+   remove(up_app);
+   remove(up_marker);
+   rmdir(up_root);
+}
+
+static bool up_app_is(const char *want, size_t want_len)
+{
+   char buf[8192];
+   size_t n;
+   FILE *f = fopen(up_app, "rb");
+   if (!f)
+      return false;
+   n = fread(buf, 1, sizeof(buf), f);
+   fclose(f);
+   return n == want_len && !memcmp(buf, want, n);
+}
+
+static bool up_exists(const char *path)
+{
+   struct stat st;
+   return lstat(path, &st) == 0;
+}
+
+static void up_run(bool preferred)
+{
+   CHECK(task_push_self_update_apply_at(&test_ep, SELF_UPDATE_KIND_APPIMAGE,
+            "99.0.0", preferred, up_root), "update started");
+   pump();
+}
+
+#define NEW_BUILD "new build, bare AppImage"
+
+static void lane_checksum(void)
+{
+   char hex[65];
+   struct stat st;
+
+   printf("[checksum]\n");
+   sha256_hash(hex, (const uint8_t*)NEW_BUILD, strlen(NEW_BUILD));
+
+   /* 200 and matching: installed, mode kept, marker written. */
+   up_setup();
+   reset(NEWER_RELEASE, 200, 200, 200);
+   cfg.sha_status = 200;
+   cfg.sha_body   = hex;
+   cfg.file_body  = NEW_BUILD;
+   cfg.file_len   = strlen(NEW_BUILD);
+   up_run(true);
+   CHECK(last_notice_is("installed 99.0.0"), "matching hash: installed");
+   CHECK(up_app_is(NEW_BUILD, strlen(NEW_BUILD)), "matching hash: new bytes in place");
+   CHECK(stat(up_app, &st) == 0 && (st.st_mode & 07777) == 0750,
+         "matching hash: mode 0750 kept");
+   CHECK(up_exists(up_marker), "matching hash: pending marker written");
+   CHECK(!up_exists(up_stage), "matching hash: staging removed");
+   up_teardown();
+
+   /* 200 and not matching: refused, nothing changed. */
+   up_setup();
+   reset(NEWER_RELEASE, 200, 200, 200);
+   cfg.sha_status = 200;
+   cfg.sha_body   = "00000000000000000000000000000000"
+                    "00000000000000000000000000000000";
+   cfg.file_body  = NEW_BUILD;
+   cfg.file_len   = strlen(NEW_BUILD);
+   up_run(true);
+   CHECK(last_notice_is("notupdated checksum mismatch"), "wrong hash: refused");
+   CHECK(up_app_is("old build", 9), "wrong hash: old file intact");
+   CHECK(!up_exists(up_marker), "wrong hash: no marker");
+   CHECK(!up_exists(up_stage), "wrong hash: staging removed");
+   up_teardown();
+
+   /* 404: no checksum published, installed. */
+   up_setup();
+   reset(NEWER_RELEASE, 200, 200, 200);
+   cfg.file_body = NEW_BUILD;
+   cfg.file_len  = strlen(NEW_BUILD);
+   up_run(true);
+   CHECK(last_notice_is("installed 99.0.0"), "no checksum (404): installed");
+   CHECK(up_app_is(NEW_BUILD, strlen(NEW_BUILD)), "no checksum (404): new bytes in place");
+   up_teardown();
+
+   /* 500: only a 404 means absent; stopped before the download. */
+   up_setup();
+   reset(NEWER_RELEASE, 200, 200, 200);
+   cfg.sha_status = 500;
+   cfg.file_body  = NEW_BUILD;
+   cfg.file_len   = strlen(NEW_BUILD);
+   up_run(true);
+   CHECK(last_notice_is("notupdated checksum: HTTP 500"), "checksum 500: refused");
+   CHECK(retro_atomic_load_acquire_int(&n_get) == 0, "checksum 500: nothing downloaded");
+   CHECK(up_app_is("old build", 9), "checksum 500: old file intact");
+   CHECK(!up_exists(up_stage), "checksum 500: staging removed");
+   up_teardown();
+}
+
+static void lane_archive(void)
+{
+   static char want[8192];
+   char *fixture  = NULL;
+   size_t fix_len = 0;
+   size_t i;
+   FILE *f;
+
+   printf("[archive]\n");
+   if ((f = fopen("linux_appimage_fixture.7z", "rb")))
+   {
+      fixture = (char*)malloc(4096);
+      fix_len = fixture ? fread(fixture, 1, 4096, f) : 0;
+      fclose(f);
+   }
+   CHECK(fix_len > 0, "fixture read");
+   want[0] = '\0';
+   for (i = 0; i < 200; i++)
+      strlcat(want, "appimage from the archive\n", sizeof(want));
+
+   up_setup();
+   reset(NEWER_RELEASE, 200, 404, 200);
+   cfg.file_body = fixture;
+   cfg.file_len  = fix_len;
+   up_run(false);
+   CHECK(last_notice_is("installed 99.0.0"), "archive: installed");
+   CHECK(up_app_is(want, strlen(want)),
+         "archive: the depth-two AppImage member is in place");
+   CHECK(!up_exists(up_stage), "archive: staging removed");
+   up_teardown();
+   free(fixture);
+}
+
 static void rf_write(const char *path, const char *content)
 {
    FILE *f = fopen(path, "wb");
@@ -533,6 +746,8 @@ int main(int argc, char **argv)
    LANE(failed);
    LANE(tlsgate);
    LANE(none);
+   LANE(checksum);
+   LANE(archive);
    LANE(realfs);
 #undef LANE
 

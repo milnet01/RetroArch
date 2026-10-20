@@ -175,6 +175,19 @@ const struct self_update_fileops *task_self_update_fileops(void);
  * left behind, and reports a pending marker in @config_dir.  Does
  * nothing for an install of kind NONE. */
 void task_self_update_startup(const char *config_dir);
+
+/* Downloads, verifies and installs the release the last menu check
+ * found, writing the pending marker to @config_dir.  Returns false
+ * when nothing was started: no release on offer, an update or check
+ * already running, or certificate checking not required. */
+bool task_push_self_update_apply(const char *config_dir);
+
+/* The same against @ep, for release @version of an install of @kind;
+ * @preferred picks the small file (spec §4.5).  Only the test harness
+ * calls this. */
+bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
+      enum self_update_kind kind, const char *version, bool preferred,
+      const char *config_dir);
 #endif
 
 bool task_push_bluetooth_scan(retro_task_callback_t cb);

@@ -14,7 +14,8 @@
  */
 
 /* Self-updater tasks: the install-kind facts this platform supplies,
- * and the check for a newer stable release.  Every decision is made
+ * the check for a newer stable release, the start-up cleanup and the
+ * download-and-apply of the release the check found.  Every decision is made
  * by self_update.c; this file only gathers facts, makes the requests
  * and reports. */
 
@@ -24,13 +25,17 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <encodings/utf.h>
 #else
 #include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #endif
 
+#include <7z/r7z_archive.h>
+#include <encodings/utf.h>
 #include <file/file_path.h>
+#include <lrc_hash.h>
 #include <net/net_http.h>
 #include <retro_miscellaneous.h>
 #include <streams/file_stream.h>
@@ -43,6 +48,7 @@
 #include "../verbosity.h"
 #include "../version.h"
 
+#include "task_file_transfer.h"
 #include "tasks_internal.h"
 
 #define SELF_UPDATE_USER_AGENT "RetroArch/" PACKAGE_VERSION
@@ -65,6 +71,13 @@ typedef struct self_update_check
 
 /* One check at a time; a second request while one runs is dropped. */
 static bool self_update_check_running = false;
+/* One update at a time, and no check while one runs. */
+static bool self_update_apply_running = false;
+
+/* The release the last menu check found and sized: what Update Now
+ * installs. */
+static char self_update_offer_version[32];
+static bool self_update_offer_preferred = false;
 
 static void self_update_notify(const char *msg)
 {
@@ -129,6 +142,9 @@ static void cb_self_update_head(retro_task_t *task, void *task_data,
 
    if (data && data->status == 200)
    {
+      strlcpy(self_update_offer_version, state->version,
+            sizeof(self_update_offer_version));
+      self_update_offer_preferred = state->preferred;
       self_update_report_available(state, data);
       self_update_check_done(state);
       return;
@@ -484,7 +500,8 @@ bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
    settings_t *settings = config_get_ptr();
 
    /* No request at all from an install the updater cannot replace. */
-   if (kind == SELF_UPDATE_KIND_NONE || self_update_check_running)
+   if (     kind == SELF_UPDATE_KIND_NONE || self_update_check_running
+         || self_update_apply_running)
       return false;
 
    if (!self_update_tls_allowed(ep, settings->uints.tls_verify_mode))
@@ -630,4 +647,663 @@ void task_self_update_startup(const char *config_dir)
       default:
          break;
    }
+}
+
+/* ---- apply ------------------------------------------------------- */
+
+/* Download, verify, unpack and install the release the menu check
+ * found (spec §4.5, §4.6).  The .sha256 fetch and the download are
+ * HTTP tasks chained through their callbacks; everything after the
+ * download is one task, a few megabytes or one decode slice per call. */
+
+#define SELF_UPDATE_READ_CHUNK (4 * 1024 * 1024)
+
+enum self_update_stage
+{
+   SELF_UPDATE_STAGE_READ = 0, /* hash the download; load a .7z whole */
+   SELF_UPDATE_STAGE_OPEN,     /* open the .7z, pick the members */
+   SELF_UPDATE_STAGE_EXTRACT,  /* one block at a time */
+   SELF_UPDATE_STAGE_INSTALL
+};
+
+typedef struct self_update_apply
+{
+   struct sha256_state sha;
+   uint64_t archive_size;
+   uint64_t read_size;
+   RFILE *file;
+   uint8_t *archive;          /* the whole .7z, while it is unpacked */
+   r7z_archive_t *ar;
+   uint32_t *members;         /* entry indices, ordered by block */
+   char **rel;                /* each member's path below the payload */
+   size_t num_members;
+   size_t next;               /* the next member to extract */
+   enum self_update_kind kind;
+   enum self_update_stage stage;
+   uint32_t folder;           /* the block decoded last */
+   uint8_t expected[32];
+   char url[256];
+   char version[32];
+   char error[160];
+   char staging[PATH_MAX_LENGTH];
+   char download[PATH_MAX_LENGTH]; /* the downloaded file in staging */
+   char payload[PATH_MAX_LENGTH];  /* where members are extracted */
+   char config_dir[PATH_MAX_LENGTH];
+   bool has_expected;
+   bool has_folder;           /* a block has been decoded */
+   bool from_archive;         /* a .7z, not the bare file */
+} self_update_apply_t;
+
+static void self_update_apply_free(self_update_apply_t *state)
+{
+   size_t i;
+
+   if (state->file)
+      filestream_close(state->file);
+   r7z_archive_close(state->ar);
+   free(state->archive);
+   for (i = 0; state->rel && i < state->num_members; i++)
+      free(state->rel[i]);
+   free(state->rel);
+   free(state->members);
+   free(state);
+}
+
+/* Ends a failed update: the staging folder goes, nothing installed has
+ * been touched, and the user is told why. */
+static void self_update_apply_failed(self_update_apply_t *state,
+      const char *reason)
+{
+   char msg[256];
+   const char *staging[1];
+
+   if (state->file)
+   {
+      filestream_close(state->file);
+      state->file = NULL;
+   }
+   staging[0] = state->staging;
+   self_update_cleanup(&su_fileops, NULL, staging, 1);
+   snprintf(msg, sizeof(msg),
+         msg_hash_to_str(MSG_SELF_UPDATE_FAILED), reason);
+   self_update_notify(msg);
+   self_update_apply_free(state);
+   self_update_apply_running = false;
+}
+
+/* Available memory, or 0 where the platform does not say (spec §4.5). */
+static uint64_t self_update_memory_available(void)
+{
+#if defined(_WIN32)
+   MEMORYSTATUSEX ms;
+   ms.dwLength = sizeof(ms);
+   if (!GlobalMemoryStatusEx(&ms))
+      return 0;
+   /* A 32-bit process runs out of address space before memory. */
+   return ms.ullAvailPhys < ms.ullAvailVirtual
+      ? ms.ullAvailPhys : ms.ullAvailVirtual;
+#elif defined(__linux__)
+   char line[128];
+   unsigned long long kb = 0;
+   FILE *f = fopen("/proc/meminfo", "r");
+
+   if (!f)
+      return 0;
+   while (fgets(line, sizeof(line), f))
+      if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1)
+         break;
+   fclose(f);
+   return (uint64_t)kb * 1024;
+#else
+   return 0;
+#endif
+}
+
+/* Picks the members to extract, each with its path below the payload.
+ * AppImage: the one member at depth two ending .AppImage.  Windows
+ * portable: the program set under the single top-level folder, which
+ * must hold retroarch.exe. */
+static const char *self_update_pick_members(self_update_apply_t *state)
+{
+   char name[PATH_MAX_LENGTH];
+   char top[PATH_MAX_LENGTH];
+   uint32_t i, n = r7z_archive_num_entries(state->ar);
+   bool has_exe  = false;
+
+   *top = '\0';
+   if (     !(state->members = (uint32_t*)calloc(n ? n : 1, sizeof(uint32_t)))
+         || !(state->rel     = (char**)calloc(n ? n : 1, sizeof(char*))))
+      return "out of memory";
+
+   for (i = 0; i < n; i++)
+   {
+      const r7z_entry_t *e = r7z_archive_entry(state->ar, i);
+      const char *rel      = NULL;
+      const char *slash;
+
+      if (!e || !utf16_to_char_string(e->name, name, sizeof(name)))
+         return "unreadable archive";
+      slash = strchr(name, '/');
+
+      if (state->kind == SELF_UPDATE_KIND_APPIMAGE)
+      {
+         if (     !e->is_dir && slash && !strchr(slash + 1, '/')
+               && string_ends_with(name, ".AppImage"))
+         {
+            if (state->num_members)
+               return "more than one AppImage in the archive";
+            rel = "new.AppImage";
+         }
+      }
+      else
+      {
+         size_t len = slash ? (size_t)(slash - name) : strlen(name);
+         if (!*top)
+         {
+            if (len == 0 || len >= sizeof(top))
+               return "unexpected archive layout";
+            memcpy(top, name, len);
+            top[len] = '\0';
+         }
+         else if (len != strlen(top) || strncmp(name, top, len))
+            return "unexpected archive layout";
+         if (!e->is_dir)
+            rel = self_update_program_member(name, top);
+         if (rel && string_is_equal_noncase(rel, "retroarch.exe"))
+            has_exe = true;
+      }
+
+      if (rel)
+      {
+         if (!(state->rel[state->num_members] = strdup(rel)))
+            return "out of memory";
+         state->members[state->num_members++] = i;
+      }
+   }
+
+   if (!state->num_members)
+      return "nothing to install in the archive";
+   if (state->kind == SELF_UPDATE_KIND_WIN_PORTABLE && !has_exe)
+      return "no retroarch.exe in the archive";
+
+   /* Block order, so each block is decoded once.  An empty file has no
+    * block and sorts first. */
+   for (i = 1; i < state->num_members; i++)
+   {
+      uint32_t m   = state->members[i];
+      char    *r   = state->rel[i];
+      const r7z_entry_t *e = r7z_archive_entry(state->ar, m);
+      uint64_t key = e->size ? (uint64_t)e->folder + 1 : 0;
+      uint32_t j   = i;
+
+      for (; j > 0; j--)
+      {
+         const r7z_entry_t *p = r7z_archive_entry(state->ar,
+               state->members[j - 1]);
+         if ((p->size ? (uint64_t)p->folder + 1 : 0) <= key)
+            break;
+         state->members[j] = state->members[j - 1];
+         state->rel[j]     = state->rel[j - 1];
+      }
+      state->members[j] = m;
+      state->rel[j]     = r;
+   }
+   return NULL;
+}
+
+/* Before a block is decoded: reopen the archive if another block's
+ * output is still held, then check memory against the block's real
+ * figures.  NULL to go on, else the reason to stop. */
+static const char *self_update_enter_block(self_update_apply_t *state,
+      uint32_t folder, size_t first)
+{
+   static char reason[128];
+   uint64_t unpack, pack, largest = 0, need = 0;
+   uint32_t coders;
+   size_t i;
+
+   if (state->has_folder)
+   {
+      /* Closing frees the decoded block; the archive bytes stay. */
+      r7z_archive_close(state->ar);
+      state->ar = NULL;
+      if (r7z_archive_open(&state->ar, state->archive,
+               (size_t)state->archive_size) != R7Z_OK)
+         return "unreadable archive";
+   }
+
+   if (r7z_archive_folder_info(state->ar, folder, &unpack, &pack,
+            &coders) != R7Z_OK)
+      return "unreadable archive";
+   for (i = first; i < state->num_members; i++)
+   {
+      const r7z_entry_t *e = r7z_archive_entry(state->ar, state->members[i]);
+      if (e->folder != folder)
+         break;
+      if (e->size > largest)
+         largest = e->size;
+   }
+
+   if (!self_update_memory_ok(self_update_memory_available(),
+            state->archive_size, pack, unpack, coders, largest, &need))
+   {
+      snprintf(reason, sizeof(reason),
+            msg_hash_to_str(MSG_SELF_UPDATE_NO_MEMORY),
+            (unsigned)((need + 1024 * 1024 - 1) / (1024 * 1024)));
+      return reason;
+   }
+
+   state->folder     = folder;
+   state->has_folder = true;
+   return NULL;
+}
+
+static bool self_update_write_member(const char *path,
+      const uint8_t *data, size_t len)
+{
+   char dir[PATH_MAX_LENGTH];
+
+   fill_pathname_basedir(dir, path, sizeof(dir));
+   if (su_fs_mkdir_p(NULL, dir) != 0)
+      return false;
+   return filestream_write_file(path, data, (int64_t)len);
+}
+
+/* NULL when this call's work is done, else the reason to stop. */
+static const char *self_update_apply_step(self_update_apply_t *state,
+      bool *finished)
+{
+   switch (state->stage)
+   {
+      case SELF_UPDATE_STAGE_READ:
+         {
+            int64_t want, got;
+
+            if (!state->file)
+            {
+               int64_t size;
+               if (!(state->file = filestream_open(state->download,
+                           RETRO_VFS_FILE_ACCESS_READ,
+                           RETRO_VFS_FILE_ACCESS_HINT_NONE)))
+                  return "cannot read the download";
+               if ((size = filestream_get_size(state->file)) <= 0)
+                  return "empty download";
+               state->archive_size = (uint64_t)size;
+               sha256_stream_init(&state->sha, 0);
+               if (state->from_archive)
+               {
+                  if (state->archive_size > (uint64_t)((size_t)-1))
+                     return "download too large";
+                  if (!(state->archive = (uint8_t*)malloc(
+                              (size_t)state->archive_size)))
+                     return "out of memory";
+               }
+            }
+
+            want = (int64_t)(state->archive_size - state->read_size);
+            if (want > SELF_UPDATE_READ_CHUNK)
+               want = SELF_UPDATE_READ_CHUNK;
+            if (state->from_archive)
+            {
+               uint8_t *dst = state->archive + state->read_size;
+               if ((got = filestream_read(state->file, dst, want)) != want)
+                  return "cannot read the download";
+               sha256_stream_update(&state->sha, dst, (size_t)got);
+            }
+            else
+            {
+               static uint8_t buf[64 * 1024];
+               if (want > (int64_t)sizeof(buf))
+                  want = (int64_t)sizeof(buf);
+               if ((got = filestream_read(state->file, buf, want)) != want)
+                  return "cannot read the download";
+               sha256_stream_update(&state->sha, buf, (size_t)got);
+            }
+            state->read_size += (uint64_t)got;
+
+            if (state->read_size < state->archive_size)
+               return NULL;
+
+            filestream_close(state->file);
+            state->file = NULL;
+            if (state->has_expected)
+            {
+               uint8_t digest[32];
+               sha256_stream_final(&state->sha, digest);
+               if (memcmp(digest, state->expected, sizeof(digest)))
+                  return "checksum mismatch";
+            }
+            state->stage = state->from_archive
+               ? SELF_UPDATE_STAGE_OPEN : SELF_UPDATE_STAGE_INSTALL;
+         }
+         return NULL;
+
+      case SELF_UPDATE_STAGE_OPEN:
+         {
+            const char *err;
+            if (r7z_archive_open(&state->ar, state->archive,
+                     (size_t)state->archive_size) != R7Z_OK)
+               return "unreadable archive";
+            if ((err = self_update_pick_members(state)))
+               return err;
+            state->stage = SELF_UPDATE_STAGE_EXTRACT;
+         }
+         return NULL;
+
+      case SELF_UPDATE_STAGE_EXTRACT:
+         {
+            char path[PATH_MAX_LENGTH];
+            uint8_t *out = NULL;
+            size_t len   = 0;
+            int res;
+            uint32_t idx         = state->members[state->next];
+            const r7z_entry_t *e = r7z_archive_entry(state->ar, idx);
+
+            if (      e->size
+                  && (!state->has_folder || e->folder != state->folder))
+            {
+               const char *err = self_update_enter_block(state, e->folder,
+                     state->next);
+               if (err)
+                  return err;
+            }
+
+            res = r7z_archive_extract_slice(state->ar, idx, &out, &len);
+            if (res == R7Z_PENDING)
+               return NULL;
+            if (res != R7Z_OK)
+               return "unreadable archive";
+
+            fill_pathname_join_special(path, state->payload,
+                  state->rel[state->next], sizeof(path));
+            res = self_update_write_member(path, out, len);
+            free(out);
+            if (!res)
+               return "cannot write the update";
+
+            if (++state->next < state->num_members)
+               return NULL;
+
+            /* Everything is on disk; the archive's memory goes before
+             * anything installed is touched. */
+            r7z_archive_close(state->ar);
+            state->ar = NULL;
+            free(state->archive);
+            state->archive = NULL;
+            state->stage   = SELF_UPDATE_STAGE_INSTALL;
+         }
+         return NULL;
+
+      case SELF_UPDATE_STAGE_INSTALL:
+         {
+            char marker[PATH_MAX_LENGTH];
+            char text[64];
+            const char *staging[1];
+#ifdef _WIN32
+            char exe_dir[PATH_MAX_LENGTH];
+
+            *exe_dir = '\0';
+            if (     !fill_pathname_application_dir(exe_dir, sizeof(exe_dir))
+                  || !*exe_dir)
+               return "cannot find the RetroArch folder";
+            if (self_update_replace(&su_fileops, exe_dir, state->payload,
+                     (const char *const*)state->rel, state->num_members) != 0)
+               return "a program file is in use; nothing was changed";
+#else
+            char fresh[PATH_MAX_LENGTH];
+            const char *appimage = getenv("APPIMAGE");
+            int fd;
+
+            if (state->from_archive)
+               fill_pathname_join_special(fresh, state->payload,
+                     "new.AppImage", sizeof(fresh));
+            else
+               strlcpy(fresh, state->download, sizeof(fresh));
+            /* On disk before it replaces the running AppImage. */
+            if ((fd = open(fresh, O_RDONLY)) >= 0)
+            {
+               fsync(fd);
+               close(fd);
+            }
+            if (     !appimage || !*appimage
+                  || self_update_appimage_swap(&su_fileops, fresh,
+                     appimage) != 0)
+               return "cannot replace the AppImage";
+#endif
+            fill_pathname_join_special(marker, state->config_dir,
+                  SELF_UPDATE_MARKER, sizeof(marker));
+            if (     !self_update_marker_format(text, sizeof(text),
+                        state->version, state->kind)
+                  || !filestream_write_file(marker, text,
+                        (int64_t)strlen(text)))
+               RARCH_WARN("[Self Update] Could not write %s.\n", marker);
+
+            staging[0] = state->staging;
+            self_update_cleanup(&su_fileops, NULL, staging, 1);
+            *finished = true;
+         }
+         return NULL;
+   }
+   return "internal error";
+}
+
+static void self_update_apply_handler(retro_task_t *task)
+{
+   bool finished = false;
+   const char *err;
+   self_update_apply_t *state = (self_update_apply_t*)task->state;
+
+   if (task_get_flags(task) & RETRO_TASK_FLG_CANCELLED)
+      err = "cancelled";
+   else
+      err = self_update_apply_step(state, &finished);
+
+   if (err)
+   {
+      strlcpy(state->error, err, sizeof(state->error));
+      finished = true;
+   }
+   else if (state->stage == SELF_UPDATE_STAGE_READ && state->archive_size)
+      task_set_progress(task,
+            (int8_t)((state->read_size * 50) / state->archive_size));
+   else if (state->stage == SELF_UPDATE_STAGE_EXTRACT && state->num_members)
+      task_set_progress(task,
+            (int8_t)(50 + (state->next * 50) / state->num_members));
+
+   if (finished)
+      task_set_flags(task, RETRO_TASK_FLG_FINISHED, true);
+}
+
+/* Runs on the main thread once the task ends. */
+static void cb_self_update_applied(retro_task_t *task, void *task_data,
+      void *user_data, const char *err)
+{
+   char msg[256];
+   self_update_apply_t *state = (self_update_apply_t*)task->state;
+
+   task->state = NULL;
+   if (!state)
+      return;
+   if (*state->error)
+   {
+      self_update_apply_failed(state, state->error);
+      return;
+   }
+   snprintf(msg, sizeof(msg),
+         msg_hash_to_str(MSG_SELF_UPDATE_INSTALLED), state->version);
+   self_update_notify(msg);
+   self_update_apply_free(state);
+   self_update_apply_running = false;
+}
+
+static void cb_self_update_download(retro_task_t *task, void *task_data,
+      void *user_data, const char *err)
+{
+   char reason[64];
+   char title[64];
+   retro_task_t *install;
+   self_update_apply_t *state = (self_update_apply_t*)user_data;
+   http_transfer_data_t *data = (http_transfer_data_t*)task_data;
+
+   if (!state)
+      return;
+   if (!data || data->status < 200 || data->status > 299)
+   {
+      if (data && data->status > 0)
+         snprintf(reason, sizeof(reason), "download: HTTP %d", data->status);
+      else
+         strlcpy(reason, "download did not finish", sizeof(reason));
+      self_update_apply_failed(state, reason);
+      return;
+   }
+
+   if (!(install = task_init()))
+   {
+      self_update_apply_failed(state, "out of memory");
+      return;
+   }
+   snprintf(title, sizeof(title),
+         msg_hash_to_str(MSG_SELF_UPDATE_INSTALLING), state->version);
+   install->handler  = self_update_apply_handler;
+   install->callback = cb_self_update_applied;
+   install->state    = state;
+   install->title    = strdup(title);
+   task_queue_push(install);
+}
+
+/* Reads the first 64 hex digits of a .sha256 reply. */
+static bool self_update_parse_sha256(const char *s, size_t len,
+      uint8_t out[32])
+{
+   size_t i;
+
+   if (!s || len < 64)
+      return false;
+   for (i = 0; i < 64; i++)
+   {
+      int c = (unsigned char)s[i];
+      int v = (c >= '0' && c <= '9') ? c - '0'
+            : (c >= 'a' && c <= 'f') ? c - 'a' + 10
+            : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+      if (v < 0)
+         return false;
+      if (i & 1)
+         out[i / 2] |= (uint8_t)v;
+      else
+         out[i / 2]  = (uint8_t)(v << 4);
+   }
+   return true;
+}
+
+static void cb_self_update_sha256(retro_task_t *task, void *task_data,
+      void *user_data, const char *err)
+{
+   char reason[64];
+   char title[64];
+   self_update_apply_t *state = (self_update_apply_t*)user_data;
+   http_transfer_data_t *data = (http_transfer_data_t*)task_data;
+
+   if (!state)
+      return;
+
+   /* Only a 404 means "no checksum published" (D5); any other
+    * failure stops the update rather than skipping the check. */
+   if (data && data->status == 200)
+   {
+      if (!self_update_parse_sha256(data->data, data->len, state->expected))
+      {
+         self_update_apply_failed(state, "unreadable checksum");
+         return;
+      }
+      state->has_expected = true;
+   }
+   else if (!data || data->status != 404)
+   {
+      if (data && data->status > 0)
+         snprintf(reason, sizeof(reason), "checksum: HTTP %d", data->status);
+      else
+         strlcpy(reason, "checksum: no reply", sizeof(reason));
+      self_update_apply_failed(state, reason);
+      return;
+   }
+
+   snprintf(title, sizeof(title),
+         msg_hash_to_str(MSG_SELF_UPDATE_DOWNLOADING), state->version);
+   if (!task_push_http_download_file(state->url, state->download, false,
+            title, cb_self_update_download, state))
+      self_update_apply_failed(state, "request not started");
+}
+
+bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
+      enum self_update_kind kind, const char *version, bool preferred,
+      const char *config_dir)
+{
+   char msg[PATH_MAX_LENGTH + 128];
+   char sha_url[sizeof(((self_update_apply_t*)0)->url) + 8];
+   self_update_apply_t *state;
+   settings_t *settings = config_get_ptr();
+
+   /* The installer route is not built yet. */
+   if (     (kind != SELF_UPDATE_KIND_APPIMAGE
+            && kind != SELF_UPDATE_KIND_WIN_PORTABLE)
+         || !version || !*version || !config_dir
+         || self_update_apply_running || self_update_check_running)
+      return false;
+
+   if (!self_update_tls_allowed(ep, settings->uints.tls_verify_mode))
+   {
+      self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_TLS_REQUIRED));
+      return false;
+   }
+
+   if (!(state = (self_update_apply_t*)calloc(1, sizeof(*state))))
+      return false;
+   state->kind         = kind;
+   state->from_archive = !(preferred && kind == SELF_UPDATE_KIND_APPIMAGE);
+   strlcpy(state->version, version, sizeof(state->version));
+   strlcpy(state->config_dir, config_dir, sizeof(state->config_dir));
+
+   self_update_staging_dir(state->staging, sizeof(state->staging), kind);
+   if (     !*state->staging
+         || !self_update_file_url(state->url, sizeof(state->url), ep, kind,
+               version, SELF_UPDATE_X86_64, preferred))
+   {
+      self_update_apply_free(state);
+      return false;
+   }
+   fill_pathname_join_special(state->download, state->staging,
+         path_basename(state->url), sizeof(state->download));
+   fill_pathname_join_special(state->payload, state->staging,
+         "new", sizeof(state->payload));
+
+   /* A read-only folder stops the update before anything is fetched. */
+   if (su_fs_mkdir_p(NULL, state->staging) != 0)
+   {
+      char dir[PATH_MAX_LENGTH];
+      fill_pathname_basedir(dir, state->staging, sizeof(dir));
+      snprintf(msg, sizeof(msg),
+            msg_hash_to_str(MSG_SELF_UPDATE_NOT_WRITABLE), dir);
+      self_update_notify(msg);
+      self_update_apply_free(state);
+      return false;
+   }
+
+   snprintf(sha_url, sizeof(sha_url), "%s.sha256", state->url);
+   if (!task_push_http_transfer_with_user_agent(sha_url, true, "GET",
+            SELF_UPDATE_USER_AGENT, cb_self_update_sha256, state))
+   {
+      self_update_apply_failed(state, "request not started");
+      return false;
+   }
+   self_update_apply_running = true;
+   return true;
+}
+
+bool task_push_self_update_apply(const char *config_dir)
+{
+   if (!*self_update_offer_version)
+      return false;
+   return task_push_self_update_apply_at(&self_update_endpoints_default,
+         task_self_update_kind(), self_update_offer_version,
+         self_update_offer_preferred, config_dir);
 }

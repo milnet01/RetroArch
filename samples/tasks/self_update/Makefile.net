@@ -24,6 +24,14 @@ SOURCES := \
 	$(LIBRETRO_COMM_DIR)/net/net_compat.c \
 	$(LIBRETRO_COMM_DIR)/net/net_socket.c \
 	$(LIBRETRO_COMM_DIR)/formats/json/rjson.c \
+	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_archive.c \
+	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_bcj2.c \
+	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_filters.c \
+	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma.c \
+	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma2.c \
+	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma_stream.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_crc32.c \
+	$(LIBRETRO_COMM_DIR)/hash/lrc_hash.c \
 	$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
 	$(LIBRETRO_COMM_DIR)/compat/compat_strldup.c \
 	$(LIBRETRO_COMM_DIR)/compat/compat_strcasestr.c \
