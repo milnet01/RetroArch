@@ -22,6 +22,7 @@
  * rule here runs on Linux under samples/tasks/self_update. */
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include <boolean.h>
 #include <retro_common_api.h>
@@ -133,6 +134,20 @@ enum self_update_marker_result
    SELF_UPDATE_MARKER_UPDATED,     /* running version reached the target */
    SELF_UPDATE_MARKER_NOT_FINISHED
 };
+
+/* The headroom self_update_memory_ok() adds to a block's figures. */
+#define SELF_UPDATE_MEMORY_MARGIN ((uint64_t)64 * 1024 * 1024)
+
+/* Spec §4.5: true when @avail bytes of free memory cover decoding one
+ * block of a .7z held whole in memory: @archive_size, the block's
+ * @pack_size, its @unpack_size (counted twice when @num_coders > 1,
+ * for the intermediate buffer), its @largest_member and
+ * SELF_UPDATE_MEMORY_MARGIN.  @avail 0 means the platform did not
+ * report it, and is allowed.  A sum past 64 bits is refused.  @need,
+ * when not NULL, receives the sum, or UINT64_MAX when it overflowed. */
+bool self_update_memory_ok(uint64_t avail, uint64_t archive_size,
+      uint64_t pack_size, uint64_t unpack_size, unsigned num_coders,
+      uint64_t largest_member, uint64_t *need);
 
 /* The restart target: $APPIMAGE for an AppImage, else @exe_path, the
  * executable path captured before any file was replaced. */

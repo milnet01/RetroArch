@@ -10,6 +10,7 @@
  *   marker       INV-11
  *   appimage     INV-12
  *   cleanup      INV-13's start-up removal
+ *   memory       INV-14's sum
  *
  *   ./self_update_test            every lane
  *   ./self_update_test <lane>     one lane
@@ -19,6 +20,7 @@
  * told to fail one chosen rename. */
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -732,10 +734,67 @@ static void lane_cleanup(void)
 
 /* ---- main -------------------------------------------------------- */
 
+/* ---- memory ------------------------------------------------------ */
+
+/* Stable 1.22.2, spec §4.5: the Linux RetroArch.7z (one block of one
+ * coder) and block 1 of the Win64 one (BCJ2, four coders).  The sums
+ * without the margin are the spec's, so a wrong term shows as a wrong
+ * total rather than only as a flipped answer. */
+#define LNX_ARCHIVE 179361448u
+#define LNX_PACK    179180498u
+#define LNX_UNPACK  410409118u
+#define LNX_MEMBER  10390008u
+#define LNX_SUM     ((uint64_t)779341072u + SELF_UPDATE_MEMORY_MARGIN)
+#define WIN_ARCHIVE 202509078u
+#define WIN_PACK    35474948u
+#define WIN_UNPACK  161415485u
+#define WIN_MEMBER  18641482u
+#define WIN_SUM     ((uint64_t)579456478u + SELF_UPDATE_MEMORY_MARGIN)
+
+static int mem_ok(uint64_t avail, unsigned coders)
+{
+   return self_update_memory_ok(avail, LNX_ARCHIVE, LNX_PACK, LNX_UNPACK,
+         coders, LNX_MEMBER, NULL);
+}
+
+static void lane_memory(void)
+{
+   uint64_t need = 0;
+
+   check(self_update_memory_ok(0, LNX_ARCHIVE, LNX_PACK, LNX_UNPACK, 1,
+            LNX_MEMBER, &need) && need == LNX_SUM,
+         "memory: Linux 1.22.2 block needs the spec's sum plus 64 MiB");
+   check(!mem_ok(LNX_SUM - 1, 1), "memory: one coder, one byte short -> refused");
+   check(mem_ok(LNX_SUM, 1), "memory: one coder, exactly the sum -> allowed");
+
+   /* The same sizes as four coders: the unpacked size counts twice. */
+   check(!mem_ok(LNX_SUM, 4), "memory: four coders, the one-coder sum -> refused");
+   check(!mem_ok(LNX_SUM + LNX_UNPACK - 1, 4),
+         "memory: four coders, one byte short of the doubled sum -> refused");
+   check(mem_ok(LNX_SUM + LNX_UNPACK, 4), "memory: four coders, the doubled sum -> allowed");
+
+   need = 0;
+   check(self_update_memory_ok(WIN_SUM, WIN_ARCHIVE, WIN_PACK, WIN_UNPACK, 4,
+            WIN_MEMBER, &need) && need == WIN_SUM,
+         "memory: Win64 1.22.2 BCJ2 block needs the spec's sum plus 64 MiB");
+
+   check(mem_ok(0, 4), "memory: not reported (0) -> allowed");
+
+   need = 0;
+   check(!self_update_memory_ok(UINT64_MAX, UINT64_MAX - 1, 2, 0, 1, 0, &need)
+         && need == UINT64_MAX, "memory: a sum past 64 bits -> refused");
+   check(!self_update_memory_ok(UINT64_MAX, 0, 0, UINT64_MAX / 2 + 1, 4, 0, NULL),
+         "memory: a doubling past 64 bits -> refused");
+   check(!self_update_memory_ok(UINT64_MAX, 0, 0, 0, 1,
+            UINT64_MAX - SELF_UPDATE_MEMORY_MARGIN + 1, NULL),
+         "memory: the margin pushing past 64 bits -> refused");
+}
+
 static const struct { const char *name; void (*fn)(void); } lanes[] = {
    { "kind", lane_kind }, { "version", lane_version }, { "release", lane_release },
    { "tls", lane_tls }, { "program_set", lane_program_set }, { "replace", lane_replace },
-   { "marker", lane_marker }, { "appimage", lane_appimage }, { "cleanup", lane_cleanup } };
+   { "marker", lane_marker }, { "appimage", lane_appimage }, { "cleanup", lane_cleanup },
+   { "memory", lane_memory } };
 
 int main(int argc, char **argv)
 {

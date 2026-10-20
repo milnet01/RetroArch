@@ -409,6 +409,41 @@ const char *self_update_program_member(const char *member, const char *top)
    return NULL;
 }
 
+/* ---- memory ------------------------------------------------------ */
+
+bool self_update_memory_ok(uint64_t avail, uint64_t archive_size,
+      uint64_t pack_size, uint64_t unpack_size, unsigned num_coders,
+      uint64_t largest_member, uint64_t *need)
+{
+   /* A multi-coder block holds one stage's output while the next is
+    * written, or BCJ2's four inputs beside its output. */
+   uint64_t terms[6];
+   uint64_t sum = 0;
+   size_t   i;
+
+   terms[0] = archive_size;
+   terms[1] = pack_size;
+   terms[2] = unpack_size;
+   terms[3] = num_coders > 1 ? unpack_size : 0;
+   terms[4] = largest_member;
+   terms[5] = SELF_UPDATE_MEMORY_MARGIN;
+
+   for (i = 0; i < ARRAY_SIZE(terms); i++)
+   {
+      if (terms[i] > UINT64_MAX - sum)
+      {
+         if (need)
+            *need = UINT64_MAX;
+         return false;
+      }
+      sum += terms[i];
+   }
+
+   if (need)
+      *need = sum;
+   return avail == 0 || avail >= sum;
+}
+
 /* ---- marker and restart ------------------------------------------ */
 
 size_t self_update_marker_format(char *s, size_t len,

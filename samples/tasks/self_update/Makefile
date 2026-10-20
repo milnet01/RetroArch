@@ -1,8 +1,8 @@
 # Policy lanes for the self-updater (self_update.c): install kind,
 # version compare, release offer, TLS gate and URLs, the Windows
 # program-file filter, replace-and-rollback, the pending marker, the
-# AppImage swap and start-up cleanup.  No network; the file lanes run
-# in a scratch folder under this directory.
+# AppImage swap, start-up cleanup and the memory rule.  No network; the
+# file lanes run in a scratch folder under this directory.
 #
 #   make check
 #   make check SANITIZER=address,undefined
