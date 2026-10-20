@@ -299,7 +299,7 @@ Threat model applied to severity calibration: this is a personal fork running on
 
 These are the highest-confidence findings — multiple reviewers coming at the code from different angles all flagged the same root cause.
 
-- 🚧 [RETR-S0026] **🔥 No atomic write on disk-save paths.**
+- ✅ [RETR-S0026] **🔥 No atomic write on disk-save paths.**
   Every "save user data to disk" path opens the destination directly with truncating-write mode. Power loss / OOM kill / `kill -9` mid-save = file corrupt and previous save gone. _(Bundle 2 — partially fixed in `403106af54` on `local/fixes-2026-04`.)_
   - ✅ `tasks/task_save.c::task_save_handler` (save state)
   - ✅ `tasks/task_save.c::content_auto_save_state` (auto save at unload)
@@ -315,6 +315,17 @@ These are the highest-confidence findings — multiple reviewers coming at the c
   renames first and keeps the .tmp if the fallback rename fails; the old
   delete-then-rename could lose both copies. Still open: bsvmovie.c replay
   checkpoints and the vendored config_file.c save.
+  2026-10-20, closed. config_file.c is done: upstream config_file_write
+  (now in libretro-common/file/config_file_io.c) dumps to <path>.tmp and
+  renames over the target only after a clean write (b867454de3 and
+  d20c1a344e), and the fork's copy on local/fixes-2026-09 carries it.
+  bsvmovie.c is not taken: the replay is a live stream, seeked, rewritten
+  and truncated in place by rewind and state loads, so tmp+rename does not
+  fit. A crash leaves a torn tail, and bsv_movie_read_next_events ends
+  playback on every short read, so the frames before the tear still play
+  (read in code, not run). Framing or checksums would change the replay
+  format and break compatibility with upstream replays; not a fork-only
+  change.
   **Layman:** Saving to disk can leave a half-written, corrupt file if the app crashes mid-save; writes should go to a temporary file and swap in.
   Kind: fix.
 
