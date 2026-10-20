@@ -58,7 +58,7 @@ UWP (`uwp/`, `pkg/msvc-uwp`) does not build through `./configure` and never defi
 | `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format, the memory rule (§4.5), the restart target (§4.6), the start-up cleanup, the Windows replace-and-rollback loop and the AppImage swap. The last three, and reading and removing the pending marker at start-up, do their file operations (exists, rename, remove, make a folder, get and set mode, list a folder, read a small file) through a table of function pointers the caller passes; production passes one backed by the real calls, and the tests pass one that wraps the real calls and can fail a chosen one. Everything here is testable without a network or a Windows machine. |
 | `struct self_update_endpoints` in `self_update.h` | The test seam: the GitHub API base URL, the buildbot base URL and whether the TLS-mode gate applies. Production code passes `self_update_endpoints_default` — the two §4.8 hosts, gate on — and nothing else. Only `samples/tasks/self_update/` passes another one, pointing at its local plain-HTTP server with the gate off. |
 | `tasks/task_self_update.c` | The check task and the download-and-apply task, built on `task_push_http_transfer_with_user_agent`, `task_push_http_download_file` and the 7z reader (`r7z_archive_*`, `libretro-common/include/7z/r7z_archive.h`), which reports each entry's block and size. It also reads available memory: `MemAvailable` from `/proc/meminfo` on Linux, `GlobalMemoryStatusEx` on Windows. |
-| `libretro-common/formats/7z/r7z_archive.c` / `libretro-common/include/7z/r7z_archive.h` | New, read-only: `r7z_archive_folder_info`, giving one block's unpacked size, packed size (the sum of its packed streams) and number of coders, as the archive header records them. An index past the last block returns `R7Z_ERROR_PARAM`. This is vendored code, so the function goes upstream in the self-updater PR, never as a fork-only change (§11). |
+| `libretro-common/formats/7z/r7z_archive.c` / `libretro-common/include/7z/r7z_archive.h` | New, read-only: `int r7z_archive_folder_info(const r7z_archive_t *a, uint32_t folder, uint64_t *unpack_size, uint64_t *pack_size, uint32_t *num_coders)`, giving one block's unpacked size, packed size (the sum of its packed streams) and number of coders, as the archive header records them. `folder` is the block index `r7z_entry_t` carries. It returns `R7Z_OK`; an index past the last block returns `R7Z_ERROR_PARAM`. This is vendored code, so the function goes upstream in the self-updater PR, never as a fork-only change (§11). |
 | `frontend/drivers/platform_win32.c`, `frontend/drivers/platform_unix.c` | The two platform hooks: launching the installer after exit (Windows), and restarting into the target `self_update.c` returns (AppImage). |
 
 ### 4.3 Install kind
@@ -106,7 +106,7 @@ Four parts because upstream has shipped `v1.16.0.1`, `.2` and `.3` (`gh api 'rep
 
 Base `https://buildbot.libretro.com/stable/<version>/`, `<version>` without the `v`:
 
-| Kind | Preferred, used if HEAD → 200 (D8) | Otherwise | What is taken from it |
+| Kind | Preferred, used if HEAD → 200 (D8) | If the preferred HEAD → 404 | What is taken from it |
 |------|------|------|------|
 | `WIN_PORTABLE` | `windows/<arch>/RetroArch_update.7z` | `windows/<arch>/RetroArch.7z` | The program set, §4.6 |
 | `WIN_INSTALLER*` | — | `windows/x86_64/RetroArch-Win64-setup.exe` or `windows/x86/RetroArch-Win32-setup.exe` | The whole file |
@@ -114,7 +114,7 @@ Base `https://buildbot.libretro.com/stable/<version>/`, `<version>` without the 
 
 `<arch>` is `x86_64` or `x86`. For every file downloaded, `<url>.sha256` is fetched first (D5): 200 → its first 64 hex digits are the expected SHA-256, checked by reading the finished staging file back in chunks through `sha256_stream_init` / `_update` / `_final` (`libretro-common/include/lrc_hash.h`) — `task_push_http_download_file` writes straight to disk and offers no per-chunk hook; 404 → no checksum; any other result → the update stops.
 
-Before asking the user, the check task issues a HEAD for the file it will download and shows its `Content-Length` (D8).
+Before asking the user, the check task issues a HEAD for the file it will download and shows its `Content-Length` (D8). A HEAD answer other than 200 or 404 stops the check (`cb_self_update_head`).
 
 **Memory (D10).** A `.7z` is read whole into memory. `r7z_archive_extract_slice` decodes the whole solid block holding a member into one buffer, after copying the block's packed bytes into a buffer of their own (`decode_folder_slice`, `decode_folder_bcj2_slice`). A block with more than one coder holds a second buffer about its unpacked size: a BCJ2 block holds its four decoded inputs and its output at once, and a chain holds one stage's output while the next stage's is written. A block's buffer is freed only when the next block finishes decoding, or when the archive is closed. Stable 1.22.2, measured 2026-10-20 with `7z l -slt` on range-fetched header bytes:
 
@@ -227,7 +227,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Breaks when:* the restart uses `fill_pathname_application_path` and comes back as the old build.
 
 - **INV-13** — A failed or abandoned update leaves the installed program as it was and removes its staging folder.
-  *Test:* lanes `checksum` and `replace` assert staging is gone after each failure row; lane `cleanup` plants `*.retroarch-old` files and each kind's staging folder (the two Windows ones and the AppImage one) and asserts the start-up cleanup removes them all.
+  *Test:* lane `checksum` asserts staging is gone after each failure row; lane `replace` asserts that after each failed rename every original is back and no `.retroarch-old` is left; lane `cleanup` plants `*.retroarch-old` files and each kind's staging folder (the two Windows ones and the AppImage one) and asserts the start-up cleanup removes them all.
   *Breaks when:* a staging folder or `.retroarch-old` file survives a failure and is never removed.
 
 - **INV-14** — No block of a `.7z` is decoded unless available memory, where the platform reports it, covers the §4.5 sum for that block: the archive size, the block's packed size, its unpacked size (twice for more than one coder), its largest needed member, and 64 MiB. The blocks are decoded one at a time, with the archive reopened between them.
