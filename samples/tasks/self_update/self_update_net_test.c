@@ -18,11 +18,17 @@
  *   failed    the release query answers 403: the status is reported
  *   tlsgate   the shipping endpoints with certificate checking not
  *             required: refused before any request
- *   none      an install the updater cannot replace: no request */
+ *   none      an install the updater cannot replace: no request
+ *   realfs    the shipping file-operation table, on a scratch folder:
+ *             the start-up cleanup empties a staging folder without
+ *             following a link out of it, the AppImage swap keeps the
+ *             mode bits, and a marker is read and removed */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #include <boolean.h>
 #include <retro_miscellaneous.h>
@@ -431,6 +437,76 @@ static void lane_none(void)
    CHECK(retro_atomic_load_acquire_int(&n_release) == 0, "no request");
 }
 
+static void rf_write(const char *path, const char *content)
+{
+   FILE *f = fopen(path, "wb");
+   if (f)
+   {
+      fputs(content, f);
+      fclose(f);
+   }
+}
+
+static void lane_realfs(void)
+{
+   const struct self_update_fileops *ops = task_self_update_fileops();
+   char root[64], outside[128], kept[160], stage[128], sub[160];
+   char link[160], app[160], fresh[160], marker[160], target[32];
+   const char *staging[1];
+   unsigned cur[4];
+   struct stat st;
+
+   printf("realfs\n");
+   snprintf(root, sizeof(root), "su_realfs_%ld", (long)getpid());
+   snprintf(outside, sizeof(outside), "%s/outside", root);
+   snprintf(kept, sizeof(kept), "%s/keep.txt", outside);
+   snprintf(stage, sizeof(stage), "%s/.retroarch-update", root);
+   snprintf(sub, sizeof(sub), "%s/sub", stage);
+   snprintf(link, sizeof(link), "%s/link", stage);
+
+   CHECK(ops->mkdir_p(ops->ud, sub) == 0 && ops->mkdir_p(ops->ud, outside) == 0,
+         "mkdir_p makes nested folders");
+   rf_write(kept, "keep");
+   snprintf(fresh, sizeof(fresh), "%s/new.AppImage", stage);
+   rf_write(fresh, "new build");
+   snprintf(fresh, sizeof(fresh), "%s/sub/part", stage);
+   rf_write(fresh, "part");
+   /* A link to a folder outside staging: the cleanup must remove the
+    * link and leave what it points at. */
+   CHECK(symlink("../outside", link) == 0, "plant a link out of staging");
+
+   staging[0] = stage;
+   self_update_cleanup(ops, NULL, staging, 1);
+   CHECK(ops->exists(ops->ud, stage) == 0, "cleanup removes the staging folder");
+   CHECK(lstat(link, &st) != 0, "cleanup removes the link itself");
+   CHECK(ops->exists(ops->ud, kept) == 1, "cleanup leaves the link's target alone");
+
+   snprintf(app, sizeof(app), "%s/RetroArch.AppImage", root);
+   snprintf(fresh, sizeof(fresh), "%s/new.AppImage", root);
+   rf_write(app, "old build");
+   chmod(app, 0750);
+   rf_write(fresh, "new build");
+   chmod(fresh, 0600);
+   CHECK(self_update_appimage_swap(ops, fresh, app) == 0
+         && stat(app, &st) == 0 && (st.st_mode & 07777) == 0750
+         && ops->exists(ops->ud, fresh) == 0,
+         "AppImage swap renames over the old file and keeps mode 0750");
+
+   snprintf(marker, sizeof(marker), "%s/self_update.pending", root);
+   rf_write(marker, "1.0.0\n1\n");
+   self_update_version_parse(PACKAGE_VERSION, cur);
+   CHECK(self_update_marker_consume(ops, marker, cur, target, sizeof(target))
+         == SELF_UPDATE_MARKER_UPDATED && !strcmp(target, "1.0.0")
+         && ops->exists(ops->ud, marker) == 0,
+         "a marker is read through the table and removed");
+
+   remove(kept);
+   remove(app);
+   rmdir(outside);
+   rmdir(root);
+   CHECK(ops->exists(ops->ud, root) == 0, "scratch folder removed");
+}
+
 int main(int argc, char **argv)
 {
    const char *only = argc > 1 ? argv[1] : NULL;
@@ -457,6 +533,7 @@ int main(int argc, char **argv)
    LANE(failed);
    LANE(tlsgate);
    LANE(none);
+   LANE(realfs);
 #undef LANE
 
    server_stop();

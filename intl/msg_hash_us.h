@@ -31741,6 +31741,14 @@ MSG_HASH(
    "Updating RetroArch needs \"TLS Certificate Verification\" set to \"Required\"."
    )
 MSG_HASH(
+   MSG_SELF_UPDATE_UPDATED,
+   "RetroArch was updated to %s."
+   )
+MSG_HASH(
+   MSG_SELF_UPDATE_NOT_FINISHED,
+   "The update to RetroArch %s did not finish. RetroArch is still %s."
+   )
+MSG_HASH(
    MSG_LATEST_CORE_INSTALLED,
    "Latest version already installed: "
    )

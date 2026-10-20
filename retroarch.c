@@ -6831,6 +6831,12 @@ int rarch_main(int argc, char *argv[], void *data)
       task_push_cloud_sync();
 #endif
 #ifdef HAVE_SELF_UPDATER
+   {
+      char config_dir[PATH_MAX_LENGTH];
+      fill_pathname_basedir(config_dir, path_get(RARCH_PATH_CONFIG),
+            sizeof(config_dir));
+      task_self_update_startup(config_dir);
+   }
    if (settings->bools.self_update_check_on_startup)
       task_push_self_update_check(true);
 #endif

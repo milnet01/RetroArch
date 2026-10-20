@@ -25,11 +25,15 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <encodings/utf.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
 #endif
 
 #include <file/file_path.h>
 #include <net/net_http.h>
 #include <retro_miscellaneous.h>
+#include <streams/file_stream.h>
 #include <string/stdstring.h>
 
 #include "../configuration.h"
@@ -223,6 +227,172 @@ static void cb_self_update_release(retro_task_t *task, void *task_data,
       self_update_check_failed(state, NULL, "request not started");
 }
 
+/* ---- file operations --------------------------------------------- */
+
+/* The real calls behind self_update.c's file-operation table.  A link
+ * is listed as a file (POSIX lstat; a Windows reparse point), so the
+ * start-up cleanup never follows one out of a staging folder. */
+
+static int su_fs_exists(void *ud, const char *path)
+{
+   return path_is_valid(path) ? 1 : 0;
+}
+
+static int su_fs_mkdir_p(void *ud, const char *path)
+{
+   return (path_is_directory(path) || path_mkdir(path)) ? 0 : -1;
+}
+
+static long su_fs_read(void *ud, const char *path, char *buf, size_t len)
+{
+   void   *data = NULL;
+   int64_t n    = 0;
+
+   if (!filestream_read_file(path, &data, &n) || n < 0)
+      return -1;
+   if ((uint64_t)n > len)
+      n = (int64_t)len;
+   memcpy(buf, data, (size_t)n);
+   free(data);
+   return (long)n;
+}
+
+#ifdef _WIN32
+static int su_fs_rename(void *ud, const char *from, const char *to)
+{
+   int      ret   = -1;
+   wchar_t *wfrom = utf8_to_utf16_string_alloc(from);
+   wchar_t *wto   = utf8_to_utf16_string_alloc(to);
+
+   if (wfrom && wto && MoveFileW(wfrom, wto))
+      ret = 0;
+   free(wfrom);
+   free(wto);
+   return ret;
+}
+
+static int su_fs_remove(void *ud, const char *path)
+{
+   int      ret = -1;
+   wchar_t *w   = utf8_to_utf16_string_alloc(path);
+
+   if (w && (DeleteFileW(w) || RemoveDirectoryW(w)))
+      ret = 0;
+   free(w);
+   return ret;
+}
+
+/* Only the AppImage route keeps permission bits. */
+static int su_fs_get_mode(void *ud, const char *path, unsigned *mode)
+{
+   *mode = 0;
+   return 0;
+}
+
+static int su_fs_set_mode(void *ud, const char *path, unsigned mode)
+{
+   return 0;
+}
+
+static int su_fs_list(void *ud, const char *dir, self_update_list_cb cb,
+      void *ctx)
+{
+   char             pattern[PATH_MAX_LENGTH];
+   wchar_t         *w;
+   HANDLE           h;
+   WIN32_FIND_DATAW fd;
+
+   fill_pathname_join_special(pattern, dir, "*", sizeof(pattern));
+   if (!(w = utf8_to_utf16_string_alloc(pattern)))
+      return -1;
+   h = FindFirstFileW(w, &fd);
+   free(w);
+   if (h == INVALID_HANDLE_VALUE)
+      return -1;
+   do
+   {
+      char *name;
+      bool  is_dir;
+
+      if (     !wcscmp(fd.cFileName, L".")
+            || !wcscmp(fd.cFileName, L".."))
+         continue;
+      if (!(name = utf16_to_utf8_string_alloc(fd.cFileName)))
+         continue;
+      is_dir =    (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+              && !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+      if (!cb(ctx, name, is_dir))
+      {
+         free(name);
+         break;
+      }
+      free(name);
+   } while (FindNextFileW(h, &fd));
+   FindClose(h);
+   return 0;
+}
+#else
+static int su_fs_rename(void *ud, const char *from, const char *to)
+{
+   return rename(from, to);
+}
+
+static int su_fs_remove(void *ud, const char *path)
+{
+   return remove(path);
+}
+
+static int su_fs_get_mode(void *ud, const char *path, unsigned *mode)
+{
+   struct stat st;
+   if (stat(path, &st) != 0)
+      return -1;
+   *mode = (unsigned)(st.st_mode & 07777);
+   return 0;
+}
+
+static int su_fs_set_mode(void *ud, const char *path, unsigned mode)
+{
+   return chmod(path, (mode_t)mode);
+}
+
+static int su_fs_list(void *ud, const char *dir, self_update_list_cb cb,
+      void *ctx)
+{
+   DIR           *d = opendir(dir);
+   struct dirent *e;
+
+   if (!d)
+      return -1;
+   while ((e = readdir(d)))
+   {
+      char        path[PATH_MAX_LENGTH];
+      struct stat st;
+
+      if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+         continue;
+      fill_pathname_join_special(path, dir, e->d_name, sizeof(path));
+      if (lstat(path, &st) != 0)
+         continue;
+      if (!cb(ctx, e->d_name, S_ISDIR(st.st_mode)))
+         break;
+   }
+   closedir(d);
+   return 0;
+}
+#endif
+
+static const struct self_update_fileops su_fileops = {
+   su_fs_exists, su_fs_rename, su_fs_remove, su_fs_mkdir_p,
+   su_fs_get_mode, su_fs_set_mode, su_fs_list, su_fs_read, NULL };
+
+const struct self_update_fileops *task_self_update_fileops(void)
+{
+   return &su_fileops;
+}
+
+/* ---- install kind ------------------------------------------------ */
+
 static enum self_update_kind self_update_kind_detect(void)
 {
    struct self_update_env env;
@@ -341,4 +511,123 @@ bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
    if (!quiet)
       self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_CHECKING));
    return true;
+}
+
+/* ---- staging and start-up ---------------------------------------- */
+
+#define SELF_UPDATE_MARKER "self_update.pending"
+
+/* The staging folder for @kind (spec §4.6): beside retroarch.exe or
+ * $APPIMAGE, so the final renames stay on one volume; the installer
+ * route's goes under %TEMP%.  Empty when it cannot be worked out. */
+static void self_update_staging_dir(char *s, size_t len,
+      enum self_update_kind kind)
+{
+   char dir[PATH_MAX_LENGTH];
+
+   *s   = '\0';
+   *dir = '\0';
+   switch (kind)
+   {
+#ifdef _WIN32
+      case SELF_UPDATE_KIND_WIN_PORTABLE:
+         if (fill_pathname_application_dir(dir, sizeof(dir)) && *dir)
+            fill_pathname_join_special(s, dir, ".retroarch-update", len);
+         break;
+      case SELF_UPDATE_KIND_WIN_INSTALLER:
+      case SELF_UPDATE_KIND_WIN_INSTALLER_VISIBLE:
+         {
+            wchar_t wtmp[MAX_PATH + 1];
+            DWORD   n = GetTempPathW(ARRAY_SIZE(wtmp), wtmp);
+            char   *tmp;
+
+            if (n == 0 || n > MAX_PATH)
+               break;
+            if ((tmp = utf16_to_utf8_string_alloc(wtmp)))
+            {
+               fill_pathname_join_special(s, tmp, "retroarch-update", len);
+               free(tmp);
+            }
+         }
+         break;
+#else
+      case SELF_UPDATE_KIND_APPIMAGE:
+         {
+            const char *appimage = getenv("APPIMAGE");
+            if (appimage && *appimage)
+            {
+               fill_pathname_basedir(dir, appimage, sizeof(dir));
+               fill_pathname_join_special(s, dir, ".retroarch-update", len);
+            }
+         }
+         break;
+#endif
+      default:
+         break;
+   }
+}
+
+void task_self_update_startup(const char *config_dir)
+{
+   char marker[PATH_MAX_LENGTH];
+   char target[32];
+   char msg[256];
+   unsigned current[4];
+   const char *staging[2];
+   size_t count = 0;
+   enum self_update_kind kind = task_self_update_kind();
+#ifdef _WIN32
+   char exe_dir[PATH_MAX_LENGTH];
+   char stage_exe[PATH_MAX_LENGTH];
+   char stage_tmp[PATH_MAX_LENGTH];
+#else
+   char stage_app[PATH_MAX_LENGTH];
+#endif
+
+   if (kind == SELF_UPDATE_KIND_NONE)
+      return;
+
+   /* Leftovers of an earlier update, whichever route it took; anything
+    * still in use is left for the next start. */
+#ifdef _WIN32
+   *exe_dir = '\0';
+   fill_pathname_application_dir(exe_dir, sizeof(exe_dir));
+   self_update_staging_dir(stage_exe, sizeof(stage_exe),
+         SELF_UPDATE_KIND_WIN_PORTABLE);
+   self_update_staging_dir(stage_tmp, sizeof(stage_tmp),
+         SELF_UPDATE_KIND_WIN_INSTALLER);
+   if (*stage_exe)
+      staging[count++] = stage_exe;
+   if (*stage_tmp)
+      staging[count++] = stage_tmp;
+   self_update_cleanup(&su_fileops, exe_dir, staging, count);
+#else
+   self_update_staging_dir(stage_app, sizeof(stage_app), kind);
+   if (*stage_app)
+      staging[count++] = stage_app;
+   self_update_cleanup(&su_fileops, NULL, staging, count);
+#endif
+
+   if (     !config_dir || !*config_dir
+         || self_update_version_parse(PACKAGE_VERSION, current) != 0)
+      return;
+   fill_pathname_join_special(marker, config_dir, SELF_UPDATE_MARKER,
+         sizeof(marker));
+   switch (self_update_marker_consume(&su_fileops, marker, current,
+            target, sizeof(target)))
+   {
+      case SELF_UPDATE_MARKER_UPDATED:
+         snprintf(msg, sizeof(msg),
+               msg_hash_to_str(MSG_SELF_UPDATE_UPDATED), target);
+         self_update_notify(msg);
+         break;
+      case SELF_UPDATE_MARKER_NOT_FINISHED:
+         snprintf(msg, sizeof(msg),
+               msg_hash_to_str(MSG_SELF_UPDATE_NOT_FINISHED), target,
+               PACKAGE_VERSION);
+         self_update_notify(msg);
+         break;
+      default:
+         break;
+   }
 }

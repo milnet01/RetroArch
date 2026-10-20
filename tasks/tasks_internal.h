@@ -167,6 +167,14 @@ bool task_push_self_update_check(bool quiet);
  * which passes self_update_endpoints_default. */
 bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
       enum self_update_kind kind, bool quiet);
+
+/* The real file operations behind self_update.c's table. */
+const struct self_update_fileops *task_self_update_fileops(void);
+
+/* Start-up, before the update check: removes what an earlier update
+ * left behind, and reports a pending marker in @config_dir.  Does
+ * nothing for an install of kind NONE. */
+void task_self_update_startup(const char *config_dir);
 #endif
 
 bool task_push_bluetooth_scan(retro_task_callback_t cb);
