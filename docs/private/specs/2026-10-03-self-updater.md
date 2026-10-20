@@ -34,7 +34,7 @@ Recorded in RETR-0021's body; each made by the user.
 | D7 | A portable Windows update replaces program files only — never config, saves or assets. | 2026-10-03 |
 | D8 | Accept the full-size download; show its size before asking. Ask upstream for a small stable update package and a bare AppImage, and use them when they exist. | 2026-10-03 |
 | D9 | An installer install outside the folder the silent installer targets opens the installer visibly, with a note naming the folder to pick. | 2026-10-03 |
-| D10 | Accept a peak of about 600 MB while unpacking the stable `.7z`; check free memory first and stop with a message when it is short. | 2026-10-20 |
+| D10 | Accept the real peak while unpacking the stable `.7z`, about 780 MB on Linux and 750 MB on Win64 for stable 1.22.2. Check free memory before each block from the archive's real block sizes, never estimates, and stop with a message when it is short. | 2026-10-20 |
 
 One choice was mine, stated so it can be overturned: the latest version comes from GitHub's release API and the files from the buildbot (§8 says why).
 
@@ -58,6 +58,7 @@ UWP (`uwp/`, `pkg/msvc-uwp`) does not build through `./configure` and never defi
 | `self_update.c` / `self_update.h` | Pure policy, no I/O of its own: install-kind decision, version parse and compare, release-JSON parse, URL building, the Windows program-file filter, the pending-update marker format, the memory rule (§4.5), the restart target (§4.6), the start-up cleanup, the Windows replace-and-rollback loop and the AppImage swap. The last three, and reading and removing the pending marker at start-up, do their file operations (exists, rename, remove, make a folder, get and set mode, list a folder, read a small file) through a table of function pointers the caller passes; production passes one backed by the real calls, and the tests pass one that wraps the real calls and can fail a chosen one. Everything here is testable without a network or a Windows machine. |
 | `struct self_update_endpoints` in `self_update.h` | The test seam: the GitHub API base URL, the buildbot base URL and whether the TLS-mode gate applies. Production code passes `self_update_endpoints_default` — the two §4.8 hosts, gate on — and nothing else. Only `samples/tasks/self_update/` passes another one, pointing at its local plain-HTTP server with the gate off. |
 | `tasks/task_self_update.c` | The check task and the download-and-apply task, built on `task_push_http_transfer_with_user_agent`, `task_push_http_download_file` and the 7z reader (`r7z_archive_*`, `libretro-common/include/7z/r7z_archive.h`), which reports each entry's block and size. It also reads available memory: `MemAvailable` from `/proc/meminfo` on Linux, `GlobalMemoryStatusEx` on Windows. |
+| `libretro-common/formats/7z/r7z_archive.c` / `libretro-common/include/7z/r7z_archive.h` | New, read-only: `r7z_archive_folder_info`, giving one block's unpacked size, packed size (the sum of its packed streams) and number of coders, as the archive header records them. An index past the last block returns `R7Z_ERROR_PARAM`. This is vendored code, so the function goes upstream in the self-updater PR, never as a fork-only change (§11). |
 | `frontend/drivers/platform_win32.c`, `frontend/drivers/platform_unix.c` | The two platform hooks: launching the installer after exit (Windows), and restarting into the target `self_update.c` returns (AppImage). |
 
 ### 4.3 Install kind
@@ -115,12 +116,20 @@ Base `https://buildbot.libretro.com/stable/<version>/`, `<version>` without the 
 
 Before asking the user, the check task issues a HEAD for the file it will download and shows its `Content-Length` (D8).
 
-**Memory (D10).** A `.7z` is read whole into memory, and `r7z_archive_extract_slice` decodes the whole solid block holding a member into one buffer. Stable 1.22.2, measured 2026-10-20 with `7z l -slt`:
+**Memory (D10).** A `.7z` is read whole into memory. `r7z_archive_extract_slice` decodes the whole solid block holding a member into one buffer, after copying the block's packed bytes into a buffer of their own (`decode_folder_slice`, `decode_folder_bcj2_slice`). A block with more than one coder holds a second buffer about its unpacked size: a BCJ2 block holds its four decoded inputs and its output at once, and a chain holds one stage's output while the next stage's is written. A block's buffer is freed only when the next block finishes decoding, or when the archive is closed. Stable 1.22.2, measured 2026-10-20 with `7z l -slt` on range-fetched header bytes:
 
-- The Linux `RetroArch.7z` (179,361,448 B) is one block, 410,409,118 B unpacked, holding the 10,390,008 B AppImage.
-- The Win64 `RetroArch.7z` (202,509,078 B) has two blocks, 380,484,561 B and 161,415,485 B unpacked. The program set has members in both.
+- The Linux `RetroArch.7z` (179,361,448 B) is one block of one coder (`LZMA:26`): packed 179,180,498 B, unpacked 410,409,118 B, holding the 10,390,008 B AppImage.
+- The Win64 `RetroArch.7z` (202,509,078 B) has two blocks. Block 0 is one coder (`LZMA2:26`): packed 166,881,476 B, unpacked 380,484,561 B. Block 1 is four coders (`BCJ2`, one `LZMA2`, two `LZMA`): packed 35,474,948 B, unpacked 161,415,485 B, holding `retroarch.exe` (18,641,482 B) and the DLLs. The program set has members in both.
 
-After opening the archive and before decoding anything, the apply task reads available memory. It stops unless that is at least the archive size, plus the largest unpacked block holding a needed member, plus the largest needed member, plus 64 MiB. Where available memory cannot be read, it proceeds. Reading the archive comes before the check; its size is the download size the user saw before agreeing (D8).
+The apply task decodes the needed blocks one at a time. Between blocks it closes the archive and reopens it on the same buffer; `r7z_archive_close` frees the decoded block. Before decoding each block, it reads available memory, and the block's sizes and coder count from `r7z_archive_folder_info` (§4.2). It stops unless available memory is at least the sum of:
+
+- the archive size;
+- the block's packed size;
+- the block's unpacked size, counted twice when the block has more than one coder;
+- the largest needed member in the block;
+- 64 MiB.
+
+For stable 1.22.2 that sum, less the 64 MiB, is 779,341,072 B on Linux. On Win64 it is 749,876,939 B for block 0 and 579,456,478 B for block 1. Available memory is `MemAvailable` from `/proc/meminfo` on Linux. On Windows it is the smaller of `ullAvailPhys` and `ullAvailVirtual` from `GlobalMemoryStatusEx`, since a 32-bit process can run out of address space before memory. Where available memory cannot be read, it proceeds. Reading the archive comes before the check; its size is the download size the user saw before agreeing (D8).
 
 ### 4.6 Applying the update
 
@@ -221,9 +230,13 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Test:* lanes `checksum` and `replace` assert staging is gone after each failure row; lane `cleanup` plants `*.retroarch-old` files and each kind's staging folder (the two Windows ones and the AppImage one) and asserts the start-up cleanup removes them all.
   *Breaks when:* a staging folder or `.retroarch-old` file survives a failure and is never removed.
 
-- **INV-14** — No member of a `.7z` is decoded unless available memory, where the platform reports it, covers the archive size, plus the largest unpacked block holding a needed member, plus the largest needed member, plus 64 MiB.
-  *Test:* lane `memory`: `self_update_memory_ok` with available memory one byte below that sum → refused; equal to it → allowed; not reported (0) → allowed; sizes whose sum overflows 64 bits → refused. Fixture isolates the arithmetic; reading the figure on each platform is not covered.
-  *Breaks when:* the check counts the archive alone, or a sum that wraps reads as small.
+- **INV-14** — No block of a `.7z` is decoded unless available memory, where the platform reports it, covers the §4.5 sum for that block: the archive size, the block's packed size, its unpacked size (twice for more than one coder), its largest needed member, and 64 MiB. The blocks are decoded one at a time, with the archive reopened between them.
+  *Test:* lane `memory`: `self_update_memory_ok` for a one-coder block with available memory one byte below the sum → refused, and equal to it → allowed; for a four-coder block with the same sizes, the one-coder sum → refused, and the doubled sum → allowed; not reported (0) → allowed; sizes whose sum overflows 64 bits → refused. The four-coder rows isolate the doubling; the one-coder rows the rest of the sum. Reading the figure on each platform, and the reopen between blocks, are not covered.
+  *Breaks when:* the check leaves out the packed size or the doubling, or a sum that wraps reads as small.
+
+- **INV-15** — `r7z_archive_folder_info` reports each block's unpacked size, packed size and coder count as the archive header records them.
+  *Test:* a new test in `libretro-common/samples/formats/r7z/`, over a checked-in fixture made by `7zz a -mf=BCJ2` of an `.exe` and then `7zz a -mf=off` of a text file: two blocks, block 0 one `LZMA2` coder, block 1 four coders under `BCJ2`. The expected sizes are written from `7zz l -slt` of the fixture. An index past the last block returns `R7Z_ERROR_PARAM`. The BCJ2 block isolates the packed-stream sum and the coder count; two blocks of different sizes isolate the index.
+  *Breaks when:* a BCJ2 block reports one packed stream or one coder, or a block reports another block's sizes.
 
 ## 6. Failure modes
 
@@ -239,7 +252,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 | Installer reaches `retroarch.exe` before the process is gone | Prevented by the wait in `run.cmd`; caught by the marker if it happens anyway. |
 | Some other caller relied on an `https`→`http` redirect | It now fails where it used to succeed over plain HTTP. The guard is in `net_http.c` for every caller (§4.8), so this is a deliberate behaviour change, stated in its own upstream PR. |
 | Restart fails | The update is installed; the next manual start runs it and the marker check confirms it. |
-| Not enough free memory to unpack (INV-14) | Stops before decoding; staging removed; the message names the memory needed. |
+| Not enough free memory to unpack (INV-14) | Stops before decoding the block; staging removed; the message names the memory needed. No installed file has been touched: extraction finishes before any is replaced (§4.6). |
 | A nightly build whose `PACKAGE_VERSION` equals the last stable | Told it is up to date; a nightly is never replaced by an equal or older stable. |
 | A user renamed their AppImage to include a version | The file keeps the user's name and now holds the new build. |
 
@@ -247,6 +260,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 
 - `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`. The policy lanes compile `self_update.c` alone: it reads no settings, and the TLS gate takes the `tls_verify_mode` value as an argument. The network lanes (`startup`, `tlsgate`, `none`, `checksum`; `self_update_net_test.c`, built by `Makefile.net`) link the real `tasks/task_self_update.c`, `tasks/task_http.c`, `task_queue.c` and `net_http.c`, stub the frontend symbols, and serve from a local HTTP server thread — the shape of `samples/tasks/core_updater/Makefile.refresh_flags` and its `get_list_refresh_flags_test.c`. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` and `tlsgate` (INV-5), `none` (INV-1), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13), `memory` (INV-14). Wired into `samples/Makefile`'s `check`.
 - `samples/tasks/http/` — `http_limits_test` covers the HTTPS-to-HTTP redirect guard (INV-5).
+- `libretro-common/samples/formats/r7z/` — a new test of `r7z_archive_folder_info` over its two-block fixture (INV-15), wired into that directory's `Makefile` beside `r7z_lzma_props_test.c`.
 - Each lane is run once against a deliberately broken build of the rule it tests (the fixture's named rule removed) and must fail there before it is trusted.
 - Manual, on `wintest` (Windows 10): INV-10 both routes, a portable update, and a portable update while a DLL is held open by another process (INV-9's real-world case). Manual, on Linux: INV-12's AppImage recipe. INV-2's configure recipe.
 - Not covered by any test: that GitHub keeps `releases/latest` meaning "newest non-prerelease, non-draft". The parser re-checks both flags so a change there is refused rather than trusted.
@@ -261,6 +275,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 - **Overwrite `retroarch.exe` in place on Windows.** A running executable cannot be opened for writing or deleted; it can only be renamed (measured).
 - **A separate updater helper executable.** A new build target to ship in every package. The portable route needs no helper (rename), and the installer route needs only a wait, which `cmd.exe` provides.
 - **A low-memory 7z unpacker, or updating only from small files.** Rejected by the user on 2026-10-20 (D10). The first is a large new decoder to save a few seconds' peak. The second never updates today, since no small stable file is published.
+- **Estimate block sizes from the entry list, with the archive size as the packed size.** Chosen and then rejected by the user on 2026-10-20 (D10): the entry list does not say which blocks have more than one coder, so the doubling would rest on a guess. `r7z_archive_folder_info` reads the real figures from the header instead.
 - **Revive the removed Qt updater.** Qt-only, Windows-only, nightly-only, plain HTTP and no restart; upstream removed it wanting a non-Qt method, which this is.
 
 ## 9. Out of scope
@@ -288,7 +303,8 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 | INV-11 | lane `marker` |
 | INV-12 | **Partial:** lane `appimage` covers the rename, mode and restart target; a real AppImage restart is manual |
 | INV-13 | lanes `checksum`, `replace`, `cleanup` |
-| INV-14 | lane `memory` |
+| INV-14 | **Partial:** lane `memory` covers the sum; reading available memory and the reopen between blocks are not covered |
+| INV-15 | `libretro-common/samples/formats/r7z/` folder-info test |
 | D7 (never writes config, saves or assets) | lane `program_set` (Windows); the AppImage route writes one file by construction |
 
 ## 11. Cross-doc impact
@@ -296,6 +312,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 - `CHANGES.md` `# Future`: one user-visible entry when the feature lands on the PR branch.
 - `docs/private/ROADMAP.md`: RETR-0021 progress notes.
 - `docs/private/upstream-prs/README.md`: the self-updater PR, when opened; the redirect-guard PR is recorded there.
+- `libretro-common/` is vendored (project `CLAUDE.md`): `r7z_archive_folder_info` and its test go upstream in the self-updater PR, and the fork carries them only on that PR's way there.
 - No other spec binds the code this changes. `docs/private/specs/2026-04-27-tls-verification-opt-in-design.md` defines `tls_verify_mode`, which this reads and does not change.
 
 ## 12. Cold-eyes loop log
@@ -305,7 +322,7 @@ Rows live in `../reviews/2026-10-03-self-updater-loop-log.md`.
 ## 13. Resource cost
 
 - Disk, temporary: one downloaded file in staging (stable 1.22.2: Win64 `RetroArch.7z` 202,509,078 B; Win64 setup 209,037,907 B; Linux `RetroArch.7z` 179,361,448 B — buildbot listing, 2026-10-03) plus the extracted program set. Staging is removed on success and on failure.
-- Memory: downloads stream to disk (`task_push_http_download_file`), hashing reads the staging file back in chunks (`sha256_stream_*`). Unpacking a `.7z` holds the whole archive and one whole solid block in memory at once: about 600 MB at peak for stable 1.22.2 on either platform (§4.5, D10).
+- Memory: downloads stream to disk (`task_push_http_download_file`), hashing reads the staging file back in chunks (`sha256_stream_*`). Unpacking a `.7z` holds the whole archive, a copy of one block's packed bytes and that whole block in memory at once, the block twice over when it has more than one coder. For stable 1.22.2 the peak is about 780 MB on Linux and 750 MB on Win64 (§4.5, D10).
 - Network: one small JSON request per check, one HEAD per candidate file, then one download. The start-up check, when on, runs once per start; GitHub allows 60 unauthenticated requests an hour per address. Source: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
 - No new dependencies.
 

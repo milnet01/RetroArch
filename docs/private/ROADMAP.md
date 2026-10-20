@@ -1800,6 +1800,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   between blocks; twice the unpacked size for a BCJ2 block; on Windows
   the smaller of physical and process-virtual memory). Gate it with
   review-contract (fresh orchestrator), then build the apply step.
+  User decision 2026-10-20 (later the same day, replacing "estimate
+  block sizes from the entry list; no r7z API change"): no estimates.
+  r7z_archive.h's entry list gives each entry's block but not how the
+  block was packed, so a BCJ2 block cannot be known from it. The 7z
+  reader gains one read-only function reporting each block's unpacked
+  size, packed size and coder count; the memory check uses those real
+  numbers. The function goes upstream with the self-updater PR.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
