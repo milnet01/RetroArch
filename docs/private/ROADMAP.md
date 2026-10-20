@@ -786,9 +786,14 @@ These are exploitable now and have concrete reproducers.
   _(Bundle 64 — widened tree-wide to 51 sites across 8 files (materialui 5, ozone 26, xmb 10, gfx_widgets 2, gfx_display 4, gfx/widgets/leaderboard 1, gfx/widgets/screenshot 2, gfx/widgets/volume 1) and closed in `2137199165` on `local/fixes-2026-04`. Fix shape: integer-literal divisor → float literal (`/ 2` → `/ 2.0f`, also `/ 4`, `/ 6`, `/ 8`, `/ 12`) — division happens in float space, ½-px centring drift gone wherever result feeds a float coord. Behaviour-preserving in int-returning contexts. clang-tidy on the 8 files: 0 warnings post-Bundle. `make -j4 retroarch` clean, binary runs.)_
   Kind: implement.
 
-- 📋 [RETR-S0073] **TIDY — clang-tidy `readability-misleading-indentation` at `menu/drivers/materialui.c:12086`.**
+- 🚫 [RETR-S0073] **TIDY — clang-tidy `readability-misleading-indentation` at `menu/drivers/materialui.c:12086`.**
   The `break;` at the end of a switch-case body whose preceding statement is an unbraced `else materialui_set_node_playlist_icon(...);` (line 12082-12083). clang-tidy reads the `break;`'s indent against the unbraced `else` body and flags as misleading. **Likely FP per project style** — `CODING-GUIDELINES` (referenced from CLAUDE.md) explicitly mandates "No braces for single-statement blocks", and the `break;` is correctly indented relative to its enclosing `case`, not its preceding `else`. Right resolution is either an inline `// NOLINTNEXTLINE(readability-misleading-indentation)` with a one-line comment naming the no-brace style, OR a project-level `.clang-tidy` disabling the check (since the style guide makes it unactionable codebase-wide). Defer until clang-tidy `readability-*` is brought into the audit checks list — currently the audit-config only enables `bugprone-*` + `clang-analyzer-*`, so this never lights up under the audit pipeline (only under interactive clangd).
   Note (2026-06-30, Bundle 83): site line drifted — the unbraced-else-then-break pattern is now at materialui.c:12071-12075, not :12086 (:12086 is now an unrelated `size_t _len` decl in materialui_list_clear). Resolution constraint clarified: the suggested inline NOLINTNEXTLINE is NOT usable here — it is a //-style line comment, which this codebase's C89 rule (no //-only comments) forbids, and clang-tidy honours only //-style NOLINT. The sole clean fix is a repo-root .clang-tidy disabling readability-misleading-indentation tree-wide — a broad change for a check not in the audit pipeline (only bugprone-* + clang-analyzer-* run). Kept deferred per the bullet's own precondition (until readability-* enters the audit checks list).
+  2026-10-20: dropped as a false positive. The break; is indented to its
+  case, as CODING-GUIDELINES' no-braces style requires. readability-* is
+  not in the audit's check list, so nothing reports it, and the only
+  clean silencer, a repo-root .clang-tidy, is a fork-only file in
+  upstream's tree. Reopen if readability-* joins the audit checks.
   **Layman:** One spot in the touch-style menu code is indented in a way that makes it look like it does something it doesn't.
   Kind: refactor.
 
