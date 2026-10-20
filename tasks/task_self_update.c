@@ -43,6 +43,9 @@
 
 #include "../command.h"
 #include "../configuration.h"
+#ifdef HAVE_MENU
+#include "../menu/menu_driver.h"
+#endif
 #include "../msg_hash.h"
 #include "../runloop.h"
 #include "../self_update.h"
@@ -87,6 +90,35 @@ static void self_update_notify(const char *msg)
          MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
 }
 
+/* What the Update RetroArch page shows: set on the main thread at each
+ * step of a menu check or an update, never by the start-up check. */
+static enum self_update_status self_update_status_now =
+   SELF_UPDATE_STATUS_IDLE;
+static char self_update_status_line[256];
+
+static void self_update_set_status(enum self_update_status status,
+      const char *line)
+{
+#ifdef HAVE_MENU
+   struct menu_state *menu_st = menu_state_get_ptr();
+#endif
+   self_update_status_now = status;
+   strlcpy(self_update_status_line, line ? line : "",
+         sizeof(self_update_status_line));
+#ifdef HAVE_MENU
+   if (menu_st)
+      menu_st->flags |= MENU_ST_FLAG_ENTRIES_NEED_REFRESH
+                      | MENU_ST_FLAG_PREVENT_POPULATE;
+#endif
+}
+
+enum self_update_status task_self_update_status(const char **line)
+{
+   if (line)
+      *line = self_update_status_line;
+   return self_update_status_now;
+}
+
 static void self_update_check_done(self_update_check_t *state)
 {
    free(state);
@@ -109,7 +141,10 @@ static void self_update_check_failed(self_update_check_t *state,
    if (state->quiet)
       RARCH_WARN("[Self Update] %s\n", msg);
    else
+   {
       self_update_notify(msg);
+      self_update_set_status(SELF_UPDATE_STATUS_DONE, msg);
+   }
    self_update_check_done(state);
 }
 
@@ -129,6 +164,7 @@ static void self_update_report_available(const self_update_check_t *state,
    snprintf(msg, sizeof(msg),
          msg_hash_to_str(MSG_SELF_UPDATE_AVAILABLE), state->version, size);
    self_update_notify(msg);
+   self_update_set_status(SELF_UPDATE_STATUS_OFFER, msg);
 }
 
 static void cb_self_update_head(retro_task_t *task, void *task_data,
@@ -170,6 +206,7 @@ static void cb_self_update_head(retro_task_t *task, void *task_data,
             msg_hash_to_str(MSG_SELF_UPDATE_NOT_YET_AVAILABLE),
             state->version);
       self_update_notify(msg);
+      self_update_set_status(SELF_UPDATE_STATUS_DONE, msg);
       self_update_check_done(state);
       return;
    }
@@ -210,7 +247,10 @@ static void cb_self_update_release(retro_task_t *task, void *task_data,
       if (state->quiet)
          RARCH_LOG("[Self Update] %s\n", msg);
       else
+      {
          self_update_notify(msg);
+         self_update_set_status(SELF_UPDATE_STATUS_DONE, msg);
+      }
       self_update_check_done(state);
       return;
    }
@@ -508,6 +548,9 @@ bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
    if (!self_update_tls_allowed(ep, settings->uints.tls_verify_mode))
    {
       self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_TLS_REQUIRED));
+      if (!quiet)
+         self_update_set_status(SELF_UPDATE_STATUS_DONE,
+               msg_hash_to_str(MSG_SELF_UPDATE_TLS_REQUIRED));
       return false;
    }
 
@@ -527,7 +570,13 @@ bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
    }
    self_update_check_running = true;
    if (!quiet)
+   {
+      /* A new check replaces whatever was on offer. */
+      *self_update_offer_version = '\0';
       self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_CHECKING));
+      self_update_set_status(SELF_UPDATE_STATUS_CHECKING,
+            msg_hash_to_str(MSG_SELF_UPDATE_CHECKING));
+   }
    return true;
 }
 
@@ -729,6 +778,7 @@ static void self_update_apply_failed(self_update_apply_t *state,
    snprintf(msg, sizeof(msg),
          msg_hash_to_str(MSG_SELF_UPDATE_FAILED), reason);
    self_update_notify(msg);
+   self_update_set_status(SELF_UPDATE_STATUS_DONE, msg);
    self_update_apply_free(state);
    self_update_apply_running = false;
 }
@@ -1236,6 +1286,7 @@ static void cb_self_update_applied(retro_task_t *task, void *task_data,
    snprintf(msg, sizeof(msg),
          msg_hash_to_str(MSG_SELF_UPDATE_INSTALLED), state->version);
    self_update_notify(msg);
+   self_update_set_status(SELF_UPDATE_STATUS_INSTALLED, msg);
    self_update_apply_free(state);
    self_update_apply_running = false;
 }
@@ -1355,6 +1406,8 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
    if (!self_update_tls_allowed(ep, settings->uints.tls_verify_mode))
    {
       self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_TLS_REQUIRED));
+      self_update_set_status(SELF_UPDATE_STATUS_DONE,
+            msg_hash_to_str(MSG_SELF_UPDATE_TLS_REQUIRED));
       return false;
    }
 
@@ -1388,6 +1441,7 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
       snprintf(msg, sizeof(msg),
             msg_hash_to_str(MSG_SELF_UPDATE_NOT_WRITABLE), dir);
       self_update_notify(msg);
+      self_update_set_status(SELF_UPDATE_STATUS_DONE, msg);
       self_update_apply_free(state);
       return false;
    }
@@ -1400,6 +1454,9 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
       return false;
    }
    self_update_apply_running = true;
+   snprintf(msg, sizeof(msg),
+         msg_hash_to_str(MSG_SELF_UPDATE_DOWNLOADING), version);
+   self_update_set_status(SELF_UPDATE_STATUS_UPDATING, msg);
    return true;
 }
 

@@ -154,6 +154,22 @@ void *task_push_webdav_copy(const char *url, const char *dest, bool mute, const 
       retro_task_callback_t cb, void *userdata);
 
 #ifdef HAVE_SELF_UPDATER
+/* Where a menu check or an update stands, for the Update RetroArch
+ * page. */
+enum self_update_status
+{
+   SELF_UPDATE_STATUS_IDLE = 0,
+   SELF_UPDATE_STATUS_CHECKING,
+   SELF_UPDATE_STATUS_OFFER,     /* a newer release, sized: Update Now */
+   SELF_UPDATE_STATUS_UPDATING,
+   SELF_UPDATE_STATUS_INSTALLED, /* restart to use it */
+   SELF_UPDATE_STATUS_DONE       /* up to date, or stopped: see the line */
+};
+
+/* The current status; @line, when not NULL, receives the sentence the
+ * user was last shown for it.  Main thread only. */
+enum self_update_status task_self_update_status(const char **line);
+
 /* The install kind, decided once from this platform's facts. */
 enum self_update_kind task_self_update_kind(void);
 

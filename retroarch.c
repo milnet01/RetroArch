@@ -5258,8 +5258,13 @@ bool command_event(enum event_command cmd, void *data)
          break;
 #endif
 #ifdef HAVE_SELF_UPDATER
-      case CMD_EVENT_SELF_UPDATE_CHECK:
-         task_push_self_update_check(false);
+      case CMD_EVENT_SELF_UPDATE_APPLY:
+         {
+            char config_dir[PATH_MAX_LENGTH];
+            fill_pathname_basedir(config_dir, path_get(RARCH_PATH_CONFIG),
+                  sizeof(config_dir));
+            task_push_self_update_apply(config_dir);
+         }
          break;
 #endif
       case CMD_EVENT_MENU_RESET_TO_DEFAULT_CONFIG:

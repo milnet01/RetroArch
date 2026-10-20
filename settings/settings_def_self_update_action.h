@@ -8,7 +8,15 @@
  * string tables always carry this row via the strings pass. */
 #if defined(HAVE_SELF_UPDATER) || defined(SETTINGS_DEF_STRINGS_PASS)
 S_ACTION_EX(SELF_UPDATE,
-      "self_update", SD_FLAG_NONE, NULL, NULL, CMD_EVENT_SELF_UPDATE_CHECK,
+      "self_update", SD_FLAG_NONE, NULL, NULL, 0,
       "Update RetroArch",
       "Check for a newer stable RetroArch. Nothing is downloaded until you choose to update.")
+#endif
+/* Shown on the Update RetroArch page only while a newer release is on
+ * offer. */
+#if defined(HAVE_SELF_UPDATER) || defined(SETTINGS_DEF_STRINGS_PASS)
+S_ACTION_EX(SELF_UPDATE_NOW,
+      "self_update_now", SD_FLAG_NONE, NULL, NULL, CMD_EVENT_SELF_UPDATE_APPLY,
+      "Update Now",
+      "Download and install this release. RetroArch tells you when to restart.")
 #endif

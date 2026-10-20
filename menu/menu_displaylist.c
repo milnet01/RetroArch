@@ -15688,6 +15688,35 @@ static bool menu_displaylist_ctl_internal(
                info->flags     |= MD_FLAG_NEED_PUSH;
             }
             break;
+#ifdef HAVE_SELF_UPDATER
+         case DISPLAYLIST_SELF_UPDATE_LIST:
+            {
+               const char *line = NULL;
+               enum self_update_status status =
+                  task_self_update_status(&line);
+
+               menu_entries_clear(info->list);
+               /* What the check or the update last said: the release on
+                * offer, the step under way, or why it stopped. */
+               if (     line && *line
+                     && menu_entries_append(info->list, line, "", 0,
+                        MENU_INFO_MESSAGE, 0, 0, NULL))
+                  count++;
+               if (     status == SELF_UPDATE_STATUS_OFFER
+                     && MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
+                        MENU_ENUM_LABEL_SELF_UPDATE_NOW,
+                        PARSE_ACTION, false) == 0)
+                  count++;
+               else if (status == SELF_UPDATE_STATUS_INSTALLED
+                     && MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(info->list,
+                        MENU_ENUM_LABEL_RESTART_RETROARCH,
+                        PARSE_ACTION, false) == 0)
+                  count++;
+               info->flags |= MD_FLAG_NEED_REFRESH
+                            | MD_FLAG_NEED_PUSH;
+            }
+            break;
+#endif
          case DISPLAYLIST_CORE_RESTORE_BACKUP_LIST:
             menu_entries_clear(info->list);
             count                = menu_displaylist_parse_core_backup_list(

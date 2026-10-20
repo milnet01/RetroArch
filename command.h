@@ -165,8 +165,8 @@ enum event_command
    CMD_EVENT_CLOUD_SYNC_RESOLVE_KEEP_SERVER,
 #endif
 #ifdef HAVE_SELF_UPDATER
-   /* Check for a newer stable RetroArch */
-   CMD_EVENT_SELF_UPDATE_CHECK,
+   /* Download and install the release the check found */
+   CMD_EVENT_SELF_UPDATE_APPLY,
 #endif
    /* Shutdown the OS */
    CMD_EVENT_SHUTDOWN,

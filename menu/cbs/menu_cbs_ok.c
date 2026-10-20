@@ -467,6 +467,8 @@ static enum msg_hash_enums action_ok_dl_to_enum(unsigned lbl)
          return MENU_ENUM_LABEL_DEFERRED_CHEEVOS_VISIBILITY_SETTINGS_LIST;
       case ACTION_OK_DL_UPDATER_SETTINGS_LIST:
          return MENU_ENUM_LABEL_DEFERRED_UPDATER_SETTINGS_LIST;
+      case ACTION_OK_DL_SELF_UPDATE_LIST:
+         return MENU_ENUM_LABEL_DEFERRED_SELF_UPDATE_LIST;
       case ACTION_OK_DL_NETWORK_HOSTING_SETTINGS_LIST:
          return MENU_ENUM_LABEL_DEFERRED_NETWORK_HOSTING_SETTINGS_LIST;
       case ACTION_OK_DL_NETPLAY_KICK_LIST:
@@ -1842,6 +1844,7 @@ int generic_action_ok_displaylist_push(
       case ACTION_OK_DL_CHEEVOS_APPEARANCE_SETTINGS_LIST:
       case ACTION_OK_DL_CHEEVOS_VISIBILITY_SETTINGS_LIST:
       case ACTION_OK_DL_UPDATER_SETTINGS_LIST:
+      case ACTION_OK_DL_SELF_UPDATE_LIST:
       case ACTION_OK_DL_NETWORK_SETTINGS_LIST:
       case ACTION_OK_DL_NETWORK_HOSTING_SETTINGS_LIST:
       case ACTION_OK_DL_NETPLAY_KICK_LIST:
@@ -7045,6 +7048,18 @@ static int action_ok_delete_entry(const char *path,
 STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_cdrom_info_list, ACTION_OK_DL_CDROM_INFO_DETAIL_LIST)
 STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_push_core_restore_backup_list, ACTION_OK_DL_CORE_RESTORE_BACKUP_LIST)
 STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_push_core_delete_backup_list, ACTION_OK_DL_CORE_DELETE_BACKUP_LIST)
+
+#ifdef HAVE_SELF_UPDATER
+/* Update RetroArch: runs the check and opens the page that shows its
+ * result, then Update Now while a newer release is on offer. */
+static int action_ok_self_update(const char *path, const char *label,
+      unsigned type, size_t idx, size_t entry_idx)
+{
+   task_push_self_update_check(false);
+   return generic_action_ok_displaylist_push(path, NULL, label, type, idx,
+         entry_idx, ACTION_OK_DL_SELF_UPDATE_LIST);
+}
+#endif
 #if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
 STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_shader_preset_manager, ACTION_OK_DL_SHADER_PRESET_MANAGER_LIST)
 STATIC_DEFAULT_ACTION_OK_FUNC(action_ok_shader_parameters, ACTION_OK_DL_SHADER_PARAMETERS)
@@ -9817,6 +9832,9 @@ static int menu_cbs_init_bind_ok_compare_label(menu_file_list_cbs_t *cbs,
          {MENU_ENUM_LABEL_CORE_MANAGER_STEAM_ENTRY,            action_ok_push_core_information_steam_list},
 #endif
          {MENU_ENUM_LABEL_CORE_RESTORE_BACKUP_LIST,            action_ok_push_core_restore_backup_list},
+#ifdef HAVE_SELF_UPDATER
+         {MENU_ENUM_LABEL_SELF_UPDATE,                         action_ok_self_update},
+#endif
          {MENU_ENUM_LABEL_CORE_DELETE_BACKUP_LIST,             action_ok_push_core_delete_backup_list},
          {MENU_ENUM_LABEL_PLAYLIST_MANAGER_SETTINGS,           action_ok_push_playlist_manager_settings},
          {MENU_ENUM_LABEL_PLAYLIST_MANAGER_RESET_CORES,        action_ok_playlist_reset_cores},
