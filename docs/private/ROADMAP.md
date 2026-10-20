@@ -1822,11 +1822,21 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   for all of these. The bare-file-name entries may need the info files
   fixed upstream (libretro-core-info). Build on the fork, then one
   upstream PR, as with RETR-0026.
+  Checked 2026-10-20. core_updater_list.c fills each entry from
+  core_info_get_core_updater_info (core_info.c), which reads only
+  display_name, description, license and is_experimental. The info
+  files on the user's install carry manufacturer and systemname
+  (virtualxt: IBM / PC/XT; potator: Watara / Supervision; vircon32 and
+  wasm4: systemname only). Fix: read those two keys and show
+  "System: <manufacturer> <systemname>" in the entry's sublabel, beside
+  the licence (menu_cbs_sublabel.c). vita3k and xenia_edge have no .info
+  file at all in the user's info directory, so they show the file name;
+  that part needs the info files added upstream (libretro-core-info).
   **Layman:** The list of cores to download should say which console or computer each one emulates, not just its name and licence.
   Kind: feature.
   Source: user-request-2026-10-20.
 
-- 📋 [RETR-0039] **FEATURE — Core System Files Downloader: mark the files already downloaded.**
+- 📋 [RETR-0039] **FEATURE — Core System Files and Content Downloaders: mark what is already downloaded.**
   User request 2026-10-20, with a screenshot of Online Updater > Core
   System Files Downloader (Ozone): entries such as Dolphin.zip and
   PPSSPP.zip show no marker, while the Core Downloader marks installed
@@ -1835,6 +1845,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   a zip unpacks into files and folders under the system directory and
   leaves no record of itself. Pairs with RETR-0038. Build on the fork,
   then one upstream PR.
+  2026-10-20, widened at the user's request, with a second screenshot:
+  Online Updater > Content Downloader (Ozone) has the same gap. Its
+  top level lists folders (Arcade, Atari - 2600, Cave Story, DOOM, ...)
+  with no marker. The user reports that some entries show they were
+  downloaded and the rest do not; which ones, and why, is unchecked.
+  Find what each page already knows about a finished download, and
+  whether the partial marking is a bug in the existing code.
   **Layman:** The list of core support files should show which ones you already have, the way the core list does.
   Kind: feature.
   Source: user-request-2026-10-20.
