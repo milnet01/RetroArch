@@ -195,6 +195,11 @@ int self_update_replace(const struct self_update_fileops *ops,
 int self_update_appimage_swap(const struct self_update_fileops *ops,
       const char *new_file, const char *appimage);
 
+/* A staging folder's name: beside the program, and under %TEMP% for
+ * the installer route.  self_update_cleanup() removes no other. */
+#define SELF_UPDATE_STAGING_NAME     ".retroarch-update"
+#define SELF_UPDATE_STAGING_TMP_NAME "retroarch-update"
+
 /* Start-up: removes *.retroarch-old files from @exe_dir, its filters/
  * tree and platforms/, and removes each staging folder given; any of
  * the paths may be NULL.  Something still in use is left for the next

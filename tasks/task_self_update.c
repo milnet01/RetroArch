@@ -620,7 +620,7 @@ static void self_update_staging_dir(char *s, size_t len,
 #ifdef _WIN32
       case SELF_UPDATE_KIND_WIN_PORTABLE:
          if (fill_pathname_application_dir(dir, sizeof(dir)) && *dir)
-            fill_pathname_join_special(s, dir, ".retroarch-update", len);
+            fill_pathname_join_special(s, dir, SELF_UPDATE_STAGING_NAME, len);
          break;
       case SELF_UPDATE_KIND_WIN_INSTALLER:
       case SELF_UPDATE_KIND_WIN_INSTALLER_VISIBLE:
@@ -633,7 +633,7 @@ static void self_update_staging_dir(char *s, size_t len,
                break;
             if ((tmp = utf16_to_utf8_string_alloc(wtmp)))
             {
-               fill_pathname_join_special(s, tmp, "retroarch-update", len);
+               fill_pathname_join_special(s, tmp, SELF_UPDATE_STAGING_TMP_NAME, len);
                free(tmp);
             }
          }
@@ -645,7 +645,7 @@ static void self_update_staging_dir(char *s, size_t len,
             if (appimage && *appimage)
             {
                fill_pathname_basedir(dir, appimage, sizeof(dir));
-               fill_pathname_join_special(s, dir, ".retroarch-update", len);
+               fill_pathname_join_special(s, dir, SELF_UPDATE_STAGING_NAME, len);
             }
          }
          break;

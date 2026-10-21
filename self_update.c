@@ -728,8 +728,8 @@ static bool su_is_staging_name(const char *path)
    const char *name = path + strlen(path);
    while (name > path && !su_is_sep(name[-1]))
       name--;
-   return !strcmp(name, ".retroarch-update")
-       || !strcmp(name, "retroarch-update");
+   return !strcmp(name, SELF_UPDATE_STAGING_NAME)
+       || !strcmp(name, SELF_UPDATE_STAGING_TMP_NAME);
 }
 
 void self_update_cleanup(const struct self_update_fileops *ops,
