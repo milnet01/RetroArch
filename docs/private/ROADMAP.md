@@ -2059,6 +2059,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   undo of the placed new file fails, p keeps the new file and
   p.retroarch-old the old; p exists, so start-up cleanup deletes the
   only old copy. Awaiting the user's decision.
+  2026-10-21: INV-16 gate loop 6 (cdf462b48f) — §4.6 repair now removes
+  a stale p.retroarch-new first (fixed). One finding awaits the user: if
+  the rollback record cannot be made, p is present and start-up or a
+  retry still deletes the only old copy. INV-16 waits on that answer.
   **Layman:** If a Windows update fails and putting the old files back also fails, the next start can delete the only copy of a RetroArch file.
   Kind: fix.
   Source: review-code 2026-10-21 lane 1 (su_undo).
