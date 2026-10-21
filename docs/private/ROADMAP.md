@@ -1873,6 +1873,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   runs, since RetroArch is gone for a minute or more with nothing on
   screen. wintest cleaned up. Still to run: the Linux AppImage restart
   (INV-12) and the Update RetroArch page in a live Linux menu.
+  2026-10-21 review-readability on the self-updater (fixes branch @
+  1e0eb0b134): no HIGH, 7 MEDIUM, 18 LOW findings; lane returns in
+  ~/.local/share/claude-scratch/review-readability-2026-10-21/. User
+  rulings 2026-10-21: (1) code comments citing the private spec (spec
+  §4.5, §4.6, D5, "Windows portable step 3 and 4") are rewritten to
+  state the reason inline, since libretro never sees the spec; (2) the
+  four unrelated defines dab9d538f8 added to msg_hash_lbl_str.h
+  (KEYCHAIN_PASSPHRASE_STR, three MCP_SERVER_*_STR; upstream already has
+  them) stay out of any upstream PR. Findings to be closed via
+  close-findings once the fork-wide readability run also lands.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
