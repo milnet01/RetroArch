@@ -358,6 +358,7 @@ static dummy_res_t try_dummy(const rlzma_stream_t *s,
       RC_UPDATE_0_CHECK
 
       lit_mask  = ((uint32_t)0x100 << s->lp) - ((uint32_t)0x100 >> s->lc);
+      /* As in the real decoder below: the previous byte, wrapping. */
       lit_state = 0;
       if (s->total_pos != 0)
          lit_state = ((((uint32_t)s->total_pos << 8)
@@ -593,7 +594,10 @@ static int decode_real(rlzma_stream_t *s, size_t dic_limit,
          RC_UPDATE_0(prob)
 
          /* The first byte after a dictionary reset has no predecessor;
-          * its context is zero, exactly as in the one-shot decoder. */
+          * its context is zero, exactly as in the one-shot decoder.
+          * Otherwise the previous byte is the one before dic_pos, or,
+          * when the write position has just wrapped to 0, the last
+          * byte of the circular dictionary. */
          lit_state = 0;
          if (total_pos != 0)
             lit_state = ((((uint32_t)total_pos << 8)
