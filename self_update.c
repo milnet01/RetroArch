@@ -67,7 +67,9 @@ static bool su_win_path_eq(const char *a, size_t a_len,
    return true;
 }
 
-/* Does @uninstall (optionally quoted) name <dir>\uninstall.exe? */
+/* Does @uninstall name <dir>\uninstall.exe?  A quoted path may be
+ * followed by arguments ("...\uninstall.exe" /S), which are not part
+ * of it. */
 static bool su_uninstall_names(const char *uninstall, const char *dir)
 {
    static const char name[] = "uninstall.exe";
@@ -75,10 +77,13 @@ static bool su_uninstall_names(const char *uninstall, const char *dir)
    size_t len               = strlen(uninstall);
    size_t i;
 
-   if (len >= 2 && uninstall[0] == '"' && uninstall[len - 1] == '"')
+   if (uninstall[0] == '"')
    {
+      const char *end = strchr(uninstall + 1, '"');
+      if (!end)
+         return false;
       uninstall++;
-      len -= 2;
+      len = (size_t)(end - uninstall);
    }
    if (len <= name_len || !su_is_sep(uninstall[len - name_len - 1]))
       return false;

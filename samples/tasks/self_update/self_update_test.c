@@ -110,6 +110,12 @@ static void lane_kind(void)
    check(win_kind("C:\\RetroArch-Win64x", true, "C:\\RetroArch-Win64x\\uninstall.exe", true)
             == SELF_UPDATE_KIND_WIN_INSTALLER_VISIBLE,
          "kind: a folder that only starts with the silent one is elsewhere");
+   check(win_kind("C:\\RetroArch-Win64", true, "\"C:\\RetroArch-Win64\\uninstall.exe\" /S", true)
+            == SELF_UPDATE_KIND_WIN_INSTALLER,
+         "kind: arguments after the quoted path are not part of it");
+   check(win_kind("C:\\RetroArch-Win64", true, "\"C:\\RetroArch-Win64\\uninstall.exe", true)
+            == SELF_UPDATE_KIND_WIN_PORTABLE,
+         "kind: a quoted path with no closing quote names nothing");
 }
 
 /* ---- version ----------------------------------------------------- */
