@@ -1,0 +1,83 @@
+## Files read
+- `/mnt/Games/Scripts/Linux/ra-fixes/self_update.c`: 747 / 747 lines, as the `Read` tool displayed them.
+- `/mnt/Games/Scripts/Linux/ra-fixes/self_update.h`: 214 / 214 lines, as displayed. Line 214 shows as empty, so `wc -l` may say 213.
+- `l1-r7z-fork.diff`: 311 / 311 lines.
+- The four vendored r7z files were not read in full; the brief scoped them to the changed regions. I read the diff hunks plus:
+  - `r7z_lzma_stream.h` lines 160–200
+  - `r7z_lzma_stream.c` lines 540–575
+  - `r7z_archive.c` lines 2515–2550
+  - search hits with context in all three, and in `r7z_lzma2.c`.
+
+## What I started with
+- The review-lane agent prompt.
+- The global `~/.claude/CLAUDE.md`.
+- The user's email address, from harness context.
+- A SessionStart hook note saying the Ants MCP verbs are available.
+
+There was no project `CLAUDE.md`, no memory index and no git snapshot. No disagreement between the brief and the lane file needed resolving.
+
+## Summary
+This code is the decision-making part of RetroArch's self-updater. It works out:
+- what kind of install is running (AppImage, portable Windows, or installed Windows);
+- whether a newer stable release exists, and where to download it;
+- whether there is enough memory to unpack it.
+
+It also swaps old program files for new ones, and puts them all back if anything fails. It never touches the disk or network itself; the caller passes in the file operations it may use. The 7z changes let the updater ask an archive how much memory unpacking will need. They also fix the LZMA decoder so that each new block lands after the previous one instead of overwriting it.
+
+## Findings
+[Q4] MEDIUM `self_update.h:113,141,152,183,191` — `@preferred picks the small file of spec §4.5` / `Spec §4.5: true when…` / `Windows installer route, spec §4.6` / `Windows portable step 3 and 4` / `AppImage steps 2 and 3`
+- **Where a stranger gets stuck:** these comments point at a spec, and at numbered steps, that are not in the tree. The code is headed for upstream libretro, who never see that spec. A maintainer there cannot look up "§4.5" or "step 3 and 4".
+- **Why it matters:** these are the comments a maintainer would use to decide whether changing the memory sum or the replace order breaks a promise. With the source gone, they would have to guess, or ask.
+- **Fix:** state each rule in the comment itself, and drop the spec and step numbers.
+
+[Q1] MEDIUM `self_update.c:723-724` — `return !strcmp(name, ".retroarch-update") || !strcmp(name, "retroarch-update");`
+- **The duplication:** these two staging-folder names are a hand-kept copy of the names `tasks/task_self_update.c:602` and `:615` (and `:627`) create with `fill_pathname_join_special`.
+- **What a stranger would get wrong:** someone renaming the staging folder in the task file has no reason to look here. Cleanup would then quietly refuse to remove the renamed folder, and nothing fails, so the stale download stays on disk for good.
+- **Note:** the comment at `:716` says "the two names the updater gives them" but does not say where they are given.
+- **Fix:** define both names once in `self_update.h`, and use them in both files.
+- Searched: `retroarch-update` across the whole tree.
+
+[Q4] LOW-MEDIUM `r7z_lzma_stream.h:172-174` (an unchanged context line in the fork's hunk) — `Call this before the first block and at every LZMA2 state reset.`
+- **The conflict:** the fork's new text at `:187-188` says only `rlzma_stream_reset()` moves the write position back to the start. Its new comment in `rlzma_stream_reset_parts` says a whole-folder decode must not do that at a block boundary.
+- **What a stranger would get wrong:** someone following "call this at every LZMA2 state reset" would rewind `dic_pos` in the middle of a folder. That brings back the overwrite bug the fork just fixed.
+- **Actual practice:** LZMA2 chunk resets go through `rlzma_stream_reset_parts` (`r7z_lzma2.c:283`, `:346`). `rlzma_stream_reset` is called only from `rlzma2_dec_reset` (`r7z_lzma2.c:127`) and `decode_stage_begin` (`r7z_archive.c:2427`).
+- **Fix:** limit that sentence to starting a stream, and point chunk resets at `rlzma_stream_reset_parts`.
+- Searched: `rlzma_stream_reset\(` and `rlzma_stream_reset_parts\(` under `libretro-common`.
+
+[Q5] LOW `r7z_lzma_stream.c:600` (and its twin in `try_dummy`, `:364`) — `dic[(dic_pos ? dic_pos : dic_size) - 1]`
+- **The gap:** the new comments explain why `total_pos` replaced `dic_pos`. They do not explain the fallback to `dic_size`: when the write position has wrapped to 0, the previous byte is at the end of the circular window.
+- **Why it is new:** before the fork, `dic_pos == 0` meant "no previous byte". Now a non-zero `total_pos` with `dic_pos == 0` is a real case.
+- **What a stranger would get wrong:** this looks like a guard, and "simplifying" it to `dic[dic_pos - 1]` reads out of bounds.
+- **Fix:** a one-line comment on the wrap, at both copies.
+
+[Q5] LOW `self_update.c:328` — `arch = "x86_64";`
+- **The gap:** for an AppImage, the `x86_64` argument is silently overridden. The header (`:112-118`) documents that `@preferred` is ignored for installers, but says nothing about `x86_64` being ignored for AppImages.
+- **What a stranger would get wrong:** someone adding a 32-bit or ARM Linux build would expect the flag to carry through.
+- **Fix:** say in the header and at the line that only an x86_64 AppImage is published.
+
+[Q5] LOW `self_update.c:217` — `if (n < sizeof(out->tag) && strlen(s) == n)`
+- **The gap:** `strlen(s) == n` rejects a tag with an embedded NUL character. No comment says so.
+- **What a stranger would get wrong:** someone tidying it to `n < sizeof(out->tag)` alone would let a tag with a hidden NUL through, cut short at the NUL.
+- **Fix:** add a short comment naming the embedded-NUL case.
+
+[Q5] LOW `self_update.c:155-158` — `if (parts < 2) { out[0] = 0; return -1; }`
+- **The gap:** only this failure path resets the output. The early returns at `:143`, `:147` and `:152` leave `out` partly filled.
+- **What a stranger would get wrong:** they would assume a failed parse always leaves `out` all zero, which `:130` and this branch suggest.
+- **Fix:** either reset `out` on every failure, or say in the header that `out` is undefined on failure.
+
+## Candidates dismissed
+- **`self_update.c:186` `self_update_release_parse` (size):** its two halves (handle a value, recognise a key) are each commented. The nesting is a single key/type check, and I found no point where a reader loses the thread.
+- **`self_update.c:581` `self_update_replace` (size):** one loop with set-aside, make-folder and place steps, each commented, plus a commented rollback. Readable as it stands.
+- **`self_update.c:307` `self_update_file_url` (size):** a guard, one switch and two formats. The only issue is the arch override, filed above as Q5.
+- **`self_update.h:146` "64 bits":** accurate. `self_update.c:433` refuses a sum that would pass `UINT64_MAX`, and sets `*need` to `UINT64_MAX` as documented.
+- **`r7z_lzma_stream.h:38/39/56/60/64` numbers:** outside the fork's changed regions. The diff's hunks in that header start at line 173.
+
+## Correctness leads
+- `self_update.c:418-427`: the memory check counts the folder's final output size twice for any multi-coder folder. The comment says this covers "BCJ2's four inputs beside its output". But the four BCJ2 inputs (the coder outputs in `coder_unpack_sizes`) are not tied to the main output size (`f->unpack_size`, `r7z_archive.c:940`), so their total could exceed it. Searched: `unpack_size` and `coder_unpack_sizes` in `r7z_archive.c`.
+- `self_update.c:500-510` against `:523-554`: the marker records the install kind on its second line, but `self_update_marker_consume` never reads it. Searched: `self_update_marker_` across the tree; the only caller is `task_self_update.c:683`. I did not search for code that reads the marker file directly.
+- `self_update.c:630`: the `if (i < count)` test on the failure path is always true, because every `goto fail` is inside the loop. It is harmless dead code. Searched: none (all in this file).
+
+## Not checked
+- **The edited comment at `r7z_archive.c:2984-2986`** ("A shape the slicer will not take: a BCJ2 coder without four inputs") narrows the fallback to one cause. I confirmed that cause at `:2539-2540`. Other `R7Z_ERROR_UNSUPPORTED` returns (`:1533`, `:1631`, `:1701`, `:1982`) could also reach `decode_folder_slice`, and I did not trace them. If any can, the comment is incomplete; the header's wording ("A folder shape the slicer does not take") is the safer one.
+- **The rest of the four r7z files**, beyond the hunks and the slices listed above. The brief scoped them to the changed regions.
+- **`tasks/task_self_update.c`** beyond the search hits that confirm the Q1 finding.

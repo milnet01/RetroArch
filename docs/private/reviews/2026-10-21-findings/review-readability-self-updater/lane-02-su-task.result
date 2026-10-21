@@ -1,0 +1,118 @@
+I've read all the lane files and checked a few things outside them. Here is the report.
+
+## Files read
+- `tasks/task_self_update.c`: read in full, 1471 lines (`Read` also showed an empty line 1472 after the final newline).
+- `menu/menu_content_downloads.c`: read in full, 107 lines.
+- `menu/menu_content_downloads.h`: read in full, 46 lines.
+- `l2-glue-hunks.diff`: read in full, 623 lines.
+- Read only to confirm findings:
+  - `self_update.h` lines 20–213
+  - `self_update.c` `self_update_file_url`
+  - `qb/config.libs.sh` lines 915–945
+  - `Makefile.common` lines 1030–1050
+  - `griffin/griffin.c` lines 1615–1628
+  - `menu/cbs/menu_cbs_ok.c` lines 5770–5960
+
+## What I started with
+- The global `~/.claude/CLAUDE.md`, which was injected.
+- A SessionStart hook note saying the Ants MCP is connected.
+- The review-lane agent file, which is my system prompt.
+- No project `CLAUDE.md`, no memory index and no git snapshot.
+
+**Packet note:** `l2-glue-hunks.diff` also holds hunks that are not the self-updater's:
+- `MSG_TLS_VERIFY_FAILED/DISABLED`
+- `KEYCHAIN_PASSPHRASE_STR`
+- the `MCP_SERVER_*_STR` labels
+- the `content_path` NULL guard in `menu_displaylist.c`
+
+I left those out. I did review the Content Downloader hunks (`menu_cbs_ok.c` `cb_generic_download`, and the `DISPLAYLIST_CORE_CONTENT` part of `menu_displaylist.c`), because `menu_content_downloads.*` is in this lane.
+
+## Summary
+This code lets RetroArch update itself. It asks GitHub whether a newer stable release exists and checks how big the download is. When the user picks "Update Now", it downloads the file, checks it against a published checksum, unpacks it, and either swaps the program files in place or runs the Windows installer after RetroArch closes. When RetroArch starts, it clears away anything left over from an earlier update and says whether that update worked. A separate small piece keeps a list of which Content Downloader items have finished downloading, so they keep their "[#]" mark even after an archive is unpacked and deleted.
+
+## Findings
+
+[Q1/Q4] MEDIUM `tasks/task_self_update.c:277` — `state->preferred =    state->kind == SELF_UPDATE_KIND_APPIMAGE || state->kind == SELF_UPDATE_KIND_WIN_PORTABLE;`, and also `:1419` `state->from_archive = kind == SELF_UPDATE_KIND_WIN_PORTABLE || (kind == SELF_UPDATE_KIND_APPIMAGE && !preferred);`
+- **The problem:** two facts about each kind are written down twice. They are which kinds have a small "preferred" file, and whether that file is a .7z or a bare file. The other copy is the file table in `self_update_file_url` (in `self_update.c`). The file's opening comment, "Every decision is made by self_update.c", sends a stranger only to that table.
+- **The likely mistake:** if the buildbot's file layout changes (for example, the portable small file becomes a bare exe), a stranger edits `self_update_file_url` and misses lines 277 and 1419. The download would then be opened as a .7z, or the wrong first request made.
+- **Fix:** have `self_update.c` export a per-kind "has a small file / is an archive" query and call it here. Or correct the opening comment to name these two places.
+- Searched: read `self_update_file_url` in `self_update.c`.
+- I graded this MEDIUM rather than HIGH because the comment at 1418 hints at the rule.
+
+[Q4] LOW `tasks/task_self_update.c:18` — `Every decision is made by self_update.c; this file only gathers facts, makes the requests and reports.`
+- **The problem:** this file does decide things by kind:
+  - the staging folder for each kind (590–635)
+  - which kinds run an installer and quit (1193)
+  - which members of an archive to keep (pick_members, 840–866)
+  - the start-up check's TLS notice (see the next finding)
+- **The likely mistake:** a stranger adding a kind would trust this sentence and change only `self_update.c`.
+- **Fix:** reword the comment to say which decisions stay here.
+
+[Q4/Q5] LOW `tasks/task_self_update.c:550` — `self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_TLS_REQUIRED));`
+- **The problem:** this runs even when `quiet` is set. But the field comment at :72 says the start-up check should "report only a newer release", and :140 says it "stays quiet about a failure". The "TLS required" message is the one failure the start-up check still shows on screen, and no comment says why.
+- **The likely mistake:** a stranger tidying up quiet mode would wrap it in `if (!quiet)`, or would trust the comment at :72.
+- **Fix:** add a one-line why at 550, or widen the :72 comment.
+- This confirms dup:4c7a21e0bbe2 only in part (see Candidates dismissed).
+
+[Q1] LOW `tasks/task_self_update.c:1308` — `snprintf(reason, sizeof(reason), "download: HTTP %d", data->status);`
+- **The problem:** there are three copies of "HTTP status, or else a fallback reason": :134–137, :1308–1311 and :1378–1381. They have drifted apart. The check's copy passes through the transport's `err` text. The download and checksum copies throw `err` away and use fixed text.
+- **The likely mistake:** a stranger making the failure messages more useful would fix one copy.
+- **Fix:** one helper that takes a prefix and `err`.
+- Confirms dup:879cfacbff7e, with one more site at 134.
+
+[Q4] LOW `tasks/task_self_update.c:457` — `/* Static: gathered once, on the main thread, and kept while the decision reads them. */`
+- **The problem:** the decision (`self_update_kind_decide`) reads these values synchronously, inside this call. `uninstall_string`, a few lines below, is a plain heap value freed right after the call, which shows nothing keeps the pointers afterwards. So the stated reason for `static` does not hold. The real reason may be stack size.
+- **The likely mistake:** a stranger would think some code holds on to `env.exe_dir` later, and would not dare change it.
+- **Fix:** state the real reason, or drop `static`.
+
+[Q3] LOW `tasks/task_self_update.c:722` — `uint64_t archive_size;`
+- **The problem:** this holds the download's size for every route, including the bare AppImage and the installer, which are not archives. It also drives the progress bar at 1232.
+- **The likely mistake:** a stranger would think it is zero or unused when `!from_archive`, and could break progress or the READ stage.
+- **Fix:** rename it `download_size`.
+
+[Q3] LOW `tasks/task_self_update.c:1394` — `const char *version, bool preferred,`
+- **The problem:** `preferred` means "the small update file, not the full archive". That meaning is stated only at :73 and in `self_update.h`'s comment on `self_update_file_url`. In `task_push_self_update_apply_at`, and in `self_update_offer_preferred` at :84, the name reads like a user preference.
+- **The likely mistake:** a stranger wiring a new caller would guess its meaning wrong.
+- **Fix:** rename it `small_file` or `use_update_file`.
+
+[Q1] LOW `tasks/task_self_update.c:888` — `uint64_t key = e->size ? (uint64_t)e->folder + 1 : 0;`
+- **The problem:** the rule "an empty entry has no block, so its `folder` value means nothing" is written out three times: :888, :895 and :1151 (`if (e->size && ...)`). Only :881 says why.
+- **The likely mistake:** a stranger changing how empty or directory entries are handled would miss one copy.
+- **Fix:** a small `entry_block_key()` helper used at all three sites.
+
+[Q1/Q5] LOW diff `retroarch.c` hunks at `command_event` (`CMD_EVENT_SELF_UPDATE_APPLY`) and `rarch_main` — `fill_pathname_basedir(config_dir, path_get(RARCH_PATH_CONFIG), sizeof(config_dir));`
+- **The problem:** the code that writes the marker (apply) and the code that reads it (start-up) each work out the marker's folder separately. The two must stay identical, and nothing says so.
+- **The likely mistake:** if a stranger moves one, the "updated / not finished" message silently stops appearing.
+- **Fix:** one helper that returns the marker's folder.
+- This is two copies, so it sits at the edge of the Q1 rule. I filed it because the pair must agree, not merely look alike.
+
+[Q4] LOW `menu/cbs/menu_cbs_ok.c:5868` — `/* Content Downloader: record the download beside it, before extraction can delete it, ... */`
+- **The problem:** this code sits at `finish:`, after `task_push_decompress` has already been called (above, around 5820). It runs "before extraction" only because decompression is a queued task that runs later, and the comment does not say so.
+- **The likely mistake:** a stranger reading top to bottom would think the comment is false. Or they would move the record above the push and break the `goto finish` error paths.
+- **Fix:** add "(the decompress task runs later)".
+
+[Q3] LOW `menu/menu_content_downloads.h:42` — `bool menu_content_downloads_record(const char *dir, const char *name);`
+- **The problem:** "record" means three things here: the file-name constant `MENU_CONTENT_DOWNLOADS_RECORD`, the loaded text (the `record` parameter), and this function, where it is a verb meaning "append". Next to `_load`, which returns the record, a stranger would guess `_record` also returns it.
+- **Fix:** rename it `menu_content_downloads_add`.
+
+## Candidates dismissed
+- **`self_update_apply_step` (153 lines, nesting 5):** a switch over four stages, each a self-contained block. The enum comments at 713–716 name what each stage does. I found no point where the thread is lost.
+- **`self_update_pick_members` (87 lines):** two jobs, picking and sorting. Both have comments (814–817, 881–882). It is readable as it stands; the size is not a finding. Its key duplication is reported separately.
+- **`task_push_self_update_apply_at` (70 lines):** linear setup, with each early return easy to read.
+- **`cb_self_update_release` (69 lines):** linear, and the comments at 263 and 275 carry the two non-obvious branches.
+- **`task_self_update_startup` (64 lines):** the platform `#ifdef`s are short, and :657 explains why Windows cleans both staging folders.
+- **`self_update_kind_detect` (62 lines):** it gathers facts under `#ifdef`s, with comments on the registry view and the terminator.
+- **dup:4c7a21e0bbe2:** the difference (`if (!quiet)`) follows from the rule at :93–94 that the start-up check never sets status. The apply path has no quiet mode. This is not a divergence, but the quiet-mode notify gap is reported above.
+- **comment_claims :1330 "64 hex digits":** the code reads exactly characters 0–63 and rejects anything that is not hex. That matches the comment.
+- **comment_claims :1365 "404 means":** only 404 falls through to the download without a checksum, and every other failure stops. That matches the comment. Its "(D5)" label is noted under Not checked.
+
+## Correctness leads
+- `tasks/task_self_update.c:1403` — `task_push_self_update_apply_at` rejects a NULL `config_dir` but not an empty one. `self_update_write_marker` would then write `self_update.pending` into the current folder, while start-up skips an empty `config_dir`. Searched: none (I did not check whether `RARCH_PATH_CONFIG` can be empty).
+- `tasks/task_self_update.c:1425-1431` and `:1402-1405` — these failures return false without setting a status or notifying. The page keeps showing the OFFER, and "Update Now" appears to do nothing. Searched: none.
+- `tasks/task_self_update.c:1306` vs `:1367` — the download accepts any 2xx, but the checksum and HEAD steps accept only exactly 200. Searched: none.
+- `tasks/task_self_update.c:303-315` — `su_fs_read` silently cuts the file to `len` and reports success. A caller cannot tell a truncated read from a whole one. Searched: none.
+
+## Not checked
+- I did not judge the hunks in the packet outside this lane (TLS_VERIFY messages, KEYCHAIN, MCP_SERVER labels, the content_path guard).
+- `tasks/task_self_update.c` lines 587, 705, 786, 1017 and 1365 cite "spec §4.5/§4.6" and "D5". The brief says upstream never sees that spec. In each case the comment still states its reason, so I judged the citations as labels, not as the comment. The spec itself is not in my packet. Whether upstream will accept spec references is the orchestrator's call.
+- I did not confirm that the `menu_content_downloads_record` call in `cb_generic_download` sits inside `HAVE_NETWORKING`, the guard on its `#include`. The object file is built under the menu block in `Makefile.common`, and griffin includes it unconditionally. I did not open `settings_def_self_update*.h`, where Update Now is wired to `CMD_EVENT_SELF_UPDATE_APPLY`.
