@@ -917,18 +917,12 @@ static void webdav_read_cb(retro_task_t *task, void *task_data, void *user_data,
       return;
    }
 
-   /* On a 2xx, require the body length match the advertised
-    * Content-Length (or that the response was Transfer-Encoding:
-    * chunked).  Without this, a mid-download connection drop on a
-    * T_FULL response (no CL header) leaves status = 200 with a
-    * truncated body -- net_http.c terminates T_FULL on connection
-    * close and cannot tell that from a complete body.  Fail the
-    * response so the caller leaves the existing local file intact. */
-   if (found && !cloud_sync_http_body_is_framed(data->headers, data->len))
+   /* A body delimited only by the connection closing may have been
+    * cut off; do not let it replace the local file. */
+   if (found && !net_http_body_is_framed(data->headers))
    {
-      RARCH_WARN("[webdav] %s: short or unbounded response body "
-            "(status %d, %lu bytes); treating as failure\n",
-            webdav_cb_st->path, data->status, (unsigned long)data->len);
+      RARCH_WARN("[webdav] %s: response body has no Content-Length or "
+            "chunked framing; treating as failure.\n", webdav_cb_st->path);
       found   = false;
       success = false;
    }

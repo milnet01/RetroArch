@@ -959,18 +959,15 @@ static void s3_read_cb(retro_task_t *task, void *task_data, void *user_data, con
    else if (!success)
       s3_log_http_failure(s3_cb_st->path, data, err);
 
-   /* Defense-in-depth on top of the status check above: require that
-    * the body length match the advertised Content-Length (or chunked).
-    * See cloud_sync_http_body_is_framed for the threat model.  Skip
-    * for 4xx (404/400) since those are valid no-file/error responses
-    * with no local-file write -- the existing status-range guard below
-    * already excludes them. */
-   if (success && data && data->status >= 200 && data->status < 300
-         && !cloud_sync_http_body_is_framed(data->headers, data->len))
+   /* A body delimited only by the connection closing may have been
+    * cut off; do not let it replace the local file.  Only a 2xx
+    * writes one: success here also covers 404 and 400, which mean
+    * "not on the server". */
+   if (success && data->status >= 200 && data->status < 300
+         && !net_http_body_is_framed(data->headers))
    {
-      RARCH_WARN(S3_PFX "%s: short or unbounded response body "
-            "(status %d, %lu bytes); treating as failure\n",
-            s3_cb_st->path, data->status, (unsigned long)data->len);
+      RARCH_WARN(S3_PFX "%s: response body has no Content-Length or "
+            "chunked framing; treating as failure.\n", s3_cb_st->path);
       success = false;
    }
 

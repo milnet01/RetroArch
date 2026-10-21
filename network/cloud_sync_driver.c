@@ -12,9 +12,6 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <string/stdstring.h>
-#include <net/net_http.h>
-
 #include "cloud_sync_driver.h"
 #include "../list_special.h"
 #include "../retroarch.h"
@@ -142,28 +139,4 @@ bool cloud_sync_free(const char *path,
    if (driver && driver->cloud_sync_free)
       return driver->cloud_sync_free(path, cb, user_data);
    return false;
-}
-
-bool cloud_sync_http_body_is_framed(const char *headers, size_t body_len)
-{
-   size_t cl     = 0;
-   bool digits   = false;
-   const char *p;
-   if (!headers)
-      return false;
-   /* Chunked: net_http only leaves its chunk-length state on a
-    * complete zero-length chunk, so a mid-chunk drop fails the
-    * transfer before this is reached. */
-   if (!(p = net_http_header_value(headers, "Content-Length")))
-      return net_http_body_is_framed(headers);
-   for (; *p >= '0' && *p <= '9'; p++)
-   {
-      size_t d = (size_t)(*p - '0');
-      /* A length that does not fit cannot match the body. */
-      if (cl > ((size_t)-1 - d) / 10)
-         return false;
-      cl     = cl * 10 + d;
-      digits = true;
-   }
-   return digits && body_len == cl;
 }

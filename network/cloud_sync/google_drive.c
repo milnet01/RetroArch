@@ -1302,16 +1302,12 @@ static void gdrive_read_download_cb(retro_task_t *task, void *task_data,
    if (!success && data)
       gdrive_log_http_failure(cb_st->path, data);
 
-   /* Defense-in-depth on top of the status check above: require that
-    * the body length match the advertised Content-Length (or chunked).
-    * See cloud_sync_http_body_is_framed for the threat model. */
-   if (success && (!data
-         || !cloud_sync_http_body_is_framed(data->headers, data->len)))
+   /* A body delimited only by the connection closing may have been
+    * cut off; do not let it replace the local file. */
+   if (success && !net_http_body_is_framed(data->headers))
    {
-      if (data)
-         RARCH_WARN(GDPFX "%s: short or unbounded response body "
-               "(status %d, %lu bytes); treating as failure\n",
-               cb_st->path, data->status, (unsigned long)data->len);
+      RARCH_WARN(GDPFX "%s: response body has no Content-Length or "
+            "chunked framing; treating as failure.\n", cb_st->path);
       success = false;
    }
 
