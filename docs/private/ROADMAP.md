@@ -1856,6 +1856,23 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   routes (INV-10), a portable update with a DLL held open, the Linux
   AppImage restart (INV-12), and the Update RetroArch page in a live
   menu on Linux.
+  Progress (2026-10-21, later): the Windows manual recipes all pass on
+  wintest, user clicking over VNC. Portable update with Qt5Core.dll held
+  open (no FILE_SHARE_DELETE): refused, every file back, no leftovers
+  (INV-9). Silent installer route into C:\RetroArch-Win64 (INV-10): the
+  installer ran after RetroArch exited, 1.22.2 installed and restarted,
+  config and a planted save kept. Visible route (install in C:\RA-Other):
+  the installer opened with the folder named, user picked it, 1.22.2
+  installed and restarted. Not checkable until upstream ships the
+  updater: the "updated" marker report and the cleanup of
+  %TEMP%\retroarch-update after an installer run, because the restarted
+  program is the official 1.22.2 without the updater. 1e0eb0b134: the
+  failure line now opens "Update not installed:" and the file-in-use
+  reason says to close other programs (the old wording was misread as a
+  success). Suggestion, not built: a notice while the silent installer
+  runs, since RetroArch is gone for a minute or more with nothing on
+  screen. wintest cleaned up. Still to run: the Linux AppImage restart
+  (INV-12) and the Update RetroArch page in a live Linux menu.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
