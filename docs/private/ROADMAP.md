@@ -2069,6 +2069,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   is nothing to restart. (2) The start-up repair restores a stale
   .retroarch-old from an earlier update over a file this replace never
   touched. INV-16 is not ready to build until both are decided.
+  2026-10-22: INV-16 gate loop 8 (last pass, user ruling 2026-10-21)
+  ran, commit 0d69e9f480. 4 findings fixed in the spec; 1 awaits the
+  user: files a release adds have no .retroarch-old, so a start-up
+  repair leaves them beside the restored old build. Recommended: narrow
+  the spec's "not a mixed install" claim to replaced files. Build INV-16
+  once that is answered.
   **Layman:** If a Windows update fails and putting the old files back also fails, the next start can delete the only copy of a RetroArch file.
   Kind: fix.
   Source: review-code 2026-10-21 lane 1 (su_undo).
