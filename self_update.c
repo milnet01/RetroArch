@@ -663,10 +663,10 @@ int self_update_appimage_swap(const struct self_update_fileops *ops,
 struct su_walk
 {
    const struct self_update_fileops *ops;
-   char path[PATH_MAX_LENGTH];
    unsigned depth;
    bool all;     /* remove everything, not only *.retroarch-old */
    bool recurse;
+   char path[PATH_MAX_LENGTH];
 };
 
 static bool su_walk_cb(void *ctx, const char *name, bool is_dir)
