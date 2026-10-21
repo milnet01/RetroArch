@@ -2054,6 +2054,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   separately and the message says so. User approved 2026-10-21; the
   amendment is drafted as INV-16 in the spec, and review-contract is owed
   before the code.
+  2026-10-21: review-contract loop 5 on the INV-16 amendment
+  (5171eb6fbd): 3 fixed, 1 surfaced. Do not build INV-16 yet. When the
+  undo of the placed new file fails, p keeps the new file and
+  p.retroarch-old the old; p exists, so start-up cleanup deletes the
+  only old copy. Awaiting the user's decision.
   **Layman:** If a Windows update fails and putting the old files back also fails, the next start can delete the only copy of a RetroArch file.
   Kind: fix.
   Source: review-code 2026-10-21 lane 1 (su_undo).
