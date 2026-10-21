@@ -392,7 +392,10 @@ struct fs_ud
 {
    int renames;     /* renames done so far */
    int fail_rename; /* 1-based rename to fail, 0 for none */
+   int fail_rename2; /* a second one, for a failure inside the undo */
    int fail_remove; /* every remove fails while set */
+   int fail_mkdir;  /* every folder creation fails while set */
+   int no_replace;  /* rename refuses an existing target, as MoveFileW does */
 };
 
 static int fs_exists(void *ud, const char *p)
@@ -405,7 +408,10 @@ static int fs_exists(void *ud, const char *p)
 static int fs_rename(void *ud, const char *a, const char *b)
 {
    struct fs_ud *u = (struct fs_ud*)ud;
-   if (++u->renames == u->fail_rename)
+   ++u->renames;
+   if (u->renames == u->fail_rename || u->renames == u->fail_rename2)
+      return -1;
+   if (u->no_replace && fs_exists(ud, b))
       return -1;
    return rename(a, b);
 }
@@ -422,7 +428,8 @@ static int fs_mkdir_p(void *ud, const char *p)
 {
    char tmp[1024];
    char *s;
-   (void)ud;
+   if (ud && ((struct fs_ud*)ud)->fail_mkdir)
+      return -1;
    snprintf(tmp, sizeof(tmp), "%s", p);
    for (s = tmp + 1; *s; s++)
       if (*s == '/')
@@ -593,7 +600,7 @@ static int all_old(void)
 
 static void lane_replace(void)
 {
-   char dst[256], stage[256];
+   char dst[256], stage[256], record[256];
    size_t i;
    int all_new = 1;
    /* Renames per file: one to set the old one aside (when it exists),
@@ -604,6 +611,7 @@ static void lane_replace(void)
    path_in(dst, sizeof(dst), "");
    dst[strlen(dst) - 1] = '\0';
    path_in(stage, sizeof(stage), "stage");
+   path_in(record, sizeof(record), SELF_UPDATE_ROLLBACK_NAME);
 
    setup_replace();
    ud.renames = 0;
@@ -617,6 +625,7 @@ static void lane_replace(void)
    check(olds_in(".") == 3 && olds_in("filters/audio") == 1,
          "replace: each old file was set aside as .retroarch-old");
    check(file_is("retroarch.cfg", "mine") == 1, "replace: retroarch.cfg untouched");
+   check(!fs_exists(NULL, record), "replace: success -> the rollback record is gone");
 
    for (i = 0; i < sizeof(fail_at) / sizeof(fail_at[0]); i++)
    {
@@ -625,12 +634,69 @@ static void lane_replace(void)
       ud.renames = 0;
       ud.fail_rename = fail_at[i];
       snprintf(what, sizeof(what), "replace: rename %d fails -> error", fail_at[i]);
-      check(self_update_replace(&ops, dst, stage, set, SET_N) != 0, what);
+      check(self_update_replace(&ops, dst, stage, set, SET_N)
+            == SELF_UPDATE_REPLACE_UNDONE, what);
       snprintf(what, sizeof(what),
             "replace: rename %d fails -> every original back, no .retroarch-old", fail_at[i]);
       check(all_old(), what);
+      snprintf(what, sizeof(what),
+            "replace: rename %d fails -> the rollback record is gone", fail_at[i]);
+      check(!fs_exists(NULL, record), what);
    }
    ud.fail_rename = 0;
+
+   /* The last placing rename (9) fails; the undo then runs zlib1.dll's
+    * rename back (10), Added.filt's move to staging (11), then
+    * Echo.dsp's move to staging (12) and its old file's rename back
+    * (13).  Failing 12 leaves the new file in place; failing 13 puts
+    * the new file back after the old one could not return.  Either way
+    * Echo.dsp exists and its old bytes survive. */
+   for (i = 12; i <= 13; i++)
+   {
+      char what[96];
+      setup_replace();
+      ud.renames      = 0;
+      ud.fail_rename  = 9;
+      ud.fail_rename2 = (int)i;
+      snprintf(what, sizeof(what), "replace: undo rename %d fails -> partly undone", (int)i);
+      check(self_update_replace(&ops, dst, stage, set, SET_N)
+            == SELF_UPDATE_REPLACE_PARTLY_UNDONE, what);
+      snprintf(what, sizeof(what),
+            "replace: undo rename %d fails -> record kept, file present, old bytes kept", (int)i);
+      check(fs_exists(NULL, record) && file_is("filters/audio/Echo.dsp", "new") == 1
+            && file_is("filters/audio/Echo.dsp.retroarch-old", "old") == 1, what);
+   }
+   ud.fail_rename  = 0;
+   ud.fail_rename2 = 0;
+
+   /* A retry before the restart: the record blocks it outright. */
+   ud.renames = 0;
+   check(self_update_replace(&ops, dst, stage, set, SET_N)
+         == SELF_UPDATE_REPLACE_PARTLY_UNDONE && ud.renames == 0
+         && file_is("filters/audio/Echo.dsp.retroarch-old", "old") == 1,
+         "replace: record present -> partly undone, nothing renamed or deleted");
+
+   setup_replace();
+   ud.renames    = 0;
+   ud.fail_mkdir = 1;
+   check(self_update_replace(&ops, dst, stage, set, SET_N) == SELF_UPDATE_REPLACE_UNDONE
+         && ud.renames == 0 && all_old(),
+         "replace: the record cannot be made -> nothing renamed");
+   ud.fail_mkdir = 0;
+
+   /* A leftover from an earlier update that cannot be deleted. */
+   setup_replace();
+   write_file("old.dll.retroarch-old", "older");
+   ud.renames     = 0;
+   ud.fail_remove = 1;
+   check(self_update_replace(&ops, dst, stage, set, SET_N) == SELF_UPDATE_REPLACE_UNDONE
+         && ud.renames == 0 && !fs_exists(NULL, record)
+         && file_is("retroarch.exe", "old") == 1,
+         "replace: an undeletable leftover .retroarch-old -> nothing renamed, no record");
+   ud.fail_remove = 0;
+   check(self_update_replace(&ops, dst, stage, set, SET_N) == SELF_UPDATE_REPLACE_DONE
+         && file_is("old.dll.retroarch-old", "x") == -1,
+         "replace: a leftover .retroarch-old is deleted before the replace");
 
    /* A stale .retroarch-old from an earlier update is replaced. */
    setup_replace();
@@ -729,7 +795,7 @@ static void lane_appimage(void)
 
 static void lane_cleanup(void)
 {
-   char exe_dir[256], s1[256], s2[256], s3[256];
+   char exe_dir[256], s1[256], s2[256], s3[256], record[256];
    const char *staging[4];
 
    rm_rf(scratch);
@@ -755,12 +821,16 @@ static void lane_cleanup(void)
    write_file("temp/retroarch-update/run.cmd", "x");
    write_file("apps/.retroarch-update/new.AppImage", "x");
    write_file("apps/RetroArch.AppImage", "x");
+   write_file("ra/retroarch.exe.retroarch-new", "x");
 
-   self_update_cleanup(&ops, exe_dir, staging, 4);
+   check(!self_update_cleanup(&ops, exe_dir, staging, 4),
+         "cleanup: no record -> no repair reported");
 
    check(olds_in("ra") == 0 && olds_in("ra/filters/audio") == 0
          && olds_in("ra/platforms") == 0,
          "cleanup: .retroarch-old files removed from the folder, filters and platforms");
+   check(file_is("ra/retroarch.exe.retroarch-new", "x") == -1,
+         "cleanup: no record -> .retroarch-new removed");
    check(file_is("ra/saves/game.srm.retroarch-old", "user") == 1,
          "cleanup: nothing is touched outside the program folders");
    check(file_is("ra/retroarch.exe", "x") == 1 && file_is("apps/RetroArch.AppImage", "x") == 1,
@@ -771,6 +841,37 @@ static void lane_cleanup(void)
 
    self_update_cleanup(&ops, exe_dir, staging, 4);
    check(1, "cleanup: a second run with nothing to do returns");
+
+   /* A replace left its rollback record: start-up puts the old file
+    * back instead of deleting it.  The rename refuses an existing
+    * target, so the stale .retroarch-new must go first. */
+   path_in(record, sizeof(record), "ra/" SELF_UPDATE_ROLLBACK_NAME);
+   write_file("ra/retroarch.exe", "new");
+   write_file("ra/retroarch.exe.retroarch-old", "old");
+   write_file("ra/retroarch.exe.retroarch-new", "stale");
+   fs_mkdir_p(NULL, record);
+   ud.renames    = 0;
+   ud.no_replace = 1;
+   check(self_update_cleanup(&ops, exe_dir, NULL, 0),
+         "cleanup: record -> repair reported");
+   check(file_is("ra/retroarch.exe", "old") == 1 && olds_in("ra") == 0
+         && !fs_exists(NULL, record),
+         "cleanup: record -> the old file is back and the record is gone");
+
+   /* The old file's rename back (2) fails: the moved file returns. */
+   write_file("ra/retroarch.exe", "new");
+   write_file("ra/retroarch.exe.retroarch-old", "old");
+   fs_mkdir_p(NULL, record);
+   ud.renames     = 0;
+   ud.fail_rename = 2;
+   check(!self_update_cleanup(&ops, exe_dir, NULL, 0),
+         "cleanup: failed repair -> no repair reported");
+   check(file_is("ra/retroarch.exe", "new") == 1
+         && file_is("ra/retroarch.exe.retroarch-old", "old") == 1
+         && fs_exists(NULL, record),
+         "cleanup: failed repair -> the file is present and the record stays");
+   ud.fail_rename = 0;
+   ud.no_replace  = 0;
    rm_rf(scratch);
 }
 

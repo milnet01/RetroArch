@@ -193,11 +193,28 @@ struct self_update_fileops
    void *ud;
 };
 
+enum self_update_replace_result
+{
+   SELF_UPDATE_REPLACE_DONE = 0,
+   SELF_UPDATE_REPLACE_UNDONE,       /* failed; nothing is left changed */
+   SELF_UPDATE_REPLACE_PARTLY_UNDONE /* failed; the next start finishes the undo */
+};
+
+/* The rollback record: a folder in <dst> that exists while a replace is
+ * unfinished.  A folder, because the file operations can make one but
+ * cannot write a file. */
+#define SELF_UPDATE_ROLLBACK_NAME ".retroarch-rollback"
+
 /* Windows portable install: for each path in @rel (relative,
  * '/'-separated), moves <dst>/p aside to p.retroarch-old if it exists,
- * then moves <staging>/p to <dst>/p.  On any failure every move
- * already made is undone, in reverse, and -1 is returned. */
-int self_update_replace(const struct self_update_fileops *ops,
+ * then moves <staging>/p to <dst>/p.  First it deletes every leftover
+ * *.retroarch-old (see self_update_cleanup()) and makes the rollback
+ * record; it changes nothing if either fails, or if the record already
+ * exists.  On any failure every move already made is undone, in
+ * reverse.  The record is removed after a success or a full undo; an
+ * undo that fails part-way keeps it, so the next start can finish. */
+enum self_update_replace_result self_update_replace(
+      const struct self_update_fileops *ops,
       const char *dst, const char *staging,
       const char *const *rel, size_t count);
 
@@ -211,11 +228,14 @@ int self_update_appimage_swap(const struct self_update_fileops *ops,
 #define SELF_UPDATE_STAGING_NAME     ".retroarch-update"
 #define SELF_UPDATE_STAGING_TMP_NAME "retroarch-update"
 
-/* Start-up: removes *.retroarch-old files from @exe_dir, its filters/
- * tree and platforms/, and removes each staging folder given; any of
- * the paths may be NULL.  Something still in use is left for the next
- * start. */
-void self_update_cleanup(const struct self_update_fileops *ops,
+/* Start-up: removes *.retroarch-old and *.retroarch-new files from
+ * @exe_dir, its filters/ tree and platforms/, and removes each staging
+ * folder given; any of the paths may be NULL.  Something still in use
+ * is left for the next start.  While @exe_dir holds the rollback
+ * record, each p.retroarch-old is instead put back under p (a present
+ * p moves to p.retroarch-new), and the record goes once none is left.
+ * Returns true when it put any file back. */
+bool self_update_cleanup(const struct self_update_fileops *ops,
       const char *exe_dir, const char *const *staging, size_t count);
 
 /* Start-up: when @marker exists, reads it, compares its target with

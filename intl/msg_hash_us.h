@@ -31749,6 +31749,10 @@ MSG_HASH(
    "The update to RetroArch %s did not finish. RetroArch is still %s."
    )
 MSG_HASH(
+   MSG_SELF_UPDATE_ROLLED_BACK,
+   "The update did not finish, so RetroArch put the previous version back. Restart RetroArch to use it."
+   )
+MSG_HASH(
    MSG_SELF_UPDATE_DOWNLOADING,
    "Downloading RetroArch %s"
    )

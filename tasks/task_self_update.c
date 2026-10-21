@@ -672,7 +672,9 @@ void task_self_update_startup(const char *config_dir)
    char msg[256];
    unsigned current[4];
    const char *staging[2];
-   size_t count = 0;
+   size_t count  = 0;
+   bool repaired = false;
+   enum self_update_marker_result marker_result;
    enum self_update_kind kind = task_self_update_kind();
 #ifdef _WIN32
    char exe_dir[PATH_MAX_LENGTH];
@@ -698,7 +700,7 @@ void task_self_update_startup(const char *config_dir)
       staging[count++] = stage_exe;
    if (*stage_tmp)
       staging[count++] = stage_tmp;
-   self_update_cleanup(&su_fileops, exe_dir, staging, count);
+   repaired = self_update_cleanup(&su_fileops, exe_dir, staging, count);
 #else
    self_update_staging_dir(stage_app, sizeof(stage_app), kind);
    if (*stage_app)
@@ -706,13 +708,21 @@ void task_self_update_startup(const char *config_dir)
    self_update_cleanup(&su_fileops, NULL, staging, count);
 #endif
 
+   /* This process may be the build whose files were just moved aside,
+    * so the version it reports says nothing about what is installed. */
+   if (repaired)
+      self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_ROLLED_BACK));
+
    if (     !config_dir || !*config_dir
          || self_update_version_parse(PACKAGE_VERSION, current) != 0)
       return;
    fill_pathname_join_special(marker, config_dir, SELF_UPDATE_MARKER,
          sizeof(marker));
-   switch (self_update_marker_consume(&su_fileops, marker, current,
-            target, sizeof(target)))
+   marker_result = self_update_marker_consume(&su_fileops, marker, current,
+         target, sizeof(target));
+   if (repaired)
+      return;
+   switch (marker_result)
    {
       case SELF_UPDATE_MARKER_UPDATED:
          snprintf(msg, sizeof(msg),
@@ -1017,10 +1027,19 @@ static const char *self_update_install_files(self_update_apply_t *state)
    if (     !fill_pathname_application_dir(exe_dir, sizeof(exe_dir))
          || !*exe_dir)
       return "cannot find the RetroArch folder";
-   if (self_update_replace(&su_fileops, exe_dir, state->payload,
-            (const char *const*)state->rel, state->num_members) != 0)
-      return "another program is using one of RetroArch's files. "
-            "Nothing was changed. Close other programs and try again.";
+   switch (self_update_replace(&su_fileops, exe_dir, state->payload,
+            (const char *const*)state->rel, state->num_members))
+   {
+      case SELF_UPDATE_REPLACE_DONE:
+         break;
+      case SELF_UPDATE_REPLACE_PARTLY_UNDONE:
+         return "another program is using one of RetroArch's files, "
+               "and some files could not be put back yet. "
+               "Restart RetroArch to finish undoing the update.";
+      case SELF_UPDATE_REPLACE_UNDONE:
+         return "another program is using one of RetroArch's files. "
+               "Nothing was changed. Close other programs and try again.";
+   }
 #else
    char fresh[PATH_MAX_LENGTH];
    const char *appimage = getenv("APPIMAGE");

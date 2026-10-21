@@ -25,6 +25,7 @@
 #include "network/tls_config.h"
 
 #define SELF_UPDATE_OLD_SUFFIX ".retroarch-old"
+#define SELF_UPDATE_NEW_SUFFIX ".retroarch-new"
 
 const struct self_update_endpoints self_update_endpoints_default =
 {
@@ -583,34 +584,73 @@ static bool su_join(char *s, size_t len, const char *dir, const char *rel,
             suffix ? suffix : "")) != 0;
 }
 
+/* What a walk of the program folders does to each file it finds. */
+enum su_walk_mode
+{
+   SU_WALK_OLD = 0,   /* delete *.retroarch-old */
+   SU_WALK_LEFTOVERS, /* delete *.retroarch-old and *.retroarch-new */
+   SU_WALK_REPAIR,    /* put each *.retroarch-old back under its name */
+   SU_WALK_ALL        /* delete everything: a staging folder */
+};
+
+static bool su_program_walk(const struct self_update_fileops *ops,
+      const char *exe_dir, enum su_walk_mode mode, bool *repaired);
+
 /* Puts one file back: a placed new file returns to staging, then a
- * set-aside old file returns to its name. */
-static void su_undo(const struct self_update_fileops *ops, const char *dst,
+ * set-aside old file returns to its name.  Returns false when either
+ * rename fails.  Neither failure may leave the name empty: a new file
+ * that cannot leave stays, and keeps the old one aside; a new file
+ * whose old one cannot return goes back in. */
+static bool su_undo(const struct self_update_fileops *ops, const char *dst,
       const char *staging, const char *rel, bool placed, bool aside)
 {
    char cur[PATH_MAX_LENGTH], old[PATH_MAX_LENGTH], src[PATH_MAX_LENGTH];
    if (     !su_join(cur, sizeof(cur), dst, rel, NULL)
          || !su_join(old, sizeof(old), dst, rel, SELF_UPDATE_OLD_SUFFIX)
          || !su_join(src, sizeof(src), staging, rel, NULL))
-      return;
-   if (placed)
-      ops->rename(ops->ud, cur, src);
-   if (aside)
-      ops->rename(ops->ud, old, cur);
+      return false;
+   if (placed && ops->rename(ops->ud, cur, src) != 0)
+      return false;
+   if (aside && ops->rename(ops->ud, old, cur) != 0)
+   {
+      if (placed)
+         ops->rename(ops->ud, src, cur);
+      return false;
+   }
+   return true;
 }
 
-int self_update_replace(const struct self_update_fileops *ops,
+enum self_update_replace_result self_update_replace(
+      const struct self_update_fileops *ops,
       const char *dst, const char *staging,
       const char *const *rel, size_t count)
 {
    char cur[PATH_MAX_LENGTH], old[PATH_MAX_LENGTH], src[PATH_MAX_LENGTH];
+   char record[PATH_MAX_LENGTH];
    bool *aside;
+   bool undone = true;
    size_t i;
 
-   if (!ops || !dst || !staging || (count && !rel))
-      return -1;
+   if (     !ops || !dst || !staging || (count && !rel)
+         || !su_join(record, sizeof(record), dst,
+            SELF_UPDATE_ROLLBACK_NAME, NULL))
+      return SELF_UPDATE_REPLACE_UNDONE;
+   /* An earlier replace is unfinished; the next start completes it. */
+   if (ops->exists(ops->ud, record) == 1)
+      return SELF_UPDATE_REPLACE_PARTLY_UNDONE;
+   /* Every leftover goes first, so each *.retroarch-old found under the
+    * record later is one this replace set aside. */
+   if (!su_program_walk(ops, dst, SU_WALK_OLD, NULL))
+      return SELF_UPDATE_REPLACE_UNDONE;
    if (!(aside = (bool*)calloc(count ? count : 1, sizeof(*aside))))
-      return -1;
+      return SELF_UPDATE_REPLACE_UNDONE;
+   /* Made before the first rename, so a crash part-way is undone at the
+    * next start too. */
+   if (ops->mkdir_p(ops->ud, record) != 0)
+   {
+      free(aside);
+      return SELF_UPDATE_REPLACE_UNDONE;
+   }
 
    for (i = 0; i < count; i++)
    {
@@ -622,10 +662,7 @@ int self_update_replace(const struct self_update_fileops *ops,
       if (ops->exists(ops->ud, cur) == 1)
       {
          /* Windows renames a running exe or a loaded DLL but will not
-          * overwrite or delete it, so the old file is moved aside.  A
-          * stale one from an earlier update goes first. */
-         if (ops->exists(ops->ud, old) == 1)
-            ops->remove(ops->ud, old);
+          * overwrite or delete it, so the old file is moved aside. */
          if (ops->rename(ops->ud, cur, old) != 0)
             goto fail;
          aside[i] = true;
@@ -644,16 +681,21 @@ int self_update_replace(const struct self_update_fileops *ops,
          goto fail;
    }
    free(aside);
-   return 0;
+   ops->remove(ops->ud, record);
+   return SELF_UPDATE_REPLACE_DONE;
 
 fail:
    /* File i was not placed, though it may have been set aside. */
-   if (i < count)
-      su_undo(ops, dst, staging, rel[i], false, aside[i]);
+   if (i < count && !su_undo(ops, dst, staging, rel[i], false, aside[i]))
+      undone = false;
    while (i-- > 0)
-      su_undo(ops, dst, staging, rel[i], true, aside[i]);
+      if (!su_undo(ops, dst, staging, rel[i], true, aside[i]))
+         undone = false;
    free(aside);
-   return -1;
+   if (!undone)
+      return SELF_UPDATE_REPLACE_PARTLY_UNDONE;
+   ops->remove(ops->ud, record);
+   return SELF_UPDATE_REPLACE_UNDONE;
 }
 
 /* ---- AppImage ---------------------------------------------------- */
@@ -678,11 +720,58 @@ int self_update_appimage_swap(const struct self_update_fileops *ops,
 struct su_walk
 {
    const struct self_update_fileops *ops;
+   enum su_walk_mode mode;
    unsigned depth;
-   bool all;     /* remove everything, not only *.retroarch-old */
    bool recurse;
+   bool failed;   /* a delete or a rename did not happen */
+   bool repaired; /* a file was put back */
    char path[PATH_MAX_LENGTH];
 };
+
+static void su_walk_remove(struct su_walk *w)
+{
+   if (w->ops->remove(w->ops->ud, w->path) != 0)
+      w->failed = true;
+}
+
+/* @w->path is p.retroarch-old: rename p, if present, to p.retroarch-new,
+ * then the old file to p.  When the old file cannot move, p comes back,
+ * so the name is never left empty. */
+static void su_put_back(struct su_walk *w)
+{
+   const struct self_update_fileops *ops = w->ops;
+   char p[PATH_MAX_LENGTH], moved[PATH_MAX_LENGTH];
+   size_t len = strlen(w->path) - (sizeof(SELF_UPDATE_OLD_SUFFIX) - 1);
+   bool present;
+
+   memcpy(p, w->path, len);
+   p[len] = '\0';
+   if (!su_fit(moved, sizeof(moved), snprintf(moved, sizeof(moved), "%s%s",
+               p, SELF_UPDATE_NEW_SUFFIX)))
+   {
+      w->failed = true;
+      return;
+   }
+   if ((present = ops->exists(ops->ud, p) == 1))
+   {
+      /* A rename on Windows never replaces its target. */
+      if (ops->exists(ops->ud, moved) == 1)
+         ops->remove(ops->ud, moved);
+      if (ops->rename(ops->ud, p, moved) != 0)
+      {
+         w->failed = true;
+         return;
+      }
+   }
+   if (ops->rename(ops->ud, w->path, p) != 0)
+   {
+      if (present)
+         ops->rename(ops->ud, moved, p);
+      w->failed = true;
+      return;
+   }
+   w->repaired = true;
+}
 
 static bool su_walk_cb(void *ctx, const char *name, bool is_dir)
 {
@@ -704,34 +793,64 @@ static bool su_walk_cb(void *ctx, const char *name, bool is_dir)
          w->depth++;
          w->ops->list(w->ops->ud, w->path, su_walk_cb, w);
          w->depth--;
-         if (w->all)
+         if (w->mode == SU_WALK_ALL)
             w->ops->remove(w->ops->ud, w->path);
       }
    }
-   else if (w->all || su_ends_with_ci(name, n, SELF_UPDATE_OLD_SUFFIX))
+   else if (w->mode == SU_WALK_ALL)
       w->ops->remove(w->ops->ud, w->path);
+   else if (su_ends_with_ci(name, n, SELF_UPDATE_OLD_SUFFIX))
+   {
+      if (w->mode == SU_WALK_REPAIR)
+         su_put_back(w);
+      else
+         su_walk_remove(w);
+   }
+   else if (w->mode == SU_WALK_LEFTOVERS
+         && su_ends_with_ci(name, n, SELF_UPDATE_NEW_SUFFIX))
+      su_walk_remove(w);
 
    w->path[base] = '\0';
    return true;
 }
 
-static void su_walk(const struct self_update_fileops *ops, const char *dir,
-      const char *sub, bool all, bool recurse)
+/* Returns false when something the walk should have deleted or renamed
+ * is still there. */
+static bool su_walk(const struct self_update_fileops *ops, const char *dir,
+      const char *sub, enum su_walk_mode mode, bool recurse, bool *repaired)
 {
    struct su_walk w;
-   w.ops     = ops;
-   w.depth   = 0;
-   w.all     = all;
-   w.recurse = recurse;
+   w.ops      = ops;
+   w.mode     = mode;
+   w.depth    = 0;
+   w.recurse  = recurse;
+   w.failed   = false;
+   w.repaired = false;
    if (sub)
    {
       if (!su_join(w.path, sizeof(w.path), dir, sub, NULL))
-         return;
+         return false;
    }
    else if (strlcpy(w.path, dir, sizeof(w.path)) >= sizeof(w.path))
-      return;
+      return false;
    if (ops->exists(ops->ud, w.path) == 1)
       ops->list(ops->ud, w.path, su_walk_cb, &w);
+   if (repaired && w.repaired)
+      *repaired = true;
+   return !w.failed;
+}
+
+/* The program folders: the exe folder itself, and the filters/ and
+ * platforms/ trees. */
+static bool su_program_walk(const struct self_update_fileops *ops,
+      const char *exe_dir, enum su_walk_mode mode, bool *repaired)
+{
+   bool ok = su_walk(ops, exe_dir, NULL, mode, false, repaired);
+   if (!su_walk(ops, exe_dir, "filters", mode, true, repaired))
+      ok = false;
+   if (!su_walk(ops, exe_dir, "platforms", mode, true, repaired))
+      ok = false;
+   return ok;
 }
 
 /* A staging folder is removed only under one of the two names the
@@ -745,23 +864,34 @@ static bool su_is_staging_name(const char *path)
        || !strcmp(name, SELF_UPDATE_STAGING_TMP_NAME);
 }
 
-void self_update_cleanup(const struct self_update_fileops *ops,
+bool self_update_cleanup(const struct self_update_fileops *ops,
       const char *exe_dir, const char *const *staging, size_t count)
 {
+   char record[PATH_MAX_LENGTH];
+   bool repaired = false;
    size_t i;
    if (!ops)
-      return;
+      return false;
    if (exe_dir && *exe_dir)
    {
-      su_walk(ops, exe_dir, NULL,        false, false);
-      su_walk(ops, exe_dir, "filters",   false, true);
-      su_walk(ops, exe_dir, "platforms", false, true);
+      if (     su_join(record, sizeof(record), exe_dir,
+                  SELF_UPDATE_ROLLBACK_NAME, NULL)
+            && ops->exists(ops->ud, record) == 1)
+      {
+         /* A replace did not finish: its old files go back, and the
+          * record stays until every one has. */
+         if (su_program_walk(ops, exe_dir, SU_WALK_REPAIR, &repaired))
+            ops->remove(ops->ud, record);
+      }
+      else
+         su_program_walk(ops, exe_dir, SU_WALK_LEFTOVERS, NULL);
    }
    for (i = 0; staging && i < count; i++)
    {
       if (!staging[i] || !su_is_staging_name(staging[i]))
          continue;
-      su_walk(ops, staging[i], NULL, true, true);
+      su_walk(ops, staging[i], NULL, SU_WALK_ALL, true, NULL);
       ops->remove(ops->ud, staging[i]);
    }
+   return repaired;
 }
