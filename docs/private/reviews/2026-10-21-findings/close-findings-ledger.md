@@ -8,7 +8,7 @@ the user's ruled order (RETR-0021, 2026-10-21 ruling 3). Fixes are on
 |---|---|---|
 | Save-file data loss | closed | `ledger-save-file.json`; RETR-0009, RETR-0021 notes |
 | Cloud sync | closed: 13 fixed, 1 queued (RETR-0047), 1 out of scope queued (RETR-0048) | `ledger-cloud-sync.json` |
-| Self-updater | closed except RETR-0042 (spec amendment drafted, gate owed) | table below |
+| Self-updater | closed | table below |
 | Menu | not started | `review-code-leads/lane-04-menu-drivers.result`, `lane-05-menu-glue-frontend.result`; `review-readability-fork/return-L1-menu-drivers.md`, `return-L2-menu-glue.md` |
 | Replay / input | not started | `review-code-leads/lane-07-replay-runahead.result`; `review-readability-fork/return-L5-input-replay.md`, `return-L6-runloop-save-netplay.md` |
 | local-CI.sh | not started | `review-code-leads/lane-09-build-tooling.result`; `review-readability-fork/return-L9-build-tooling.md` |
@@ -20,7 +20,7 @@ Sources: `review-code-leads/lane-01..03`, `review-readability-self-updater/messa
 
 | Finding | Disposition |
 |---|---|
-| lane 1 su_undo (MEDIUM) | queued RETR-0042; spec amendment INV-16 drafted, review-contract owed before code |
+| lane 1 su_undo (MEDIUM) | fixed 0a5adc7473 (INV-16, gated in spec loops 5-8; RETR-0042 closed) |
 | lane 1 A2 quoted UninstallString | fixed 4a8a64a797; REG_EXPAND_SZ half queued RETR-0043 |
 | lane 1 A3 marker remove | fixed ad87ccbab7 |
 | lane 1 A5 struct order | fixed 629120f883 |

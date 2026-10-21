@@ -2040,7 +2040,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: fix.
   Source: user-report-2026-10-20.
 
-- 📋 [RETR-0042] **MEDIUM — Self-updater: a failed rollback can lose a program file at the next start.**
+- ✅ [RETR-0042] **MEDIUM — Self-updater: a failed rollback can lose a program file at the next start.**
   su_undo (self_update.c) ignores both rename results, so
   self_update_replace returns -1 whether the rollback worked or not. If
   putting p.retroarch-old back to p fails, the caller reports "file in
@@ -2075,6 +2075,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   repair leaves them beside the restored old build. Recommended: narrow
   the spec's "not a mixed install" claim to replaced files. Build INV-16
   once that is answered.
+  2026-10-22: fixed in ra-fixes 0a5adc7473 to the INV-16 the user
+  settled across four gate loops (5-8). The rollback record
+  (.retroarch-rollback folder) is made before the first rename; replace
+  refuses while it exists and clears leftover *.retroarch-old first;
+  su_undo never leaves a name empty; replace returns DONE / UNDONE /
+  PARTLY_UNDONE and the task words the third; start-up cleanup puts old
+  files back under the record and shows MSG_SELF_UPDATE_ROLLED_BACK. Red
+  first (replace 8 checks, cleanup 4), then green: self_update_test
+  plain/ASan/UBSan, self_update_net_test 79 checks, make -j4 retroarch,
+  local CI 5/5 on push. Not run: the Windows start-up notice, manual on
+  wintest (INV-16 Partial in §10).
   **Layman:** If a Windows update fails and putting the old files back also fails, the next start can delete the only copy of a RetroArch file.
   Kind: fix.
   Source: review-code 2026-10-21 lane 1 (su_undo).
