@@ -3525,6 +3525,15 @@ static void command_event_finish_content_deinit(void)
 
 }
 
+#ifdef HAVE_SELF_UPDATER
+/* The self-updater's marker lives beside the config file; start-up
+ * reads it from the same folder Update Now writes it to. */
+static void retroarch_self_update_dir(char *s, size_t len)
+{
+   fill_pathname_basedir(s, path_get(RARCH_PATH_CONFIG), len);
+}
+#endif
+
 bool command_event(enum event_command cmd, void *data)
 {
    struct rarch_state *p_rarch     = &rarch_st;
@@ -5261,8 +5270,7 @@ bool command_event(enum event_command cmd, void *data)
       case CMD_EVENT_SELF_UPDATE_APPLY:
          {
             char config_dir[PATH_MAX_LENGTH];
-            fill_pathname_basedir(config_dir, path_get(RARCH_PATH_CONFIG),
-                  sizeof(config_dir));
+            retroarch_self_update_dir(config_dir, sizeof(config_dir));
             task_push_self_update_apply(config_dir);
          }
          break;
@@ -6838,8 +6846,7 @@ int rarch_main(int argc, char *argv[], void *data)
 #ifdef HAVE_SELF_UPDATER
    {
       char config_dir[PATH_MAX_LENGTH];
-      fill_pathname_basedir(config_dir, path_get(RARCH_PATH_CONFIG),
-            sizeof(config_dir));
+      retroarch_self_update_dir(config_dir, sizeof(config_dir));
       task_self_update_startup(config_dir);
    }
    if (settings->bools.self_update_check_on_startup)
