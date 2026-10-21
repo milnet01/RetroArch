@@ -454,24 +454,30 @@ static char* s3_url_encode(const char *input)
    return output;
 }
 
-/* qsort comparator: SigV4 sorts query parameters by URL-encoded name
- * (then by URL-encoded value) in byte order. Names and values arrive
- * pre-encoded from s3_url_encode_query_value at the callers, so plain
- * strcmp on the raw "key=value" string gives the spec-mandated order
- * (strcmp compares byte-by-byte until a difference, which sorts the
- * key part first and uses the '=' / value as the natural tiebreaker). */
+/* qsort comparator: SigV4 sorts query parameters by URL-encoded name,
+ * then by URL-encoded value, in byte order.  Names and values arrive
+ * pre-encoded from s3_url_encode_query_value at the callers.  The
+ * names are compared on their own: on the whole "name=value" string,
+ * a name that extends another ("a1" after "a") would meet the '=' and
+ * sort first, since digits, '-', '.' and '%' all sort below '='. */
 static int s3_query_param_cmp(const void *a, const void *b)
 {
-   return strcmp(*(const char* const*)a, *(const char* const*)b);
+   const char *x  = *(const char* const*)a;
+   const char *y  = *(const char* const*)b;
+   size_t      xn = strcspn(x, "=");
+   size_t      yn = strcspn(y, "=");
+   int         r  = strncmp(x, y, xn < yn ? xn : yn);
+
+   if (r)
+      return r;
+   if (xn != yn)
+      return xn < yn ? -1 : 1;
+   return strcmp(x + xn, y + yn);
 }
 
-/* Canonicalize query string parameters per AWS SigV4 spec.
- * The earlier `return strdup(query_string)` was a TODO that worked
- * only by accident -- every existing caller in s3.c happens to pass
- * already-alphabetical parameters ("partNumber=N&uploadId=X" sorts
- * because 'p' < 'u'; lone "uploadId=X" is one parameter). The first
- * caller to pass two parameters out of order would silently produce
- * a SigV4 mismatch with no other symptom than HTTP 403 from S3. */
+/* Canonicalize query string parameters per AWS SigV4: split on '&',
+ * sort with s3_query_param_cmp, re-join.  Returns NULL only when out
+ * of memory; an empty query gives "". */
 static char* s3_canonicalize_query_string(const char *query_string)
 {
    size_t  i, count, total, pos;
@@ -796,9 +802,13 @@ static char* s3_calculate_signature_v4_with_time(const char *method, const char 
          ? "host;x-amz-content-sha256;x-amz-copy-source;x-amz-date"
          : "host;x-amz-content-sha256;x-amz-date", sizeof(signed_headers));
 
-   /* Build canonical query string */
-   if (query_string)
-      canonical_query_string = s3_canonicalize_query_string(query_string);
+   /* Build canonical query string.  Out of memory, the request is not
+    * signed at all: signing it with an empty query would only show up
+    * as a 403. */
+   if (query_string
+         && !(canonical_query_string =
+            s3_canonicalize_query_string(query_string)))
+      goto cleanup;
 
    /* Build canonical request */
    snprintf(canonical_request, sizeof(canonical_request),

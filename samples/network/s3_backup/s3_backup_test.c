@@ -313,6 +313,30 @@ static void test_no_backup_wanted(const char *tmp)
          "the server manifest must upload without a copy");
 }
 
+/* SigV4 sorts query parameters by name, then by value.  Sorting the
+ * whole "name=value" string puts "a1=2" before "a=1", because '1'
+ * sorts below '=', and S3 answers such a request with a 403. */
+static void test_query_order(void)
+{
+   static const char *cases[][2] = {
+      { "a1=2&a=1",                  "a=1&a1=2" },
+      { "a-b=1&a=2",                 "a=2&a-b=1" },
+      { "uploadId=x&partNumber=3",   "partNumber=3&uploadId=x" },
+      { "k=2&k=1",                   "k=1&k=2" },
+      { "",                          "" }
+   };
+   size_t i;
+
+   for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      char *got = s3_canonicalize_query_string(cases[i][0]);
+      CHECK(got && !strcmp(got, cases[i][1]),
+            "query \"%s\": sorted to \"%s\", SigV4 wants \"%s\"",
+            cases[i][0], got ? got : "(null)", cases[i][1]);
+      free(got);
+   }
+}
+
 int main(void)
 {
    char  tmp[64];
@@ -331,6 +355,7 @@ int main(void)
    test_nothing_to_keep(tmp);
    test_copy_fails(tmp);
    test_no_backup_wanted(tmp);
+   test_query_order();
 
    remove(tmp);
 
