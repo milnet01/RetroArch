@@ -280,10 +280,9 @@ static void cb_self_update_release(retro_task_t *task, void *task_data,
       return;
    }
 
-   /* Size the download before anything is offered.  An installer
-    * has no preferred file, so the first request is the only one. */
-   state->preferred =    state->kind == SELF_UPDATE_KIND_APPIMAGE
-                      || state->kind == SELF_UPDATE_KIND_WIN_PORTABLE;
+   /* Size the download before anything is offered: the smaller file
+    * first where there is one. */
+   state->preferred = self_update_has_small_file(state->kind);
    if (     !self_update_file_url(state->url, sizeof(state->url),
                state->ep, state->kind, state->version,
                SELF_UPDATE_X86_64, state->preferred)
@@ -1447,9 +1446,7 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
       return false;
    }
    state->kind         = kind;
-   /* An installer is run whole; the bare AppImage is the file itself. */
-   state->from_archive =    kind == SELF_UPDATE_KIND_WIN_PORTABLE
-                         || (kind == SELF_UPDATE_KIND_APPIMAGE && !preferred);
+   state->from_archive = self_update_file_is_archive(kind, preferred);
    strlcpy(state->version, version, sizeof(state->version));
    strlcpy(state->config_dir, config_dir, sizeof(state->config_dir));
 

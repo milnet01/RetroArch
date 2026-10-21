@@ -356,6 +356,19 @@ size_t self_update_file_url(char *s, size_t len,
             ep->files_base, version, tail));
 }
 
+bool self_update_has_small_file(enum self_update_kind kind)
+{
+   return    kind == SELF_UPDATE_KIND_APPIMAGE
+          || kind == SELF_UPDATE_KIND_WIN_PORTABLE;
+}
+
+bool self_update_file_is_archive(enum self_update_kind kind,
+      bool preferred)
+{
+   return    kind == SELF_UPDATE_KIND_WIN_PORTABLE
+          || (kind == SELF_UPDATE_KIND_APPIMAGE && !preferred);
+}
+
 /* ---- Windows program set ----------------------------------------- */
 
 static bool su_ends_with_ci(const char *s, size_t len, const char *suffix)

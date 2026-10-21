@@ -307,6 +307,20 @@ static void lane_tls(void)
          "tls: only a bare version reaches the URL");
    check(self_update_file_url(url, 20, ep, SELF_UPDATE_KIND_APPIMAGE, "1.23.0", true, false) == 0,
          "tls: a buffer too small gives no URL rather than a cut one");
+
+   /* Each must agree with the file names above. */
+   check(   self_update_has_small_file(SELF_UPDATE_KIND_WIN_PORTABLE)
+         && self_update_has_small_file(SELF_UPDATE_KIND_APPIMAGE)
+         && !self_update_has_small_file(SELF_UPDATE_KIND_WIN_INSTALLER)
+         && !self_update_has_small_file(SELF_UPDATE_KIND_WIN_INSTALLER_VISIBLE),
+         "file: the portable install and the AppImage have a smaller file");
+   check(   self_update_file_is_archive(SELF_UPDATE_KIND_WIN_PORTABLE, true)
+         && self_update_file_is_archive(SELF_UPDATE_KIND_WIN_PORTABLE, false)
+         && !self_update_file_is_archive(SELF_UPDATE_KIND_APPIMAGE, true)
+         && self_update_file_is_archive(SELF_UPDATE_KIND_APPIMAGE, false)
+         && !self_update_file_is_archive(SELF_UPDATE_KIND_WIN_INSTALLER, true)
+         && !self_update_file_is_archive(SELF_UPDATE_KIND_WIN_INSTALLER_VISIBLE, false),
+         "file: the .7z downloads are the ones to unpack");
 }
 
 /* ---- program_set ------------------------------------------------- */
