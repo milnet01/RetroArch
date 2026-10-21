@@ -1422,7 +1422,13 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
    }
 
    if (!(state = (self_update_apply_t*)calloc(1, sizeof(*state))))
+   {
+      snprintf(msg, sizeof(msg),
+            msg_hash_to_str(MSG_SELF_UPDATE_FAILED), "out of memory");
+      self_update_notify(msg);
+      self_update_set_status(SELF_UPDATE_STATUS_DONE, msg);
       return false;
+   }
    state->kind         = kind;
    /* An installer is run whole; the bare AppImage is the file itself. */
    state->from_archive =    kind == SELF_UPDATE_KIND_WIN_PORTABLE
@@ -1435,7 +1441,7 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
          || !self_update_file_url(state->url, sizeof(state->url), ep, kind,
                version, SELF_UPDATE_X86_64, preferred))
    {
-      self_update_apply_free(state);
+      self_update_apply_failed(state, "no download address");
       return false;
    }
    fill_pathname_join_special(state->download, state->staging,
