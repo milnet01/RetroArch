@@ -1,0 +1,128 @@
+# Self-updater task layer (RETR-0021): review of leads B1–G1
+
+**Line counts as read:** `tasks/task_self_update.c` 1471 lines, `self_update.h` 213 lines.
+
+**In my context when I arrived:** the global `~/.claude/CLAUDE.md`; the userEmail block; a SessionStart hook note about Ants MCP; the environment block. I had no project `CLAUDE.md` and no git snapshot. The shared context's project-contract summary came with the packet.
+
+**Disagreements and coverage notes:**
+- The spec sits outside the project root, so `read_regions` refused it. I read §4–§6 with native `Read`, as the brief allows ("read the sections that bear on each lead").
+- I never opened `self_update.c`, because no lead turned on its internals.
+- My exclusion was too narrow: the second search's `exclude_glob` covered `**/test/**` and `**/tests/**`, so it missed `samples/**/*_test.c`. Two filenames and their single matched lines from `samples/tasks/http/` reached me. I used nothing from them.
+
+## Leads
+
+### Lead B1
+**VERDICT: real (LOW)**
+
+- **Where:** `task_self_update.c:1196-1198`, `self_update_write_marker(state); if ((err = self_update_launch_installer(state))) return err;`.
+- **What happens:**
+  - The failure goes through the handler (`state->error`, line 1229) to `cb_self_update_applied`, then to `self_update_apply_failed` (line 1255).
+  - That removes staging only (line 777). The marker stays in place.
+  - `self_update_launch_installer` has three failure returns: "cannot prepare the installer" (line 1040), "out of memory" (line 1044) and "cannot start the installer" (line 1052).
+- **Result:** at the next start, `task_self_update_startup` (lines 683-696) reads the marker. The target is above the running version, so the user sees `MSG_SELF_UPDATE_NOT_FINISHED` for an update that never started. They were already told "update failed" in the previous session.
+- **Which side is wrong:** the code. Spec §4.6 step 2 orders "write the marker, then run.cmd", and the code follows that. The spec does not cover a failed launch. INV-11 scopes the marker to "any applied update", and this update was never applied.
+- **Fix:** write the marker after `CreateProcessW` succeeds. This is safe because run.cmd waits for this process to exit. Alternatively, delete the marker in this failure path.
+
+### Lead B2
+**VERDICT: real (LOW)**
+
+- **Where:** `task_self_update.c:197-209`. If `self_update_file_url(...)` or `task_push_http_transfer_with_user_agent(...)` returns false, the code falls through to `MSG_SELF_UPDATE_NOT_YET_AVAILABLE`.
+- **Why it matters:** spec §6 reserves "not available yet" for a HEAD 404 on the buildbot. A local failure to start the request gets reported as a server state. The sibling path at line 284 reports the same failure as `"request not started"`.
+- **Reachability:** rare. `file_url` returns 0 only for kind NONE or an overflowing buffer, so a failed push is the realistic way in.
+- **Fix:** if the re-request fails, call `self_update_check_failed(state, NULL, "request not started"); return;`.
+
+### Lead B3
+**VERDICT: real (LOW). Latent with the current `version.all`.**
+
+- **Where:** `task_self_update.c:236-239`. `|| self_update_version_parse(PACKAGE_VERSION, current) != 0)` leads to `"unreadable reply"`.
+- **Not reachable today:** `version.all:9` is `#define PACKAGE_VERSION "1.22.2"`, which parses.
+- **If it ever becomes reachable** (a non-numeric `PACKAGE_VERSION`):
+  - Every check blames the server.
+  - `task_self_update_startup` (lines 678-680) silently skips consuming the marker on every start.
+- **Fix:** split the condition and give the local case its own reason, for example "cannot read this build's version".
+
+### Lead B4
+**VERDICT: not a defect**
+
+- **Where:** `task_self_update.c:1451-1455`.
+- **The running flag:** `self_update_apply_failed` sets `self_update_apply_running = false` (line 783). It is already false at that point, so nothing changes. That function frees `state` and reports the failure, which is what this path needs.
+- **The folder removal:** this is the only early return that comes after `su_fs_mkdir_p` (line 1438) succeeded. The earlier returns happen before anything is created: an empty staging path or `file_url` failing (lines 1425-1431), and the mkdir failure itself.
+- **Matches the spec:** removing the folder it created is what INV-13 requires: "A failed or abandoned update … removes its staging folder".
+
+### Lead C1
+**VERDICT: real (LOW). The return value is ignored, and most of the false paths report themselves; three do not.**
+
+- **Where:** `retroarch.c:5266`, `task_push_self_update_apply(config_dir);`, return value discarded. Its only trigger is the Update Now action (`settings_def_self_update_action.h:19`). The menu shows Update Now only when the status is `SELF_UPDATE_STATUS_OFFER` (`menu_displaylist.c` `DISPLAYLIST_SELF_UPDATE_LIST`).
+- **The false paths, one by one:**
+  - **Certificate checking not required:** the user is told (lines 1409-1411: notification plus a DONE status). That answers the lead's example.
+  - **No release on offer, or a check or update already running:** none of these can coincide with OFFER. The offer version is set at the same moment as OFFER (lines 182-185). A new check clears it and sets CHECKING at the same time (lines 575-578). An update sets UPDATING.
+  - **Silent — `calloc` fails** (line 1416). Returns false and the status stays at OFFER.
+  - **Silent — the staging path is empty** (line 1425), for example when `GetTempPathW` fails on the installer route. Same result.
+  - **Silent — `self_update_file_url` returns 0** (line 1426). Same result.
+- **Effect:** in the three silent cases, Update Now does nothing and the page still offers it.
+- **The header is also incomplete:** `tasks_internal.h`'s comment lists only three false reasons.
+- **Fix:** report these paths through `self_update_apply_failed`-style notify and status DONE inside `_at`, and add them to the header comment.
+
+### Lead G1
+**VERDICT: not a defect.** The code follows its spec. The project rule's blanket wording disagrees with the spec, and that is a document-side matter.
+
+- **Only one place defines the macro:** `HAVE_SELF_UPDATER` is defined only in `Makefile.common:2458-2459`, under the configure gate. My search found no other definition in the tree outside sources that test it.
+- **Configure limits it to two targets:** `qb/config.libs.sh:1104-1120` keeps it on only for Win32 x86/x86_64 and Linux x86_64. Every other target gets `#error`, which forces `HAVE_SELF_UPDATER=no`.
+- **No griffin build can turn it on:** no griffin-based project (`pkg/msvc`, the console Makefiles) defines it. So the feature is absent from those builds by design, not by a link failure.
+- **The spec says so:** §4.1 states "They are not added to `griffin/griffin.c`: no console target qualifies". `Makefile.common:2456-2457` carries the same note.
+- **The divergence:** the project contract says "Adding a source file needs a griffin step" with no exception, and the spec carves one out. This belongs in the open questions; it is a matter for `review-contract`, not a code defect.
+
+## Critical (0)
+
+## High (0)
+
+## Medium (0)
+
+## Low / Info
+- [dim 7] [lead B1] `task_self_update.c:1196` — `self_update_write_marker(state);` comes before the launch. A failed launch leaves the marker, so the next start shows a false "did not finish" report. Fix: write the marker after a successful `CreateProcessW`.
+- [dim 7] [lead B2] `task_self_update.c:203-205` — a local failure to re-request is reported as "not yet available". Fix: route it to `self_update_check_failed(..., "request not started")`.
+- [dim 7] [lead B3] `task_self_update.c:237-239` — a local version-parse failure is reported as "unreadable reply". Latent with the current `version.all`. Fix: give it a separate reason.
+- [dim 7] [lead C1] `retroarch.c:5266` / `task_self_update.c:1415-1431` — the calloc, empty-staging and URL failures return false silently, and Update Now stays offered. Fix: notify and set DONE on those paths.
+- [dim 7] NEW `menu_cbs_ok.c` `action_ok_self_update` — `task_push_self_update_check(false);` ignores its return. With "check at start-up" on, opening Update RetroArch while the quiet start-up check is still running gets refused by `self_update_check_running` (line 544).
+  - Effect: no notification. The page shows the IDLE status with an empty line, so the user sees a blank page.
+  - Fix: when the push returns false, set DONE with a "check already running" line, or let the quiet check be upgraded to a visible one.
+- INFO: I did not open `self_update.c`, so `self_update_cleanup`'s name guard and `self_update_marker_consume` are taken from the header's description only. I did not check `frontend/drivers/platform_*.c` (the restart and installer hooks).
+- Other dimensions, one line each:
+  - **dim 2:** the divergences are the leads above. No other divergence from §4.5–§4.7 was found in the paths I read.
+  - **dim 2b:** none. Update Now, the start-up check and the menu entry all have callers (`settings_def_self_update_action.h:19`, `retroarch.c:6845`, `menu_displaylist.c`).
+  - **dim 3:** nothing found.
+    - Member paths are fixed or filtered: `"new.AppImage"`, or through `self_update_program_member`, which rejects `..`.
+    - The download name is `path_basename` of a URL built locally.
+    - The certificate-checking gate is in both entry points (lines 548 and 1407).
+    - A checksum other than 404 or 200 stops the update (lines 1376-1383), as INV-7 requires.
+  - **dim 4:** nothing found.
+  - **dim 5:** nothing found. Every error path I traced frees `state` exactly once.
+  - **dim 8:**
+    - The known http-task use-after-free trap is absent. No callback touches `task` beyond `task->state` in `cb_self_update_applied`, and that is its own task.
+    - Each `user_data` is either handed on to a successful push or freed — I checked every failure branch.
+    - The statics `buf` (line 1104) and `reason` (line 912) are used only by the worker-thread handler, and only one update can run at a time.
+    - `self_update_set_status` runs only from main-thread callbacks.
+  - **dim 9:** the AppImage file is fsynced before the rename (lines 1003-1007). The directory is not fsynced, but a lost rename leaves the old AppImage in place and staging is cleaned at the next start, so no data is lost. No finding.
+  - **dim 10–15:** N/A, because no observability, portability, accessibility, localisation or privacy contract was named.
+  - **dim 16:**
+    - Network failure, download failure and cancellation all reach `self_update_apply_failed`.
+    - A process killed mid-update leaves staging, and start-up cleanup removes it.
+    - Nothing further was found beyond the leads.
+  - **dim 17:** the marker has a format. An unparsable marker is removed according to the header, which I did not verify. The new setting defaults to false. Nothing found.
+
+## Covered by spec and looks correct
+I opened all of these and confirmed them against spec §4.5–§4.7, §6 and INV-5, -7, -13 and -14:
+- `task_self_update.c` in full: the check chain, the apply chain, the order of the extract and install stages, the memory gate per block, and the checksum handling.
+- The `retroarch.c` glue at lines 5260-5268 and 6838-6846.
+- The `menu_displaylist.c` self-update list.
+- The `Makefile.common` and `qb` gates.
+
+## Open questions
+- **The project rule and spec §4.1 disagree about griffin** (G1). Should the project contract's griffin rule carry the spec's "only for a target that can build it" exception? This is document-side, for `review-contract`.
+- **Line 550:** on the quiet start-up check, the certificate-checking refusal still notifies (`self_update_notify(...TLS_REQUIRED)` runs whether or not `quiet` is set). That means one message per start. The check-failed path stays silent instead ("nobody asked", line 140). Spec §4.9 says the start-up check produces a notification only for a newer release, while §6 says the refusal "names the TLS setting". I cannot tell which applies to the quiet case.
+- **Spec §4.6 installer step 2 writes the marker before run.cmd.** If B1 is fixed by moving the write, the spec's order changes too.
+
+## 3 items to fix first
+1. **B1:** the false "update did not finish" report after a failed installer launch. It is the only finding that tells the user something untrue about their install.
+2. **C1:** the three silent `false` returns behind Update Now. The user presses a button, nothing happens, and the button stays.
+3. **The new `action_ok_self_update` blank page.** It is reachable by anyone who has "check at start-up" on and opens the page early. The fix is one line.

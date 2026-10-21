@@ -1,0 +1,117 @@
+**Line counts of the subject files.** The brief told me to read each lead's enclosing function and its callers, not whole large files. Your agent file says to read the subject in full. **I followed the brief here: it sets the slice, and it does not ask me to certify anything I did not check.** So I read slices only. No subject file was read whole, and I have no whole-file line counts to give. I read:
+- `tasks/task_save.c` 405–505, 1988–2040, 2490–2520
+- `libretro-common/streams/file_stream.c` 2225–2295
+- `tasks/task_translation.c` 300–460 and 540–600
+- `ui/drivers/ui_qt_widgets.cpp` 530–605
+- `tasks/task_patch.c` 215–300
+- `gfx/common/wayland_common.c` 520–555
+- `cores/libretro-video-processor/video_processor_v4l2.c` 1260–1305, 1380–1415, 1500–1525
+- `gfx/drivers/vulkan.c` 7640–7692
+- `libretro-common/include/gfx/math/matrix_4x4.h` 36–46
+- `content.h` 44–58, `save.c` 550–585, `libretro-common/vfs/vfs_implementation.c` 2018–2130 and 2230–2285
+
+I also read the patch hunks for every lead file in L6, L7 and L8.
+
+**Already in my context when I arrived:** the global `~/.claude/CLAUDE.md`, a userEmail context block, and a SessionStart hook message about the Ants MCP verbs. There was no project `CLAUDE.md`. The project rules I hold come only from the shared context.
+
+---
+
+### Lead P1
+VERDICT: real. Fork code, but the cause is not the one the lead gives.
+- The fallback's comment says "the Win32 one refuses an existing destination". That is false against this tree.
+  - `retro_vfs_file_rename_impl` uses `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)` on Win32.
+  - Legacy, Xbox and Wii U builds move the old file aside and put it back on failure (`vfs_implementation.c` 2049–2130, 2245–2265).
+- So the first `filestream_rename` already replaces the file on every platform. The fallback at `task_save.c:427-432` only runs when a replacing rename failed for some *other* reason, such as a sharing violation from antivirus or a cloud-sync client.
+- It then deletes the good destination and retries the same failing operation. That turns a safe failure into the case where `.tmp` is the only copy.
+- Callers: `task_save_handler_finished:494` reports only "Failed to atomically replace save state". `content_auto_save_state:2035`, `task_save.c:2505` and `save.c:568` return false or `goto fail`.
+- I searched for any load or start-up code that reads `<path>.tmp` and found none.
+- The next save of the same path reopens `.tmp` for writing and truncates it, so the only copy is overwritten before the new write is known to be good.
+
+### Lead P2
+VERDICT: real. Same shape as P1, in vendored code.
+- `file_stream.c:2270-2285` has the identical delete-then-retry and the same false comment.
+- Callers: `save.c:574`, `task_save.c:2511`, `disk_index_file.c:434`, and the cloud-sync `webdav.c:948`, `s3.c:983`, `google_drive.c:1328`. Each takes only a bool back.
+- No caller or start-up path recovers `.tmp`.
+- This is also a fork-local change to `libretro-common/`, so it will be clobbered on re-sync.
+
+### Lead T1
+VERDICT: real (rendering defect), not out of bounds. The 54-byte offset and the no-padding assumption are upstream; the fork's size check and stride are consistent with them.
+- The BMP comes from the AI-service server's reply (`response->image_data`), which is untrusted.
+- The check bounds every read: `(uint64_t)image_width * image_height > (uint64_t)(new_image_size - 54) / 3`, with `new_image_size >= 54` checked first. So `memcpy(raw_image_data, raw_image_file_data + 54, w*h*3)` stays inside the buffer. The fork's `in_stride = -1 * (int)image_width * 3` matches the copied buffer.
+- A crafted file therefore cannot read past the end on this path.
+- What does break with a real BMP:
+  - Padded rows (where `w*3 % 4 != 0`) shear the image.
+  - `bfOffBits` (bytes 10–13) is ignored, so V4/V5 headers misplace the pixels.
+  - `biBitCount` is unchecked, so a 32-bit BMP is read as 24-bit.
+  - A negative height (top-down BMP) is rejected by the size check.
+
+### Lead T2
+VERDICT: upstream code, real but latent.
+- With `step < 1`, `val = (unsigned)(min + (double)j * step)` gives repeated values, so the drop-down gets duplicate items and `m_hash[val]` is overwritten.
+- The old float loop (`m_hash[i]`, `addItem(..., i)`) truncated the same way, so the fork did not introduce this.
+- I did not establish whether any uint setting has a fractional step (see Open questions).
+
+### Lead T3
+VERDICT: real, LOW.
+- I know of nothing in the BPS (beat) format that forbids a target size of zero. I did not open the spec text.
+- `if (modify_target_size == 0) return PATCH_TARGET_ALLOC_FAILED;` rejects such a patch with a misleading "alloc failed" error.
+- The NULL-write danger the comment gives is already covered by two things:
+  - the following `|| !bps.target_data` branch allocates;
+  - the per-action bound against `bps.target_length` (the comment at 290–300) stops any write when the length is 0.
+- Line 263 is BPS-only. IPS and UPS are not affected by it.
+
+### Lead V1
+VERDICT: not a defect in the code. The comment is wrong.
+- `wl_output_destroy` in client-side libwayland is a generated stub that calls `wl_proxy_destroy`. That only frees the proxy and sends no request. I am stating libwayland's behaviour from knowledge; I did not open its source.
+- No listener fires, so nothing can re-enter. Unlinking before freeing is still correct.
+- The added `if (oi)` / `if (oi->output)` guards are harmless.
+
+### Lead V2
+VERDICT: not a defect (debug output only).
+- Both callers re-queue the buffer before calling `v4l2_frame_times`:
+  - `source_v4l2_normal`: `VIDIOC_QBUF` at about line 1403, then `v4l2_frame_times(bufcp)` at 1407;
+  - `source_v4l2_alternate_hack`: QBUF before 1517.
+- So no buffer is lost on that return.
+- When `strdup` fails, `ft_fcount++` has already run but `ft_favg` is not updated. Only the "On"-gated printout is skewed.
+
+### Lead V3
+VERDICT: not a defect.
+- `math_matrix_4x4` is `{ float data[16]; }` (matrix_4x4.h:41–43). It has no padding, so `sizeof(quad->mvp->data) == sizeof(*quad->mvp)`.
+- The copy (7666), the descriptor range (7677) and `vk->tracker.mvp = *quad->mvp` (7688) all agree.
+- This only becomes a risk if the struct grows, and it has not.
+
+---
+
+## Critical (0)
+
+## High (0)
+
+## Medium (2)
+- [dim 9] [lead P1] `tasks/task_save.c:430` — `filestream_delete(path);` — The rename it falls back from already replaces the destination on every platform. So this delete only runs after a failure that deleting won't fix, and it destroys the last good save. The data is then left in `.tmp`, which nothing loads and the next save truncates. — fix: drop the delete-and-retry and leave both files in place on failure. Also correct the comment about Win32.
+- [dim 9] [lead P2] `libretro-common/streams/file_stream.c:2272` — `filestream_delete(path);` — Same defect, reached from SRAM saves, the disk index and cloud sync. — fix: the same, and send it upstream so a re-sync does not undo it.
+
+## Low / Info
+- [dim 2] [lead T1] `tasks/task_translation.c:444` — `raw_image_file_data + 54,` — The fixed offset and no row padding misrender a standard padded BMP, or any BMP with a larger header. — fix: read `bfOffBits` and `biBitCount`, use a stride of `((w*3+3)&~3)`, and bound-check against both.
+- [dim 3] `tasks/task_translation.c:368-373` and `:446-448` (upstream) — `raw_image_file_data[1] == 'P' && ... [3] == 'G'` — Bytes 0–3 are read with only `image_size > 0` checked, so a reply of 1–3 bytes reads past the end. — fix: require `new_image_size >= 4` (PNG needs 24 before it reads the header at 16–23).
+- [dim 2] `tasks/task_translation.c:553` (upstream) — `scaler->out_stride = VIDEO_SCALE_W(dims);` — Scaler strides are in bytes (`output += out_stride >> 1` in `pixconv.c`). The RGB565 stride should be `W*2`, so rows overlap and half the frame is never written. The XRGB branch correctly uses `pitch`. — fix: `scaler->out_stride = (int)pitch;`
+- [dim 2] [lead T3] `tasks/task_patch.c:263` — `if (modify_target_size == 0) return PATCH_TARGET_ALLOC_FAILED;` — rejects a format-valid empty target with the wrong error. — fix: remove it (writes are already bounded), or return `PATCH_PATCH_INVALID`.
+- [dim 2] [lead V1] `gfx/common/wayland_common.c:538-540` — the comment claims a re-entrancy danger that `wl_output_destroy` cannot cause. Doc-side; the code is right. — fix: reword the comment.
+- [dim 2] [lead T2] `ui/drivers/ui_qt_widgets.cpp:588` — `unsigned val = (unsigned)(min + (double)j * step);` — duplicate items when the step is below 1 (upstream behaviour). — fix: skip a `val` equal to the previous one.
+- INFO: I did not open the BPS spec text, the libwayland source, or `menu_setting.c`. I used no `exclude_glob` on two searches limited by glob to non-test files.
+
+## Covered by spec and looks correct
+- `task_save_handler_finished`'s choice of branch (error → delete `.tmp`; path too long → error).
+- The bounds of the translation BMP copy and the stride the fork set for the input.
+- The order of `vulkan_draw_quad`'s descriptor compare, copy and tracker update.
+- The V4L2 re-queue order on both callers.
+- The order of the Wayland output teardown.
+
+## Open questions
+- On Windows, after `DeleteFile` on a file someone has open with `FILE_SHARE_DELETE`, does `path_is_valid(path)` still return true? If it does, the "keep the only copy" check deletes `.tmp` too, and both copies are lost.
+- Does any uint setting with `SD_FLAG_ENFORCE_MAXRANGE` have a step below 1, or a huge max? A huge max would make `populate` add up to `INT_MAX` items.
+- Do real AI-service servers send padded or V5-header BMPs? That decides how often T1 shows up.
+
+## 3 items to fix first
+1. **P1:** the delete-then-retry in `content_replace_file` can destroy save states, and it is on the main save path.
+2. **P2:** the same in `filestream_write_file_atomic`, which also covers SRAM and cloud sync. The fix needs to go upstream as well.
+3. **The short-reply read past the end in `task_translation.c`:** it is reachable from untrusted server data, and the fix is one bounds check.

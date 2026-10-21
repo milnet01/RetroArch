@@ -1,0 +1,112 @@
+**Line counts, as read.** I read both lane diffs in full with `Read`: `patch-L2-menu-glue.diff` (635 lines) and `patch-L4-frontend-drivers.diff` (367 lines). I read the source files only in slices: each lead's enclosing function, its binding site and its callers, as the brief directed. So I have no whole-file line counts for `menu_cbs_scan.c`, `menu_explore.c`, `menu_setting.c`, `configuration.c`, `cheat_manager.c` or `retroarch.c`.
+
+**Disagreement resolved.** The lane file says to read the subject in full. The brief says to read enclosing functions and not whole large files. I followed the brief, so this review covers only the slices cited below.
+
+**Already in my context on arrival.** The global `~/.claude/CLAUDE.md`, a user-email context note, a SessionStart hook message about the Ants MCP, and environment details. There was no project `CLAUDE.md` and no git snapshot. The shared context carries the project contract, taken from its `CLAUDE.md`.
+
+**Search exclusions.** Every project-wide search passed `exclude_glob` for the test tree (`tests/**`, `**/test/**`, `*_test.*`, `test_*`); the last one also excluded `samples/**`. One `Grep` fallback ran against `configuration.c` only, so no test tree was in reach. I opened no test files.
+
+### Lead G1
+VERDICT: **upstream code, not a defect** (latent).
+- `menu_cbs_scan.c:191-193`: `type <= MENU_SETTINGS_INPUT_DESC_END` → `input_remap_ids[user_idx][key] = RARCH_UNMAPPED`.
+- `menu_driver.h:267` gives `END = BEGIN + ANALOG_BIND_LIST_END*MAX_USERS`, so `type == END` would give `user_idx == MAX_USERS`, one row out of bounds. The lead's arithmetic is right.
+- No entry carries that type, though. The only producer is `menu_displaylist.c:14439`, which emits `BEGIN + port*RARCH_ANALOG_BIND_LIST_END + retro_id`. There, `j < RARCH_ANALOG_BIND_LIST_END` and `retro_id = input_config_bind_order[j]`, so the largest value is `END-1`.
+- `END` is a gap value: `KBD_BEGIN` is `END+1`.
+- The fork added only the compile-time typedefs (lines 48-52), and those do not catch this off-by-one.
+- The same inclusive `<= END` appears in `menu_cbs_right.c:1233`, `_left.c:1365`, `_start.c:1018`, `_ok.c:10098` and `ozone.c:8687`. It is harmless for the same reason.
+
+### Lead G2
+VERDICT: **upstream code, not a defect.**
+- `menu_explore.c:1270`: `unsigned prev_type = menu_stack->list[menu_stack->size - 2].type;`
+- This runs only when `closed_type >= EXPLORE_TYPE_FIRSTITEM || == EXPLORE_TYPE_FILTERNULL`.
+- `explore_cancel` is bound only on explore entries (`explore_menu_entry`, line 1305).
+- A list of that type exists only because `explore_action_ok` pushed it, via `generic_action_ok_displaylist_push`, on top of an existing list.
+- The root of the stack is `MENU_EXPLORE_TAB` or `MENU_SETTING_HORIZONTAL_MENU`, and "depth 1 is never popped" (`menu_displaylist_explore`, around line 1707). So `size >= 2` holds whenever this line is reached.
+
+### Lead G3
+VERDICT: **upstream code, not a defect.**
+- `menu_setting.c:3503`: `if (config_get_ptr()->arrays.cheevos_token[0])`
+- `config_get_ptr()` returns `config_st` (`configuration.c:1210`), which is NULL only before `retroarch_config_init` (line 11190) and after `retroarch_config_deinit`.
+- That teardown runs in `main_exit` (`retroarch.c:6609`), after `RARCH_CTL_MAIN_DEINIT` (around line 6555) and after the drivers are torn down.
+- A setting's value is rendered only while the menu is alive, so this line cannot see NULL.
+- The fork's added NULL guard at 3507 is also close to a no-op: when the string is non-NULL, that point is reached only with `string[0] == '\0'`. Reading the function turned up a different defect; see N1.
+
+### Lead F1
+VERDICT: **real**, but as a weak guard rather than a current overflow.
+- `configuration.c:2007`: `assert(count <= SETTINGS_ARRAY_COUNT_MAX);`. The same holds at 2121, 2958, 3594, 4340, 4357 and 5618.
+- `GENERAL_SETTING` (line 965) writes `tmp[count]` with no bound, so the assert fires only after the heap write.
+- Under `-DNDEBUG` (dingux, webos, miyoo, libogc) the assert is gone entirely.
+- Those builds have their own `HAVE_*` sets, which desktop debug builds do not exercise.
+- I did not establish today's row counts. `populate_settings_bool` has large gaps (2288→2848) that are probably X-macro includes, so a grep count would be unsound. Whether any build overflows now is an open question.
+
+### Lead F2
+VERDICT: **upstream code, real.**
+- In the `bits < 8` copy, a COPY failure posts `MESSAGE_QUEUE_CATEGORY_ERROR` (line 1996) and success posts `_SUCCESS` (2002); DELETE posts `_SUCCESS` (2015).
+- In the `bits >= 8` copy, all three post `MESSAGE_QUEUE_CATEGORY_INFO` (2047, 2053, 2065).
+- The fork's hunks touch only the DELETE bodies, and its simplification there is correct: the inner `bits < 8` test was constant in each branch.
+- The second copy is the wrong one. A failed "add match" in 8/16/32-bit search is shown as an info toast, not an error.
+
+### Lead F3
+VERDICT: **real, and wider than the lead says.**
+- `configuration.c:9780`: `(void)chmod(path, S_IRUSR | S_IWUSR);` runs after `config_file_write` (line 9764).
+- `config_file_write` (`libretro-common/file/config_file_io.c`, the temp-then-rename block around lines 255-280) does `fopen_utf8(tmp_path, "wb")` and then `filestream_rename(tmp_path, path)`.
+- So **every** save, not only the first, does three things:
+  - creates `retroarch.cfg.tmp` with mode `0666 & ~umask`, typically 0644;
+  - fills it with every plaintext credential;
+  - renames it over the previously-0600 file, so the target is world-readable again until `chmod` runs.
+- POSIX `open(2)`: access is checked at open time. A local user who opens the file in that window (for example, prompted by inotify on the config directory) keeps a readable descriptor after the `chmod`. The mitigation therefore does not close the exposure; it only shortens how long it lasts.
+- Override, remap and other `config_file_write` callers get no `chmod`. Whether they carry credentials is in the open questions.
+
+### Lead F4
+VERDICT: **not a defect** (both copies are fork-era code; the fork's claim is correct).
+- `menu_state_get_ptr()` returns `&menu_driver_state` (`menu_driver.c:409-412`), so the pointer is never NULL.
+- The fork's claim at `retroarch.c:1669` holds.
+- `retroarch.c:6552`'s `if (menu_st)` in `main_exit` is the same dead guard, now inconsistent with 1669 but harmless.
+
+## Critical (0)
+
+## High (0)
+
+## Medium (1)
+- [dim 9] [lead F3] `configuration.c:9780`: `(void)chmod(path, S_IRUSR | S_IWUSR);`. Every save writes the credentials to a fresh 0644 `.tmp` file and renames it over the 0600 config before this `chmod` runs. A descriptor opened in that window stays readable afterwards.
+  - Fix: create the temporary with mode 0600, before any data is written. Either `open(tmp, O_CREAT|O_WRONLY|O_TRUNC, 0600)` and `fdopen`, or an `fchmod` before the dump.
+  - That change is in vendored `libretro-common`, so it needs to go upstream or behind a flag. A fork-local alternative is to bracket the call with `umask(077)`, but that is process-wide and races other threads creating files.
+
+## Low / Info
+- [dim 7] [lead F1] `configuration.c:2007` (and six siblings): `assert(count <= SETTINGS_ARRAY_COUNT_MAX);`. The check comes after the unbounded `tmp[count]` writes and is compiled out under `NDEBUG`.
+  - Fix: bound the write inside `GENERAL_SETTING` (`if (count < max)` plus a logged error), or keep a non-assert runtime check that refuses to proceed.
+- [dim 4] [lead F2] `cheat_manager.c:2047`: `MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);`. A failure is shown under the info category, which has drifted from the `bits < 8` copy (ERROR/SUCCESS).
+  - Fix: use ERROR at 2047, and SUCCESS at 2053 and 2065.
+- [dim 2] [new N1] `menu_setting.c:3503`: `if (config_get_ptr()->arrays.cheevos_token[0]) return strlcpy_lit(s, "********", len);`. This function is bound to the cheevos, WebDAV and S3 password settings (`settings_def_cheevos_account.h:28`, `settings_def_cloud_sync_webdav.h:41`, `settings_def_cloud_sync_s3.h:41`).
+  - With a RetroAchievements token present, an **empty** WebDAV or S3 password shows as set.
+  - Fix: apply the token check only to the cheevos password setting.
+  - The fork changed only the NULL guard in this function. I did not check whether the cloud-sync rows are fork-added.
+- INFO: I did not open the override, remap or autoconf save routes.
+
+**Other dimensions, answered in one line each:**
+- #2b: N/A, no contract-promised entry point among these leads.
+- #3: covered by F3.
+- #5: nothing found.
+- #8: nothing found in the slices I read.
+- #10: N/A, no observability contract.
+- #11: F1 is the only resource-limit item.
+- #12: N/A, no standard named.
+- #13: nothing found.
+- #15: covered by F3; nothing more.
+- #16 and #17: nothing found in the slices I read.
+
+## Covered by spec and looks correct
+- `action_scan_input_desc`'s index decomposition holds for every type its only producer emits (`menu_displaylist.c` around lines 14385-14445).
+- In `explore_cancel`, the `size - 2` read holds by the stack-root invariant.
+- The fork's cheat-manager DELETE simplification keeps the same behaviour.
+- `menu_state_get_ptr` cannot return NULL.
+
+## Open questions
+- F1: does any shipped `HAVE_*` combination already push a populate count past its `*_COUNT_MAX`? To settle it, preprocess `configuration.c` per platform Makefile and count the expanded `SETTING_*` rows.
+- F3: do override or remap saves write credential keys (WebDAV, S3, netplay password)? To settle it, read `config_save_overrides` around line 9143 and check whether it emits array settings that differ from the base config.
+- G2: I assumed `MENU_EXPLORE_TAB` and `MENU_SETTING_HORIZONTAL_MENU` sort numerically below `MENU_SETTINGS_LAST`, as their placement in the enum suggests. I did not confirm their values.
+
+## 3 items to fix first
+1. **F3.** A recurring credential exposure window on every save, which the current mitigation is believed to have closed.
+2. **N1.** The UI tells the user a cloud-sync password is set when it is not, which leads to sync failures that are hard to diagnose.
+3. **F1.** A missed overflow corrupts the heap silently on exactly the small-console builds where the assert is compiled out. The fix is cheap and local.

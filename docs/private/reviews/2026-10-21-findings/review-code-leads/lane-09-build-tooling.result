@@ -1,0 +1,92 @@
+Line counts as read: `local-CI.sh` 510 · `Linux.yml` 56 · `Linux-samples-tasks.yml` 1809 · `Linux-libretro-common-samples.yml` 1146 · `retroarch.yml` 75 · `Linux-Headless.yml` 65 · `qb/qb.comp.sh` 166.
+
+**In my context on arrival:** the global `~/.claude/CLAUDE.md` (it mentions review skills and Ants MCP), the user's email, a SessionStart hook note about Ants MCP, the environment block, and the shared-context packet (read as Step 1, as the brief directed). I opened no project `CLAUDE.md` or memory; the packet quotes the project contract. Search exclusions: none were needed. This lane's tree has no test directory, and I opened no tests.
+
+---
+
+### Lead B1
+**VERDICT: real.** It is wider than the lead says.
+- **The script's claim** at `local-CI.sh:345-347`: "invoke that exact block from the exported tree so the run-allowlist / build-only logic stays the single source of truth (extracted straight from the workflow's `run:` script)". That is false. The local body is a stale hand copy:
+  - **No sanitizers.** `:366` runs `make clean all` without the workflow's `MAKE_ARGS: "SANITIZER=address,undefined"` (`Linux-libretro-common-samples.yml:104`, used at `:316`). The overflow tests use ASan as their check (yml `:94-99`), so locally they cannot fail on the bug they exist to catch.
+  - **The leak exemption is gone upstream but kept here.** `:357` `[config_file_test]="ASAN_OPTIONS=detect_leaks=0"` is the exemption the workflow says it removed (yml `:249-252`). It does nothing locally anyway, because no ASan is built.
+  - **Few tests run.** Local `RUN_TARGETS` has 19 entries; the workflow's has about 80 (`crc32_test`, `pixconv_test`, `task_queue_*`, `vfs_*`, `rac3_*` and others).
+  - **Unlisted targets pass instead of failing.** Locally, a target in no list prints `[skip-run]` and is not counted (`:373`). The workflow fails on it (`::error title=Target not classified` at yml `:348-350`), and has a `NORUN_TARGETS` list the local copy lacks.
+  - **Workflow content not mirrored:** the Clang+TSan steps (yml `:499-630`), the C++11 atomic compile matrix, and the jobs `emscripten-memmap`, `config-file-fuzz-smoke`, `retro-atomic-cross` and `crc32-cross`. None is in `ACT_WORKFLOWS` or `GITHUB_ONLY`. The file is in `NATIVE_WORKFLOWS` (`:105`), so `--list` reports it as covered.
+
+### Lead B2
+**VERDICT: real.** Yes, the script claims otherwise.
+- **The claims:**
+  - `:239` "Command strings below mirror the referenced workflow step verbatim (modulo -j)".
+  - `:10-12` "mirrors the five *Linux* jobs … as faithfully as a single Linux box allows".
+  - `:13-15` says `--list` stops anything looking "silently covered", yet the file is in `NATIVE_WORKFLOWS`.
+  - `:505` "All selected Linux CI jobs passed."
+- **What runs:** `job_samples_tasks` (`:288-342`) covers 6 of the roughly 37 steps in the workflow's `samples-tasks` job. It omits:
+  - video_shader_parse, savefile_owner, input_remap, bsv_replay, bps_patch, patch_stream, file_transfer
+  - both core_updater lanes, core_backup, image_decode_slice, scan_begin_budget, database_scan
+  - playlist_manager, both overlay lanes, content_prefetch, bluetooth, wait_timeout, ordering, watchdog, netplay_nat
+  - both `task_queue_wait` grep guards (yml `:1039-1109`), playlist_parity, dirwalk, save_state
+  - the whole `samples-tasks-http` job (yml `:1363-1809`): its C89 syntax gate, dedup, emscripten headers, lifetime, stress, transport-failure, resume, init-failure and the two DNS lanes.
+- **Some lines differ from the workflow rather than mirror it:**
+  - `http_limits` runs once, with no `THREADS` loop and no `ASAN_OPTIONS` (yml `:1748-1753`).
+  - `bsv_replay_init` uses `make sweep` where the workflow runs explicit lanes.
+  - `content_downloads` (`:333-337`) appears in no workflow; a search of `.github` for it returned 0 hits.
+
+### Lead B3
+**VERDICT: real.**
+- `job_linux_i686` (`:385-392`) runs configure, clean and `info all` only.
+- `Linux.yml` also runs these two steps, and both are dropped:
+  - `:36-40` `sh tools/include_order_check.sh`. The script exists.
+  - `:47-56` `.github/workflows/scripts/stack-frame-sweep.sh`. I did not confirm the script exists; that does not affect the verdict.
+- This contradicts `:21` "reproduced bit-exactly" and `:239` "verbatim".
+
+### Lead B4
+**VERDICT: real, narrow.** Whether it is upstream code is unsettled: I have no patch to check it against.
+- `qb/qb.comp.sh:90`: `` if $(printf %s "$CC") -fuse-ld=mold "$TEMP_C" -o "$TEMP_EXE" ``. This probe passes neither `$CFLAGS` nor `$LDFLAGS`.
+- Every other link probe in `qb/qb.libs.sh` (`:173`, `:303`, `:340`, `:364`, `:449`) passes `$LDFLAGS`.
+- `qb.make.sh:7-10` then appends `-fuse-ld=mold` to the user's `LDFLAGS` without testing that combination.
+- **The lead's example is weak.**
+  - `X86=1` is a *make-time* variable (`Makefile:161-164`), so no configure probe could see it.
+  - mold supports i386 as far as I know (from memory, not checked here).
+  - The concrete failure needs a configure-time `LDFLAGS`/`CFLAGS` flag that mold rejects and the default linker accepts.
+
+---
+
+## Critical (0)
+
+## High (3)
+- [dim 2] [lead B1] `local-CI.sh:366` — `if ! ( cd "$d" && make clean all ); then` — common-samples has no sanitizers, about 19 of the workflow's 80 run-targets, no classification gate, and none of the TSan or extra jobs. The comment at `:345-347` claiming an "exact block … single source of truth" is false. **Fix:** extract the `run:` block from the workflow at run time (for example with `yq`) or run the file through act. Until then, move it out of `NATIVE_WORKFLOWS`.
+- [dim 2] [lead B2] `local-CI.sh:288` — `job_samples_tasks()` — 6 of about 37 steps, and none of the `samples-tasks-http` job. **Fix:** run `Linux-samples-tasks.yml` through act at `-j4` and drop the hand mirror, or rename the job "smoke subset" and take the file out of `NATIVE_WORKFLOWS`.
+- [dim 2] [lead B3] `local-CI.sh:388-391` — `./configure --disable-qt --enable-xdelta … make -j"$JOBS" info all` — skips `include_order_check.sh` and the stack-frame sweep. **Fix:** add both steps to the container command.
+
+## Medium (4)
+- [dim 16] `local-CI.sh:350` — `( cd "$w/libretro-common/samples"` with no `&&` and no `set -e`.
+  - **Trigger:** `mktemp -d` or `export_tree` fails, for example on a full disk. Note that `export_tree`'s status is never checked.
+  - **What happens:** the `cd` fails, and the subshell carries on in the caller's directory, which is the repo root under the pre-push hook. `find . -name Makefile` then runs `make clean all` in every Makefile directory of the **working tree**, including the top level.
+  - That breaks the promise at `:28-29` that the working tree is never touched.
+  - `job_c89` `:260` has the same shape. With `w=""`, `cd ""` succeeds and `make clean` runs in the working tree.
+  - **Fix:** `cd … || exit 1`, and check `mktemp` and `export_tree`.
+- [dim 7] `local-CI.sh:262-270` — `make $JPAR -k C89_BUILD=1` — the exit status of make is ignored. Only `error:` lines decide the result, so a failure that prints no `error:` makes the job PASS. Examples: `make: *** No rule to make target`, a Makefile syntax error, a killed compiler. **Fix:** record make's status, and fail when it is non-zero and no `error:` line is under `/usr/`.
+- [dim 11] `local-CI.sh:440-442` — `"$ACT_BIN" -W ".github/workflows/$wf" … --concurrent-jobs 1` — the act workflows build at `-j$(nproc)`. Confirmed in `Linux-asan-ubsan.yml`, `Linux-vulkan-validation.yml`, `Linux-samples-audio.yml` (58 hits), `Linux-menu-harness.yml` and others. So `--all` breaks this machine's `-j4` ceiling, and `LOCAL_CI_JOBS` does not reach them. **Fix:** inject a cap, for example `--env MAKEFLAGS=-j4` plus a `nproc` shim, or `podman --cpus=4` through act's `--container-options`.
+- [dim 2] `local-CI.sh:18-24` — "Two of the five Linux jobs run inside a fixed container image on CI; those are reproduced bit-exactly". This is contradicted by `:57-59` and `Linux-Headless.yml:24`: headless runs on `ubuntu-latest`. Locally it runs in a xenial gcc9 image, so warnings and errors that only a newer gcc raises are missed. **The document is the wrong side here.** **Fix:** reword it so headless is "different compiler from CI".
+
+## Low / Info
+- [dim 7] [lead B4] `qb/qb.comp.sh:90` — the mold probe omits `$CFLAGS $LDFLAGS`, unlike every probe in `qb.libs.sh`. **Fix:** add them to the probe line.
+- [dim 2] `local-CI.sh:213-215` — an unclassified workflow only prints a `WARN` on a normal run. Only `--list` exits 1. `Linux-frontend-overhead.yml` exists and is in none of the three lists, so the pre-push run passes over it. **Fix:** fail the default run, or make the hook run `--list`.
+- [dim 2] `local-CI.sh:31-34` — "builds run in parallel, $LOCAL_CI_JOBS jobs at once … The workflows build serially". In fact the driver runs jobs one at a time (`:465`), `LOCAL_CI_JOBS` is only make's `-j`, and `Linux.yml` builds with `-j$(getconf …)`. **The document is wrong.**
+- [dim 16] `local-CI.sh:507-508` — a failed run keeps `$LOGDIR` and with it the full export build trees (`c89.*`, `csam.*`, `stasks.*`). This contradicts "holds logs only" at `:422`. Repeated failures fill the disk. **Fix:** remove the `*.XXXX` trees on exit, or clean them on the next run.
+- INFO — I did not open the act-run workflow bodies beyond the `-j` search. I did not check whether `samples/menu/content_downloads` or `tools/…/stack-frame-sweep.sh` exist.
+- Dimensions 3, 4, 5, 8, 9, 10, 12, 13, 15 and 17: no issues found, or N/A (a dev CI script with no user surface, data store or secrets). I did not run shellcheck.
+
+## Covered by spec and looks correct
+- `job_c89` is the same as `retroarch.yml`'s commands apart from `-k`, `-j` and the documented `C89_ALIGN`.
+- `job_headless_i686` uses `--disable-menu` with the documented `--disable-qt` deviation.
+- In the driver, `set -e` placement (`:485-489`), act's zero-job guard (`:444-446`), and the `--no-container` handling.
+
+## Open questions
+- Is the samples-tasks subset meant to be a quick smoke run? If so, the defect is in the documents (`:239`, `NATIVE_WORKFLOWS`) rather than in the code.
+- Is `content_downloads` local-only on purpose?
+
+## 3 items to fix first
+1. **The working-tree `make clean` on a failed `cd`** (Medium, `:350`/`:260`). It is the only finding that does harm on this machine rather than just missing a defect, and the fix is two characters.
+2. **B1 and B2 together.** Both stand behind a "verbatim / exact block" claim, and together they leave out most of the sanitizer and LeakSanitizer coverage. A local PASS currently predicts little about these two workflows.
+3. **B3.** Two steps that cannot be undone by any later job are missing from the job described as the "bit-exact anchor"; adding them costs two lines.

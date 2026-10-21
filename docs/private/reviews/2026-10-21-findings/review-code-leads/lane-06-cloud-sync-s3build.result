@@ -1,0 +1,111 @@
+Line counts: I have none to report. Your brief told me to read only each lead's enclosing function and its callers, not whole files. I followed the brief over the lane file's "read your subject in full" rule, so no subject file was read end to end. Ranges I read:
+- `s3.c` 455–545 and 770–830
+- `webdav.c` 55–680
+- `cloud_sync_driver.c` 25–50 and 140–169
+- `cloud_sync_driver.h` 1–80
+- `net_http.c` 2225–2375, plus `net_http_header_value` and `net_http_body_is_framed`
+- the build-flag sites named under S5
+- the patch, and `shared-context.md`, both in full
+
+**What was already in my context when I arrived:** the global `~/.claude/CLAUDE.md` (it describes this review machinery, `review-code` and rule 18), the user's email address, and a SessionStart hook message about Ants MCP. No project `CLAUDE.md`, memory index or git snapshot. The project rules I used came from the shared context's summary only.
+
+I did not open the streaming-upload spec. No lead touches upload: L1 is only about how the request is signed.
+
+---
+
+### Lead L1
+**VERDICT: real, but no current caller is affected (latent).**
+
+`s3.c:466` — `return strcmp(*(const char* const*)a, *(const char* const*)b);` compares the whole `name=value` string. SigV4 sorts by encoded name first. When one name extends another, the comparison reaches `=` (0x3D) on the shorter name, and `=` sorts after digits, `-`, `.` and `%`. Example: `a=1` against `a1=2`. SigV4 puts `a` first; strcmp compares `=` with `1` and puts `a1=2` first. The signature would then be wrong and S3 would answer 403.
+
+Callers checked: there is one, `s3.c:801`. The strings that reach it:
+- `"uploads="` (`:1799-1800`)
+- `"uploadId=%s"` (`:1498`, `:1599`)
+- `"partNumber=%u&uploadId=%s"` (`:1701`)
+
+None of these names is a prefix of another, so no request signed today is wrong. The comment at `:457-462` says plain strcmp "gives the spec-mandated order". That comment is false: the code side is wrong, not the spec.
+
+### Lead L2
+**VERDICT: real (it already existed in upstream; the fork made it worse).**
+
+`webdav_create_digest_auth` calls `webdav_cleanup_digest()` at `webdav.c:269` before parsing. Several exits then `return false` without going through `parse_fail` and leave the digest state half-filled:
+- realm quote fails (`:285`)
+- qop has no closing quote, or qop lacks "auth" (`if (!webdav_st->qop_auth) return false;`)
+- nonce, opaque or algorithm quote fails
+- algorithm `malloc` fails
+- an unknown parameter has an unterminated quote
+
+On every one of those exits `cnonce` is NULL, because `webdav_create_cnonce` (`:370`) only runs on the success path. `realm`, `nonce` and `ha1hash` may also be NULL.
+
+`basic` is set true only in `webdav_sync_begin` (`:830`) and set false on success (`:376`); a failure never puts it back. The state is used afterwards:
+- Once one challenge in a sync has succeeded, `webdav_get_auth_header` (`:563`) takes the digest branch for every later request: GET `:914`, PUT `:1231`, MKCOL `:1050`, COPY, MOVE, DELETE, OPTIONS `:743`.
+- That reaches `webdav_create_digest_auth_header`, which runs `strlen(webdav_st->cnonce)` unconditionally, plus `strlen(webdav_st->realm)` and `strlen(webdav_st->nonce)`.
+- It also reaches `webdav_create_ha1`, which runs `strdup(webdav_st->ha1hash)`.
+
+Each of those is a NULL dereference. So a later 401 whose Digest challenge this parser rejects crashes RetroArch on the next request. Two examples that trigger it:
+- `qop="auth-int"` on a stale-nonce challenge
+- a value with an unterminated quote
+
+Upstream's `cnonce` was the literal `"1a2b3c4f"` and could never be NULL. The fork's change to a heap `cnonce` made the crash certain on these paths. The `realm`/`nonce` half of the problem is upstream's.
+
+### Lead L3
+**VERDICT: not a defect in `cloud_sync_http_body_is_framed`. The RFC gap is in upstream `net_http`, and it is real but low.**
+
+`net_http.c:2319-2338` reads digits and stops at the first non-digit. It errors only on `!any || oflow`. So `Content-Length: 123abc` already frames the body as 123 bytes. The helper (`cloud_sync_driver.c:159-168`) uses the same rule and checks against the same 123, so the two agree and a truncated body is still caught. Leading whitespace is handled the same way in both: `net_http_header_value` skips spaces and tabs (`net_http.c:3566-3567`), as the parser does.
+
+RFC 9112 §6.3 item 5 says an invalid Content-Length is an unrecoverable error. That check belongs in `net_http`'s parser, and `libretro-common` is vendored code.
+
+One related case fails safe. With duplicate Content-Length headers, `net_http` frames by the last one but `net_http_header_value` returns the first. When they differ, the helper rejects the response. That direction loses no data.
+
+### Lead L4
+**VERDICT: not a defect (it fails safe). The header comment overstates what the helper accepts.**
+
+`net_http` does not drop Content-Length from the stored headers. The Content-Length case ends in `break`, so the line is stored with the rest. Transfer-Encoding still wins for framing (`net_http.c:2345`, `2359`), and `len` is reset (`:2267-2281`).
+
+So the helper finds the Content-Length and compares it with the de-chunked length. A response carrying both headers is usually rejected. RFC 9112 §6.3 item 3 says such a message "ought to be handled as an error", so rejecting it conforms. A match by coincidence is also safe, because chunked framing needs the terminating chunk.
+
+The doc side is the wrong side: `cloud_sync_driver.h:56-59` says "or it was sent chunked" without this exception.
+
+### Lead S5
+**VERDICT: not a defect (no link failure).**
+
+Every `HAVE_S3` use I found is in one of three places:
+- nested inside `HAVE_CLOUDSYNC`: `configuration.c:1959`, `configuration.h:1254`, `griffin.c:1846`, and `menu_setting.c:11905`, `14237`, `18347`
+- in a file that is only built when `HAVE_CLOUDSYNC` is on: `cloud_sync_driver.c:37`, which is the only reference to `cloud_sync_s3`
+- an extern declaration only: `cloud_sync_driver.h:66`
+
+One use is outside the guard: `menu_displaylist.c:12846`, in the unguarded `case DISPLAYLIST_CLOUD_SYNC_SETTINGS_LIST` (`:12832`). It references only `MENU_ENUM_LABEL_*` values, which are not link symbols.
+
+What remains is that `--enable-s3` without `HAVE_CLOUDSYNC` is silently ignored. Makefile.common sets that flag only for `Linux`/`Win` (`:2464-2470`). I did not settle whether that block compiles; see Open questions.
+
+---
+
+## Critical (0)
+
+## High (0)
+
+## Medium (1)
+- [dim 3] [lead L2] `network/cloud_sync/webdav.c:332` — `if (!webdav_st->qop_auth) return false;` (and the other bare `return false` exits in the parse loop) — after `webdav_cleanup_digest()`, these exits leave `cnonce`/`nonce`/`realm` NULL while `basic` stays false. The next request then calls `strlen(webdav_st->cnonce)` in `webdav_create_digest_auth_header`, a NULL dereference: a server-triggered crash. — fix: send every exit to `parse_fail`, and make `webdav_create_digest_auth_header` return NULL when `ha1hash`, `nonce`, `realm` or `cnonce` is NULL.
+
+## Low / Info
+- [dim 2] [lead L1] `network/cloud_sync/s3.c:466` — `return strcmp(...)` — sorts `a1=` before `a=`, against SigV4. No current caller is hit; the comment at `:457-462` claims compliance. — fix: compare the name parts up to `=` first, then compare values.
+- [dim 7] `network/cloud_sync/s3.c:801` — `canonical_query_string = s3_canonicalize_query_string(query_string);` — on out-of-memory this returns NULL, and `:808` signs `""` instead. The failure shows up only as a 403. — fix: `goto cleanup` when it returns NULL.
+- [dim 2] [lead L4] `network/cloud_sync_driver.h:56-59` — "or it was sent chunked" — the helper rejects a chunked response that also carries Content-Length. The document is the wrong side. — fix: add that exception to the comment.
+- [dim 3] [lead L3] `libretro-common/net/net_http.c:2319` — `while (*ptr >= '0' && *ptr <= '9')` — trailing garbage after the digits is accepted, against RFC 9112 §6.3. This is upstream, vendored code. — fix: reject anything other than optional whitespace after the digits.
+- INFO: dimensions 4, 9 and 16 found nothing beyond the above in the code I read. Dimensions 5, 8, 10–15 and 17 were not examined beyond the lead functions.
+
+## Covered by spec and looks correct
+- `cloud_sync_http_body_is_framed`: the overflow guard, and its agreement with `net_http`'s Content-Length framing.
+- `webdav_create_cnonce`: the buffer bounds.
+- The `s3_canonicalize_query_string` split, size count and re-join: the buffer arithmetic is correct.
+
+## Open questions
+- `menu_displaylist.c:12862-12870`: I did not read what the `S3_URL` case accesses. If it reads `settings->arrays.s3_url`, a build with `HAVE_S3` but no `HAVE_CLOUDSYNC` fails to compile, though it would still link.
+- `Makefile.common:2464`: I did not open what block encloses it.
+- Whether `net_http` closes the connection after a response carrying both Content-Length and chunked framing. RFC 9112 §6.3 asks for that.
+- `found` in `webdav_read_cb:927` and `data` in `s3_read_cb`: I did not check that these imply `data != NULL`.
+
+## 3 items to fix first
+1. **L2:** a crash that a remote server can trigger, in a path used on every WebDAV digest sync. The fork's heap `cnonce` makes it certain.
+2. **The OOM NULL at `s3.c:801`:** it silently signs the wrong request. The fix is one line.
+3. **The L1 comparator, with its comment:** the comment claims spec compliance the code doesn't deliver, and the first caller that passes a prefix-related name will get 403s with nothing in the log.

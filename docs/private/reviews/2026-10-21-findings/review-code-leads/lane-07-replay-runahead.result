@@ -1,0 +1,116 @@
+I read only the slices the brief named, so no line counts are given for whole files (open question 4 has the details).
+
+**Line counts of subject files as read**
+
+- `patch-L5-input-replay.diff`: lines 1–172 and 249–345 (the bsvmovie, uint32s_index and input_driver hunks).
+- `patch-L6-runloop-save-netplay.diff`: lines 190–264 (the runahead.c hunks).
+- `bsvmovie.c`: 540–828 and 1735–2123.
+- `uint32s_index.c`: 60–378.
+- `input_driver.c`: 2120–2169 and 7915–7974.
+- `runahead.c`: 340–459, 540–584, 1060–1357, 1560–1629 and 2300–2399.
+- `runahead.h`: all 99 lines.
+
+**Present on arrival:** the global `~/.claude/CLAUDE.md`, a userEmail context block, a SessionStart hook message about the Ants MCP, and environment info. No project `CLAUDE.md`, no memory index, no git snapshot.
+
+**Disagreement resolved:** my lane file says to read the whole subject. The brief says to read only each lead's enclosing function and its callers, and not whole large files. I followed the brief, which sets the run.
+
+---
+
+### Lead R1
+VERDICT: real (fork code, LOW)
+- `bsvmovie.c:1753`: `uint32_t *superblock_buf = (uint32_t*)calloc(1, superblock_buf_bytes + block_byte_size);` is never checked. If it is NULL, `superblock_buf[block] = found_block.index;` (1829) writes through NULL, and `padded_block` (1754) is NULL plus an offset.
+- `bsvmovie.c:1764–1765`: the fork sets `superblock_seq_len = ... ? superblock_count : 0`, so it expects a NULL result, but nothing handles one. `movie->superblock_seq[superblock] = found_block.index;` (1844) and the loop at 1854 then dereference NULL.
+- `out_stream` (1756) is not checked either.
+- The only caller is `bsv_movie_write_checkpoint:811`. It passes `encoded_data` from an unchecked `malloc` (809), and casts the `int64_t` return straight to `uint32_t`, so a negative return would become `0xFFFFFFFF`.
+- Every trigger here is running out of memory.
+
+### Lead R2
+VERDICT: upstream code, real (MEDIUM)
+- `input_driver.c:7947–7948`: `if (settings->ints.input_turbo_bind != -1) turbo_btn_id = settings->ints.input_turbo_bind;` stores the value in a `uint16_t`, so -2 becomes 65534.
+- Line 7961, `RETRO_KEYBIND_VALID(&(*input_st->libretro_input_binds[i])[turbo_btn_id])`, then indexes `retro_keybind_set[RARCH_BIND_LIST_END]` (`input_types.h:145`) out of bounds.
+- That operand comes first in the `&&`, so it runs on every poll **even when turbo is off**.
+- The value is loaded unclamped: `configuration.c:10505`, `CONFIG_GET_INT_BASE(... "input_turbo_bind")`. Only the menu limits it, to -1..`RARCH_ANALOG_BIND_LIST_END-1`.
+- Out-of-range values below `RARCH_BIND_LIST_END` stay in bounds.
+- No L5 hunk touches this area, so I've called it upstream.
+
+### Lead R3
+VERDICT: not a defect (the only effect is less deduplication)
+- `uint32s_index.c:108–109` returns without adding `idx`. The object is already in `objects[]`/`counts[]`/`hashes[]` (171–173), so it can still be fetched by its index.
+- What a lost entry does downstream:
+  - **Writing (`uint32s_index_insert`):** later identical content misses in `uint32s_bucket_get`, gets a new index, and is written to the file again. The output is correct, just larger.
+  - **Reading (`uint32s_index_insert_exact`):** decoding looks blocks up by index (`uint32s_index_get`), never by hash, so it is unaffected.
+  - **Garbage collection (`commit`) and `pop`:** `uint32s_bucket_remove` logs "didn't find index" and returns false. `pop`'s `old_len == 1` free/delete (340) cannot remove another entry's mapping here, because the realloc path needs `len == cap ≥ 8`.
+
+### Lead R4
+VERDICT: not a defect as framed; a nearby upstream issue is real (LOW, below)
+- On SKIP, line 757, `if (handle->cur_save && size && size <= handle->cur_save_size) handle->cur_save_size = size;`, can only shrink the recorded size and never above the buffer. So `read_deduped_state` (`state_size = movie->cur_save_size`, 1877) clamps every copy into the allocation (2063–2064).
+- Upstream (old line 666) assigned it unconditionally, so the fork is the safer version.
+- The nearby issue is listed under Low.
+
+### Lead R5
+VERDICT: upstream code, real (LOW)
+- `input_driver.c:2149`: `unsigned remap_button = settings->uints.input_remap_ids[port][turbo_button];`. `input_turbo_button` is loaded unclamped (`configuration.c:10506`); the menu limits it to 0..15.
+- The array is `[MAX_USERS][RARCH_CUSTOM_BIND_LIST_END]` (`configuration.h:159`), so a large value reads out of bounds.
+- It is only reached in single-button turbo modes (`turbo_mode > INPUT_TURBO_MODE_CLASSIC_TOGGLE`), and the value read is only compared, never written.
+
+### Lead R6
+VERDICT: not a defect (cannot be reached)
+- The only list is `input_state_list`. It grows by one element (`mylist_add_element`, 1154) per distinct (port, device, index) that has no dense slot, and each element allocates `NAME_MAX_LENGTH` × `sizeof(int16_t)` (1227).
+- Reaching `capacity > INT_MAX/2` would need about 10⁹ such allocations, so memory runs out long before the multiplication can overflow.
+- The comment at 1084–1085 says the bound is `MAX_RUNAHEAD_FRAMES*MAX_USERS`. That is wrong: the bound is distinct input tuples (open question 2).
+
+### Lead R7
+VERDICT: not a defect; keep the check
+- `runahead.c:1599`, `if (core_serialize_size_special() > info->size)`, and `2350`, `if (current_core->retro_serialize_size() > preempt->state_size)`, turn a state size that grows mid-run into a clean teardown instead of a `retro_serialize` into a buffer that is too small.
+- At 2350 the special-savestate flag is already set (2343), so it queries the same way `preempt_allocate` does (2096, via `core_serialize_size_special`, `runloop.c:9508–9517`).
+- The cost is one extra size query per frame. No performance contract is named, so under the brief's dimension 5 this cannot be filed.
+
+### Lead R8
+VERDICT: not a defect (all four causes refuse the directory)
+- `runahead.c:356–359`:
+  - `lstat` does not follow a symlink, so a planted link fails `S_ISDIR`.
+  - A directory owned by another user fails `st_uid != geteuid()`.
+  - A failed `chmod` refuses.
+  - A failed `lstat` refuses.
+- Every failure returns false, and the caller (564) then skips the copy. With `/tmp` sticky, nobody else can rename the directory after the check.
+- The one accepted case worth a second look is our own directory that had loose permissions, which `chmod 0700` repairs (open question 1).
+
+---
+
+## Critical (0)
+
+## High (0)
+
+## Medium (1)
+- [dim 3][lead R2] `input/input_driver.c:7961` — `RETRO_KEYBIND_VALID(&(*input_st->libretro_input_binds[i])[turbo_btn_id])`: an `input_turbo_bind` from a config file or override outside -1..`RARCH_BIND_LIST_END-1` reads out of bounds on every poll, even with turbo off. Fix: clamp at load in `configuration.c:10505` to the menu's range, or apply the same range check as line 2140 before 7948.
+
+## Low / Info
+- [dim 7][lead R1] `bsvmovie.c:1753`, `1764`, `1756` — `calloc(...)` and `intfstream_open_memory` results are not checked, and 1829, 1844 and 1854 write through NULL when memory runs out. Fix: check all three, return -1, and have `bsv_movie_write_checkpoint:811` treat a negative result as failure before the `uint32_t` cast. Also check `malloc` at 809.
+- [dim 3][lead R5] `input_driver.c:2149` — `input_remap_ids[port][turbo_button]` with an unclamped config value reads out of bounds. Fix: clamp `input_turbo_button` to `< RARCH_FIRST_CUSTOM_BIND` at load.
+- [dim 9] upstream, `bsvmovie.c:1877` with `607–632` — `size_t state_size = movie->cur_save_size;`. When the existing buffer is big enough, `cur_save_size` still holds the *previous* checkpoint's size (from an earlier load, or shrunk by a SKIP at 757) while a STATESTREAM checkpoint is decoded. A state larger than the last one is therefore decoded only up to the old size, and its tail keeps stale bytes. Line 757 then records the new `size`. Fix: set `cur_save_size = size` (≤ buffer) before decoding, or pass `size` into `bsv_movie_read_deduped_state`.
+- [dim 3] upstream, `bsvmovie.c:649`, `677`, `697` — `malloc(compressed_encoded_size)` and `calloc(encoded_size, ...)` use sizes from the file (untrusted) and are not checked. A NULL result goes to `intfstream_read`, `uncompress` or `rzstd_decode`. This is most reachable on 32-bit builds. Fix: check each result and go to `exit` with `BSV_FLAG_MOVIE_END`.
+- [dim 7] `bsvmovie.c:1989` — `superblock = (uint32_t*)calloc(len, sizeof(uint32_t));` is not checked before the writes at 1996. Fix: check it.
+- [dim 7] upstream, `uint32s_index.c:169`, `182` — `copy = (uint32_t*)malloc(size_bytes); memcpy(copy, object, size_bytes);` copies into NULL when memory runs out. Fix: check it and return a failure result.
+- [dim 7] fork-introduced, `runahead.c:1318` — `if ((element->port == port) ...`. The constructor can now return NULL (1220–1238), and `mylist_resize` still counts that slot in `size` (1137–1145). The next lookup then dereferences a NULL `data[i]`. Fix: skip NULL elements in the loop, or don't grow `size` past a NULL constructor result.
+- INFO: dimensions 2, 2b, 4, 8, 10, 12, 13, 15 and 17: nothing found in the slices I read. Dimension 2 has no contract text in the BSV header. Dimension 11: the hard-coded buffer `char tmp_path[PATH_MAX_LENGTH]` (549) is in a task-worker frame, not a deep stack. Dimension 16: covered by the out-of-memory items above.
+
+## Covered by spec and looks correct
+- The fork's block-size header check (bsvmovie.c 341–355 on the patch's new side).
+- The size guards in `bsv_movie_load_checkpoint` (639, 663, 716, 757).
+- The superblock and block lookups in `read_deduped_state` (2018–2075).
+- The `uint32s_bucket_expand` realloc-to-temporary (106–112).
+- The `mylist_resize` and `mylist_add_element` out-of-memory paths.
+- The fork's turbo_bind checks at 2140–2142 and 2328–2340 (they patch input_driver.c's `input_state_device`): `RARCH_CUSTOM_BIND_LIST_END` matches the `input_remap_ids` dimension.
+- `runahead_tmp_dir_private`.
+
+## Open questions
+1. **R8:** if `retroarch_temp` already existed as our own directory with loose permissions, files someone planted there before the `chmod` survive. Does `filestream_copy_begin(..., RETRO_VFS_COPY_OVERWRITE)` replace a planted symlink at `dst`, or follow it? I did not open the VFS. Also, `get_tmpdir_alloc(h->dir_libretro)` may resolve to a shared directory that is not sticky, which would reopen the swap race after the check.
+2. **Whose side is wrong at `runahead.c:1084`:** the comment's `MAX_RUNAHEAD_FRAMES*MAX_USERS` bound does not describe `input_state_list`. I think the comment is wrong, not the code.
+3. **`bsvmovie.c:1792–1793`:** `uint32s_index_get(movie->superblocks, movie->superblock_seq[superblock])[block]` is not checked for NULL. Could a seek through `uint32s_index_remove_after` pop superblocks while `cur_save_valid` stays true? Reading the seek path would settle it; it was outside my slice.
+4. **Line counts:** I report slices, not whole-file counts, because the brief told me not to read whole large files.
+5. **R2 and R5 marked upstream:** this rests on the L5 patch having no hunk at those lines. The "Fused turbo/hold + remap loop" comment (7920) reads like a fork change; another patch file may hold it.
+
+## 3 items to fix first
+1. **R2 (`input_driver.c:7961`):** an out-of-bounds read on every poll from a config value, with turbo disabled. It is a one-line clamp at load, and the same clamp fixes R5.
+2. **The stale `state_size` in decoding (`bsvmovie.c:1877`):** a replay checkpoint can restore silently wrong state with no error.
+3. **R1 and the other unchecked allocations from untrusted sizes (`bsvmovie.c:649/677/697`, 1753/1764):** these crash on hostile or very large `.bsv` input, the trust boundary the project already names.

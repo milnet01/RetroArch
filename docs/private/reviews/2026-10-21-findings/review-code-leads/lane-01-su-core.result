@@ -1,0 +1,112 @@
+Opening data: **self_update.h is 214 lines and self_update.c is 747 lines**, each read in full with `Read`. In both, the last numbered line is the empty line after the final newline. The real content ends at `#endif` on line 213 and at `}` on line 746.
+
+**What I already had when I started, before reading the subject:**
+- the global `~/.claude/CLAUDE.md`
+- the review-lane agent file (my system prompt)
+- the user-email context block
+- a SessionStart hook message telling me the Ants MCP was connected
+
+I did not have a RetroArch project `CLAUDE.md`. The project rules came only from the shared context.
+
+**What I read beyond the named files.** I read spec §3 to §6 (lines 22–261) and these windows of `tasks/task_self_update.c`: lines 440–515, 640–700 and 1010–1058. The leads also brought three more files into play, so I searched or read parts of them:
+- `qb/config.libs.sh` lines 1094–1123, for A1
+- `Makefile.common` lines 2456–2462, for A1
+- `retro_miscellaneous.h`, for PATH_MAX_LENGTH, for A4
+
+The brief and the lane file did not disagree anywhere.
+
+---
+
+### Lead A1
+**VERDICT: not a defect.** No build can reach it.
+- `self_update.c:115-121`: the AppImage branch never checks `env->x86_64`.
+- `:328`: `arch = "x86_64";` sets the architecture for any AppImage.
+
+Both are true. But the feature is compiled only through `Makefile.common:2458` (`ifeq ($(HAVE_SELF_UPDATER), 1)`). That variable is set only by configure. `qb/config.libs.sh:1107` (`Linux) self_update_cond='defined(__x86_64__)' ;;`) compiles a test program and turns the feature off when it fails (`:1120`, `HAVE_SELF_UPDATER=no`). No other platform Makefile sets it: a search for `HAVE_SELF_UPDATER` outside samples found no Makefile except `Makefile.common`. This matches spec §4.1: "Linux on x86_64".
+
+The policy core has no check of its own. If a build skipped configure, an aarch64 AppImage would rename an x86_64 file over `$APPIMAGE`. I put that under Open questions; I did not file it as a finding.
+
+### Lead A2
+**VERDICT: real, LOW.**
+
+`self_update.c:78` — `if (len >= 2 && uninstall[0] == '"' && uninstall[len - 1] == '"')`
+
+For `"C:\RetroArch-Win64\uninstall.exe" /S` the last character is `S`, so the quotes are never removed. Then `:83` fails, and `kind_decide` returns `WIN_PORTABLE` (`:105`).
+
+- **The value actually measured doesn't trigger it.** Spec §4.3 recorded an unquoted `C:\RetroArch-Win64\uninstall.exe` with no arguments, so the current installer is not affected.
+- **But the code is narrower than the Windows convention.** That convention lets arguments follow the quoted path.
+- **The same misroute happens for a `REG_EXPAND_SZ` value.** The caller accepts that type (`task_self_update.c:491`, `type == REG_EXPAND_SZ`) but never expands it, so a value such as `%ProgramFiles%\…` never matches.
+- **What a misroute costs:** an installer install is updated in place as portable. The registry's `DisplayVersion` then goes stale. Under Program Files the renames fail (spec §6), and the user sees an error instead of the installer route.
+
+### Lead A3
+**VERDICT: real, LOW.**
+
+`self_update.c:538` — `ops->remove(ops->ud, marker);`
+
+The result is thrown away. If removing the marker fails (a read-only or locked config folder), the same file is read again at every start. The caller (`task_self_update.c:683-697`) then shows "updated to X" or "did not finish" each time. This breaks INV-11 ("removes the marker") without telling anyone. The `NOT_FINISHED` case is the worse one: it tells the user, start after start, that an update failed.
+
+### Lead A4
+**VERDICT: not a defect.**
+
+The project rule protects console stacks of 128 KB. This feature cannot be built for a console:
+- configure only allows Win32 x86/x86_64 and Linux x86_64 (`qb/config.libs.sh:1104-1108`);
+- it is not listed in griffin (`Makefile.common:2456-2457`, spec §4.1).
+
+On desktop, PATH_MAX_LENGTH is 2048 (`retro_miscellaneous.h:166`). So:
+- `run_cmd_format` (`:471-472`) uses about 8 KB of stack;
+- `replace` plus `su_undo` (`:585`, `:570`) use about 12 KB;
+- the deepest chain, `self_update_launch_installer` with its `text[PATH_MAX_LENGTH * 4 + 512]`, plus `run_cmd_format`, is about 23 KB.
+
+All of these fit easily in a desktop thread's stack.
+
+### Lead A5
+**VERDICT: real, LOW** (it breaks a project rule; no behaviour changes).
+
+`self_update.c:660-661` — `char path[PATH_MAX_LENGTH];` comes before `unsigned depth;`
+
+Members in alignment order would be: pointer, `unsigned`, the two `bool`s, then the `char` array. The struct is 4112 bytes either way on LP64, so nothing at runtime changes.
+
+### Lead A6
+**VERDICT: not a defect.**
+
+At `:346`, `file` can only be one of the five string literals assigned at `:329-339`. Each holds exactly one `%s`, and `arch` is always a `const char *` literal (`:314`, `:328`). Nothing from the network reaches the format string: the version goes in at `:348` as an argument to the literal `"%sstable/%s/%s"`. A `-Wformat-nonliteral` warning would be a false alarm here.
+
+---
+
+## Critical (0)
+
+## High (0)
+
+## Medium (1)
+- [dim 9] `self_update.c:575-578` — `ops->rename(ops->ud, old, cur);` — `su_undo` ignores both rename results, so `self_update_replace` returns the same `-1` whether the rollback worked or not. If restoring `p.retroarch-old` → `p` fails:
+  - the caller reports a "file in use" error, as if nothing had changed;
+  - the caller then deletes the staging copy (`task_self_update.c:777`);
+  - at the next start, `self_update_cleanup` (`:735-737`) deletes every `*.retroarch-old`, which is now the **only copy** of the original file.
+  
+  The result is a missing program file, against INV-9 ("all or nothing"). Fix: `su_undo` reports failure, and `replace` returns a separate "rollback incomplete" code. On that code the caller warns the user and keeps the `.retroarch-old` files (for example, by writing a note that start-up checks before cleaning).
+
+## Low / Info
+- [dim 7] [lead A2] `self_update.c:78-83` — an UninstallString with arguments after the quoted path, or an unexpanded `REG_EXPAND_SZ` value, is classed as portable. Fix: if the string starts with `"`, compare up to the closing quote; if it is unquoted, cut it at the first ` /`; expand `REG_EXPAND_SZ` with `ExpandEnvironmentStringsW` in the caller.
+- [dim 16] [lead A3] `self_update.c:538` — `ops->remove(ops->ud, marker);` — the result is ignored, so the notice repeats at every start. Fix: when remove fails, return INVALID (or log it) so the message is not shown again on the next start.
+- [dim 2] [lead A5] `self_update.c:660` — `char path[PATH_MAX_LENGTH];` sits before `unsigned depth;`, against the project rule that struct members are sorted by alignment. Fix: move `path` to the end.
+- INFO: I did not open the file-operation functions (`su_fs_*`) or the rest of the apply task. I checked callers only at the places listed above.
+
+## Covered by spec and looks correct
+These parts of `self_update.c` I read and checked against the spec:
+- `kind_decide`'s Linux branch, against §4.3 and INV-1;
+- `version_parse` and `version_cmp`, against INV-3: the 65535 limit, the 2–4 parts, the leading `v`;
+- `release_offer`, against INV-4;
+- `memory_ok`'s sum and overflow refusal, against §4.5 and INV-14;
+- `program_member` with `su_safe_rel`, against §4.6 step 2;
+- the bounds in `su_batch_path`;
+- `su_is_staging_name`, against §4.6.
+
+## Open questions
+- **A1's guard lives only in the build.** Should `kind_decide` or `file_url` refuse an AppImage when `x86_64` is false, so that a build which skips configure cannot swap an x86_64 file over an ARM AppImage? Whether that is wanted is a policy call.
+- **No disk flush in the AppImage swap.** Spec §4.6 step 2 says "flush it to disk" before the swap. `self_update_appimage_swap` has no flush, and the operations table has no fsync. I did not read the caller in `task_self_update.c`, so I cannot say whether it flushes.
+- **Windows names that `su_safe_rel` lets through.** It accepts a component such as `...`, or names with trailing dots or spaces, which Windows normalises. The archive is checksum-checked and comes over TLS, so I could not judge whether that boundary matters.
+
+## 3 items to fix first
+1. **The rollback result in `su_undo` / `replace` (Medium).** It is the only path here where the user's original files can be lost.
+2. **The ignored marker removal (A3).** It is a one-line fix, and without it the user can see a false "did not finish" message at every start.
+3. **The UninstallString matching (A2).** It makes the route choice survive installer versions whose registry value carries arguments or an expandable path.

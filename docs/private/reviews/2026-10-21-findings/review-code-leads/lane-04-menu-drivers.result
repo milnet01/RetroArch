@@ -1,0 +1,64 @@
+The lane was told to read only the enclosing functions, not whole files, so I took no line counts. My standing instructions ask for them, but your brief's scope won on this run. Files and functions read:
+- `menu_driver.h` lines 74–90
+- `menu_driver.c`: `menu_list_new`, `menu_list_free`, `menu_entry_get` (header), and around lines 2620–2660 and 8405–8440
+- the SCAN branch of `*_parse_menu_entry_action` in all four drivers
+- `ozone_init_font` and `ozone.c` lines 6330–6375
+- `random_range` in `retro_math.h` and `VIDEO_PX` in `video_defines.h`
+- `menu_displaylist.c` lines 655–700 and 5410–5450
+
+**Already in my context on arrival:** the global `~/.claude/CLAUDE.md`, the user's email, and a startup hook message about the Ants tools. I had no project memory and no git snapshot.
+
+### Lead M1
+VERDICT: **upstream code, real** — but not as the lead describes it. There is no read outside the list. The real defect is an endless loop.
+
+- **Out-of-range read: false.** `retro_math.h:211` reads `return (min == max) ? min : (size_t)((float)rand() / (float)RAND_MAX * (max + 1 - min) + min);`. When `selection_total` is 0, `max` becomes `UINT_MAX`. Then `max + 1 - min` wraps to 0, so every call returns 0. `menu_entry_get` (`menu_driver.c:494`, `if (!list || i >= list->size) return;`) leaves `entry_new` untouched.
+- **Endless loop: real.** The loop is `while (new_selection == selection || entry_new.type != FILE_TYPE_PLAYLIST_COLLECTION)` (`materialui.c:11058`, `rgui.c:9171`, `ozone.c:9115`, `xmb.c:6938`). It only stops on a collection entry that differs from the current one.
+  - With no collection entries at all, it never stops. History and favourites are never collections (`menu_displaylist.c:5429-5433`), and an empty list always returns index 0.
+  - With exactly one collection that is already selected, it never stops either.
+  - The menu thread then freezes for good.
+- The fork's change only replaced the expression that feeds `selection_total`. The loop is upstream code in all four drivers.
+
+### Lead M2
+VERDICT: **upstream code, not a defect.**
+- `ozone_init_font` raises small sizes first: `if (font_size < 9) font_size = 9;`. So `glyph_width = (int)VIDEO_PX(font_size * (3.0f / 4.0f))` is at least `VIDEO_PX(6.75)`, which is 7.
+- The failure path at `return false;` leaves that 7 in place. The later overwrite happens only when the measured width is `> 0`.
+- Through this function, the divisor at `ozone.c:6355` (`/ ozone->fonts.entries_label.glyph_width`) cannot be 0.
+- A NaN `font_size` would skip the clamp and give `VIDEO_POS_MIN`. That is out of this lead's scope, and I did not check `VIDEO_POS_MIN`'s value.
+
+### Lead M3
+VERDICT: **not a defect.** That state cannot be seen by other code.
+- `menu_list_new` either fills `selection_buf[0]`, or frees everything and returns NULL.
+- The only line that writes `selection_buf[i] = NULL` is inside `menu_list_free` (`menu_driver.c:1538`). It runs just before `free(menu_list)`, and both callers then set `entries.list = NULL` (`:3878`, `:7237`).
+- `selection_buf_size` is always 1, so no other code runs after slot 0 becomes NULL.
+- So `menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0` is safe at all six sites.
+- Limit: I did not open `menu_list_free_list` or the drivers' `list_free` hooks. A hook re-entering during the free would see freed memory, not NULL, so this lead's question would still not apply.
+
+## Critical (0)
+
+## High (0)
+
+## Medium (1)
+- [dim 16] [lead M1] `materialui.c:11058`, `rgui.c:9171`, `ozone.c:9115`, `xmb.c:6938` — `while (new_selection == selection || entry_new.type != FILE_TYPE_PLAYLIST_COLLECTION)` — the Scan (random) action on the playlists tab never ends when there are no collections, or when the only collection is the one already selected. The menu freezes. Fix: count the collections other than the current one first; if there are none, return `MENU_ACTION_NOOP`. Otherwise pick from that set rather than drawing again and again.
+
+## Low / Info
+- [dim 16] `ozone.c` sidebar SCAN branch (about line 9089) — `while (new_selection == tab_selection) new_selection = random_range(...system_tab_end + 1..., ...system_tab_end + horizontal_list_size)` — the same endless-loop class when `horizontal_list_size == 1` and the cursor is on that tab. When the size is 0, `min > max` and the call returns `system_tab_end + 1`, an index past the last tab, which goes to `ozone_sidebar_goto`. I did not check whether `ozone_sidebar_goto` bounds its input. Fix: return early when `horizontal_list_size <= 1`.
+- [dim 7] same four loops — `menu_entry_get(&entry_new, 0, new_selection, NULL, false);` — the result is never checked. If `rand()` returns `RAND_MAX`, or rounds up to it in float, `random_range` returns `selection_total`, one past the end. `menu_entry_get` then returns without writing anything, and `entry_new.type` keeps the previous draw's collection type. The loop can then exit with `selection_ptr` one past the end. The chance is tiny, and other code guards against an oversized `selection_ptr` (#18797 comments). Fix: reset `entry_new.type` before each draw, or clamp `new_selection < selection_total`.
+- [dim 2] `ozone.c` sidebar branch — `if (new_selection != selection)` — compares against `selection`, not `tab_selection`, so the scroll sound depends on the wrong variable. Upstream code. Fix: compare `tab_selection`.
+- [dim 4] Checked, nothing diverged: in the fork, MaterialUI drops `if (new_selection != selection)`, and the comment it leaves is correct given the loop condition. RGUI, Ozone and XMB keep the check, which does the same thing.
+- INFO: I did not open the vtable struct (`menu_driver.h:356`). The `NULL` / `set_thumbnail_content` entries the fork removed from the four driver tables are not verified against it.
+
+## Covered by spec and looks correct
+- `menu_list_new` / `menu_list_free` keep "list exists ⇒ `selection_buf[0]` exists" true wherever other code can see it.
+- The fork's guards in `materialui_pointer_up`, `rgui_render`, `rgui_navigation_set` and `rgui_pointer_up` (diff hunks only) correctly guard `selection_buf` itself.
+- Through `ozone_init_font`, `glyph_width` cannot be zero.
+
+## Open questions
+- The comment in `menu_driver.h` says *"Callers MUST guard the result before dereferencing"*. The Ozone and XMB sites, and `menu_driver.c:8001` and `:8136`, guard the list, not the result. That is safe given the M3 invariant, but it does not match the comment. I cannot tell which side is wrong:
+  - either the comment should state the invariant and accept a list guard,
+  - or the sites should guard the result, as MaterialUI and RGUI now do.
+- Does `ozone_sidebar_goto` bound its index? That decides whether the zero-playlist sidebar case is also an out-of-range access.
+
+## 3 items to fix first
+1. **The M1 endless loop in all four drivers.** It is a guaranteed freeze for anyone pressing Scan on the playlists tab with no playlists, and the fix is one counted pre-check.
+2. **The Ozone sidebar SCAN branch.** It is the same freeze class, plus a possible out-of-range tab index when there are no playlists.
+3. **The stale `entry_new.type` reused after an out-of-range draw.** It is very unlikely, but it can leave `selection_ptr` past the end of the list, and resetting the type per draw fixes it.

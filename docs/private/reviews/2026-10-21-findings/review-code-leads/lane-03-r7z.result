@@ -1,0 +1,74 @@
+Subject line counts as read: `laneD.diff` has **215 lines**, read in full with `Read`. Everything else was opened as a slice for cross-reference: `r7z_lzma_stream.h` 100–215; `r7z_lzma_stream.c` 540–580, 630–710, 840–925 and 960–1110; `r7z_lzma2.c` 110–160 and 230–380; `r7z_archive.c` 850–960, 2170–2205 and 2405–2440; and the caller `tasks/task_self_update.c` 900–975. `shared-context.md` (453 lines) is the packet, not the subject.
+
+**Already in my context when I arrived, before reading the subject:**
+- the global `~/.claude/CLAUDE.md`
+- the userEmail context block
+- the review-lane agent file
+- a SessionStart hook message recommending the Ants MCP verbs
+
+There was no project `CLAUDE.md`, no memory index and no git snapshot. The fork's project rules came only from the packet. I found no disagreement between the brief and the lane file.
+
+### Lead D1
+**VERDICT: real.** The defect is in the document, not the code. The wrong part is older than the fork, but the fork made it worse.
+
+- `r7z_lzma_stream.h:172–174` reads: `Call this before the first block and at every LZMA2 state reset.`
+- After the fork, `rlzma_stream_reset` does three things: `s->dic_pos = 0; rlzma_stream_reset_parts(s, 1, 1);`.
+- An LZMA2 *state reset* (control byte 0xA0–0xDF) keeps the dictionary. A caller following the doc would make two mistakes:
+  - It would zero `total_pos`, which forgets the history, so a valid match reaching back gets `RLZMA_ERROR_DATA` at the `reach` check (`r7z_lzma_stream.c` ~859). This was already true before the fork, because reset_parts(1,1) zeroed `total_pos` then too.
+  - Since the fork, it would also move `dic_pos` back to 0, so the next chunk overwrites the start of the output. That is the bug commit 99919acb78 fixes.
+- **No caller in the tree follows the doc.** There are only two callers of `rlzma_stream_reset`:
+  - `r7z_lzma2.c:127`, in `rlzma2_dec_reset`, at stream start;
+  - `r7z_archive.c:2427`, right after `rlzma_stream_init`, at stream start.
+  - Mid-stream resets go through `rlzma_stream_reset_parts(&p->lzma, init_dic, init_state)` (around `r7z_lzma2.c:283` and `:346`).
+- So this is a trap for the next caller (for example a core using the vendored decoder), not a live bug.
+
+### Lead D2
+**VERDICT: not a defect.**
+
+- `r7z_lzma_stream.h:142` reads: `Total bytes produced since the last reset.`
+- The fork did not change what `total_pos` means. It was already zeroed only under `init_dic`, and a reset with only `init_state` set never touched it, before the fork or after. The fork removed only the `dic_pos = 0` line.
+- Every read of `total_pos` is in `r7z_lzma_stream.c`, and each one wants "since the last dictionary reset":
+  - `pos_state` and `lit_state` (:348, :362, :583, :598);
+  - the distance bound `reach` (:859–860);
+  - the counters that advance it (:647, :698, :896, :1002, :1097).
+- My search found no use outside that file.
+- The word "reset" in the comment is loose; "dictionary reset" would be exact. That is wording, not a defect.
+
+### Lead D3
+**VERDICT: not a defect.** The short-size path cannot be reached.
+
+- The parser at `r7z_archive.c` ~888–897 runs over every folder `i` and every `k < a->folders[i].num_pack`, with `if (pk >= a->num_pack) return R7Z_ERROR_DATA;` and a running `pk++`. So any archive that opens satisfies Σ `folders[i].num_pack` ≤ `a->num_pack`.
+- In `r7z_archive_folder_info` (:2193–2196), `pk` is the sum over folders before `folder`. That makes `pk + k < pk + f->num_pack ≤ a->num_pack` for every `k` in the loop, so the guard `pk + k < a->num_pack` is never false.
+- The "cannot wrap" comment holds too: each `pack_sizes[pk] ≤ a->len - off`, so the sum stays ≤ `a->len`.
+- What a short size would cause: `pack` feeds `self_update_memory_ok` (`task_self_update.c` ~939). An undercount would only make the memory estimate low, not corrupt anything, and it cannot happen anyway.
+- The guard silently returning `R7Z_OK` differs from the other paths, which return `R7Z_ERROR_DATA` on the same condition. That only matters if the parser is ever loosened.
+
+## Critical (0)
+
+## High (0)
+
+## Medium (0)
+
+## Low / Info
+- **[dim 2] [lead D1]** `r7z_lzma_stream.h:173–174`: `at every LZMA2 state reset`. The document is wrong, not the code. Following it loses the dictionary, and since the fork it also overwrites output. Fix: say "Call this once, before the first chunk; for LZMA2 chunk resets use rlzma_stream_reset_parts()". This file is vendored, so the fix belongs upstream too.
+- **[dim 11] (unsettled)** `r7z_archive.c:2193`: `for (pk = 0, k = 0; k < folder; k++) pk += a->folders[k].num_pack;`
+  - The self-updater calls this once per block (`self_update_enter_block`), so the total work grows with the square of the folder count.
+  - A crafted archive with roughly 10⁶ tiny folders would spin for a very long time. The parser already knows each folder's first pack index (`pk` at ~887) but stores only `pack_offset`.
+  - I did not check whether the update archive is verified (signature or checksum) before this runs. That decides whether hostile input can get here.
+  - Fix: store `pack_first` per folder in the parse loop and read it here.
+- **INFO, coverage:** I did not check the extract_slice and header comment changes about BCJ2 slicing ("each call decodes one of its four inputs whole", and the fallback "a BCJ2 coder without four inputs"). No lead asked about them, and I did not open the slicer.
+- **INFO, coverage:** I checked the rewritten `pos_state` / `lit_state` in `decode_real` and `try_dummy` by reading the code. After a wrap (`dic_pos == 0`, `total_pos > 0`), `dic[dic_size - 1]` is the right previous byte. The match and short-rep source arithmetic stays valid while `dic_pos` carries across a dictionary reset. My one-line answer for dims 3, 4 and 7: nothing found in the fork's hunks.
+
+## Covered by spec and looks correct
+- **`rlzma_stream_reset_parts` and `rlzma_stream_reset`** after the fork: `dic_pos` is kept across `init_dic`, `total_pos` and `got_marker` are zeroed, and the full reset still zeroes `dic_pos`. This is consistent with `r7z_lzma2.c`'s compressed path (:340–356) and uncompressed path (:278–288).
+- **`decode_real` and `try_dummy`:** the position and literal context now come from `total_pos`, and `try_dummy` matches `decode_real` exactly. The two copies have not drifted apart.
+- **`r7z_archive_folder_info`:** NULL arguments and an out-of-range folder are rejected as documented. The returned figures come from data the parser has already checked.
+
+## Open questions
+- **Whether the fork's position rule matches the reference.** It depends on the reference decoder zeroing `processedPos` only on a *dictionary* reset, not on a state reset. That is my recollection of the LZMA SDK's `LzmaDec_InitDicAndState`; I did not open the reference. If a state-only reset also zeroes `processedPos` there, then `pos_state` after a 0xA0–0xDF chunk is wrong.
+- **Whether the self-update archive is verified before `self_update_enter_block` runs.** This settles the dim 11 item.
+
+## 3 items to fix first
+1. **D1's doc in `r7z_lzma_stream.h:173–174`.** It is the only text pointing a future caller at the overwrite bug the fork just fixed, and it is vendored, so cores read it.
+2. **Check the reference `processedPos` rule** (open question). The fork's correctness for 0xA0–0xDF chunks rests on it, and no in-tree encoder produces those chunks (see the `r7z_lzma2.c` coverage note).
+3. **Store a per-folder `pack_first`.** It removes the square-of-folders loop if hostile archives can reach it, and it would make D3's dead guard and the copied prefix sum unnecessary.
