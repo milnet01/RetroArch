@@ -422,19 +422,12 @@ bool content_tmp_path(char *s, size_t len, const char *path)
 
 bool content_replace_file(const char *tmp_path, const char *path)
 {
+   /* The VFS rename replaces the destination on every platform.  So
+    * a failure here - a sharing violation from antivirus or a sync
+    * client, say - is not cured by deleting the old file and
+    * retrying; that would only lose the last good copy. */
    if (filestream_rename(tmp_path, path) == 0)
       return true;
-
-   /* POSIX rename replaces the destination; the Win32 one refuses an
-    * existing destination, so it needs the target gone first. Only
-    * when the temporary file is really there: a rename that failed
-    * because the source is missing must not cost the destination. */
-   if (path_is_valid(tmp_path))
-   {
-      filestream_delete(path);
-      if (filestream_rename(tmp_path, path) == 0)
-         return true;
-   }
 
    /* Keep the only complete copy if the destination is already gone. */
    if (path_is_valid(path))

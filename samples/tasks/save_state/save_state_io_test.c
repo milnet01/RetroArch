@@ -124,10 +124,12 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <errno.h>
 
 #include <retro_common_api.h>
 #include <queues/message_queue.h>
 #include <queues/task_queue.h>
+#include <file/file_path.h>
 #include <streams/file_stream.h>
 #include <retro_timers.h>
 
@@ -233,6 +235,23 @@ static void alloc_count_begin(void)
 }
 
 static void alloc_count_end(void) { alloc_count_on = 0; }
+
+/* rename() as the VFS sees it.  With renames_fail set it refuses with
+ * EBUSY and leaves both files alone: a sharing violation, which no
+ * delete of the destination can clear. */
+static int renames_fail = 0;
+
+extern int __real_rename(const char *old_path, const char *new_path);
+
+int __wrap_rename(const char *old_path, const char *new_path)
+{
+   if (renames_fail)
+   {
+      errno = EBUSY;
+      return -1;
+   }
+   return __real_rename(old_path, new_path);
+}
 
 static int ser_dest_calls = 0;
 
@@ -1082,6 +1101,65 @@ static void test_close_waits_for_save(void)
    filestream_delete(path);
 }
 
+/* -----------------------------------------------------------------
+ * A rename that fails keeps the old file.
+ *
+ * Both replace paths - content_replace_file for states and SRAM,
+ * filestream_write_file_atomic for the rest - used to delete the
+ * destination and retry after any failed rename.  The VFS rename
+ * already replaces, so the retry failed the same way and the last
+ * good save was gone.
+ * ----------------------------------------------------------------- */
+static long file_first_byte(const char *p)
+{
+   RFILE *f = filestream_open(p, RETRO_VFS_FILE_ACCESS_READ,
+         RETRO_VFS_FILE_ACCESS_HINT_NONE);
+   int c;
+   if (!f)
+      return -1;
+   c = filestream_getc(f);
+   filestream_close(f);
+   return c;
+}
+
+static void test_failed_rename_keeps_old_file(void)
+{
+   const char *path     = "sst_replace.srm";
+   const char *tmp_path = "sst_replace.srm.tmp";
+
+   filestream_delete(path);
+   filestream_delete(tmp_path);
+   filestream_write_file(path, "O", 1);
+   filestream_write_file(tmp_path, "N", 1);
+
+   renames_fail = 1;
+   okf(!content_replace_file(tmp_path, path),
+       "content_replace_file reports a failed rename");
+   renames_fail = 0;
+   okf(file_first_byte(path) == 'O',
+       "content_replace_file keeps the old file when the rename fails");
+
+   filestream_write_file(tmp_path, "N", 1);
+   okf(content_replace_file(tmp_path, path)
+         && file_first_byte(path) == 'N'
+         && !path_is_valid(tmp_path),
+       "content_replace_file replaces the old file when the rename works");
+
+   filestream_write_file(path, "O", 1);
+   renames_fail = 1;
+   okf(!filestream_write_file_atomic(path, "N", 1),
+       "filestream_write_file_atomic reports a failed rename");
+   renames_fail = 0;
+   okf(file_first_byte(path) == 'O',
+       "filestream_write_file_atomic keeps the old file when the "
+       "rename fails");
+   okf(!path_is_valid(tmp_path),
+       "filestream_write_file_atomic leaves no temporary file behind");
+
+   filestream_delete(path);
+   filestream_delete(tmp_path);
+}
+
 static int run_default_lane(void)
 {
    printf("== task_save.c I/O regression oracle ==\n");
@@ -1096,6 +1174,7 @@ static int run_default_lane(void)
    test_roundtrip(TEST_TICK_BUDGET_US,
          "round-trip is byte-exact at one quantum per tick");
    test_close_waits_for_save();
+   test_failed_rename_keeps_old_file();
    test_serialize_failure();
    test_background_serialize_timing();
    test_open_failure();

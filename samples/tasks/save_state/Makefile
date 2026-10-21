@@ -54,7 +54,11 @@ CFLAGS  += -Wall -std=gnu99 -g -O1 \
 # to observe the undo snapshot reusing its buffer: the addresses are
 # identical either way, because a state-sized block is mmap'd and the
 # kernel hands back the same region on the next request.
-LDFLAGS += -Wl,--wrap=malloc -lpthread -lm
+#
+# --wrap=rename so the sample can make the VFS rename fail with the
+# destination still in place, the way a sharing violation from
+# antivirus or a cloud-sync client does on Windows.
+LDFLAGS += -Wl,--wrap=malloc -Wl,--wrap=rename -lpthread -lm
 
 # Extra flags for the caller; CFLAGS= on the command line would replace
 # everything set above instead of adding to it.
