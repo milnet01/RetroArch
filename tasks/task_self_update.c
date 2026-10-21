@@ -1193,9 +1193,11 @@ static const char *self_update_apply_step(self_update_apply_t *state,
             if (     state->kind == SELF_UPDATE_KIND_WIN_INSTALLER
                   || state->kind == SELF_UPDATE_KIND_WIN_INSTALLER_VISIBLE)
             {
-               self_update_write_marker(state);
+               /* After the launch: a marker for an installer that never
+                * started would report an update that did not finish. */
                if ((err = self_update_launch_installer(state)))
                   return err;
+               self_update_write_marker(state);
                state->quit = true;
                *finished   = true;
                return NULL;
