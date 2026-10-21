@@ -605,7 +605,7 @@ bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
 
 #define SELF_UPDATE_MARKER "self_update.pending"
 
-/* The staging folder for @kind (spec §4.6): beside retroarch.exe or
+/* The staging folder for @kind: beside retroarch.exe or
  * $APPIMAGE, so the final renames stay on one volume; the installer
  * route's goes under %TEMP%.  Empty when it cannot be worked out. */
 static void self_update_staging_dir(char *s, size_t len,
@@ -723,7 +723,7 @@ void task_self_update_startup(const char *config_dir)
 /* ---- apply ------------------------------------------------------- */
 
 /* Download, verify, unpack and install the release the menu check
- * found (spec §4.5, §4.6).  The .sha256 fetch and the download are
+ * found.  The .sha256 fetch and the download are
  * HTTP tasks chained through their callbacks; everything after the
  * download is one task, a few megabytes or one decode slice per call. */
 
@@ -804,7 +804,8 @@ static void self_update_apply_failed(self_update_apply_t *state,
    self_update_apply_running = false;
 }
 
-/* Available memory, or 0 where the platform does not say (spec §4.5). */
+/* Available memory, or 0 where the platform does not say, for
+ * self_update_memory_ok(). */
 static uint64_t self_update_memory_available(void)
 {
 #if defined(_WIN32)
@@ -1035,7 +1036,7 @@ static const char *self_update_install_files(self_update_apply_t *state)
 
 /* The installer cannot run while RetroArch is open: it skips a locked
  * retroarch.exe and still reports success.  So run.cmd waits for this
- * process to exit, then runs it (spec §4.6). */
+ * process to exit, then runs it. */
 static const char *self_update_launch_installer(self_update_apply_t *state)
 {
 #ifdef _WIN32
@@ -1385,8 +1386,10 @@ static void cb_self_update_sha256(retro_task_t *task, void *task_data,
    if (!state)
       return;
 
-   /* Only a 404 means "no checksum published" (D5); any other
-    * failure stops the update rather than skipping the check. */
+   /* Only a 404 means "no checksum published": a release need not
+    * carry one, and HTTPS with certificate checking is then the only
+    * guard.  Any other failure stops the update rather than skipping the
+    * check. */
    if (data && data->status == 200)
    {
       if (!self_update_parse_sha256(data->data, data->len, state->expected))

@@ -111,9 +111,10 @@ size_t self_update_api_url(char *s, size_t len,
       const struct self_update_endpoints *ep);
 
 /* The download URL for @kind and @version ("1.22.2", no 'v').
- * @preferred picks the small file of spec §4.5 where one exists
+ * @preferred picks the smaller download where one exists
  * (RetroArch_update.7z, the bare AppImage); for an installer it is
- * ignored.  Returns 0 for SELF_UPDATE_KIND_NONE. */
+ * ignored.  The AppImage is built for x86_64 only, so @x86_64 does not
+ * change its URL.  Returns 0 for SELF_UPDATE_KIND_NONE. */
 size_t self_update_file_url(char *s, size_t len,
       const struct self_update_endpoints *ep, enum self_update_kind kind,
       const char *version, bool x86_64, bool preferred);
@@ -139,7 +140,7 @@ enum self_update_marker_result
 /* The headroom self_update_memory_ok() adds to a block's figures. */
 #define SELF_UPDATE_MEMORY_MARGIN ((uint64_t)64 * 1024 * 1024)
 
-/* Spec §4.5: true when @avail bytes of free memory cover decoding one
+/* True when @avail bytes of free memory cover decoding one
  * block of a .7z held whole in memory: @archive_size, the block's
  * @pack_size, its @unpack_size (counted twice when @num_coders > 1,
  * for the intermediate buffer), its @largest_member and
@@ -150,7 +151,7 @@ bool self_update_memory_ok(uint64_t avail, uint64_t archive_size,
       uint64_t pack_size, uint64_t unpack_size, unsigned num_coders,
       uint64_t largest_member, uint64_t *need);
 
-/* Windows installer route, spec §4.6: the run.cmd that waits until
+/* Windows installer route: the run.cmd that waits until
  * process @pid has exited, runs @setup (with /S when @silent), waits
  * for it, then starts @exe.  CRLF line endings; '%' in a path is
  * doubled so the batch file does not expand it.  Returns 0 when it
@@ -181,7 +182,7 @@ struct self_update_fileops
    void *ud;
 };
 
-/* Windows portable step 3 and 4: for each path in @rel (relative,
+/* Windows portable install: for each path in @rel (relative,
  * '/'-separated), moves <dst>/p aside to p.retroarch-old if it exists,
  * then moves <staging>/p to <dst>/p.  On any failure every move
  * already made is undone, in reverse, and -1 is returned. */
@@ -189,7 +190,7 @@ int self_update_replace(const struct self_update_fileops *ops,
       const char *dst, const char *staging,
       const char *const *rel, size_t count);
 
-/* AppImage steps 2 and 3: gives @new_file the mode bits of @appimage,
+/* AppImage install: gives @new_file the mode bits of @appimage,
  * then renames it over @appimage. */
 int self_update_appimage_swap(const struct self_update_fileops *ops,
       const char *new_file, const char *appimage);
