@@ -31762,7 +31762,7 @@ MSG_HASH(
    )
 MSG_HASH(
    MSG_SELF_UPDATE_FAILED,
-   "RetroArch was not updated: %s"
+   "Update not installed: %s"
    )
 MSG_HASH(
    MSG_SELF_UPDATE_NO_MEMORY,

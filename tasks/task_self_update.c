@@ -987,7 +987,8 @@ static const char *self_update_install_files(self_update_apply_t *state)
       return "cannot find the RetroArch folder";
    if (self_update_replace(&su_fileops, exe_dir, state->payload,
             (const char *const*)state->rel, state->num_members) != 0)
-      return "a program file is in use; nothing was changed";
+      return "another program is using one of RetroArch's files. "
+            "Nothing was changed. Close other programs and try again.";
 #else
    char fresh[PATH_MAX_LENGTH];
    const char *appimage = getenv("APPIMAGE");
