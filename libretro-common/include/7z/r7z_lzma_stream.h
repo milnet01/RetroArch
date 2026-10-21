@@ -178,14 +178,17 @@ void rlzma_stream_reset(rlzma_stream_t *s);
 /**
  * rlzma_stream_reset_parts:
  * @s          : initialized decoder state
- * @init_dic   : non-zero to reset the dictionary position
+ * @init_dic   : non-zero to reset the dictionary: later matches may
+ *               not reach back past this point. The write position
+ *               (dic_pos) is kept.
  * @init_state : non-zero to reset the range coder, probabilities and
  *               match history
  *
- * The two halves of rlzma_stream_reset(), separately. LZMA2 chunks
- * choose which to apply: a chunk may reset decoder state while
- * continuing the previous chunk's dictionary, or reset the dictionary
- * while the range coder carries on.
+ * The two halves of rlzma_stream_reset(), separately, except that only
+ * rlzma_stream_reset() moves the write position back to the start.
+ * LZMA2 chunks choose which to apply: a chunk may reset decoder state
+ * while continuing the previous chunk's dictionary, or reset the
+ * dictionary while the range coder carries on.
  */
 void rlzma_stream_reset_parts(rlzma_stream_t *s, int init_dic,
       int init_state);

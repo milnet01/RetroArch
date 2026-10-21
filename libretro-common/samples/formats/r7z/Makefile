@@ -1,4 +1,4 @@
-TARGETS := r7z_lzma_props_test r7z_folder_info_test
+TARGETS := r7z_lzma_props_test r7z_folder_info_test r7z_dict_reset_test
 
 LIBRETRO_COMM_DIR := ../../..
 
@@ -18,6 +18,8 @@ PROPS_OBJS := r7z_lzma_props_test.o \
 
 FOLDER_INFO_OBJS := r7z_folder_info_test.o $(R7Z_SOURCES:.c=.o)
 
+DICT_RESET_OBJS := r7z_dict_reset_test.o $(R7Z_SOURCES:.c=.o)
+
 CFLAGS += -Wall -pedantic -std=gnu99 -g -I$(LIBRETRO_COMM_DIR)/include
 
 ifneq ($(SANITIZER),)
@@ -36,11 +38,15 @@ r7z_lzma_props_test: $(PROPS_OBJS)
 r7z_folder_info_test: $(FOLDER_INFO_OBJS)
 	$(CC) $(FOLDER_INFO_OBJS) $(LDFLAGS) -o $@
 
+r7z_dict_reset_test: $(DICT_RESET_OBJS)
+	$(CC) $(DICT_RESET_OBJS) $(LDFLAGS) -o $@
+
 check: $(TARGETS)
 	./r7z_lzma_props_test
 	./r7z_folder_info_test
+	./r7z_dict_reset_test
 
 clean:
-	rm -f $(TARGETS) $(PROPS_OBJS) $(FOLDER_INFO_OBJS)
+	rm -f $(TARGETS) $(PROPS_OBJS) $(FOLDER_INFO_OBJS) r7z_dict_reset_test.o
 
 .PHONY: all check clean
