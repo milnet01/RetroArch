@@ -1896,6 +1896,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   sync, menu, replay/input, local-CI.sh, rest; (4) upstream-only bugs
   are fixed in the fork and listed as PR candidates. close-findings
   files the fork-wide findings.
+  2026-10-21 close-findings, save-file group: review-code leads P1
+  (task_save.c content_replace_file) and P2 (file_stream.c
+  filestream_write_file_atomic) fixed in 948fbe8f20 on
+  local/fixes-2026-09 (local CI passed, pushed); see RETR-0009. The
+  self-updater readability returns were lost from scratch before
+  closing; they were re-run (fa0f067b80) and every surviving return is
+  now in docs/private/reviews/2026-10-21-findings/. Open: the
+  self-updater, cloud sync, menu, replay/input, local-CI.sh and the
+  remaining groups, in the ruled order.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
@@ -2562,6 +2571,15 @@ current upstream first, so the player is built on current code.
   survives. Checked against filestream_write_file_atomic on
   local/fixes-2026-09. The upstream merge is tracked on RETR-S0115.
   2026-10-09: #19629, which carries this fix, merged upstream.
+  2026-10-21: review-code (lane 8, lead P2) found the 02e196e1e7 shape
+  still lost the good file: a failed rename deleted the destination and
+  retried a rename that already replaces, so a sharing violation left
+  the data only in a .tmp nothing loads. Fixed on local/fixes-2026-09 in
+  948fbe8f20 by taking upstream's c24fd90825 shape: delete and retry
+  only under a frontend VFS rename; otherwise drop the temporary and
+  keep the old file. save_state_io_test covers it (rename wrapped to
+  fail with EBUSY; red before, green after). Upstream already has this
+  fix, so nothing is owed upstream.
   **Layman:** A shared save helper meant to prevent half-written files can, in a rare failure, delete both the old file and the new one.
   Kind: fix.
   Source: sync review 2026-09-25 (core lane).
