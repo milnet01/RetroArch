@@ -178,8 +178,9 @@ static void webdav_cleanup_digest(void)
  * sources that an off-machine attacker cannot jointly observe:
  *   - time(NULL) to second resolution
  *   - clock() to clock-tick resolution
- *   - &local_var (ASLR-randomised stack address)
- *   - the per-session nonce-count counter
+ *   - &mix (ASLR-randomised stack address)
+ * @nc is mixed in too, but adds nothing: every caller passes it just
+ * after webdav_cleanup_digest() reset it to 1.
  * MD5 the mix into 16 bytes and hex-encode.  This is NOT a CSPRNG
  * and would not stop a co-resident attacker; it does stop the
  * wire-only replay attack the digest scheme is meant to defend. */
@@ -1141,7 +1142,7 @@ static void webdav_ensure_dir(const char *dir, webdav_mkdir_cb_t cb,
 
    /* this is a recursive callback, set it up so it looks like it's still proceeding.
     * Zero the whole http_transfer_data_t so the callee never reads uninitialised
-    * data/headers/len fields (it is currently saved by short-circuit luck only). */
+    * data/headers/len fields. */
    memset(&data, 0, sizeof(data));
    data.status = 200;
    webdav_mkdir_cb(NULL, &data, webdav_mkdir_st, NULL);

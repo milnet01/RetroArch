@@ -422,20 +422,12 @@ static char* s3_url_encode(const char *input)
    {
       unsigned char c = (unsigned char)input[i];
 
-      /* RFC 3986 unreserved characters: A-Z, a-z, 0-9, -, ., _, ~ plus
-       * '/' (path-segment delimiter; must not be encoded so the
-       * canonical URI keeps its segment structure).
-       *
-       * Earlier code also excluded '&', '=', '?' to "preserve query
-       * delimiters" -- but this function is path-only (s3_url_encode
-       * is invoked from s3_build_request_url for the path part; query
-       * strings go through s3_url_encode_query_value + s3_canonicalize_
-       * query_string). Leaving '?' literal in a path component meant
-       * an object key like "rom?backup.state" had its '?' interpreted
-       * as the path/query boundary by s3_build_canonical_uri_from_url
-       * (line 1017: strpbrk(path_start, "?#")), so the canonical URI
-       * dropped everything after the '?' and the SigV4 signature was
-       * computed on the wrong path. Fix: encode all three. */
+      /* Paths only (queries go through s3_url_encode_query_value):
+       * RFC 3986 unreserved characters stay literal, and so does '/',
+       * so the canonical URI keeps its segments.  Everything else is
+       * encoded, '?', '&' and '=' included: a literal '?' in an object
+       * key would end the path in s3_build_canonical_uri_from_url, and
+       * the request would be signed for the wrong path. */
       if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
           (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' ||
           c == '~' || c == '/')
@@ -865,7 +857,7 @@ static char* s3_build_auth_header_ex(const char *method, const char *canonical_u
    /* Worst case: access_key_id (127) + '/' + date (8) + '/' + region
     * (NAME_MAX_LENGTH-1 = 255 on desktop) + '/' + S3_SERVICE ("s3", 2) +
     * "/aws4_request" (13) + NUL = 409 bytes.  256 was insufficient and
-    * triggered -Wformat-truncation once HAVE_S3 was wired in (Bundle 63). */
+    * triggered -Wformat-truncation. */
    char credential[512];
    time_t now;
    struct tm *tm_info;
