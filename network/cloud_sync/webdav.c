@@ -282,7 +282,7 @@ static bool webdav_create_digest_auth(const char *digest)
       {
          if (!(ptr = webdav_digest_quoted(ptr + STRLEN_CONST("realm=\""),
                      &webdav_st->realm)))
-            return false;
+            goto parse_fail;
          free(webdav_st->ha1hash);
          webdav_st->ha1hash = webdav_create_ha1_hash(
                webdav_st->username, webdav_st->realm,
@@ -295,7 +295,7 @@ static bool webdav_create_digest_auth(const char *digest)
          const char *tail;
          ptr += STRLEN_CONST("qop=\"");
          if (!(tail = strchr(ptr, '"')))
-            return false;
+            goto parse_fail;
          /* Any member of the list equal to "auth". */
          while (ptr < tail)
          {
@@ -310,26 +310,26 @@ static bool webdav_create_digest_auth(const char *digest)
          }
          /* not even going to try for auth-int, sorry */
          if (!webdav_st->qop_auth)
-            return false;
+            goto parse_fail;
          ptr = tail + 1;
       }
       else if (string_starts_with(ptr, "nonce=\""))
       {
          if (!(ptr = webdav_digest_quoted(ptr + STRLEN_CONST("nonce=\""),
                      &webdav_st->nonce)))
-            return false;
+            goto parse_fail;
       }
       else if (string_starts_with(ptr, "opaque=\""))
       {
          if (!(ptr = webdav_digest_quoted(ptr + STRLEN_CONST("opaque=\""),
                      &webdav_st->opaque)))
-            return false;
+            goto parse_fail;
       }
       else if (string_starts_with(ptr, "algorithm=\""))
       {
          if (!(ptr = webdav_digest_quoted(ptr + STRLEN_CONST("algorithm=\""),
                      &webdav_st->algo)))
-            return false;
+            goto parse_fail;
       }
       else if (string_starts_with(ptr, "algorithm="))
       {
@@ -340,7 +340,7 @@ static bool webdav_create_digest_auth(const char *digest)
          n = (size_t)(e - ptr);
          free(webdav_st->algo);
          if (!(webdav_st->algo = (char*)malloc(n + 1)))
-            return false;
+            goto parse_fail;
          memcpy(webdav_st->algo, ptr, n);
          webdav_st->algo[n] = '\0';
          ptr = e;
@@ -356,7 +356,7 @@ static bool webdav_create_digest_auth(const char *digest)
             if (*ptr == '"')
             {
                if (!(ptr = strchr(ptr + 1, '"')))
-                  return false;
+                  goto parse_fail;
                ptr++;
             }
             else
@@ -494,6 +494,12 @@ static char *webdav_create_digest_auth_header(const char *method, const char *ur
    const char     *path      = url;
    int             count     = 0;
    size_t          total     = 0;
+
+   /* A challenge the parser rejected leaves no digest to answer with,
+    * and basic auth stays off once one challenge has been accepted. */
+   if (   !webdav_st->ha1hash || !webdav_st->realm
+       || !webdav_st->nonce   || !webdav_st->cnonce)
+      return NULL;
 
    /* Skip scheme and host to get at the path.  strchr() returns NULL
     * once the slashes run out, which happens for a URL that is only a

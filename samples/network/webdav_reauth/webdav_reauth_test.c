@@ -351,6 +351,48 @@ static void test_malformed_challenges(void)
          "bare trailing token and no nonce: accepted");
 }
 
+/* A challenge the parser rejects, after one it accepted, must not
+ * leave a digest half built.  The next request builds its header from
+ * that state, and a NULL cnonce, nonce or realm there was a crash any
+ * server could trigger - with qop="auth-int", say. */
+static void test_rejected_challenge_after_digest(void)
+{
+   webdav_state_t *webdav_st = webdav_state_get_ptr();
+   static const char *rejected[] = {
+      "WWW-Authenticate: Digest realm=\"dav\", nonce=\"6f2a\", qop=\"auth-int\"",
+      "WWW-Authenticate: Digest realm=\"dav\", nonce=\"6f2a",
+      "WWW-Authenticate: Digest realm=\"dav\", x=\"y",
+      "WWW-Authenticate: Digest realm=\"dav\""
+   };
+   size_t i;
+
+   for (i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++)
+   {
+      http_transfer_data_t resp;
+      char  blk[256];
+      char *h;
+      size_t n = strlcpy(blk, digest_header, sizeof(blk) - 1);
+
+      blk[n + 1] = '\0';
+      make_response(&resp, 401, blk, NULL, 0);
+      webdav_st->basic = true;
+      CHECK(webdav_needs_reauth(&resp), "rejected[%u]: setup challenge "
+            "not accepted", (unsigned)i);
+
+      n = strlcpy(blk, rejected[i], sizeof(blk) - 1);
+      blk[n + 1] = '\0';
+      CHECK(!webdav_needs_reauth(&resp), "rejected[%u]: accepted",
+            (unsigned)i);
+
+      h = webdav_get_auth_header("GET",
+            "http://127.0.0.1/dav/saves/a.srm");
+      CHECK(!h, "rejected[%u]: a digest header was built from a "
+            "rejected challenge", (unsigned)i);
+      free(h);
+   }
+   webdav_cleanup_digest();
+}
+
 int main(void)
 {
    settings_t           *settings  = config_get_ptr();
@@ -379,6 +421,7 @@ int main(void)
    test_mkcol(&challenge);
    test_stale_nonce_recovers(&challenge, tmp);
    test_malformed_challenges();
+   test_rejected_challenge_after_digest();
 
    stub_reset();
    webdav_cleanup_digest();
