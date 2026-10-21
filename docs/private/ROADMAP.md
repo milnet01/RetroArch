@@ -1883,6 +1883,19 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (KEYCHAIN_PASSPHRASE_STR, three MCP_SERVER_*_STR; upstream already has
   them) stay out of any upstream PR. Findings to be closed via
   close-findings once the fork-wide readability run also lands.
+  2026-10-21 review-code on the readability runs' correctness leads
+  (~/.local/share/claude-scratch/review-code-2026-10-21-leads/): 27 of
+  50 leads real, 22 new defects; top items are the save-replace
+  delete-then-retry data loss (task_save.c content_replace_file,
+  file_stream.c filestream_write_file_atomic) and su_undo ignoring
+  rename results. User rulings 2026-10-21: (1) the start-up update check
+  stays silent when tls_verify_mode is not REQUIRED (spec 4.9
+  "quietly"); (2) local-CI.sh's samples-tasks and common-samples jobs
+  become declared quick checks, false "verbatim/bit-exact" comments
+  fixed; (3) fix order: save-file loss first, then self-updater, cloud
+  sync, menu, replay/input, local-CI.sh, rest; (4) upstream-only bugs
+  are fixed in the fork and listed as PR candidates. close-findings
+  files the fork-wide findings.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
