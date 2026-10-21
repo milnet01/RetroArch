@@ -529,6 +529,22 @@ jobs:
           make clean
           echo "[pass] self_update_test (ASan)"
 
+      - name: Build and run self_update_net_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/tasks/self_update
+        run: |
+          set -eu
+          # The check and apply tasks against a loopback server: the
+          # start-up and menu checks, the TLS gate, the .sha256 check,
+          # the RetroArch.7z unpack, and the shipping file operations
+          # on a scratch folder.  No outside network.
+          make -f Makefile.net clean
+          ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
+             UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 timeout 120 \
+             make -f Makefile.net check SANITIZER=address,undefined
+          make -f Makefile.net clean
+          echo "[pass] self_update_net_test (ASan)"
+
       - name: Build and run core_backup_io_test (ASan + UBSan, TSan)
         shell: bash
         working-directory: samples/tasks/core_backup

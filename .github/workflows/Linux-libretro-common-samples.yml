@@ -136,6 +136,7 @@ jobs:
             rh265_lossless_test
             rh265_lossless_test_nothreads
             r7z_lzma_props_test
+            r7z_folder_info_test
             vcdiff_test
             net_ifinfo
             vfs_read_overflow_test
