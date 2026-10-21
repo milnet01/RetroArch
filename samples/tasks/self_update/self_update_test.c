@@ -375,6 +375,7 @@ struct fs_ud
 {
    int renames;     /* renames done so far */
    int fail_rename; /* 1-based rename to fail, 0 for none */
+   int fail_remove; /* every remove fails while set */
 };
 
 static int fs_exists(void *ud, const char *p)
@@ -392,7 +393,13 @@ static int fs_rename(void *ud, const char *a, const char *b)
    return rename(a, b);
 }
 
-static int fs_remove(void *ud, const char *p) { (void)ud; return remove(p); }
+static int fs_remove(void *ud, const char *p)
+{
+   struct fs_ud *u = (struct fs_ud*)ud;
+   if (u && u->fail_remove)
+      return -1;
+   return remove(p);
+}
 
 static int fs_mkdir_p(void *ud, const char *p)
 {
@@ -655,6 +662,16 @@ static void lane_marker(void)
    check(self_update_marker_consume(&ops, marker, cur, target, sizeof(target))
          == SELF_UPDATE_MARKER_INVALID && !fs_exists(NULL, marker),
          "marker: an unparsable marker is invalid and removed");
+
+   /* A marker that cannot be removed would report the same update at
+    * every start, so it reports nothing. */
+   self_update_marker_format(buf, sizeof(buf), "1.22.2", SELF_UPDATE_KIND_WIN_INSTALLER);
+   write_file("self_update.pending", buf);
+   ud.fail_remove = 1;
+   check(self_update_marker_consume(&ops, marker, cur, target, sizeof(target))
+         == SELF_UPDATE_MARKER_INVALID,
+         "marker: one that cannot be removed is not reported");
+   ud.fail_remove = 0;
    rm_rf(scratch);
 }
 

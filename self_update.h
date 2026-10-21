@@ -202,8 +202,9 @@ void self_update_cleanup(const struct self_update_fileops *ops,
 
 /* Start-up: when @marker exists, reads it, compares its target with
  * @current, writes the target version to @target and removes the
- * marker.  Returns SELF_UPDATE_MARKER_INVALID when there is no marker
- * or it does not parse (an unparsable marker is removed too). */
+ * marker.  Returns SELF_UPDATE_MARKER_INVALID when there is no marker,
+ * it does not parse (an unparsable marker is removed too), or it
+ * cannot be removed. */
 enum self_update_marker_result self_update_marker_consume(
       const struct self_update_fileops *ops, const char *marker,
       const unsigned current[4], char *target, size_t target_len);

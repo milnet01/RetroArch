@@ -540,8 +540,9 @@ enum self_update_marker_result self_update_marker_consume(
       return SELF_UPDATE_MARKER_INVALID;
 
    n = ops->read(ops->ud, marker, buf, sizeof(buf) - 1);
-   ops->remove(ops->ud, marker);
-   if (n <= 0)
+   /* A marker left in place would report the same update at every
+    * start, so one that cannot be removed reports nothing. */
+   if (ops->remove(ops->ud, marker) != 0 || n <= 0)
       return SELF_UPDATE_MARKER_INVALID;
    buf[n] = '\0';
 
