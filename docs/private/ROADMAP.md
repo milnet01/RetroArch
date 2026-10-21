@@ -1834,6 +1834,28 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   a DLL held open); a real AppImage restart (INV-12). Gap: the
   libretro-common samples CI job runs an allowlist, and neither r7z
   test is on it. Next: the manual recipes, then the upstream PR.
+  Progress (2026-10-21): e51606824d puts r7z_folder_info_test on the
+  libretro-common samples CI run list (it was built but listed in neither
+  list, so CI would fail it as "Target not classified") and adds a CI step
+  for self_update_net_test. First real portable update on wintest, from a
+  fork build labelled 1.22.1 against the live buildbot: "unreadable
+  archive". Cause, reproduced on Linux: rlzma_stream_reset_parts() set
+  dic_pos to 0 on an LZMA2 dictionary reset, so any folder crossing a
+  7-Zip block boundary (every 256 MiB at a 64 MiB dictionary) failed; the
+  stable RetroArch.7z's first folder is 380 MB. Fixed in 99919acb78 (the
+  reset keeps the write position; position bits and literal context come
+  from total_pos, as in the reference), test r7z_dict_reset_test red then
+  green, all 14808 files of the real archive extract with every stored
+  CRC matching. Affects 7z content loading too, so it goes upstream on
+  its own. Retest on wintest passed (user clicked through over VNC):
+  1.22.2 runs, only program files replaced, the config and a planted save
+  untouched; a second start of a fork build removed all 185
+  *.retroarch-old leftovers. Scripted menu driving over netcmd and
+  injected clicks proved unreliable on wintest; the user drives the menu
+  over VNC (ssh tunnel 5901 -> wintest 5900). Still to run: the installer
+  routes (INV-10), a portable update with a DLL held open, the Linux
+  AppImage restart (INV-12), and the Update RetroArch page in a live
+  menu on Linux.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
