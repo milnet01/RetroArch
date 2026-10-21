@@ -201,6 +201,9 @@ static void cb_self_update_head(retro_task_t *task, void *task_data,
                      "HEAD", SELF_UPDATE_USER_AGENT, cb_self_update_head,
                      state))
             return;
+         /* Not a 404 for the archive: it was never asked about. */
+         self_update_check_failed(state, NULL, "request not started");
+         return;
       }
       snprintf(msg, sizeof(msg),
             msg_hash_to_str(MSG_SELF_UPDATE_NOT_YET_AVAILABLE),
@@ -233,10 +236,14 @@ static void cb_self_update_release(retro_task_t *task, void *task_data,
       return;
    }
 
-   if (     self_update_release_parse(data->data, data->len, &rel) != 0
-         || self_update_version_parse(PACKAGE_VERSION, current) != 0)
+   if (self_update_release_parse(data->data, data->len, &rel) != 0)
    {
       self_update_check_failed(state, NULL, "unreadable reply");
+      return;
+   }
+   if (self_update_version_parse(PACKAGE_VERSION, current) != 0)
+   {
+      self_update_check_failed(state, NULL, "unreadable own version");
       return;
    }
 
