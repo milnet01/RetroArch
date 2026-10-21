@@ -108,6 +108,9 @@ libretro/RetroArch and two target libretro/libretro-common.
 - Diff is topic-only: `git -C /mnt/Games/Scripts/Linux/ra-pr diff upstream/master <branch> --stat`.
 - The C89 build of each touched `.c` file is clean.
 - The draft claims nothing the Testing section did not run.
+- Last, once every valid fix is in: `/review-readability` on the code
+  the branch changes, and its valid findings fixed (user rule,
+  2026-10-21). Nothing checks this step.
 - `pr/netcmd-local-hardening` changes behaviour for anyone who drives
   the network command port from another machine. The draft offers a
   setting instead; decide whether to add that setting before opening.
