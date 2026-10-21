@@ -146,8 +146,8 @@ For stable 1.22.2 that sum, less the 64 MiB, is 779,341,072 B on Linux. On Win64
 **Windows installer.** RetroArch cannot run the installer itself and stay open: the installer skips a `retroarch.exe` it cannot open and still exits 0 (measured 2026-10-03). So:
 
 1. Download the installer to `%TEMP%\retroarch-update\`; verify per §4.5.
-2. Write the pending marker, then write `%TEMP%\retroarch-update\run.cmd`, which waits until RetroArch's process ID is gone, then runs `start "" /wait "<setup>"` with `/S` for `WIN_INSTALLER` and without it for `WIN_INSTALLER_VISIBLE`, then starts `<exe dir>\retroarch.exe`.
-3. Start it hidden (`CreateProcess` on `cmd.exe /c`), show *RetroArch will close to install the update*, and quit through `CMD_EVENT_QUIT` so content and config save as on any quit.
+2. Write `%TEMP%\retroarch-update\run.cmd`, which waits until RetroArch's process ID is gone, then runs `start "" /wait "<setup>"` with `/S` for `WIN_INSTALLER` and without it for `WIN_INSTALLER_VISIBLE`, then starts `<exe dir>\retroarch.exe`.
+3. Start it hidden (`CreateProcess` on `cmd.exe /c`). Only once it has started, write the pending marker, so an installer that never started is not reported as an unfinished update. Then show *RetroArch will close to install the update*, and quit through `CMD_EVENT_QUIT` so content and config save as on any quit.
 
 `start` goes through the shell, so Windows shows its usual admin prompt for the installer. For `WIN_INSTALLER_VISIBLE` the message before quitting names the folder the user must pick: `<exe dir>`.
 
@@ -227,7 +227,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Breaks when:* the restart uses `fill_pathname_application_path` and comes back as the old build.
 
 - **INV-13** — A failed or abandoned update leaves the installed program as it was and removes its staging folder.
-  *Test:* lane `checksum` asserts staging is gone after each failure row; lane `replace` asserts that after each failed rename every original is back and no `.retroarch-old` is left; lane `cleanup` plants `*.retroarch-old` files and each kind's staging folder (the two Windows ones and the AppImage one) and asserts the start-up cleanup removes them all.
+  *Test:* lane `checksum` asserts staging is gone after each failure row; lane `replace` asserts that after each failed rename every original is back and no `.retroarch-old` is left; lane `cleanup` plants `*.retroarch-old` files beside their originals, and each kind's staging folder (the two Windows ones and the AppImage one) and asserts the start-up cleanup removes them all.
   *Breaks when:* a staging folder or `.retroarch-old` file survives a failure and is never removed.
 
 - **INV-14** — No block of a `.7z` is decoded unless available memory, where the platform reports it, covers the §4.5 sum for that block: the archive size, the block's packed size, its unpacked size (twice for more than one coder), its largest needed member, and 64 MiB. The blocks are decoded one at a time, with the archive reopened between them.
@@ -262,7 +262,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 
 ## 7. Tests
 
-- `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`. The policy lanes compile `self_update.c` alone: it reads no settings, and the TLS gate takes the `tls_verify_mode` value as an argument. The network lanes (`startup`, `tlsgate`, `none`, `checksum`; `self_update_net_test.c`, built by `Makefile.net`) link the real `tasks/task_self_update.c`, `tasks/task_http.c`, `task_queue.c` and `net_http.c`, stub the frontend symbols, and serve from a local HTTP server thread — the shape of `samples/tasks/core_updater/Makefile.refresh_flags` and its `get_list_refresh_flags_test.c`. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` and `tlsgate` (INV-5), `none` (INV-1), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13), `memory` (INV-14). Wired into `samples/Makefile`'s `check`.
+- `samples/tasks/self_update/` — new, built like `samples/tasks/core_updater/`: a standalone `Makefile` with `check` and `SANITIZER=address|undefined`. The policy lanes compile `self_update.c` alone: it reads no settings, and the TLS gate takes the `tls_verify_mode` value as an argument. The network lanes (`startup`, `tlsgate`, `none`, `checksum`; `self_update_net_test.c`, built by `Makefile.net`) link the real `tasks/task_self_update.c`, `tasks/task_http.c`, `task_queue.c` and `net_http.c`, stub the frontend symbols, and serve from a local HTTP server thread — the shape of `samples/tasks/core_updater/Makefile.refresh_flags` and its `get_list_refresh_flags_test.c`. Lanes: `kind` (INV-1, INV-10's routing), `version` (INV-3), `release` (INV-4), `tls` and `tlsgate` (INV-5), `none` (INV-1), `startup` (INV-6), `checksum` (INV-7, INV-13), `program_set` (INV-8), `replace` (INV-9, INV-13, INV-16), `marker` (INV-11), `appimage` (INV-12), `cleanup` (INV-13, INV-16), `memory` (INV-14). Wired into `samples/Makefile`'s `check`.
 - `samples/tasks/http/` — `http_limits_test` covers the HTTPS-to-HTTP redirect guard (INV-5).
 - `libretro-common/samples/formats/r7z/` — a new test of `r7z_archive_folder_info` over its two-block fixture (INV-15), wired into that directory's `Makefile` beside `r7z_lzma_props_test.c`.
 - Each lane is run once against a deliberately broken build of the rule it tests (the fixture's named rule removed) and must fail there before it is trusted.

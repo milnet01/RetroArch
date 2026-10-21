@@ -1,0 +1,74 @@
+{
+ "rows": [
+  {
+   "id": "F1",
+   "loop": 5,
+   "source": "1d spec_lint test_coverage_gap",
+   "doc": "docs/private/specs/2026-10-03-self-updater.md",
+   "anchor": "\u00a77 Tests, Lanes list",
+   "q": "Q2",
+   "was": "`replace` (INV-9, INV-13) ... `cleanup` (INV-13)",
+   "now": "`replace` (INV-9, INV-13, INV-16) ... `cleanup` (INV-13, INV-16)",
+   "must_agree": [
+    "\u00a75 INV-16 Test clause",
+    "\u00a710 INV-16 row"
+   ],
+   "deleted": "none \u2014 \u00a77 lane list (incomplete, not false)",
+   "disposition": "fixed before dispatch"
+  },
+  {
+   "id": "F2",
+   "loop": 5,
+   "q": "Q2",
+   "anchor": "INV-16 headline vs \u00a74.6 cleanup exception",
+   "lanes": [
+    "a",
+    "b"
+   ],
+   "disposition": "surfaced",
+   "deleted": null
+  },
+  {
+   "id": "F3",
+   "loop": 5,
+   "q": "Q1",
+   "anchor": "\u00a74.6 Windows installer steps 2-3",
+   "lanes": [
+    "a",
+    "b"
+   ],
+   "was": "Write the pending marker, then write run.cmd",
+   "now": "marker written only once run.cmd has started",
+   "deleted": "Write the pending marker, then write `%TEMP%\\retroarch-update\\run.cmd`",
+   "disposition": "fixed (out of radius; exempt record, no loop left)"
+  },
+  {
+   "id": "F4",
+   "loop": 5,
+   "q": "Q3",
+   "anchor": "INV-16 result value unnamed",
+   "lanes": [
+    "b"
+   ],
+   "disposition": "dismissed: sole caller self_update_install_files, same change"
+  },
+  {
+   "id": "F5",
+   "loop": 5,
+   "q": "Q2",
+   "anchor": "INV-13 cleanup test",
+   "lanes": [
+    "b"
+   ],
+   "was": "plants `*.retroarch-old` files and",
+   "now": "plants `*.retroarch-old` files beside their originals, and",
+   "deleted": "none \u2014 INV-13 Test clause",
+   "disposition": "fixed"
+  }
+ ],
+ "collateral": [],
+ "surfaced": [
+  "F2"
+ ],
+ "out_of_scope": []
+}
