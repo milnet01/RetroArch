@@ -69,7 +69,8 @@ struct self_update_env
 
 enum self_update_kind self_update_kind_decide(const struct self_update_env *env);
 
-/* 0 on success; parts beyond those present are 0.  Accepts one
+/* 0 on success; parts beyond those present are 0.  On failure all
+ * four are 0.  Accepts one
  * optional leading 'v', then two to four dot-separated decimal
  * parts.  Rejects empty parts, signs, other non-digits, fewer than
  * two or more than four parts, any part > 65535. */

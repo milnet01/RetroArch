@@ -160,6 +160,9 @@ static void lane_version(void)
       snprintf(what, sizeof(what), "version: \"%s\" is rejected", bad[i]);
       check(self_update_version_parse(bad[i], v) != 0, what);
    }
+   check(self_update_version_parse("1.2.x", v) != 0
+         && !v[0] && !v[1] && !v[2] && !v[3],
+         "version: a rejected one leaves all four parts 0");
 }
 
 /* ---- release ----------------------------------------------------- */

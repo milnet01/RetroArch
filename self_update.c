@@ -145,24 +145,25 @@ int self_update_version_parse(const char *s, unsigned out[4])
       {
          v = v * 10 + (unsigned long)(*s - '0');
          if (v > 65535)
-            return -1;
+            goto fail;
          s++;
       }
       if (s == start || parts == 4)
-         return -1;
+         goto fail;
       out[parts++] = (unsigned)v;
       if (!*s)
          break;
       if (*s != '.')
-         return -1;
+         goto fail;
       s++;
    }
    if (parts < 2)
-   {
-      out[0] = 0;
-      return -1;
-   }
+      goto fail;
    return 0;
+
+fail:
+   out[0] = out[1] = out[2] = out[3] = 0;
+   return -1;
 }
 
 int self_update_version_cmp(const unsigned a[4], const unsigned b[4])
@@ -219,6 +220,7 @@ int self_update_release_parse(const char *json, size_t len,
             size_t n;
             const char *s = rjson_get_string(j, &n);
             out->has_tag  = true;
+            /* strlen() short of @n: a NUL inside the tag, rejected. */
             if (n < sizeof(out->tag) && strlen(s) == n)
             {
                memcpy(out->tag, s, n);
