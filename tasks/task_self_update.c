@@ -15,9 +15,11 @@
 
 /* Self-updater tasks: the install-kind facts this platform supplies,
  * the check for a newer stable release, the start-up cleanup and the
- * download-and-apply of the release the check found.  Every decision is made
- * by self_update.c; this file only gathers facts, makes the requests
- * and reports. */
+ * download-and-apply of the release the check found.  The policy -
+ * install kind, versions, URLs, the memory rule, which files to
+ * replace - is self_update.c's.  This file gathers the platform
+ * facts, picks the staging folders and the archive members, makes the
+ * requests, runs the installer and reports. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,6 +74,17 @@ typedef struct self_update_check
    bool quiet;       /* the start-up check: report only a newer release */
    bool preferred;   /* url is the small update file, not the full archive */
 } self_update_check_t;
+
+/* "HTTP <status>" after @what, or @fallback when the reply carried no
+ * status. */
+static void self_update_http_reason(char *s, size_t len, const char *what,
+      const http_transfer_data_t *data, const char *fallback)
+{
+   if (data && data->status > 0)
+      snprintf(s, len, "%sHTTP %d", what, data->status);
+   else
+      strlcpy(s, fallback, len);
+}
 
 /* One check at a time.  A second request while one runs is dropped,
  * except that a visible one takes over a quiet one (below). */
@@ -132,10 +145,8 @@ static void self_update_check_failed(self_update_check_t *state,
    char msg[256];
    char reason[64];
 
-   if (data && data->status > 0)
-      snprintf(reason, sizeof(reason), "HTTP %d", data->status);
-   else
-      strlcpy(reason, (err && *err) ? err : "no reply", sizeof(reason));
+   self_update_http_reason(reason, sizeof(reason), "", data,
+         (err && *err) ? err : "no reply");
    snprintf(msg, sizeof(msg),
          msg_hash_to_str(MSG_SELF_UPDATE_CHECK_FAILED), reason);
    /* The start-up check stays quiet about a failure; nobody asked. */
@@ -461,8 +472,8 @@ static enum self_update_kind self_update_kind_detect(void)
 {
    struct self_update_env env;
 #ifdef _WIN32
-   /* Static: gathered once, on the main thread, and kept while the
-    * decision reads them. */
+   /* Static, to keep two path buffers off the stack: detection runs
+    * once, from task_self_update_kind(). */
    static char exe_dir[PATH_MAX_LENGTH];
    static char uninstaller[PATH_MAX_LENGTH];
    char *uninstall_string = NULL;
@@ -739,7 +750,7 @@ enum self_update_stage
 typedef struct self_update_apply
 {
    struct sha256_state sha;
-   uint64_t archive_size;
+   uint64_t download_size;
    uint64_t read_size;
    RFILE *file;
    uint8_t *archive;          /* the whole .7z, while it is unpacked */
@@ -941,7 +952,7 @@ static const char *self_update_enter_block(self_update_apply_t *state,
       r7z_archive_close(state->ar);
       state->ar = NULL;
       if (r7z_archive_open(&state->ar, state->archive,
-               (size_t)state->archive_size) != R7Z_OK)
+               (size_t)state->download_size) != R7Z_OK)
          return "unreadable archive";
    }
 
@@ -958,7 +969,7 @@ static const char *self_update_enter_block(self_update_apply_t *state,
    }
 
    if (!self_update_memory_ok(self_update_memory_available(),
-            state->archive_size, pack, unpack, coders, largest, &need))
+            state->download_size, pack, unpack, coders, largest, &need))
    {
       snprintf(reason, sizeof(reason),
             msg_hash_to_str(MSG_SELF_UPDATE_NO_MEMORY),
@@ -1098,19 +1109,19 @@ static const char *self_update_apply_step(self_update_apply_t *state,
                   return "cannot read the download";
                if ((size = filestream_get_size(state->file)) <= 0)
                   return "empty download";
-               state->archive_size = (uint64_t)size;
+               state->download_size = (uint64_t)size;
                sha256_stream_init(&state->sha, 0);
                if (state->from_archive)
                {
-                  if (state->archive_size > (uint64_t)((size_t)-1))
+                  if (state->download_size > (uint64_t)((size_t)-1))
                      return "download too large";
                   if (!(state->archive = (uint8_t*)malloc(
-                              (size_t)state->archive_size)))
+                              (size_t)state->download_size)))
                      return "out of memory";
                }
             }
 
-            want = (int64_t)(state->archive_size - state->read_size);
+            want = (int64_t)(state->download_size - state->read_size);
             if (want > SELF_UPDATE_READ_CHUNK)
                want = SELF_UPDATE_READ_CHUNK;
             if (state->from_archive)
@@ -1131,7 +1142,7 @@ static const char *self_update_apply_step(self_update_apply_t *state,
             }
             state->read_size += (uint64_t)got;
 
-            if (state->read_size < state->archive_size)
+            if (state->read_size < state->download_size)
                return NULL;
 
             filestream_close(state->file);
@@ -1152,7 +1163,7 @@ static const char *self_update_apply_step(self_update_apply_t *state,
          {
             const char *err;
             if (r7z_archive_open(&state->ar, state->archive,
-                     (size_t)state->archive_size) != R7Z_OK)
+                     (size_t)state->download_size) != R7Z_OK)
                return "unreadable archive";
             if ((err = self_update_pick_members(state)))
                return err;
@@ -1252,9 +1263,9 @@ static void self_update_apply_handler(retro_task_t *task)
       strlcpy(state->error, err, sizeof(state->error));
       finished = true;
    }
-   else if (state->stage == SELF_UPDATE_STAGE_READ && state->archive_size)
+   else if (state->stage == SELF_UPDATE_STAGE_READ && state->download_size)
       task_set_progress(task,
-            (int8_t)((state->read_size * 50) / state->archive_size));
+            (int8_t)((state->read_size * 50) / state->download_size));
    else if (state->stage == SELF_UPDATE_STAGE_EXTRACT && state->num_members)
       task_set_progress(task,
             (int8_t)(50 + (state->next * 50) / state->num_members));
@@ -1328,10 +1339,8 @@ static void cb_self_update_download(retro_task_t *task, void *task_data,
       return;
    if (!data || data->status < 200 || data->status > 299)
    {
-      if (data && data->status > 0)
-         snprintf(reason, sizeof(reason), "download: HTTP %d", data->status);
-      else
-         strlcpy(reason, "download did not finish", sizeof(reason));
+      self_update_http_reason(reason, sizeof(reason), "download: ", data,
+            "download did not finish");
       self_update_apply_failed(state, reason);
       return;
    }
@@ -1400,10 +1409,8 @@ static void cb_self_update_sha256(retro_task_t *task, void *task_data,
    }
    else if (!data || data->status != 404)
    {
-      if (data && data->status > 0)
-         snprintf(reason, sizeof(reason), "checksum: HTTP %d", data->status);
-      else
-         strlcpy(reason, "checksum: no reply", sizeof(reason));
+      self_update_http_reason(reason, sizeof(reason), "checksum: ", data,
+            "checksum: no reply");
       self_update_apply_failed(state, reason);
       return;
    }
