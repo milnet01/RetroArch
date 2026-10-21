@@ -73,8 +73,9 @@ typedef struct self_update_check
    bool preferred;   /* url is the small update file, not the full archive */
 } self_update_check_t;
 
-/* One check at a time; a second request while one runs is dropped. */
-static bool self_update_check_running = false;
+/* One check at a time.  A second request while one runs is dropped,
+ * except that a visible one takes over a quiet one (below). */
+static self_update_check_t *self_update_check_running = NULL;
 /* One update at a time, and no check while one runs. */
 static bool self_update_apply_running = false;
 
@@ -122,7 +123,7 @@ enum self_update_status task_self_update_status(const char **line)
 static void self_update_check_done(self_update_check_t *state)
 {
    free(state);
-   self_update_check_running = false;
+   self_update_check_running = NULL;
 }
 
 static void self_update_check_failed(self_update_check_t *state,
@@ -548,9 +549,22 @@ bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
    settings_t *settings = config_get_ptr();
 
    /* No request at all from an install the updater cannot replace. */
-   if (     kind == SELF_UPDATE_KIND_NONE || self_update_check_running
-         || self_update_apply_running)
+   if (kind == SELF_UPDATE_KIND_NONE || self_update_apply_running)
       return false;
+
+   /* The menu page opened while the start-up check still runs: that
+    * check reports in full instead, or the page would stay blank. */
+   if (self_update_check_running)
+   {
+      if (quiet || !self_update_check_running->quiet)
+         return false;
+      self_update_check_running->quiet = false;
+      *self_update_offer_version       = '\0';
+      self_update_notify(msg_hash_to_str(MSG_SELF_UPDATE_CHECKING));
+      self_update_set_status(SELF_UPDATE_STATUS_CHECKING,
+            msg_hash_to_str(MSG_SELF_UPDATE_CHECKING));
+      return true;
+   }
 
    if (!self_update_tls_allowed(ep, settings->uints.tls_verify_mode))
    {
@@ -575,7 +589,7 @@ bool task_push_self_update_check_at(const struct self_update_endpoints *ep,
       free(state);
       return false;
    }
-   self_update_check_running = true;
+   self_update_check_running = state;
    if (!quiet)
    {
       /* A new check replaces whatever was on offer. */

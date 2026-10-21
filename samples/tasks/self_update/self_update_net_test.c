@@ -12,6 +12,8 @@
  *             naming it, and no request for the file at all
  *   sized     the menu check, offered a newer release: the small file
  *             is sized with HEAD and its size is reported
+ *   upgrade   the menu check while the start-up check runs: it takes
+ *             over that check, says it is checking, and is sized
  *   fallback  the small file answers 404: the full archive is sized
  *   notyet    both files answer 404: "not available yet", nothing else
  *   uptodate  the release is not newer: "up to date", one request
@@ -409,6 +411,28 @@ static void lane_sized(void)
          "only the small file was sized");
 }
 
+/* Opening the menu page while the quiet start-up check still runs:
+ * the request upgrades that check rather than being dropped, so the
+ * page gets a status and the full result. */
+static void lane_upgrade(void)
+{
+   enum self_update_status st;
+   const char *line = NULL;
+
+   printf("[upgrade]\n");
+   reset(NEWER_RELEASE, 200, 200, 200);
+   CHECK(task_push_self_update_check_at(&test_ep,
+            SELF_UPDATE_KIND_APPIMAGE, true), "quiet check started");
+   CHECK(task_push_self_update_check_at(&test_ep,
+            SELF_UPDATE_KIND_APPIMAGE, false),
+         "a visible check while the quiet one runs is taken");
+   st = task_self_update_status(&line);
+   CHECK(st == SELF_UPDATE_STATUS_CHECKING, "the page says it is checking");
+   pump();
+   CHECK(last_notice_is("available 99.0.0 1.0 MB"),
+         "the visible result, sized, is reported");
+}
+
 static void lane_fallback(void)
 {
    printf("[fallback]\n");
@@ -740,6 +764,7 @@ int main(int argc, char **argv)
 #define LANE(name) if (!only || !strcmp(only, #name)) lane_##name()
    LANE(startup);
    LANE(sized);
+   LANE(upgrade);
    LANE(fallback);
    LANE(notyet);
    LANE(uptodate);
