@@ -138,10 +138,10 @@ For stable 1.22.2 that sum, less the 64 MiB, is 779,341,072 B on Linux. On Win64
 1. Download to staging; verify per §4.5.
 2. Extract the **program set**: let `T` be the archive's single top-level folder; the set is every `T/*.exe`, `T/*.dll` and everything under `T/filters/` and `T/platforms/` — the set upstream's nightly `RetroArch_update.7z` carries. Nothing else is extracted, so `retroarch.cfg`, `retroarch.default.cfg`, saves, states, shaders, overlays, assets and databases are never written (D7).
 3. For each extracted file `p`: if `<exe dir>\p` exists, rename it to `p.retroarch-old`; then move the new file into place. Windows allows renaming a running executable or loaded DLL and writing a new file under its old name, but not deleting it (measured 2026-10-03).
-4. If any step fails, undo every rename already made, in reverse, and report the failure.
+4. If any step fails, undo every rename already made, in reverse, and report the failure. If an undo rename itself fails, the report says the update was only partly undone (INV-16).
 5. Write the pending marker (§4.7), remove staging, and offer *Restart now*. The restart uses the `retroarch.exe` path captured **before** step 3: after the rename, the process's reported path still names the original file (measured: `Get-Process` reported the original name after a rename), so the captured path is the one that now holds the new build.
 
-`*.retroarch-old` files in `<exe dir>`, `filters\` and `platforms\`, a leftover `.retroarch-update\` and a leftover `%TEMP%\retroarch-update\` (the installer route's staging, below) are deleted at start-up; a file still in use is left for the next start. Cleanup removes a staging folder only when its name is `.retroarch-update` or `retroarch-update`, so a wrong path cannot empty another folder.
+`*.retroarch-old` files in `<exe dir>`, `filters\` and `platforms\`, a leftover `.retroarch-update\` and a leftover `%TEMP%\retroarch-update\` (the installer route's staging, below) are deleted at start-up; a file still in use is left for the next start. The exception is a `p.retroarch-old` whose `p` is missing: an undo that failed left it as the only copy, so start-up renames it back to `p` instead (INV-16). Cleanup removes a staging folder only when its name is `.retroarch-update` or `retroarch-update`, so a wrong path cannot empty another folder.
 
 **Windows installer.** RetroArch cannot run the installer itself and stay open: the installer skips a `retroarch.exe` it cannot open and still exits 0 (measured 2026-10-03). So:
 
@@ -238,6 +238,10 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
   *Test:* a new test in `libretro-common/samples/formats/r7z/`, over a checked-in fixture made by `7zz a -mf=BCJ2` of an `.exe` and then `7zz a -mf=off` of a text file: two blocks, block 0 one `LZMA2` coder, block 1 four coders under `BCJ2`. The expected sizes are written from `7zz l -slt` of the fixture. An index past the last block returns `R7Z_ERROR_PARAM`. The BCJ2 block isolates the packed-stream sum and the coder count; two blocks of different sizes isolate the index.
   *Breaks when:* a BCJ2 block reports one packed stream or one coder, or a block reports another block's sizes.
 
+- **INV-16** — A failed undo never costs the old file. When an undo rename fails, `self_update_replace` returns a result apart from a clean rollback, and the next start's cleanup renames a `p.retroarch-old` whose `p` is missing back to `p` rather than deleting it.
+  *Test:* lane `replace`, with an injected rename that fails during the undo: the result is the incomplete-rollback one, and `p.retroarch-old` still holds the old bytes. Lane `cleanup` plants `SDL2.dll.retroarch-old` with no `SDL2.dll`: afterwards `SDL2.dll` holds its bytes and no `.retroarch-old` remains. The missing original isolates the rename-back from the delete.
+  *Breaks when:* cleanup deletes the only copy of a program file, or the user is told nothing changed when an undo failed.
+
 ## 6. Failure modes
 
 | Assumption broken | What happens |
@@ -247,7 +251,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 | Certificate checking is not `REQUIRED` | The check does not start; the message names the TLS verification setting (`MENU_ENUM_LABEL_TLS_VERIFY_MODE`). |
 | Download interrupted | `task_push_http_download_file` resumes where it can; on final failure, staging is removed and nothing is installed. |
 | Not enough disk space, or the exe / AppImage folder is read-only | Detected when the staging file cannot be created or written; reported; nothing installed. A Windows portable copy under `Program Files` is the common read-only case. |
-| A rename fails part-way (another program holds a file) | INV-9 rollback; reported. |
+| A rename fails part-way (another program holds a file) | INV-9 rollback; reported. If the undo fails too, reported as partly undone; the next start puts the old file back (INV-16). |
 | User declines the Windows admin prompt, or the installer fails | `run.cmd` still starts RetroArch; the marker check reports the update did not finish. |
 | Installer reaches `retroarch.exe` before the process is gone | Prevented by the wait in `run.cmd`; caught by the marker if it happens anyway. |
 | Some other caller relied on an `https`→`http` redirect | It now fails where it used to succeed over plain HTTP. The guard is in `net_http.c` for every caller (§4.8), so this is a deliberate behaviour change, stated in its own upstream PR. |
@@ -305,6 +309,7 @@ The *Test:* paths below are created by this work; none runs yet. Each names the 
 | INV-13 | lanes `checksum`, `replace`, `cleanup` |
 | INV-14 | **Partial:** lane `memory` covers the sum; reading available memory and the reopen between blocks are not covered |
 | INV-15 | `libretro-common/samples/formats/r7z/` folder-info test |
+| INV-16 | lanes `replace`, `cleanup` |
 | D7 (never writes config, saves or assets) | lane `program_set` (Windows); the AppImage route writes one file by construction |
 
 ## 11. Cross-doc impact

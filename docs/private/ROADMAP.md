@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=41 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=48 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1562,6 +1562,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   with the fix: unit-tests exits 0. #19835 is our only open upstream PR.
   2026-10-15: opened #19836, #19837 and #19838 (RETR-0019,
   user-approved). Open now: #19835 to #19838.
+  2026-10-21 upstream PR candidates from close-findings (fixed on
+  local/fixes-2026-09, upstream still has the bug): webdav digest header
+  from a rejected challenge (59e5bdd42a); s3 signs an empty query when
+  out of memory and does not sort query parameters (27b5c8d2fd);
+  net_http accepts a Content-Length with trailing garbage (ac53297f08,
+  vendored); r7z reset comment with the 99919acb78 dictionary fix
+  (db663de23b, vendored); r7z quadratic folder walk (RETR-0044). Not
+  candidates: the save-file fix (upstream already has it, c24fd90825).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1905,6 +1913,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   now in docs/private/reviews/2026-10-21-findings/. Open: the
   self-updater, cloud sync, menu, replay/input, local-CI.sh and the
   remaining groups, in the ruled order.
+  2026-10-21 close-findings, later: cloud sync closed
+  (51f2d28b3d..ac53297f08) and the self-updater closed
+  (4a8a64a797..08b5a539a8), both pushed with local CI passing. Open:
+  RETR-0042, whose fix needs the spec amendment drafted as INV-16 in
+  2026-10-03-self-updater.md (user approved 2026-10-21). review-contract
+  has not run on it yet, and nothing may be built under it first. Then
+  the menu, replay/input, local-CI.sh and remaining groups. Ledger and
+  per-group sources:
+  docs/private/reviews/2026-10-21-findings/close-findings-ledger.md.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
@@ -2022,6 +2039,99 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** The Content Downloader says a zip you already downloaded is missing, because RetroArch unpacks the zip and throws it away, and then looks for the zip.
   Kind: fix.
   Source: user-report-2026-10-20.
+
+- 📋 [RETR-0042] **MEDIUM — Self-updater: a failed rollback can lose a program file at the next start.**
+  su_undo (self_update.c) ignores both rename results, so
+  self_update_replace returns -1 whether the rollback worked or not. If
+  putting p.retroarch-old back to p fails, the caller reports "file in
+  use", and the next start's self_update_cleanup deletes every
+  *.retroarch-old, which is then the only copy of p. Queued, not fixed:
+  the fix changes behaviour the spec states (2026-10-03-self-updater.md
+  § Windows portable: *.retroarch-old files "are deleted at start-up";
+  INV-13), so it needs a spec amendment through review-contract first.
+  Proposed: cleanup renames a .retroarch-old back when its original is
+  missing instead of deleting it; replace reports an incomplete rollback
+  separately and the message says so. User approved 2026-10-21; the
+  amendment is drafted as INV-16 in the spec, and review-contract is owed
+  before the code.
+  **Layman:** If a Windows update fails and putting the old files back also fails, the next start can delete the only copy of a RetroArch file.
+  Kind: fix.
+  Source: review-code 2026-10-21 lane 1 (su_undo).
+  Lanes: self_update.
+
+- 📋 [RETR-0043] **LOW — Self-updater: expand a REG_EXPAND_SZ UninstallString before matching it.**
+  The registry read accepts REG_EXPAND_SZ but matches the value
+  unexpanded, so a value holding %ProgramFiles% would class an installed
+  copy as portable. Fix: ExpandEnvironmentStringsW in
+  task_self_update.c before the match. Queued because it needs a Windows
+  build and run (ssh wintest) to test. The quoted-arguments half was
+  fixed in 4a8a64a797.
+  **Layman:** An installed RetroArch whose uninstall entry uses a Windows path variable could be treated as a portable copy.
+  Kind: fix.
+  Source: review-code 2026-10-21 lane 1 lead A2.
+  Lanes: self_update.
+
+- 📋 [RETR-0044] **LOW — r7z: locating a block's first pack stream walks every earlier folder.**
+  r7z_archive.c sums num_pack over all earlier folders each time a block
+  is entered, so the self-updater's per-block entry is quadratic in the
+  folder count. Reaching it with a hostile archive needs a compromised
+  build server: the download is HTTPS with certificate checking and is
+  checked against a published .sha256. Fix: store each folder's first
+  pack index in the parse loop. Upstream code in vendored
+  libretro-common: upstream PR candidate.
+  **Layman:** Unpacking an archive with a huge number of tiny blocks gets slower and slower; only a tampered download could do this.
+  Kind: perf.
+  Source: review-code 2026-10-21 lane 3.
+  Lanes: r7z.
+
+- 📋 [RETR-0045] **LOW — Self-updater: rename preferred to say it means the smaller download.**
+  preferred (self_update_file_url's parameter, the check state, the
+  offer) reads as a user preference; it means "the smaller download".
+  Queued: the rename crosses self_update.h's API, both test files and the
+  spec's wording, and a partial rename is worse than none.
+  **Layman:** A name in the updater's code is misleading; renaming it makes the code easier to change safely.
+  Kind: refactor.
+  Source: review-readability 2026-10-21 self-updater re-run, L2 finding 7.
+  Lanes: self_update.
+
+- 📋 [RETR-0046] **INVESTIGATE — Self-updater correctness leads from the readability re-run.**
+  Ungraded leads for review-code, none yet verified as defects:
+  (1) self_update.c memory sum may not count BCJ2's extra inputs;
+  (2) the marker's kind line is written but never read;
+  (3) self_update_replace's fail path tests i < count, always true there;
+  (4) an empty config_dir puts the marker in the current folder;
+  (5) the download accepts any 2xx, the checksum only 200;
+  (6) su_fs_read truncates silently. Records:
+  docs/private/reviews/2026-10-21-findings/review-readability-self-updater/.
+  **Layman:** Six possible small bugs in the updater that a reviewer noticed in passing and nobody has checked yet.
+  Kind: investigate.
+  Source: review-readability 2026-10-21 self-updater re-run, message2.md part 3.
+  Lanes: self_update.
+
+- 📋 [RETR-0047] **LOW — Cloud sync: write-then-reopen of a download is copied in three backends.**
+  google_drive.c, s3.c and webdav.c each write the download with
+  filestream_write_file_atomic and reopen it read-only, with the same
+  comment; their failure messages already differ. Queued because the
+  obvious home, cloud_sync_driver.c, is not linked by the backend
+  samples: putting a helper there is the link break 51f2d28b3d just
+  fixed. It needs a home every backend sample links.
+  **Layman:** The same few lines are repeated in three cloud services' code, so a future fix could reach only one of them.
+  Kind: refactor.
+  Source: review-readability 2026-10-21 fork, L3 Q1.
+  Lanes: cloud_sync.
+
+- 📋 [RETR-0048] **LOW — Network samples do not rebuild when the driver they include changes.**
+  Six samples under samples/network (webdav_reauth, webdav_options,
+  webdav_backup, gdrive_backup, s3_backup, smb_backup) #include a
+  network/cloud_sync/*.c file, and their Makefiles do not list it as a
+  dependency. A local rerun after editing the driver tests a stale
+  binary: measured on webdav_reauth, which passed against unfixed code
+  until make clean. CI builds clean, so only local reruns are hit. Fix:
+  add the included .c to each test object's prerequisites.
+  **Layman:** Some cloud-sync tests can pass against old code when re-run locally, because they are not rebuilt after a change.
+  Kind: test.
+  Source: close-findings 2026-10-21 (found while fixing cloud sync).
+  Lanes: samples/network.
 
 ### 📝 Cold-eyes 2026-07-04
 

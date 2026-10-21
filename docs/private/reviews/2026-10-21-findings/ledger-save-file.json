@@ -1,0 +1,64 @@
+{
+ "run": {
+  "cited_by": [
+   "docs/private/upstream-prs/pr-crash-safe-saving.md",
+   "docs/private/upstream-prs/README.md",
+   "docs/private/ROADMAP.md RETR-0009, RETR-S0115 notes, RETR-0021 note"
+  ],
+  "swept": {
+   "save.c SRAM callers": "agrees",
+   "disk_index_file.c / cloud sync callers (bool only)": "agrees",
+   "content.h content_replace_file comment": "agrees",
+   "file_stream.h atomic doc": "fixed (matches upstream wording)",
+   "pr-crash-safe-saving.md": "frozen (merged PR draft)",
+   "upstream-prs/README.md port note": "frozen (dated record)",
+   "RETR-0009 resolution note": "frozen; new annotation owed",
+   "vfs_implementation.c rename comments": "agrees"
+  },
+  "collateral": [],
+  "surfaced": [],
+  "out_of_scope": [
+   "tasks/task_save.c unused variable settings warning (pre-existing, -Wunused-variable in save_state_io_test build)"
+  ],
+  "falsified": []
+ },
+ "findings": [
+  {
+   "finding": "P1 content_replace_file deletes the good save before retrying a rename that already replaces",
+   "source": "review-code 2026-10-21 lane-08",
+   "dim": "9",
+   "severity": "HIGH (re-ranked)",
+   "verified": "yes \u2014 ra-fixes tasks/task_save.c content_replace_file: filestream_delete(path) then retry; vfs rename replaces on every platform (MoveFileExW REPLACE_EXISTING, move-aside on consoles); RetroArch sets no filestream_rename_cb",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_save.c"
+   ],
+   "was": "failed rename -> delete good file -> retry fails -> only .tmp left",
+   "now": "948fbe8f20: no delete+retry; red run: save_state_io_test \"content_replace_file keeps the old file when the rename fails\" FAIL before, ok after; mutation: revert task_save.c alone -> red",
+   "must_agree": [
+    "content.h content_replace_file comment",
+    "save.c callers",
+    "upstream file_stream.c c24fd90825 shape"
+   ]
+  },
+  {
+   "finding": "P2 filestream_write_file_atomic same delete-then-retry",
+   "source": "review-code 2026-10-21 lane-08",
+   "dim": "9",
+   "severity": "HIGH (re-ranked)",
+   "verified": "yes \u2014 ra-fixes libretro-common/streams/file_stream.c filestream_write_file_atomic; upstream master already fixed (c24fd90825, #19629): delete only when filestream_rename_cb is set",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "libretro-common/streams/file_stream.c"
+   ],
+   "was": "same delete+retry on the built-in rename",
+   "now": "948fbe8f20: upstream c24fd90825 shape (delete+retry only under filestream_rename_cb, else drop temp); red: 2 checks FAIL before, ok after; mutation: revert file_stream.c alone -> both red",
+   "must_agree": [
+    "libretro-common/include/streams/file_stream.h doc",
+    "upstream master file_stream.c"
+   ]
+  }
+ ]
+}

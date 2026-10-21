@@ -1,0 +1,240 @@
+{
+ "run": {
+  "cited_by": [
+   "docs/private/upstream-prs/pr-cloud-sync-robustness.md",
+   "docs/private/ROADMAP.md port note",
+   "review returns"
+  ],
+  "swept": {
+   "cloud_sync_http_body_is_framed tree-wide (code)": "agrees (no hits)",
+   "pr-cloud-sync-robustness.md": "frozen",
+   "ROADMAP port note": "frozen",
+   "webdav_reauth_test comment naming net_http_body_is_framed": "agrees (true again)",
+   "six cloud-sync samples": "agrees (all pass ASan clean)",
+   "net_http.h body_is_framed doc": "agrees"
+  },
+  "collateral": [],
+  "surfaced": [],
+  "out_of_scope": [
+   "samples/network/* Makefiles: the six tests that #include a cloud_sync .c do not rebuild when it changes (stale-binary false pass, measured this run)",
+   "d605dc0148 regression: the five cloud-sync samples failed to link since 2026-09-26; Linux-samples-network runs only on request in local-CI.sh"
+  ],
+  "falsified": []
+ },
+ "findings": [
+  {
+   "finding": "C1 webdav digest parse: bare return-false exits leave half state; later request strlen(NULL cnonce) crash (review-code L2 MEDIUM + readability L3 Q5 MEDIUM webdav.c exits)",
+   "source": "review-code lane-06 L2; readability L3",
+   "dim": "3 / Q5",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 webdav.c parser exits + webdav_create_digest_auth_header; remedy refuted in part: routing exits alone still crashes (parse_fail does not restore basic)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/webdav.c"
+   ],
+   "was": null,
+   "now": "59e5bdd42a; red: ASan SEGV strlen webdav.c:521; guard-only mutation green, exits-only mutation SEGV; exit routing: no red run (nothing observable once guarded)",
+   "must_agree": []
+  },
+  {
+   "finding": "C2 s3.c:801 canonicalize OOM -> signs empty query",
+   "source": "review-code lane-06",
+   "dim": "7",
+   "severity": "LOW",
+   "verified": "yes \u2014 s3.c:801",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/s3.c"
+   ],
+   "was": null,
+   "now": "27b5c8d2fd; no red run: harness has no allocation-failure seam",
+   "must_agree": []
+  },
+  {
+   "finding": "C3 s3_query_param_cmp strcmp on key=value misorders prefix names; comment claims spec order (review-code L1 + readability Q4 s3.c:457-462)",
+   "source": "review-code lane-06 L1; readability L3",
+   "dim": "2 / Q4",
+   "severity": "LOW / MEDIUM",
+   "verified": "yes \u2014 s3.c s3_query_param_cmp strcmp",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/s3.c"
+   ],
+   "was": null,
+   "now": "27b5c8d2fd; red: test_query_order 2 FAIL before, pass after",
+   "must_agree": []
+  },
+  {
+   "finding": "C4 cloud_sync_driver.h chunked clause omits CL+chunked rejection",
+   "source": "review-code lane-06 L4",
+   "dim": "2",
+   "severity": "LOW",
+   "verified": "yes \u2014 cloud_sync_driver.h",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync_driver.h"
+   ],
+   "was": null,
+   "now": "51f2d28b3d removes the helper and its comment (user ruling 2026-10-21: match upstream)",
+   "must_agree": []
+  },
+  {
+   "finding": "C5 net_http Content-Length accepts trailing garbage (upstream, vendored)",
+   "source": "review-code lane-06 L3",
+   "dim": "3",
+   "severity": "LOW",
+   "verified": "yes \u2014 net_http.c Content-Length loop",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "libretro-common/net/net_http.c"
+   ],
+   "was": null,
+   "now": "this push; red: net_http_semantics \"2abc\" FAIL before, pass after",
+   "must_agree": []
+  },
+  {
+   "finding": "C6 s3.c:429-438 stale 'line 1017' and history-first comment",
+   "source": "readability L3",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 s3.c:436 cites line 1017, strpbrk at 1183",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/s3.c"
+   ],
+   "was": null,
+   "now": "6e5327b279; no red run: comment only",
+   "must_agree": []
+  },
+  {
+   "finding": "C7 webdav.c:177-182 cnonce 'three sources' lists four; nc adds nothing; &local_var is &mix",
+   "source": "readability L3",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 webdav.c cnonce comment; single caller after cleanup",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/webdav.c"
+   ],
+   "was": null,
+   "now": "6e5327b279; no red run",
+   "must_agree": []
+  },
+  {
+   "finding": "C8 body-is-framed guard in three diverged copies (gdrive/s3/webdav)",
+   "source": "readability L3",
+   "dim": "Q1",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 three diverged guards",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/google_drive.c",
+    "network/cloud_sync/s3.c",
+    "network/cloud_sync/webdav.c",
+    "network/cloud_sync_driver.c"
+   ],
+   "was": null,
+   "now": "51f2d28b3d: three guards now upstream wording, one call each",
+   "must_agree": []
+  },
+  {
+   "finding": "C9 write-then-reopen in three copies",
+   "source": "readability L3",
+   "dim": "Q1",
+   "severity": "LOW",
+   "verified": "yes \u2014 three write-then-reopen copies",
+   "disposition": "queued",
+   "why": "a shared helper belongs in cloud_sync_driver.c, which the backend samples do not link (the defect 51f2d28b3d just fixed); needs a home every sample links",
+   "files": [
+    "network/cloud_sync/*.c"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "C10 'See cloud_sync_http_body_is_framed for the threat model' points at nothing",
+   "source": "readability L3",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "google_drive.c",
+    "s3.c"
+   ],
+   "was": null,
+   "now": "51f2d28b3d: pointer comment gone",
+   "must_agree": []
+  },
+  {
+   "finding": "C11 google_drive.c:1308 !data / if(data) dead under success",
+   "source": "readability L3",
+   "dim": "Q5",
+   "severity": "LOW",
+   "verified": "yes \u2014 success implies data",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/google_drive.c"
+   ],
+   "was": null,
+   "now": "51f2d28b3d: guard is upstream shape, no !data",
+   "must_agree": []
+  },
+  {
+   "finding": "C12 s3.c:858 'Bundle 63' task reference as reason",
+   "source": "readability L3",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes \u2014 s3.c Bundle 63",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/s3.c"
+   ],
+   "was": null,
+   "now": "6e5327b279",
+   "must_agree": []
+  },
+  {
+   "finding": "C13 webdav.c:1143 'short-circuit luck' stale",
+   "source": "readability L3",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes \u2014 webdav.c:1144",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/webdav.c"
+   ],
+   "was": null,
+   "now": "6e5327b279",
+   "must_agree": []
+  },
+  {
+   "finding": "C14 s3.c:468-474 canonicalize header mostly history",
+   "source": "readability L3",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes \u2014 s3.c canonicalize header",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "network/cloud_sync/s3.c"
+   ],
+   "was": null,
+   "now": "27b5c8d2fd",
+   "must_agree": []
+  }
+ ]
+}
