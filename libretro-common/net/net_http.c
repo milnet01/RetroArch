@@ -2332,7 +2332,12 @@ static ssize_t net_http_receive_header(struct http_t *state, ssize_t len)
                      }
                      val = val * 10 + digit;
                   }
-                  if (!any || oflow)
+                  while (*ptr == ' ' || *ptr == '\t')
+                     ++ptr;
+                  /* Anything after the digits but whitespace makes the
+                   * length invalid (RFC 9112 6.3), not the number its
+                   * leading digits spell. */
+                  if (!any || oflow || *ptr)
                   {
                      /* Malformed header: treat as protocol error. */
                      response->part = P_DONE;

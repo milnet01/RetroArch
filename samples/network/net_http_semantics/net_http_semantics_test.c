@@ -983,9 +983,31 @@ static void run_section_a4(void)
       { "HTTP/1.1 200 OK\r\n", 0, B_NONE, 1 },
       { OK_2, 0, B_NONE, 0 },
    };
+   /* RFC 9112 6.3: an invalid Content-Length is an unrecoverable
+    * error, not the number its leading digits spell. */
+   static const struct step s_badlen[] = {
+      { "HTTP/1.1 200 OK\r\nContent-Length: 2abc\r\n\r\nok", 0, B_NONE, 0 },
+   };
+   static const struct step s_lenows[] = {
+      { "HTTP/1.1 200 OK\r\nContent-Length: 2 \t\r\n\r\nok", 0, B_NONE, 0 },
+   };
 
    memset(&a, 0, sizeof(a));
    memset(&b, 0, sizeof(b));
+
+   case_begin(s_badlen, 1, 0);
+   xfer_run(&a, "/badlen");
+   check(a.done && a.err,
+         "Content-Length \"2abc\": error, not a 2-byte body");
+   xfer_free(&a);
+   memset(&a, 0, sizeof(a));
+
+   case_begin(s_lenows, 1, 0);
+   xfer_run(&a, "/lenows");
+   check(a.done && !a.err && body_is(&a, "ok"),
+         "Content-Length with trailing whitespace: still framed");
+   xfer_free(&a);
+   memset(&a, 0, sizeof(a));
 
    case_begin(s_badchunk, 2, 0);
    xfer_run(&a, "/badchunk");
