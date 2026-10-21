@@ -2063,6 +2063,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   a stale p.retroarch-new first (fixed). One finding awaits the user: if
   the rollback record cannot be made, p is present and start-up or a
   retry still deletes the only old copy. INV-16 waits on that answer.
+  2026-10-21 INV-16 gate loop 7 (review-contract, 2 lanes, cap 1): 2
+  verified, both surfaced for a user choice, none fixed. (1) A failed
+  undo, or a half-done repair, can leave retroarch.exe missing, so there
+  is nothing to restart. (2) The start-up repair restores a stale
+  .retroarch-old from an earlier update over a file this replace never
+  touched. INV-16 is not ready to build until both are decided.
   **Layman:** If a Windows update fails and putting the old files back also fails, the next start can delete the only copy of a RetroArch file.
   Kind: fix.
   Source: review-code 2026-10-21 lane 1 (su_undo).
