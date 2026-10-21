@@ -5865,14 +5865,15 @@ finish:
       RARCH_LOG("[Updater] Download \"%s\".\n",
             (transf ? transf->path : msg_hash_to_str(MENU_ENUM_LABEL_VALUE_UNKNOWN)));
 
-      /* Content Downloader: record the download beside it, before
-       * extraction can delete it, so the list can still mark it. */
+      /* Content Downloader: record the download beside it, so the
+       * list can still mark it.  The extraction task pushed above has
+       * not run yet; it may delete the archive when it does. */
       if (     transf
             && transf->enum_idx == MENU_ENUM_LABEL_CB_CORE_CONTENT_DOWNLOAD
             && *output_path)
       {
          fill_pathname_basedir(buf, output_path, sizeof(buf));
-         menu_content_downloads_record(buf, path_basename(output_path));
+         menu_content_downloads_add(buf, path_basename(output_path));
       }
 
       /* Content Downloader: Mark downloaded content label with a "[#]". */

@@ -77,7 +77,7 @@ int main(void)
 
    printf("[archive unpacked and deleted]\n");
    reset();
-   CHECK(menu_content_downloads_record(DIR_NAME, "Doom (Shareware).zip"),
+   CHECK(menu_content_downloads_add(DIR_NAME, "Doom (Shareware).zip"),
          "recorded");
    CHECK(present("Doom (Shareware).zip"),
          "a recorded archive is marked with no file on disk");
@@ -88,12 +88,12 @@ int main(void)
    printf("[record]\n");
    reset();
    CHECK(menu_content_downloads_load(DIR_NAME) == NULL, "no record yet");
-   menu_content_downloads_record(DIR_NAME, "a.zip");
-   menu_content_downloads_record(DIR_NAME, "b.zip");
-   menu_content_downloads_record(DIR_NAME, "a.zip");
+   menu_content_downloads_add(DIR_NAME, "a.zip");
+   menu_content_downloads_add(DIR_NAME, "b.zip");
+   menu_content_downloads_add(DIR_NAME, "a.zip");
    CHECK(record_lines() == 2, "each name once");
    CHECK(present("a.zip") && present("b.zip"), "both names marked");
-   CHECK(!menu_content_downloads_record(DIR_NAME, "bad\nname.zip"),
+   CHECK(!menu_content_downloads_add(DIR_NAME, "bad\nname.zip"),
          "a name with a line break is refused");
    CHECK(!present("bad") && !present("name.zip"),
          "and nothing of it is recorded");

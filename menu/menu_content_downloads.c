@@ -66,7 +66,7 @@ bool menu_content_downloads_present(const char *dir, const char *record,
    return path_is_valid(path);
 }
 
-bool menu_content_downloads_record(const char *dir, const char *name)
+bool menu_content_downloads_add(const char *dir, const char *name)
 {
    char path[PATH_MAX_LENGTH];
    RFILE *file;

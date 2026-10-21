@@ -39,7 +39,7 @@ bool menu_content_downloads_present(const char *dir, const char *record,
       const char *name);
 
 /* Adds @name to @dir's record, once. */
-bool menu_content_downloads_record(const char *dir, const char *name);
+bool menu_content_downloads_add(const char *dir, const char *name);
 
 RETRO_END_DECLS
 
