@@ -6690,6 +6690,19 @@ static void check_verbosity_settings(config_file_t *conf,
    }
 }
 
+/* Turbo Bind and Turbo Button index the remap and bind tables
+ * directly, so a value read from a config or remap file has to stay
+ * inside their menu ranges: Turbo Bind is -1 (empty) or a RetroPad
+ * ID up to the analog binds, Turbo Button a digital RetroPad ID. */
+static void config_sanitize_turbo_binds(settings_t *settings)
+{
+   if (     settings->ints.input_turbo_bind < -1
+         || settings->ints.input_turbo_bind >= RARCH_ANALOG_BIND_LIST_END)
+      settings->ints.input_turbo_bind     = DEFAULT_TURBO_BIND;
+   if (settings->uints.input_turbo_button >= RARCH_FIRST_CUSTOM_BIND)
+      settings->uints.input_turbo_button  = DEFAULT_TURBO_BUTTON;
+}
+
 /**
  * config_load:
  * @path                : path to be read from.
@@ -7446,6 +7459,8 @@ static bool config_load_file(global_t *global,
                legacy_ozone_color_themes[color_theme]);
    }
 #endif
+
+   config_sanitize_turbo_binds(settings);
 
 #ifdef HAVE_CHEEVOS
    if (*settings->arrays.cheevos_leaderboards_enable)
@@ -10526,6 +10541,7 @@ bool input_remapping_load_file(void *data, const char *path)
    CONFIG_GET_INT_BASE(conf, settings, uints.input_turbo_button, "input_turbo_button");
    CONFIG_GET_INT_BASE(conf, settings, uints.input_turbo_period, "input_turbo_period");
    CONFIG_GET_INT_BASE(conf, settings, uints.input_turbo_duty_cycle, "input_turbo_duty_cycle");
+   config_sanitize_turbo_binds(settings);
 
    input_remapping_update_port_map();
 
