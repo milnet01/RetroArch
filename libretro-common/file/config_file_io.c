@@ -49,6 +49,19 @@
 #include <retro_miscellaneous.h>
 #include <streams/file_stream.h>
 
+/* Where the temporary can be created with the target's permissions:
+ * libcs with open()/fdopen() and a permission model behind them, the
+ * same set vfs_implementation.c gives its POSIX metadata calls. */
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) \
+      || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__) \
+      || defined(__HAIKU__) || defined(__QNX__) || defined(ANDROID) \
+      || defined(__sun__)
+#define CONFIG_FILE_KEEP_MODE 1
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#endif
+
 static char *config_file_io_fs_read_file(const char *path,
       int64_t *len, void *ud)
 {
@@ -255,12 +268,42 @@ bool config_file_write(config_file_t *conf, const char *path, bool sort)
          memcpy(tmp_path, path, _len);
          memcpy(tmp_path + _len, ".tmp", sizeof(".tmp"));
 
+#ifdef CONFIG_FILE_KEEP_MODE
+         {
+            /* The temporary replaces the target, so it takes the
+             * target's permissions, and takes them when it is created:
+             * a save must not reset a mode the user set, and a private
+             * file (credentials) must not be readable by others even
+             * briefly.  A mode applied after opening is too late, as a
+             * descriptor opened in between can read what is written
+             * later; that is also why a leftover temporary is removed
+             * rather than reused. */
+            struct stat st;
+            mode_t mode = 0666;
+            int fd;
+
+            if (stat(path, &st) == 0)
+               mode = st.st_mode & 0777;
+            unlink(tmp_path);
+            fd   = open(tmp_path, O_WRONLY | O_CREAT | O_EXCL, mode);
+            file = (fd >= 0) ? fdopen(fd, "wb") : NULL;
+            if (!file)
+            {
+               if (fd >= 0)
+                  close(fd);
+               free(tmp_path);
+               free(resolved);
+               return false;
+            }
+         }
+#else
          if (!(file = (FILE*)fopen_utf8(tmp_path, "wb")))
          {
             free(tmp_path);
             free(resolved);
             return false;
          }
+#endif
          setvbuf(file, NULL, _IOFBF, 0x4000);
 
          /* A dump that could not allocate its staging buffer writes

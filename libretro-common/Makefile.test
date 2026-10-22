@@ -75,6 +75,15 @@ TEST_KEYCHAIN_SRC = test/file/test_keychain.c file/keychain.c \
 		compat/compat_strl.c compat/compat_strldup.c time/rtime.c \
 		string/stdstring.c encodings/encoding_utf.c
 
+TEST_CONFIG_FILE_WRITE = test/file/test_config_file_write
+TEST_CONFIG_FILE_WRITE_SRC = test/file/test_config_file_write.c \
+		file/config_file.c file/config_file_io.c \
+		streams/file_stream.c vfs/vfs_implementation.c file/file_path.c \
+		string/rstrtod.c \
+		file/file_path_io.c features/features_cpu.c \
+		compat/compat_strl.c compat/compat_strldup.c compat/fopen_utf8.c \
+		time/rtime.c string/stdstring.c encodings/encoding_utf.c
+
 TEST_RWAV = test/formats/test_rwav
 TEST_RWAV_SRC = test/formats/test_rwav.c formats/wav/rwav.c
 
@@ -465,6 +474,10 @@ unit-tests:
 	$(CC) $(TEST_UNIT_CFLAGS) $(TEST_KEYCHAIN_SRC) $(LIBCHECK_LIBS) -o $(TEST_KEYCHAIN)
 	$(TEST_KEYCHAIN)
 	lcov -c -d . -o `dirname $(TEST_KEYCHAIN)`/coverage.info
+	# config file write
+	$(CC) $(TEST_UNIT_CFLAGS) $(TEST_CONFIG_FILE_WRITE_SRC) $(LIBCHECK_LIBS) -o $(TEST_CONFIG_FILE_WRITE)
+	$(TEST_CONFIG_FILE_WRITE)
+	lcov -c -d . -o `dirname $(TEST_CONFIG_FILE_WRITE)`/coverage.info
 	# list
 	$(CC) $(TEST_UNIT_CFLAGS) $(TEST_LINKED_LIST_SRC) $(LIBCHECK_LIBS) -o $(TEST_LINKED_LIST)
 	$(TEST_LINKED_LIST)

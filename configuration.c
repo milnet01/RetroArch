@@ -9021,6 +9021,16 @@ static bool config_save_credentials(
       }
    }
 
+   /* config_file_write() gives its temporary the target's permissions.
+    * A first save has no target to copy them from, so create it empty
+    * and private first: the credentials then never sit in a file
+    * others can read, even briefly. */
+   if (!path_is_valid(credentials_path))
+   {
+      filestream_write_file(credentials_path, "", 0);
+      path_set_private(credentials_path);
+   }
+
    ret = config_file_write(conf, credentials_path, true);
    config_file_free(conf);
 
@@ -9774,11 +9784,11 @@ bool config_save_file(const char *path)
    ret = config_file_write(conf, path, true);
    config_file_free(conf);
 
-   /* retroarch.cfg holds plaintext credentials (WebDAV / S3 secret keys
-    * / stream keys / netplay password / Google Drive refresh token).
-    * The default umask leaves it world-readable. Tighten to user-only
-    * read+write; failure is non-fatal (e.g. on filesystems that don't
-    * support POSIX modes). */
+   /* Credentials stay in retroarch.cfg when retroarch-keychain.cfg
+    * could not be written, and the default umask leaves it
+    * world-readable.  Tighten to user-only read+write; later saves keep
+    * the mode, as config_file_write() copies it.  Failure is non-fatal
+    * (e.g. on filesystems that don't support POSIX modes). */
 #if !defined(_WIN32) && !defined(_3DS) && !defined(GEKKO) \
    && !defined(VITA) && !defined(PS2) && !defined(PSP) \
    && !defined(__SWITCH__) && !defined(__PS3__) \
