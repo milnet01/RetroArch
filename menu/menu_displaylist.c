@@ -14194,6 +14194,70 @@ bool menu_displaylist_has_subsystems(void)
    return (subsystem && runloop_st->subsystem_current_count > 0);
 }
 
+/* Fills @list with a float setting's choices, min to max in steps,
+ * for a dropdown of @setting_type, and selects the one nearest the
+ * setting's value.  Returns the number of entries added. */
+static unsigned menu_displaylist_build_float_dropdown(
+      struct menu_state *menu_st, file_list_t *list,
+      rarch_setting_t *setting, unsigned setting_type)
+{
+   int j;
+   int n_steps;
+   char val_d[16];
+   float orig_value      = *setting->value.target.fraction;
+   float step            = setting->step;
+   float half_step       = step * 0.5f;
+   float min             = (setting->flags & SD_FLAG_ENFORCE_MINRANGE) ? setting->min : 0.00f;
+   float max             = (setting->flags & SD_FLAG_ENFORCE_MAXRANGE) ? setting->max : 9999.00f;
+   bool checked_found    = false;
+   unsigned checked      = 0;
+   unsigned count        = 0;
+
+   snprintf(val_d, sizeof(val_d), "%d", setting->enum_idx);
+
+   /* Integer counter: a float counter accumulates drift and can stop
+    * one entry early or late, and a zero step never terminates. */
+   n_steps = (step > 0.0f) ? (int)((max + half_step - min) / step) : 0;
+
+   for (j = 0; j <= n_steps; j++)
+   {
+      char val_s[NAME_MAX_LENGTH];
+      float i = min + (float)j * step;
+
+      /* repr formats the setting's current value, so the value is set
+       * to each choice in turn and restored below */
+      if (setting->actions->repr)
+      {
+         *setting->value.target.fraction = i;
+         setting->actions->repr(setting, val_s, sizeof(val_s));
+      }
+      else
+         snprintf(val_s, sizeof(val_s), "%.2f", i);
+
+      if (menu_entries_append(list, val_s, val_d,
+               MENU_ENUM_LABEL_NO_ITEMS, setting_type, 0, 0, NULL))
+         count++;
+
+      if (!checked_found && (fabs(i - orig_value) < half_step))
+      {
+         checked       = (unsigned)j;
+         checked_found = true;
+      }
+   }
+
+   *setting->value.target.fraction = orig_value;
+
+   if (checked_found)
+   {
+      menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)list->list[checked].actiondata;
+      if (cbs)
+         cbs->checked           = true;
+      menu_st->selection_ptr    = checked;
+   }
+
+   return count;
+}
+
 static bool menu_displaylist_ctl_internal(
       enum menu_displaylist_ctl_state type,
       menu_displaylist_info_t *info,
@@ -17816,86 +17880,9 @@ static bool menu_displaylist_ctl_internal(
                            }
                            break;
                         case ST_FLOAT:
-                           {
-                              int j;
-                              int n_steps;
-                              char val_d[16];
-                              float orig_value       = *setting->value.target.fraction;
-                              unsigned setting_type  = MENU_SETTING_DROPDOWN_SETTING_FLOAT_ITEM;
-                              float step             = setting->step;
-                              float half_step        = step * 0.5f;
-                              float min              = (setting->flags & SD_FLAG_ENFORCE_MINRANGE) ? setting->min : 0.00f;
-                              float max              = (setting->flags & SD_FLAG_ENFORCE_MAXRANGE) ? setting->max : 9999.00f;
-                              bool checked_found     = false;
-                              unsigned checked       = 0;
-                              unsigned entry_index   = 0;
-
-                              snprintf(val_d, sizeof(val_d), "%d", setting->enum_idx);
-
-                              /* Integer counter: a float counter accumulates drift and can stop
-                               * one entry early or late, and a zero step never terminates. */
-                              n_steps = (step > 0.0f) ? (int)((max + half_step - min) / step) : 0;
-
-                              if (setting->actions->repr)
-                              {
-                                 for (j = 0; j <= n_steps; j++)
-                                 {
-                                    char val_s[NAME_MAX_LENGTH];
-                                    float i = min + (float)j * step;
-                                    *setting->value.target.fraction = i;
-                                    setting->actions->repr(setting,
-                                          val_s, sizeof(val_s));
-                                    if (menu_entries_append(info->list,
-                                             val_s,
-                                             val_d,
-                                             MENU_ENUM_LABEL_NO_ITEMS,
-                                             setting_type, 0, 0, NULL))
-                                       count++;
-
-                                    if (!checked_found && (fabs(i - orig_value) < half_step))
-                                    {
-                                       checked       = entry_index;
-                                       checked_found = true;
-                                    }
-
-                                    entry_index++;
-                                 }
-
-                                 *setting->value.target.fraction = orig_value;
-                              }
-                              else
-                              {
-                                 for (j = 0; j <= n_steps; j++)
-                                 {
-                                    char val_s[16];
-                                    float i = min + (float)j * step;
-                                    snprintf(val_s, sizeof(val_s), "%.2f", i);
-
-                                    if (menu_entries_append(info->list,
-                                             val_s,
-                                             val_d,
-                                             MENU_ENUM_LABEL_NO_ITEMS,
-                                             setting_type, 0, 0, NULL))
-                                       count++;
-
-                                    if (!checked_found && (fabs(i - orig_value) < half_step))
-                                    {
-                                       checked       = entry_index;
-                                       checked_found = true;
-                                    }
-
-                                    entry_index++;
-                                 }
-                              }
-
-                              if (checked_found)
-                              {
-                                 menu_file_list_cbs_t *cbs  = (menu_file_list_cbs_t*)info->list->list[checked].actiondata;
-                                 if (cbs)
-                                    cbs->checked            = true;
-                                 menu_st->selection_ptr     = checked;
-                              }
-                           }
+                           count += menu_displaylist_build_float_dropdown(menu_st,
+                                 info->list, setting,
+                                 MENU_SETTING_DROPDOWN_SETTING_FLOAT_ITEM);
                            break;
                         case ST_UINT:
                            {
@@ -18191,85 +18178,9 @@ static bool menu_displaylist_ctl_internal(
                         }
                         break;
                      case ST_FLOAT:
-                        {
-                           int j;
-                           int n_steps;
-                           char val_d[16];
-                           float orig_value       = *setting->value.target.fraction;
-                           unsigned setting_type  = MENU_SETTING_DROPDOWN_SETTING_FLOAT_ITEM_SPECIAL;
-                           float step             = setting->step;
-                           float half_step        = step * 0.5f;
-                           float min              = (setting->flags & SD_FLAG_ENFORCE_MINRANGE) ? setting->min : 0.00f;
-                           float max              = (setting->flags & SD_FLAG_ENFORCE_MAXRANGE) ? setting->max : 9999.00f;
-                           bool checked_found     = false;
-                           unsigned checked       = 0;
-                           unsigned entry_index   = 0;
-
-                           snprintf(val_d, sizeof(val_d), "%d", setting->enum_idx);
-
-                           /* Integer counter: a float counter accumulates drift and can stop
-                            * one entry early or late, and a zero step never terminates. */
-                           n_steps = (step > 0.0f) ? (int)((max + half_step - min) / step) : 0;
-
-                           if (setting->actions->repr)
-                           {
-                              for (j = 0; j <= n_steps; j++)
-                              {
-                                 char val_s[NAME_MAX_LENGTH];
-                                 float i = min + (float)j * step;
-                                 *setting->value.target.fraction = i;
-                                 setting->actions->repr(setting,
-                                       val_s, sizeof(val_s));
-                                 if (menu_entries_append(info->list,
-                                          val_s,
-                                          val_d,
-                                          MENU_ENUM_LABEL_NO_ITEMS,
-                                          setting_type, 0, 0, NULL))
-                                    count++;
-
-                                 if (!checked_found && (fabs(i - orig_value) < half_step))
-                                 {
-                                    checked       = entry_index;
-                                    checked_found = true;
-                                 }
-
-                                 entry_index++;
-                              }
-
-                              *setting->value.target.fraction = orig_value;
-                           }
-                           else
-                           {
-                              for (j = 0; j <= n_steps; j++)
-                              {
-                                 char val_s[16];
-                                 float i = min + (float)j * step;
-                                 snprintf(val_s, sizeof(val_s), "%.2f", i);
-                                 if (menu_entries_append(info->list,
-                                          val_s,
-                                          val_d,
-                                          MENU_ENUM_LABEL_NO_ITEMS,
-                                          setting_type, 0, 0, NULL))
-                                    count++;
-
-                                 if (!checked_found && (fabs(i - orig_value) < half_step))
-                                 {
-                                    checked       = entry_index;
-                                    checked_found = true;
-                                 }
-
-                                 entry_index++;
-                              }
-                           }
-
-                           if (checked_found)
-                           {
-                              menu_file_list_cbs_t *cbs  = (menu_file_list_cbs_t*)info->list->list[checked].actiondata;
-                              if (cbs)
-                                 cbs->checked            = true;
-                              menu_st->selection_ptr     = checked;
-                           }
-                        }
+                        count += menu_displaylist_build_float_dropdown(menu_st,
+                              info->list, setting,
+                              MENU_SETTING_DROPDOWN_SETTING_FLOAT_ITEM_SPECIAL);
                         break;
                      case ST_UINT:
                         {
