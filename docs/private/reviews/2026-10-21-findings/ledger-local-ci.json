@@ -1,0 +1,313 @@
+{
+ "run": {
+  "cited_by": [
+   "ROADMAP RETR-0021 notes (2026-10-21 ruling 2), RETR-0011, RETR-0027, dated progress notes",
+   "docs/private/DEPENDENCY-POLICY.md \u00a74a",
+   "docs/private/standards/coding-standard.md",
+   "CLAUDE.md Fork workflow",
+   "memory note local-ci-validation"
+  ],
+  "swept": {
+   "ROADMAP RETR-0021 ruling 2 (2026-10-21: quick checks)": "surfaced \u2014 superseded by the user's 2026-10-22 answer; recorded as a new note",
+   "RETR-0011, RETR-0027 and dated progress notes": "frozen",
+   "DEPENDENCY-POLICY.md C89_ALIGN and headless image": "agrees",
+   "coding-standard.md push line": "agrees",
+   "CLAUDE.md push gate": "agrees",
+   "memory note local-ci-validation (5 jobs)": "fixed",
+   "local-CI.sh header vs body": "agrees",
+   "code-pairs.json": "absent"
+  },
+  "collateral": [
+   "workflow_tool image compare stripped the account name (would refuse Linux.yml's own image): fixed before commit"
+  ],
+  "surfaced": [
+   "2026-10-21 ruling 2 vs 2026-10-22 answer"
+  ],
+  "out_of_scope": [
+   "nat_task_serialisation_test missing include (fixed 834e916357, upstream a7dac33f35)",
+   "dirwalk_budget_test pacing failed once under load (32.8ms > 16ms), passed 3/3 alone: timing-sensitive, not a defect",
+   "three stale local-ci.* dirs under the local-ci cache from earlier failed runs (old behaviour kept trees)",
+   "content_load_test screenshot lane fails under act: queued RETR-0055"
+  ],
+  "falsified": []
+ },
+ "findings": [
+  {
+   "finding": "B1 common-samples is a stale hand copy: no sanitizers, ~19 of ~80 run targets, no classification gate, no TSan/extra jobs; comment claims extraction (local-CI.sh:345-366)",
+   "source": "review-code-leads/lane-09-build-tooling.result + review-readability-fork/return-L9-build-tooling.md HIGH :345",
+   "dim": "2",
+   "severity": "HIGH",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); workflow read: MAKE_ARGS sanitizer, run list, classification gate, TSan steps",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "hand copy of the samples runner",
+   "now": "runs Linux-libretro-common-samples.yml:samples' own steps (a72b6a3d98); other jobs named: config-fuzz run, three GitHub-only",
+   "must_agree": [
+    "local-CI.sh header FIDELITY",
+    "--list output",
+    "memory note local-ci-validation"
+   ]
+  },
+  {
+   "finding": "B2 samples-tasks runs 6 of ~37 steps and none of samples-tasks-http; 'verbatim' claim (local-CI.sh:239,288)",
+   "source": "review-code-leads/lane-09-build-tooling.result + review-readability-fork/return-L9-build-tooling.md HIGH :239",
+   "dim": "2",
+   "severity": "HIGH",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); 9 of 37 steps run, http job absent",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh",
+    ".github/workflows/Linux-samples-tasks.yml"
+   ],
+   "was": "9 hand-copied steps",
+   "now": "every step of samples-tasks and samples-tasks-http (a72b6a3d98); content_downloads_test moved into the workflow",
+   "must_agree": [
+    "Linux-samples-tasks.yml content_downloads step"
+   ]
+  },
+  {
+   "finding": "B3 linux-i686 skips include_order_check.sh and the stack-frame sweep (local-CI.sh:385-391)",
+   "source": "review-code-leads/lane-09-build-tooling.result",
+   "dim": "2",
+   "severity": "HIGH",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); Linux.yml steps read",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "configure + make only",
+   "now": "Linux.yml:build steps in the CI image, image checked (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "cd without || exit in job_common_samples/job_c89; mktemp and export_tree unchecked: make clean can run in the working tree (local-CI.sh:350,260)",
+   "source": "review-code-leads/lane-09-build-tooling.result",
+   "dim": "16",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "cd with no guard; export unchecked",
+   "now": "c89: export && guard, cd || exit 1; common-samples body removed (a72b6a3d98); no red run: a failed cd needs a failed export, not reproduced",
+   "must_agree": []
+  },
+  {
+   "finding": "job_c89 ignores make's exit status; a failure printing no 'error:' passes (local-CI.sh:262-270)",
+   "source": "review-code-leads/lane-09-build-tooling.result",
+   "dim": "7",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "make status ignored",
+   "now": "fails when make fails with no host-header error (a72b6a3d98); pass path run in the hook, fail path not run",
+   "must_agree": []
+  },
+  {
+   "finding": "act workflows build at -j$(nproc), breaking the -j4 ceiling (local-CI.sh:440-442)",
+   "source": "review-code-leads/lane-09-build-tooling.result",
+   "dim": "11",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); act steps use make -j$(nproc)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "act builds at -j$(nproc)",
+   "now": "CPU shims report LOCAL_CI_JOBS: native PATH, container mount, act image (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "headless job called 'bit-exact'; CI runs it on ubuntu-latest (local-CI.sh:18-24)",
+   "source": "review-code-leads/lane-09-build-tooling.result + review-readability-fork/return-L9-build-tooling.md MEDIUM :18",
+   "dim": "2",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); Linux-Headless.yml runs-on ubuntu-latest, no container",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "headless called bit-exact",
+   "now": "header and job comment say it borrows the image, different OS and compiler (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "mold probe links without $CFLAGS $LDFLAGS (qb/qb.comp.sh:90)",
+   "source": "review-code-leads/lane-09-build-tooling.result lead B4 + review-readability-fork/return-L9-build-tooling.md lead",
+   "dim": "7",
+   "severity": "LOW",
+   "verified": "yes \u2014 qb/qb.comp.sh:90 at 87d183c902; fork code (f0333a62c6)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "qb/qb.comp.sh"
+   ],
+   "was": "probe without CFLAGS/LDFLAGS",
+   "now": "probe passes them (e3aeb2af2d); red: LDFLAGS=-Wl,--traditional-format probed yes, green: no",
+   "must_agree": []
+  },
+  {
+   "finding": "unclassified workflows only WARN on a normal run; five exist (local-CI.sh:213-215)",
+   "source": "review-code-leads/lane-09-build-tooling.result + review-readability-fork/return-L9-build-tooling.md MEDIUM :7 (names the five)",
+   "dim": "2",
+   "severity": "LOW",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); --list named five",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "WARN only; five unlisted",
+   "now": "unlisted workflow or job fails the run; FreeBSD GitHub-only, four act (a72b6a3d98); red: --list exit 1 with a job removed",
+   "must_agree": []
+  },
+  {
+   "finding": "'builds run in parallel, jobs at once ... workflows build serially' is wrong (local-CI.sh:31-34)",
+   "source": "review-code-leads/lane-09-build-tooling.result + review-readability-fork/return-L9-build-tooling.md MEDIUM :31",
+   "dim": "2",
+   "severity": "LOW",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "'jobs at once ... serially'",
+   "now": "jobs one at a time, make -j$LOCAL_CI_JOBS (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "failed run keeps export build trees in LOGDIR; 'logs only' claim false (local-CI.sh:507-508,422)",
+   "source": "review-code-leads/lane-09-build-tooling.result",
+   "dim": "16",
+   "severity": "LOW",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "failed run keeps build trees",
+   "now": "build-tree directories removed at the end of every run (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "'~30 workflow files' count is stale (local-CI.sh:7)",
+   "source": "review-readability-fork/return-L9-build-tooling.md",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); 74 workflow files",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "'~30 workflow files'",
+   "now": "count dropped (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "local-gate.md \u00a7 3 cited with no path a reader can reach (local-CI.sh:109)",
+   "source": "review-readability-fork/return-L9-build-tooling.md",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); local-gate.md is a global standard, not in this repo",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "cites local-gate.md \u00a7 3",
+   "now": "sentence removed; act's role stated directly (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "comment describes a run_native helper that does not exist (local-CI.sh:235)",
+   "source": "review-readability-fork/return-L9-build-tooling.md",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "run_native comment",
+   "now": "removed (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "DEPENDENCY-POLICY.md \u00a74a cited, but docs/private is not in this checkout (local-CI.sh:399)",
+   "source": "review-readability-fork/return-L9-build-tooling.md",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes \u2014 read against local-CI.sh at 87d183c902 (unchanged since the review; 510 lines); file is on local/audit-2026-04 only",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "bare docs/private path",
+   "now": "names the branch (a72b6a3d98)",
+   "must_agree": []
+  },
+  {
+   "finding": "HAVE_S3 comment omits the cloud-sync (Linux/Windows) dependency; --enable-s3 elsewhere does nothing silently (qb/config.params.sh:234)",
+   "source": "review-readability-fork/return-L9-build-tooling.md",
+   "dim": "Q5",
+   "severity": "LOW",
+   "verified": "yes \u2014 qb/config.params.sh:234; Makefile.common sets HAVE_CLOUDSYNC for Linux and Win only",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "qb/config.params.sh"
+   ],
+   "was": "'requires networking'",
+   "now": "names cloud sync on Linux, Windows (72fdf026af); no red run: comment only",
+   "must_agree": []
+  },
+  {
+   "finding": "lead: --enable-s3 without HAVE_CLOUDSYNC could fail to link (qb/config.libs.sh:227 + Makefile.common:2481)",
+   "source": "review-readability-fork/return-L9-build-tooling.md correctness lead",
+   "dim": null,
+   "severity": null,
+   "verified": "yes \u2014 read cloud_sync_driver.c:34, menu_setting.c, menu_displaylist.c, griffin.c HAVE_S3 sites",
+   "disposition": "dismissed",
+   "why": "no link failure possible: the only reference to cloud_sync_s3 is network/cloud_sync_driver.c, built only under HAVE_CLOUDSYNC; menu sites name setting labels only",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "RETR-0050 act runs fail at actions/cache: 'statat var/run/act: path escapes from parent'",
+   "source": "ROADMAP RETR-0050",
+   "dim": null,
+   "severity": "MEDIUM",
+   "verified": "yes \u2014 reproduced on a toy workflow: plain step ok, uses: actions/cache@v4 failed 'statat var/run/act: path escapes from parent'; ACT_IMAGE's /var/run -> /run",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "local-CI.sh"
+   ],
+   "was": "act copies actions through /var/run link; podman refuses",
+   "now": "local image: real /var/run, package lists + ccache, CPU shims (a72b6a3d98, 7624dcb23f); toy red/green; act:Linux-menu-harness.yml passed 16 steps, then content_load_test failed its own assertion (RETR-0055)",
+   "must_agree": [
+    "ROADMAP RETR-0050"
+   ]
+  }
+ ]
+}

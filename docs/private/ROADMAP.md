@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=54 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=55 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1964,6 +1964,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   question to the user: 4fb8369668 drops input_key_pressed's
   public-API claim, which RETR-S0014 recorded as option A. Next by the
   ruled order: local-CI.sh (with RETR-0050), then the rest.
+  2026-10-22: close-findings local-CI.sh group closed (ledger
+  docs/private/reviews/2026-10-21-findings/ledger-local-ci.json): 17
+  fixed, 1 dismissed, RETR-0050 closed. Fixes 834e916357..7624dcb23f on
+  local/fixes-2026-09. User decision 2026-10-22, replacing ruling (2)
+  of 2026-10-21 ("samples-tasks and common-samples become declared quick
+  checks"): every push runs the workflows' real steps. local-CI.sh reads
+  each job's run: blocks from the workflow and runs them; measured, the
+  three sample jobs take 15 minutes. That first real run found a test
+  that does not compile with gcc 14+ (834e916357, carried from upstream
+  a7dac33f35). Queued next door: RETR-0055. Next by the ruled order: the
+  rest (lane-08 T1-T3, V1; return-L4, L7, L8).
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
@@ -2225,7 +2236,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: close-findings 2026-10-22 (found next door while fixing the menu group).
   Lanes: menu.
 
-- 📋 [RETR-0050] **MEDIUM — local-CI.sh act runs fail at actions/cache before any step runs.**
+- ✅ [RETR-0050] **MEDIUM — local-CI.sh act runs fail at actions/cache before any step runs.**
   `./local-CI.sh act:Linux-menu-harness.yml` at 3aa9c12827 failed in
   its "Restore ccache" step: act copying actions-cache@v4 into the
   container got "statat var/run/act: path escapes from parent" from the
@@ -2235,6 +2246,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (playlist_nav, network_settings, playlists_scan, settings_display)
   run only by hand in a non-Qt tree.  Take with the local-CI.sh group
   (RETR-0021 ruled order).
+  2026-10-22: fixed in a72b6a3d98 and 7624dcb23f on local/fixes-2026-09.
+  Cause, reproduced on a toy workflow: plain run: steps worked; act
+  copying an action into /var/run/act failed because the act image's
+  /var/run links to /run and podman refuses to copy through it.
+  local-CI.sh now runs act on a local image built from it with a real
+  /var/run, the package lists filled and ccache installed (the
+  workflows' "Enable ccache" step installs it with no apt-get update),
+  and nproc/getconf reporting LOCAL_CI_JOBS. act:Linux-menu-harness.yml
+  then passed 16 steps, all four menu harnesses included, and failed on
+  content_load_test's own assertion (RETR-0055).
   **Layman:** The on-request local copy of the project's menu tests stops before testing anything, so those tests cannot be run locally that way.
   Kind: fix.
   Source: close-findings 2026-10-22 (menu group, running act:Linux-menu-harness.yml).
@@ -2314,6 +2335,22 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: investigate.
   Source: close-findings 2026-10-22 (replay/input group).
   Lanes: replay.
+
+- 📋 [RETR-0055] **MEDIUM — content_load_test's screenshot lane fails in Linux-menu-harness.yml under act.**
+  `./local-CI.sh act:Linux-menu-harness.yml` (local/fixes-2026-09,
+  7624dcb23f) passed every step before "Build and run
+  content_load_test", whose screenshot lane failed with "the
+  screenshot finished in 57 checks for 240 rows: encoded in one go".
+  The lane expects the PNG encode to take at least one queue check per
+  row. Not yet known: whether it fails natively (the step needs the
+  workflow's earlier build steps, so it cannot run alone), whether
+  upstream's test or task_screenshot.c differ, or whether the act
+  container's CPU count changes the path. Found while closing RETR-0050;
+  not fixed then because it is outside that group's subject.
+  **Layman:** One of the menu tests fails when run locally: it expects a screenshot to be saved a piece at a time, and here it was saved all at once.
+  Kind: fix.
+  Source: close-findings 2026-10-22 (local-CI.sh group, next door: act:Linux-menu-harness.yml at 7624dcb23f).
+  Lanes: samples/tasks/content_load, tasks/task_screenshot.c.
 
 ### 📝 Cold-eyes 2026-07-04
 
