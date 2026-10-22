@@ -11046,30 +11046,20 @@ static enum menu_action materialui_parse_menu_entry_action(
 
             if (mui->flags & MUI_FLAG_IS_PLAYLISTS_TAB)
             {
-               file_list_t *selection_buf = MENU_LIST_GET_SELECTION(menu_st->entries.list, 0);
-               size_t selection_total     = selection_buf ? selection_buf->size : 0;
-               size_t selection           = menu_st->selection_ptr;
-               size_t new_selection       = random_range(0, (unsigned)(selection_total - 1));
-               menu_entry_t entry_new;
+               size_t new_selection = menu_playlists_tab_random_selection(selection);
 
-               MENU_ENTRY_INITIALIZE(entry_new);
-               menu_entry_get(&entry_new, 0, new_selection, NULL, false);
-               /* Keep randomizing until selection is a fresh playlist */
-               while (new_selection == selection || entry_new.type != FILE_TYPE_PLAYLIST_COLLECTION)
+               if (new_selection != selection)
                {
-                  new_selection = random_range(0, (unsigned)(selection_total - 1));
-                  menu_entry_get(&entry_new, 0, new_selection, NULL, false);
+                  menu_st->selection_ptr = new_selection;
+                  if (menu_st->driver_ctx->navigation_set)
+                     menu_st->driver_ctx->navigation_set(menu_st->userdata, false);
                }
-
-               /* While-loop above only exits with new_selection != selection. */
-               menu_st->selection_ptr = new_selection;
-               if (menu_st->driver_ctx->navigation_set)
-                  menu_st->driver_ctx->navigation_set(menu_st->userdata, false);
 
                new_action = MENU_ACTION_NOOP;
 
 #ifdef HAVE_AUDIOMIXER
-               audio_driver_mixer_play_scroll_sound(true);
+               if (new_selection != selection)
+                  audio_driver_mixer_play_scroll_sound(true);
 #endif
                break;
             }
