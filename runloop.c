@@ -565,10 +565,8 @@ static bool runloop_environ_cb_get_system_info(unsigned cmd, void *data)
          unsigned log_level;
          bool do_debug_log;
 
-         /* Per the libretro spec, behavior is undefined if data is NULL.
-          * The brief is to treat the core as untrusted: a buggy or
-          * wrong-ABI core can probe with NULL; the original code would
-          * crash on the `info[i].ident` deref below. */
+         /* Refuse a NULL data rather than read through it; see the
+          * note above runloop_environment_cb's switch. */
          if (!data)
             return false;
 
@@ -1541,6 +1539,9 @@ bool runloop_environment_cb(unsigned cmd, void *data)
       return true;
    }
 
+   /* Some cases refuse a NULL data; the rest trust the core to pass a
+    * valid pointer.  A check added to one case does not make the
+    * others safe. */
    switch (cmd)
    {
       case RETRO_ENVIRONMENT_GET_OVERSCAN:
@@ -2209,10 +2210,8 @@ bool runloop_environment_cb(unsigned cmd, void *data)
             RARCH_LOG("[Environ] GET_LANGUAGE: \"%u\".\n", user_lang);
          }
 #else
-         /* Without HAVE_LANGEXTRA the case used to leave *data
-          * unwritten and still `break` to the success path; cores
-          * read uninitialised stack as their "configured language".
-          * Default to English so the contract holds. */
+         /* Without HAVE_LANGEXTRA there is no user language: report
+          * English, so *data is always written. */
          *(unsigned *)data = RETRO_LANGUAGE_ENGLISH;
 #endif
          break;
