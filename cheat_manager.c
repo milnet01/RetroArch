@@ -2044,13 +2044,13 @@ void cheat_manager_match_action(enum cheat_match_action_type match_action, unsig
                      {
                         const char *_msg = msg_hash_to_str(MSG_CHEAT_SEARCH_ADD_MATCH_FAIL);
                         runloop_msg_queue_push(_msg, strlen(_msg), 1, 180, true, NULL,
-                              MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
+                              MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_ERROR);
                      }
                      else
                      {
                         const char *_msg = msg_hash_to_str(MSG_CHEAT_SEARCH_ADD_MATCH_SUCCESS);
                         runloop_msg_queue_push(_msg, strlen(_msg), 1, 180, true, NULL,
-                              MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
+                              MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_SUCCESS);
                      }
                      return;
                   case CHEAT_MATCH_ACTION_TYPE_DELETE:
@@ -2062,7 +2062,7 @@ void cheat_manager_match_action(enum cheat_match_action_type match_action, unsig
                            cheat_st->num_matches--;
                         _msg = msg_hash_to_str(MSG_CHEAT_SEARCH_DELETE_MATCH_SUCCESS);
                         runloop_msg_queue_push(_msg, strlen(_msg), 1, 180, true, NULL,
-                              MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
+                              MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_SUCCESS);
                         return;
                      }
                   }
