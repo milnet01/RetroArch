@@ -1966,7 +1966,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   ruled order: local-CI.sh (with RETR-0050), then the rest.
   2026-10-22: close-findings local-CI.sh group closed (ledger
   docs/private/reviews/2026-10-21-findings/ledger-local-ci.json): 17
-  fixed, 1 dismissed, RETR-0050 closed. Fixes 834e916357..7624dcb23f on
+  fixed, 1 dismissed, RETR-0050 closed. Fixes 834e916357..d18ec22158 on
   local/fixes-2026-09. User decision 2026-10-22, replacing ruling (2)
   of 2026-10-21 ("samples-tasks and common-samples become declared quick
   checks"): every push runs the workflows' real steps. local-CI.sh reads
@@ -2246,7 +2246,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (playlist_nav, network_settings, playlists_scan, settings_display)
   run only by hand in a non-Qt tree.  Take with the local-CI.sh group
   (RETR-0021 ruled order).
-  2026-10-22: fixed in a72b6a3d98 and 7624dcb23f on local/fixes-2026-09.
+  2026-10-22: fixed in a72b6a3d98 and 40fa0294e0 on local/fixes-2026-09.
   Cause, reproduced on a toy workflow: plain run: steps worked; act
   copying an action into /var/run/act failed because the act image's
   /var/run links to /run and podman refuses to copy through it.
@@ -2338,7 +2338,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
 
 - 📋 [RETR-0055] **MEDIUM — content_load_test's screenshot lane fails in Linux-menu-harness.yml under act.**
   `./local-CI.sh act:Linux-menu-harness.yml` (local/fixes-2026-09,
-  7624dcb23f) passed every step before "Build and run
+  40fa0294e0) passed every step before "Build and run
   content_load_test", whose screenshot lane failed with "the
   screenshot finished in 57 checks for 240 rows: encoded in one go".
   The lane expects the PNG encode to take at least one queue check per
@@ -2349,7 +2349,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   not fixed then because it is outside that group's subject.
   **Layman:** One of the menu tests fails when run locally: it expects a screenshot to be saved a piece at a time, and here it was saved all at once.
   Kind: fix.
-  Source: close-findings 2026-10-22 (local-CI.sh group, next door: act:Linux-menu-harness.yml at 7624dcb23f).
+  Source: close-findings 2026-10-22 (local-CI.sh group, next door: act:Linux-menu-harness.yml at 40fa0294e0).
   Lanes: samples/tasks/content_load, tasks/task_screenshot.c.
 
 ### 📝 Cold-eyes 2026-07-04

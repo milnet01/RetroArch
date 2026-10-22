@@ -18,7 +18,9 @@
    "code-pairs.json": "absent"
   },
   "collateral": [
-   "workflow_tool image compare stripped the account name (would refuse Linux.yml's own image): fixed before commit"
+   "workflow_tool image compare stripped the account name (would refuse Linux.yml's own image): fixed before commit",
+   "act left a failed job container running (seen after the menu-harness act run): fixed d18ec22158, red/green on a toy workflow",
+   "commit id 7624dcb23f cited for the image fix was a stash snapshot; corrected to 40fa0294e0 in roadmap and ledger"
   ],
   "surfaced": [
    "2026-10-21 ruling 2 vs 2026-10-22 answer"
@@ -304,7 +306,7 @@
     "local-CI.sh"
    ],
    "was": "act copies actions through /var/run link; podman refuses",
-   "now": "local image: real /var/run, package lists + ccache, CPU shims (a72b6a3d98, 7624dcb23f); toy red/green; act:Linux-menu-harness.yml passed 16 steps, then content_load_test failed its own assertion (RETR-0055)",
+   "now": "local image: real /var/run, package lists + ccache, CPU shims (a72b6a3d98, 40fa0294e0); toy red/green; act:Linux-menu-harness.yml passed 16 steps, then content_load_test failed its own assertion (RETR-0055)",
    "must_agree": [
     "ROADMAP RETR-0050"
    ]
