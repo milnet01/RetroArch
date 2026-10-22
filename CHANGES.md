@@ -23,6 +23,7 @@
 - CHEEVOS: Fix for PS2/PSP CHD hashing with RetroAchievements
 - CLOUDSYNC: Google Drive cloud sync driver
 - CONFIG: Fix saving main configuration after load configuration
+- CONFIG: Saving keeps the file's permissions; credentials are never written to a file others can read
 - DOS: RetroArch for DOS can now start up and handle keyboard correctly
 - CLOUDSYNC: Conflict resolution options
 - EMSCRIPTEN: Added dice to core selection dropdown
@@ -80,11 +81,14 @@
 - MENU: Default core downloader URL on ARM64 Linux platforms
 - MENU: New "Display Time" on-screen panel
 - MENU: New hotkey for Toggle Video Filter
+- MENU: Fix menu freeze when using Scan on the Playlists tab with no other playlist to jump to
+- MENU: Fix an empty cloud sync password showing as set while logged in to RetroAchievements
 - MENU/EXPLORE: Improve merging metadata of similar items (mostly for NES db)
 - MENU/GLUI: Add Dracula color theme
 - MENU/OZONE: Add dynamic header icon option
 - MENU/OZONE: Fix occasional left mouse click selection error
 - MENU/OZONE: Left sidebar is now optional
+- MENU/OZONE: Fix Scan in the sidebar freezing, or opening a playlist tab that does not exist
 - MENU/XMB: Current menu icon refactor
 - MENU/XMB: Left thumbnail and handheld mode fixes
 - MENU/XMB: Tab change possible by gestures
