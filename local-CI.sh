@@ -151,12 +151,16 @@ ACT_BIN="${ACT_BIN:-$HOME/.local/bin/act}"
 # ubuntu-latest is 24.04; this is the image act's own picker offers for it.
 ACT_IMAGE="catthehacker/ubuntu:act-24.04"
 JOBS="${LOCAL_CI_JOBS:-4}"
-# act runs ACT_IMAGE with two changes, built once as a local image (act_image):
+# act runs ACT_IMAGE with three changes, built once as a local image whose
+# tag is a hash of its recipe (act_image), so a changed recipe rebuilds it:
 #   /var/run is a real directory. In ACT_IMAGE it links to /run, and podman
 #   refuses to copy an action into /var/run/act through the link ("statat
 #   var/run/act: path escapes from parent"), so every `uses:` step failed.
 #   nproc and getconf are the CPU shims below, so steps build at -j$JOBS.
-ACT_RUN_IMAGE="localhost/local-ci-act:24.04-j$JOBS"
+#   The package lists are filled and ccache installed, as on GitHub's
+#   runner image: the workflows' "Enable ccache" step installs it with no
+#   `apt-get update` first.
+ACT_RUN_IMAGE=""
 
 # workflow_tool jobs <workflow>
 #   Print the workflow's job ids, one per line.
@@ -496,16 +500,19 @@ act_setup() {
     ACT_SRC="$LOGDIR/act-src"
 }
 
-# act_image : build ACT_RUN_IMAGE from ACT_IMAGE (see ACT_RUN_IMAGE for
-# why), when it is missing or --pull asked for a fresh base.
+# act_image : set ACT_RUN_IMAGE, building it from ACT_IMAGE (see
+# ACT_RUN_IMAGE for why) when it is missing or --pull asked for a fresh base.
 act_image() {
+    printf '%s\n' "FROM docker.io/$ACT_IMAGE" \
+        'RUN rm /var/run && mkdir /var/run && ln -s /run/lock /var/run/lock' \
+        'RUN apt-get update && apt-get install -y --no-install-recommends ccache' \
+        'COPY nproc getconf /usr/local/bin/' >"$CPU_SHIM/Containerfile"
+    ACT_RUN_IMAGE="localhost/local-ci-act:$(cat "$CPU_SHIM"/Containerfile "$CPU_SHIM"/nproc \
+        "$CPU_SHIM"/getconf | sha256sum | cut -c1-12)"
     if [ "$DO_PULL" -eq 0 ] && podman image exists "$ACT_RUN_IMAGE"; then return 0; fi
     if [ "$DO_PULL" -eq 1 ] || ! podman image exists "docker.io/$ACT_IMAGE"; then
         podman pull "docker.io/$ACT_IMAGE" || return 1
     fi
-    printf '%s\n' "FROM docker.io/$ACT_IMAGE" \
-        'RUN rm /var/run && mkdir /var/run && ln -s /run/lock /var/run/lock' \
-        'COPY nproc getconf /usr/local/bin/' >"$CPU_SHIM/Containerfile"
     podman build -q -t "$ACT_RUN_IMAGE" -f "$CPU_SHIM/Containerfile" "$CPU_SHIM"
 }
 
