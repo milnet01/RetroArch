@@ -620,12 +620,7 @@ bool bsv_movie_load_checkpoint(bsv_movie_t *handle, uint8_t compression,
    }
    if (!handle->cur_save)
    {
-      /* Allocate first, only commit cur_save_size on success.
-       * The previous order (size = size; malloc) left cur_save NULL
-       * on OOM but recorded cur_save_size as the requested value, so
-       * the next iteration's `cur_save_size < size` check would not
-       * retry the alloc -- and downstream `compressed_data =
-       * handle->cur_save` would deref NULL. */
+      /* Record the size only once the allocation succeeds. */
       handle->cur_save       = (uint8_t*)malloc(size);
       if (!handle->cur_save)
       {
@@ -1994,8 +1989,8 @@ bool bsv_movie_read_deduped_state(bsv_movie_t *movie, uint8_t *encoded, size_t e
             }
             if (item.val.binary.len != block_byte_size)
             {
-               RARCH_ERR("[STATESTREAM] new block binary length is wrong: %d vs %d\n",
-                     item.val.binary.len, block_byte_size);
+               RARCH_ERR("[STATESTREAM] new block binary length is wrong: %u vs %u\n",
+                     (unsigned)item.val.binary.len, (unsigned)block_byte_size);
                rmsgpack_dom_value_free(&item);
                goto exit;
             }

@@ -56,9 +56,8 @@ struct input_bind_map
 struct turbo_buttons
 {
    /* Bit 31 is the "turbo active for this port" sentinel; bits 0..30 mark
-    * which RETRO_DEVICE_ID_JOYPAD_* button ids have turbo applied.  Was
-    * int32_t prior to audit S1 — using the sign bit as a sentinel is UB
-    * once `(1 << 31)` is computed on a signed operand. */
+    * which RETRO_DEVICE_ID_JOYPAD_* button ids have turbo applied.
+    * Unsigned, so setting bit 31 is defined. */
    uint32_t turbo_pressed[MAX_USERS];
    unsigned count;
    uint16_t enable[MAX_USERS];

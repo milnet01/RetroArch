@@ -293,6 +293,9 @@ struct bsv_movie
    uint8_t checkpoint_compression, checkpoint_encoding;
 
    uint8_t *last_save, *cur_save;
+   /* Never more than its buffer holds, and may be less: loading a
+    * checkpoint sets cur_save_size to the state it loaded.  A larger
+    * state reallocates. */
    size_t last_save_size, cur_save_size;
 
    bool cur_save_valid;
@@ -1236,12 +1239,9 @@ size_t input_config_get_bind_string_joykey(
 
 /**
  * input_key_pressed:
- * @key:               RARCH_BIND_*-bounded bind id (must be < RARCH_BIND_LIST_END).
+ * @key:               a RARCH_BIND_* id; one outside 0..RARCH_BIND_LIST_END-1
+ *                     returns false.
  * @keyboard_pressed:  current keyboard-state hint.
- *
- * Public API — third-party libretro front-ends and test harnesses may
- * link against this symbol.  Out-of-range @key returns false rather
- * than OOB-reading input_config_binds[0].
  *
  * @return true if the named bind is currently active on user 0.
  **/

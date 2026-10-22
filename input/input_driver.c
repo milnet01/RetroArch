@@ -5866,9 +5866,7 @@ void input_driver_init_joypads(void)
 
 bool input_key_pressed(int key, bool keyboard_pressed)
 {
-   /* Public API — third-party front-ends may pass arbitrary @key values.
-    * input_config_binds[0] is dimensioned RARCH_BIND_LIST_END, so anything
-    * outside that range would OOB-read the joypad-fallback branch below. */
+   /* input_config_binds[0] holds RARCH_BIND_LIST_END binds. */
    if (key < 0 || key >= RARCH_BIND_LIST_END)
       return false;
 
