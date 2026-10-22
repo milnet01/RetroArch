@@ -18,7 +18,6 @@
  */
 
 #include <ctype.h>
-#include <assert.h>
 
 /* For chmod() / S_IRUSR / S_IWUSR after config_file_write -- gated to
  * the same POSIX-mode platform set as the chmod call below. */
@@ -964,16 +963,32 @@ struct config_path_setting
 
 #define GENERAL_SETTING(key, configval, default_enable, default_setting, type, handle_setting) \
 { \
-   tmp[count].ident      = key; \
-   tmp[count].ptr        = configval; \
-   if (default_enable) \
+   if (count < count_max) \
    { \
-      tmp[count].flags |= CFG_BOOL_FLG_DEF_ENABLE; \
-      tmp[count].def    = default_setting; \
+      tmp[count].ident      = key; \
+      tmp[count].ptr        = configval; \
+      if (default_enable) \
+      { \
+         tmp[count].flags |= CFG_BOOL_FLG_DEF_ENABLE; \
+         tmp[count].def    = default_setting; \
+      } \
+      if (handle_setting) \
+         tmp[count].flags |= CFG_BOOL_FLG_HANDLE; \
    } \
-   if (handle_setting) \
-      tmp[count].flags |= CFG_BOOL_FLG_HANDLE; \
    count++; \
+}
+
+/* GENERAL_SETTING writes only the first count_max rows of a
+ * populate_settings_* pool and counts the rest; those are then neither
+ * loaded nor saved, so say so, and keep the rows that fit. */
+static unsigned config_settings_fit(unsigned count, unsigned count_max,
+      const char *kind)
+{
+   if (count <= count_max)
+      return count;
+   RARCH_ERR("[Config] %u %s settings for a pool of %u; the rest are "
+         "neither loaded nor saved.\n", count, kind, count_max);
+   return count_max;
 }
 
 #define SETTING_BOOL(key, configval, default_enable, default_setting, handle_setting) \
@@ -1865,7 +1880,8 @@ static struct config_array_setting *populate_settings_array(
 {
    unsigned i                           = 0;
    unsigned count                       = 0;
-   struct config_array_setting  *tmp    = (struct config_array_setting*)calloc(SETTINGS_ARRAY_COUNT_MAX, sizeof(struct config_array_setting));
+   unsigned count_max                  = SETTINGS_ARRAY_COUNT_MAX;
+   struct config_array_setting  *tmp    = (struct config_array_setting*)calloc(count_max, sizeof(struct config_array_setting));
 
    if (!tmp)
       return NULL;
@@ -1999,13 +2015,7 @@ static struct config_array_setting *populate_settings_array(
    SETTING_ARRAY("cpu_menu_gov",                 settings->arrays.cpu_menu_gov, false, NULL, true);
 #endif
 
-   /* Compile-time-pool guard: GENERAL_SETTING writes tmp[count] without
-    * a bounds check. Any future SETTING_ARRAY that pushes count past
-    * SETTINGS_ARRAY_COUNT_MAX would heap-corrupt silently. The acknowledged
-    * "Compile-time check (via negative array) can be added here if
-    * needed" is now done as a runtime assert. */
-   assert(count <= SETTINGS_ARRAY_COUNT_MAX);
-   *size = count;
+   *size = config_settings_fit(count, count_max, "array");
 
    return tmp;
 }
@@ -2015,7 +2025,8 @@ static struct config_path_setting *populate_settings_path(
 {
    unsigned count = 0;
    recording_state_t *recording_st     = recording_state_get_ptr();
-   struct config_path_setting  *tmp    = (struct config_path_setting*)calloc(SETTINGS_PATH_COUNT_MAX, sizeof(struct config_path_setting));
+   unsigned count_max                  = SETTINGS_PATH_COUNT_MAX;
+   struct config_path_setting  *tmp    = (struct config_path_setting*)calloc(count_max, sizeof(struct config_path_setting));
 
    if (!tmp)
       return NULL;
@@ -2118,8 +2129,7 @@ static struct config_path_setting *populate_settings_path(
    SETTING_ARRAY("log_dir",                      settings->paths.log_dir, true, NULL, true);
    SETTING_ARRAY("app_icon",                     settings->paths.app_icon, true, NULL, true);
 
-   assert(count <= SETTINGS_PATH_COUNT_MAX);
-   *size = count;
+   *size = config_settings_fit(count, count_max, "path");
 
    return tmp;
 }
@@ -2141,7 +2151,8 @@ bool config_metal_arg_buffers_default(void)
 static struct config_bool_setting *populate_settings_bool(
       settings_t *settings, int *size)
 {
-   struct config_bool_setting  *tmp    = (struct config_bool_setting*)calloc(SETTINGS_BOOL_COUNT_MAX, sizeof(struct config_bool_setting));
+   unsigned count_max                  = SETTINGS_BOOL_COUNT_MAX;
+   struct config_bool_setting  *tmp    = (struct config_bool_setting*)calloc(count_max, sizeof(struct config_bool_setting));
    unsigned count                      = 0;
 
    if (!tmp)
@@ -2955,8 +2966,7 @@ static struct config_bool_setting *populate_settings_bool(
    SETTING_BOOL("game_ai_show_debug",       &settings->bools.game_ai_show_debug,  false, false, false);
 #endif
 
-   assert(count <= SETTINGS_BOOL_COUNT_MAX);
-   *size = count;
+   *size = config_settings_fit(count, count_max, "bool");
 
    return tmp;
 }
@@ -2965,7 +2975,8 @@ static struct config_float_setting *populate_settings_float(
       settings_t *settings, int *size)
 {
    unsigned count = 0;
-   struct config_float_setting  *tmp      = (struct config_float_setting*)calloc(SETTINGS_FLOAT_COUNT_MAX, sizeof(struct config_float_setting));
+   unsigned count_max                  = SETTINGS_FLOAT_COUNT_MAX;
+   struct config_float_setting  *tmp      = (struct config_float_setting*)calloc(count_max, sizeof(struct config_float_setting));
 
    if (!tmp)
       return NULL;
@@ -3591,8 +3602,7 @@ static struct config_float_setting *populate_settings_float(
 #endif
 
 
-   assert(count <= SETTINGS_FLOAT_COUNT_MAX);
-   *size = count;
+   *size = config_settings_fit(count, count_max, "float");
 
    return tmp;
 }
@@ -3601,7 +3611,8 @@ static struct config_uint_setting *populate_settings_uint(
       settings_t *settings, int *size)
 {
    unsigned count                     = 0;
-   struct config_uint_setting  *tmp   = (struct config_uint_setting*)calloc(SETTINGS_UINT_COUNT_MAX, sizeof(struct config_uint_setting));
+   unsigned count_max                  = SETTINGS_UINT_COUNT_MAX;
+   struct config_uint_setting  *tmp   = (struct config_uint_setting*)calloc(count_max, sizeof(struct config_uint_setting));
 
    if (!tmp)
       return NULL;
@@ -4337,8 +4348,7 @@ static struct config_uint_setting *populate_settings_uint(
 
 
 
-   assert(count <= SETTINGS_UINT_COUNT_MAX);
-   *size = count;
+   *size = config_settings_fit(count, count_max, "uint");
 
    return tmp;
 }
@@ -4347,15 +4357,15 @@ static struct config_size_setting *populate_settings_size(
       settings_t *settings, int *size)
 {
    unsigned count                     = 0;
-   struct config_size_setting  *tmp   = (struct config_size_setting*)calloc(SETTINGS_SIZE_COUNT_MAX, sizeof(struct config_size_setting));
+   unsigned count_max                  = SETTINGS_SIZE_COUNT_MAX;
+   struct config_size_setting  *tmp   = (struct config_size_setting*)calloc(count_max, sizeof(struct config_size_setting));
 
    if (!tmp)
       return NULL;
 
    SETTING_SIZE("rewind_buffer_size",            &settings->sizes.rewind_buffer_size, true, DEFAULT_REWIND_BUFFER_SIZE, false);
 
-   assert(count <= SETTINGS_SIZE_COUNT_MAX);
-   *size = count;
+   *size = config_settings_fit(count, count_max, "size");
 
    return tmp;
 }
@@ -4364,7 +4374,8 @@ static struct config_int_setting *populate_settings_int(
       settings_t *settings, int *size)
 {
    unsigned count                     = 0;
-   struct config_int_setting  *tmp    = (struct config_int_setting*)calloc(SETTINGS_INT_COUNT_MAX, sizeof(struct config_int_setting));
+   unsigned count_max                  = SETTINGS_INT_COUNT_MAX;
+   struct config_int_setting  *tmp    = (struct config_int_setting*)calloc(count_max, sizeof(struct config_int_setting));
 
    if (!tmp)
       return NULL;
@@ -5615,8 +5626,7 @@ static struct config_int_setting *populate_settings_int(
 
 
 
-   assert(count <= SETTINGS_INT_COUNT_MAX);
-   *size = count;
+   *size = config_settings_fit(count, count_max, "int");
 
    return tmp;
 }
