@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=50 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=54 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1589,6 +1589,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (6d9a85d2cc); GENERAL_SETTING writes past its pool unbounded (4fb733fb48,
   without the fork's asserts, which upstream never had); Scan inside a
   playlist past the end (RETR-0049, not yet fixed).
+  2026-10-22 upstream PR candidate from close-findings, replay/input
+  group: the block-length error in bsv_movie_read_deduped_state prints
+  size_t values with %d (fixed on the fork in 4fb8369668). Small;
+  send with another bsv change. The group's other fixes came from
+  upstream.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1945,6 +1950,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   docs/private/reviews/2026-10-21-findings/ledger-menu.json): 21 fixed,
   4 dismissed, none queued; a defect found next door is RETR-0049. Next by the ruled order: replay /
   input, then local-CI.sh, then the rest.
+  2026-10-22: close-findings replay/input group closed (ledger
+  docs/private/reviews/2026-10-21-findings/ledger-replay-input.json),
+  fixes 1d009c440c..87d183c902 on local/fixes-2026-09. Most crash
+  fixes were carried from upstream, which had already fixed them
+  (turbo clamp d5bf86d935, replay out-of-memory b12ae7c1ee, private
+  temp dir cf77d2553f). Queued RETR-0052, RETR-0053, RETR-0054; next
+  door RETR-0051 (upstream replay fixes the fork still lacks). One
+  question to the user: 4fb8369668 drops input_key_pressed's
+  public-API claim, which RETR-S0014 recorded as option A. Next by the
+  ruled order: local-CI.sh (with RETR-0050), then the rest.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
@@ -2220,6 +2235,81 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: fix.
   Source: close-findings 2026-10-22 (menu group, running act:Linux-menu-harness.yml).
   Lanes: local-CI.sh.
+
+- 📋 [RETR-0051] **MEDIUM — Upstream replay fixes the fork still lacks.**
+  Found while closing the replay/input group: upstream/master has
+  replay commits since the fork's last merge (6bf58823c6) that the
+  fork does not carry. The close-findings run carried only the parts
+  its findings needed (e6f2b99db4, 2b330e14d0, 1d009c440c). Still
+  missing, each checked against upstream/master on 2026-10-22:
+  - 73dde88f91 a header with no block layout plays without an index.
+    Upstream says a recorder built without statestream writes block
+    sizes of 0; the fork's header check refuses them, so such a
+    replay would not play on a statestream build (unverified on the
+    fork). Until this lands, samples/tasks/bsv_statestream's
+    no_layout lane fails on the fork; run its other lanes by name.
+  - 52841a2258 a compressed checkpoint decodes to exactly its
+    header's size.
+  - 35080c9ffc a bucket that cannot grow fails the insert.
+  The fork's bsvmovie.c and upstream's have diverged; each pick
+  conflicts, and upstream's text should win where it covers the same
+  case. The fork's branch is far behind upstream/master overall, so
+  a full upstream merge (RETR-S0115) would bring these too.
+  **Layman:** The official project has fixed more replay bugs since our last merge; we should bring those fixes over.
+  Kind: fix.
+  Source: close-findings 2026-10-22 (replay/input group).
+  Lanes: replay.
+
+- 📋 [RETR-0052] **LOW — Which replay checkpoint failures end playback is unstated.**
+  Readability finding L5 Q5 (MEDIUM), review 2026-10-21
+  (docs/private/reviews/2026-10-21-findings/review-readability-fork/return-L5-input-replay.md).
+  bsv_movie_load_checkpoint sets BSV_FLAG_MOVIE_END itself on an
+  allocation failure, a truncated read and the size checks, but not on
+  a zlib or zstd failure, an unknown compression or encoding, or a
+  statestream decode failure. Its callers already end the movie on any
+  failure when asked (end_movie in bsv_movie_read_next_events), and
+  bsv_movie_reset_playback deliberately does not. Not fixed now: it
+  needs a decision on whether a failure inside the function may end
+  playback when the caller did not ask, then one rule and one comment.
+  Upstream has the same split (bsv_movie_set_end), so decide with
+  RETR-0051.
+  **Layman:** When a replay file is damaged, some kinds of damage stop playback at once and others leave it to the caller, and nothing says why.
+  Kind: review-fix.
+  Source: close-findings 2026-10-22 (replay/input group).
+  Lanes: replay.
+
+- 📋 [RETR-0053] **LOW — content_replace_file repeats filestream_write_file_atomic's rename step.**
+  Readability finding L6 Q1 (MEDIUM), review 2026-10-21
+  (return-L6-runloop-save-netplay.md). content_replace_file and
+  content_tmp_path (tasks/task_save.c) repeat the rename step and the
+  ".tmp" naming of filestream_write_file_atomic
+  (libretro-common/streams/file_stream.c). They already differ: the
+  libretro-common copy also handles a VFS rename callback that refuses
+  an existing destination. Not fixed now: one shared helper belongs in
+  vendored libretro-common, so it has to go upstream first (CLAUDE.md:
+  patch upstream and re-vendor).
+  **Layman:** Two copies of the code that swaps a finished save into place could drift apart.
+  Kind: refactor.
+  Source: close-findings 2026-10-22 (replay/input group).
+  Lanes: save.
+
+- 📋 [RETR-0054] **INVESTIGATE — Recording after a replay state load may read a superblock the load removed.**
+  Open question 3 of review-code lane 7, review 2026-10-21
+  (review-code-leads/lane-07-replay-runahead.result). In
+  bsv_movie_write_deduped_state, a block that matches last_save takes
+  its index from uint32s_index_get(movie->superblocks,
+  movie->superblock_seq[superblock])[block] without a NULL check.
+  The state-load path that clears the indexes with
+  uint32s_index_remove_after(..., 0) and then
+  bsv_movie_scan_from_start does not itself clear cur_save_valid; the
+  frame-rewind path does. Whether the rescan leaves superblock_seq
+  naming only superblocks it re-created is not settled. Upstream has
+  the same line. Check: record with statestream, load a state on the
+  same timeline, keep recording, under ASan.
+  **Layman:** Loading a save state while recording a replay might, in one path, make the recorder read memory that was already freed. Unconfirmed.
+  Kind: investigate.
+  Source: close-findings 2026-10-22 (replay/input group).
+  Lanes: replay.
 
 ### 📝 Cold-eyes 2026-07-04
 

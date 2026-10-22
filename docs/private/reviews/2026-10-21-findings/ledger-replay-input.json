@@ -1,0 +1,455 @@
+{
+ "run": {
+  "cited_by": [
+   "docs/private/ROADMAP.md RETR-S0014 (input_key_pressed option A), RETR-0019, closed bundle entries",
+   "docs/private/specs/2026-04-27-audit-spec-needed-cluster.md (S5, dated)",
+   "docs/private/upstream-prs/pr-turbo-bind-bounds.md, pr-runahead-private-tmpdir.md (dated drafts)",
+   "docs/private/audit/upstream-sync-2026-09-decisions.md, indie-review-partition.md (dated)"
+  ],
+  "swept": {
+   "CHANGES.md # Future": "fixed: three entries (87d183c902)",
+   "Linux-samples-tasks.yml": "fixed: turbo_bind step came with 1d009c440c; bsv_statestream not wired (its no_layout lane fails until RETR-0051)",
+   "Linux-state-runahead-tests.yml": "agrees: make check now also runs runahead_tmpdir_test",
+   "ROADMAP RETR-S0014 input_key_pressed option A": "surfaced: 4fb8369668 drops the public-API claim",
+   "ROADMAP RETR-0006 / RETR-0019 / bundle entries naming these functions": "frozen",
+   "spec 2026-04-27 S5": "frozen (dated design doc)",
+   "upstream-prs drafts": "frozen",
+   ".claude/code-pairs.json": "absent"
+  },
+  "collateral": [
+   "bsv_statestream harness first built against stale sanitizer objects left in the tree by another sample; make clean fixed it"
+  ],
+  "surfaced": [
+   "input_key_pressed public-API claim vs RETR-S0014 option A"
+  ],
+  "out_of_scope": [
+   "upstream replay fixes not on the fork (no-layout playback 73dde88f91, decoded-size check 52841a2258, bucket insert 35080c9ffc): queued RETR-0051",
+   "fork far behind upstream/master; noted in RETR-0051"
+  ],
+  "falsified": []
+ },
+ "findings": [
+  {
+   "finding": "R2 input_turbo_bind unclamped: poll loop reads libretro_input_binds out of bounds every frame",
+   "source": "review-code lane-07; readability L5 Q1 MEDIUM + lead",
+   "dim": "3 / Q1",
+   "severity": "MEDIUM",
+   "verified": "yes, ra-fixes 4fb8369668^: configuration.c loads unclamped, input_driver.c poll indexes with it",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "configuration.c",
+    "input/input_driver.c",
+    "menu/menu_setting.c"
+   ],
+   "was": "no load clamp; three readers disagree on \"no bind\"",
+   "now": "1d009c440c, upstream d5bf86d935 carried (load clamp); red: none against shipping code, upstream turbo_bind test models the logic",
+   "must_agree": []
+  },
+  {
+   "finding": "R5 input_turbo_button unclamped indexes input_remap_ids",
+   "source": "review-code lane-07; readability L5 lead",
+   "dim": "3",
+   "severity": "LOW",
+   "verified": "yes, input_driver.c input_state_device",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "configuration.c"
+   ],
+   "was": "unclamped",
+   "now": "1d009c440c (same clamp)",
+   "must_agree": []
+  },
+  {
+   "finding": "R1 deduped writer: unchecked calloc/stream/superblock_seq, caller casts -1 to uint32",
+   "source": "review-code lane-07; readability L5 Q1 HIGH (two grow copies) + lead 1764",
+   "dim": "7 / Q1",
+   "severity": "LOW / HIGH",
+   "verified": "yes, bsvmovie.c write path",
+   "disposition": "fixed",
+   "why": "Q1 HIGH: the two copies stay (upstream keeps both); both now fail cleanly",
+   "files": [
+    "input/bsv/bsvmovie.c",
+    "input/bsv/uint32s_index.c",
+    "input/bsv/uint32s_index.h",
+    "samples/tasks/bsv_statestream/"
+   ],
+   "was": "NULL writes on OOM",
+   "now": "e6f2b99db4, upstream b12ae7c1ee carried; bsv_statestream oom lane red (ASan SEGV) then green; block-insert NONE check not locked by the lane",
+   "must_agree": []
+  },
+  {
+   "finding": "bsvmovie load: unchecked malloc/calloc from file sizes (zlib, zstd, compressed buffer)",
+   "source": "review-code lane-07 Low (upstream code)",
+   "dim": "3",
+   "severity": "LOW",
+   "verified": "yes, bsv_movie_load_checkpoint",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "input/bsv/bsvmovie.c"
+   ],
+   "was": "unchecked",
+   "now": "e6f2b99db4; oomload lane red (SEGV in load_checkpoint) then green",
+   "must_agree": []
+  },
+  {
+   "finding": "bsvmovie read: superblock calloc unchecked",
+   "source": "review-code lane-07 Low",
+   "dim": "7",
+   "severity": "LOW",
+   "verified": "yes, read_deduped_state",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "input/bsv/bsvmovie.c"
+   ],
+   "was": "unchecked",
+   "now": "e6f2b99db4; mutation turns oomload red",
+   "must_agree": []
+  },
+  {
+   "finding": "uint32s_index insert: malloc copy unchecked",
+   "source": "review-code lane-07 Low (upstream code)",
+   "dim": "7",
+   "severity": "LOW",
+   "verified": "yes, uint32s_index_insert both branches",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "input/bsv/uint32s_index.c"
+   ],
+   "was": "memcpy into NULL",
+   "now": "e6f2b99db4 (UINT32S_INDEX_NONE)",
+   "must_agree": []
+  },
+  {
+   "finding": "runahead input_state_list counts a NULL element after constructor OOM",
+   "source": "review-code lane-07 Low (fork-introduced)",
+   "dim": "7",
+   "severity": "LOW",
+   "verified": "yes, mylist_resize + set_last lookup",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "runahead.c"
+   ],
+   "was": "NULL data[i] inside size",
+   "now": "e4938740d0; scratch harness red (NULL within size) then green; not committed, upstream replaced the list",
+   "must_agree": []
+  },
+  {
+   "finding": "runahead mylist overflow guard does not guard; comment cites wrong bound",
+   "source": "readability L6 Q4 MEDIUM; review-code lane-07 R6 + OQ2; L6 lead",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, guard tested capacity < 0 only",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "runahead.c"
+   ],
+   "was": "capacity<0 check, 7-line comment",
+   "now": "e4938740d0: refuses doubling past INT_MAX/2; no red run, unreachable bound",
+   "must_agree": []
+  },
+  {
+   "finding": "R8 / OQ1 own temp dir with loose permissions keeps links planted before chmod",
+   "source": "review-code lane-07 R8 OQ1",
+   "dim": "security",
+   "severity": "n/a",
+   "verified": "yes: fork closed the dir with chmod only",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "runahead.c",
+    "samples/runahead/"
+   ],
+   "was": "chmod 0700 only",
+   "now": "2b330e14d0, upstream cf77d2553f carried; runahead_tmpdir_test red then green",
+   "must_agree": []
+  },
+  {
+   "finding": "runahead_tmp_dir_private name hides chmod; one warning for four causes",
+   "source": "readability L6 Q3 LOW + lead",
+   "dim": "Q3",
+   "severity": "LOW",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": "upstream's comment now says it closes read access; name and single warning stay upstream's",
+   "files": [
+    "runahead.c"
+   ],
+   "was": "comment silent on chmod",
+   "now": "2b330e14d0 (upstream text)",
+   "must_agree": []
+  },
+  {
+   "finding": "runloop NULL-guard rule stated in one case only",
+   "source": "readability L6 Q5 MEDIUM",
+   "dim": "Q5",
+   "severity": "MEDIUM",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "runloop.c"
+   ],
+   "was": "rule implied",
+   "now": "559c708fa6: one note above the switch",
+   "must_agree": []
+  },
+  {
+   "finding": "runloop comments narrate the brief and old behaviour",
+   "source": "readability L6 Q4 LOW",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "runloop.c"
+   ],
+   "was": "history",
+   "now": "559c708fa6",
+   "must_agree": []
+  },
+  {
+   "finding": "task_save redundant written = false",
+   "source": "readability L6 tool lead",
+   "dim": "tool",
+   "severity": "n/a",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_save.c"
+   ],
+   "was": "redundant assignment",
+   "now": "50efba832d; no red run",
+   "must_agree": []
+  },
+  {
+   "finding": "bsvmovie 615-620 history comment",
+   "source": "readability L5 Q4 LOW",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "input/bsv/bsvmovie.c"
+   ],
+   "was": "5-line history",
+   "now": "4fb8369668",
+   "must_agree": []
+  },
+  {
+   "finding": "cur_save_size meaning unstated",
+   "source": "readability L5 Q3/Q4 MEDIUM",
+   "dim": "Q3/Q4",
+   "severity": "MEDIUM",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "input/input_driver.h"
+   ],
+   "was": "no comment",
+   "now": "4fb8369668: field comment",
+   "must_agree": []
+  },
+  {
+   "finding": "input_types.h, gx_joypad.c, xdk_joypad.c history comments",
+   "source": "readability L5 Q4 LOW",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, fork-only text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "input/input_types.h",
+    "input/drivers_joypad/gx_joypad.c",
+    "input/drivers_joypad/xdk_joypad.c"
+   ],
+   "was": "audit history",
+   "now": "4fb8369668",
+   "must_agree": []
+  },
+  {
+   "finding": "input_key_pressed public-API claim unbacked",
+   "source": "readability L5 Q4 MEDIUM",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, no caller in tree or upstream",
+   "disposition": "fixed",
+   "why": "SURFACED: RETR-S0014 records option A (declare public API); the edit removes that claim; awaiting the user",
+   "files": [
+    "input/input_driver.c",
+    "input/input_driver.h"
+   ],
+   "was": "public-API claim",
+   "now": "4fb8369668",
+   "must_agree": []
+  },
+  {
+   "finding": "%d for size_t in block-length error",
+   "source": "readability L5 tool",
+   "dim": "tool",
+   "severity": "n/a",
+   "verified": "yes, upstream code",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "input/bsv/bsvmovie.c"
+   ],
+   "was": "%d",
+   "now": "4fb8369668: %u with casts",
+   "must_agree": []
+  },
+  {
+   "finding": "MOVIE_END set by some load failures, not others",
+   "source": "readability L5 Q5 MEDIUM",
+   "dim": "Q5",
+   "severity": "MEDIUM",
+   "verified": "yes",
+   "disposition": "queued",
+   "why": "needs a decision whether the function may end playback the caller did not end: RETR-0052",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "content_replace_file duplicates filestream_write_file_atomic tail",
+   "source": "readability L6 Q1 MEDIUM",
+   "dim": "Q1",
+   "severity": "MEDIUM",
+   "verified": "yes; copies already differ (VFS rename callback)",
+   "disposition": "queued",
+   "why": "shared helper belongs in vendored libretro-common: RETR-0053",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "OQ3 write path reads uint32s_index_get(...)[block] unchecked after a state-load seek",
+   "source": "review-code lane-07 OQ3",
+   "dim": "7",
+   "severity": "n/a",
+   "verified": "unsettled: state-load path clears indexes without clearing cur_save_valid",
+   "disposition": "queued",
+   "why": "needs a recording reproduction: RETR-0054",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "stale state_size in read_deduped_state (larger state decoded to old size)",
+   "source": "review-code lane-07 Low dim 9; readability L5 lead 599-605",
+   "dim": "9",
+   "severity": "LOW",
+   "verified": "no: a larger state takes the cur_save_size < size branch, which reallocates and sets cur_save_size = size; a smaller one decodes past its end into the buffer, harmless",
+   "disposition": "dismissed",
+   "why": "not a defect; the field comment (4fb8369668) states the rule",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "R3 uint32s_bucket_expand drops idx on realloc failure",
+   "source": "review-code lane-07 R3",
+   "dim": "n/a",
+   "severity": "n/a",
+   "verified": "yes, only less deduplication (lane 7 traced it)",
+   "disposition": "dismissed",
+   "why": "not a defect; upstream 35080c9ffc fails the insert instead, carried later with RETR-0051",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "R4 SKIP shrinks cur_save_size",
+   "source": "review-code lane-07 R4",
+   "dim": "n/a",
+   "severity": "n/a",
+   "verified": "yes, never above the buffer",
+   "disposition": "dismissed",
+   "why": "not a defect",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "R7 + L6 lead: per-frame retro_serialize_size call",
+   "source": "review-code lane-07 R7; readability L6 lead",
+   "dim": "5",
+   "severity": "n/a",
+   "verified": "yes",
+   "disposition": "dismissed",
+   "why": "the check turns state growth into a clean teardown; no performance contract names the cost",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "bsvmovie 343 hand-copied block sizes",
+   "source": "readability L5 Q4 LOW",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes",
+   "disposition": "dismissed",
+   "why": "the text is upstream's now (upstream/master bsv_movie_reset_playback); changing it adds drift",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "xinput connected[3] check names slots by hand",
+   "source": "readability L5 Q1/Q5 LOW",
+   "dim": "Q1",
+   "severity": "LOW",
+   "verified": "yes, upstream code",
+   "disposition": "dismissed",
+   "why": "upstream code; the XInput API fixes the count at 4",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "read_deduped_state frees item twice on some error paths",
+   "source": "readability L5 not checked",
+   "dim": "n/a",
+   "severity": "n/a",
+   "verified": "no: rmsgpack_dom_value_free resets the value to RDT_NULL, so a second free is a no-op",
+   "disposition": "dismissed",
+   "why": "not a defect",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "task_save atomic claims false on Win32; Win32 rename failure leaves only .tmp",
+   "source": "readability L6 Q4 LOW + lead",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "no longer: content_replace_file no longer deletes first (save-file group P1/P2)",
+   "disposition": "dismissed",
+   "why": "already fixed by the save-file group",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  }
+ ]
+}
