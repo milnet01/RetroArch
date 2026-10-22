@@ -12461,8 +12461,9 @@ static void ozone_selection_changed(ozone_handle_t *ozone, bool allow_animation)
    bool menu_show_sublabels   = settings->bools.menu_show_sublabels;
    bool menu_current_sel_only = settings->bools.menu_show_sublabels_current_selection_only;
 
-   /* selection_ptr can exceed the list size: a selection remembered
-    * per tab is restored after the playlist shrank (cf. #18797). */
+   /* selection_ptr can exceed the list size when the list is rebuilt
+    * before the navigation pointer is re-clamped, and this has many
+    * callers besides the tab switch (cf. #18797). */
    if (!selection_buf || new_selection >= selection_buf->size)
       return;
 

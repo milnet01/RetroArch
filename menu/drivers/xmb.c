@@ -1125,10 +1125,9 @@ static void xmb_draw_icon(
    math_matrix_4x4 mymat_tmp;
    unsigned width  = VIDEO_SCALE_W(video_dims);
    unsigned height = VIDEO_SCALE_H(video_dims);
-   /* Hoisted to function scope so coords.color set inside the
-    * if (shadows_enable) block does not briefly point into out-of-scope
-    * memory after the block closes — same fix shape as Bundle 57's
-    * gfx_thumbnail.c invalidLifetime hoist. */
+   /* At function scope so coords.color, set inside the
+    * if (shadows_enable) block, does not point into out-of-scope
+    * memory after the block closes. */
    float shadow_color[16] = {
       0.0f, 0.0f, 0.0f, 0.0f,
       0.0f, 0.0f, 0.0f, 0.0f,
@@ -5908,8 +5907,7 @@ XMB_NOINLINE static int xmb_draw_item(
    int extra_margins_setting_left      = 0;
    /* cppcheck-suppress duplicateExpressionTernary ; `? 37 : 37` intent
     * placeholder — author keeps the ps3_layout / non-ps3_layout split
-    * structure visible so the two arms can diverge later without restructuring
-    * (same pattern as the `0 && X` placeholder closed in Bundle 62). */
+    * structure visible so the two arms can diverge later without restructuring. */
    unsigned ticker_limit               = ((xmb->use_ps3_layout) ? 37 : 37) * xmb->scale_mod[0];
    /* cppcheck-suppress duplicateExpressionTernary ; same `? 58 : 58` intent
     * placeholder for line_ticker_width. */
@@ -11156,10 +11154,8 @@ static int xmb_pointer_up(void *userdata,
                if (tab_delta)
                {
                   int i          = 0;
-                  /* Local tab_entry is renamed from `entry` so it does not
-                   * shadow the function-parameter `entry` used by the
-                   * outer gesture handlers (TAP / SELECT / CANCEL /
-                   * SCROLL paths below pass the parameter). */
+                  /* Not `entry`: the gesture paths below pass the
+                   * parameter of that name. */
                   menu_entry_t tab_entry;
                   MENU_ENTRY_INITIALIZE(tab_entry);
                   menu_entry_get(&tab_entry, 0, menu_st->selection_ptr, NULL, true);
