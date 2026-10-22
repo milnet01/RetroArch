@@ -5783,7 +5783,7 @@ static bool rgui_wheel_scroll(void *data, int notches)
    if (rgui->flags & RGUI_FLAG_SHOW_FULLSCREEN_THUMBNAIL)
       return false;
 
-   entries_end = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+   entries_end = MENU_LIST_GET_SELECTION_SIZE(menu_list, 0);
    bottom = (int)entries_end - (int)rgui->term_layout.height;
    start = (int)menu_st->entries.begin + (notches * RGUI_WHEEL_SCROLL_ROWS);
    if (start > bottom)
@@ -8225,7 +8225,7 @@ static void rgui_navigation_set(void *data, bool scroll)
          && ((rgui->flags & RGUI_FLAG_IS_PLAYLIST) || (rgui->flags & RGUI_FLAG_IS_EXPLORE_LIST)))
    {
       size_t entry_idx_selection = selection + 1;
-      size_t list_size           = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+      size_t list_size           = MENU_LIST_GET_SELECTION_SIZE(menu_list, 0);
       unsigned entry_idx_offset  = rgui->entry_index_offset;
       bool show_entry_idx        = true;
 
@@ -8426,7 +8426,7 @@ static void rgui_populate_entries(
    {
       menu_list_t *menu_list     = menu_st->entries.list;
       size_t entry_idx_selection = menu_st->selection_ptr + 1;
-      size_t list_size           = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+      size_t list_size           = MENU_LIST_GET_SELECTION_SIZE(menu_list, 0);
       unsigned entry_idx_offset  = 0;
       bool show_entry_idx        = true;
 

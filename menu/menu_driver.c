@@ -7993,7 +7993,7 @@ static int generic_menu_iterate(
             menu_entry_t *entry = &menu_st->iterate_entry;
             menu_list_t *menu_list = menu_st->entries.list;
             size_t selection       = menu_st->selection_ptr;
-            size_t menu_list_size  = menu_st->entries.list ? MENU_LIST_GET_SELECTION(menu_st->entries.list, 0)->size : 0;
+            size_t menu_list_size  = MENU_LIST_GET_SELECTION_SIZE(menu_st->entries.list, 0);
             /* FIXME: Crappy hack, needed for mouse controls
              * to not be completely broken in case we press back.
              *
@@ -8128,7 +8128,7 @@ int generic_menu_entry_action(
    menu_list_t *menu_list         = menu_st->entries.list;
    file_list_t *selection_buf     = menu_list ? MENU_LIST_GET_SELECTION(menu_list, (unsigned)0) : NULL;
    file_list_t *menu_stack        = menu_list ? MENU_LIST_GET(menu_list, (unsigned)0) : NULL;
-   size_t entries_size            = menu_list ? MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
+   size_t entries_size            = MENU_LIST_GET_SELECTION_SIZE(menu_list, 0);
    size_t selection_buf_size      = selection_buf ? selection_buf->size : 0;
    menu_file_list_cbs_t *cbs      = selection_buf && selection_buf->size ?
       (menu_file_list_cbs_t*)selection_buf->list[i].actiondata : NULL;
@@ -8190,7 +8190,7 @@ int generic_menu_entry_action(
                   }
                   else
                   {
-                     size_t menu_list_size     = menu_st->entries.list ? MENU_LIST_GET_SELECTION(menu_st->entries.list, 0)->size : 0;
+                     size_t menu_list_size     = MENU_LIST_GET_SELECTION_SIZE(menu_st->entries.list, 0);
                      size_t new_selection      = menu_list_size - 1;
 
                      menu_st->selection_ptr    = new_selection;
@@ -8281,7 +8281,7 @@ int generic_menu_entry_action(
                   }
                   else
                   {
-                     size_t menu_list_size     = menu_st->entries.list ? MENU_LIST_GET_SELECTION(menu_st->entries.list, 0)->size : 0;
+                     size_t menu_list_size     = MENU_LIST_GET_SELECTION_SIZE(menu_st->entries.list, 0);
                      size_t new_selection      = menu_list_size - 1;
 
                      menu_st->selection_ptr    = new_selection;
@@ -8854,7 +8854,7 @@ size_t menu_playlist_random_selection(size_t selection, bool is_explore_list)
 {
    struct menu_state *menu_st = menu_state_get_ptr();
    size_t selection_start     = 0;
-   size_t selection_total     = menu_st->entries.list ? MENU_LIST_GET_SELECTION(menu_st->entries.list, 0)->size : 0;
+   size_t selection_total     = MENU_LIST_GET_SELECTION_SIZE(menu_st->entries.list, 0);
    size_t new_selection       = selection;
 
    /* Skip header items (Search Name + Add Additional Filter + Save as View + Delete this View) */

@@ -74,16 +74,19 @@ RETRO_BEGIN_DECLS
 #define MENU_LIST_GET(list, idx) ((list) ? ((list)->menu_stack[(idx)]) : NULL)
 
 /* Returns NULL if `list` is NULL.  Callers MUST guard the result before
- * dereferencing (the menu-draw lifecycle includes states — driver swap,
- * menu init failure, post-deinit cleanup — where menu_list is genuinely
- * NULL).  See audit S2 / indie-review C1 (2026-04-25) for the path-
- * sensitive proof from clang-analyzer. */
+ * dereferencing: the menu draws through states where menu_list is NULL
+ * (driver swap, menu init failure, after deinit).  For the size alone,
+ * use MENU_LIST_GET_SELECTION_SIZE. */
 #define MENU_LIST_GET_SELECTION(list, idx) ((list) ? ((list)->selection_buf[(idx)]) : NULL)
 
-/* NULL-safe sibling of MENU_LIST_GET_SELECTION (audit S2).  Returns 0
- * when list (or list->menu_stack[idx]) is NULL — same semantics as an
- * empty stack so callers' `<= 1` / `> 1` guards still produce the right
- * behaviour (treat as "already at root", no pop). */
+/* Size of selection_buf[idx], or 0 when list or the buffer is NULL:
+ * the same as an empty list. */
+#define MENU_LIST_GET_SELECTION_SIZE(list, idx) (((list) && (list)->selection_buf[(idx)]) ? (list)->selection_buf[(idx)]->size : 0)
+
+/* Size of menu_stack[idx], the MENU_LIST_GET counterpart.  Returns 0
+ * when list (or list->menu_stack[idx]) is NULL — same as an empty
+ * stack, so callers' `<= 1` / `> 1` guards still treat it as "already
+ * at root", no pop. */
 #define MENU_LIST_GET_STACK_SIZE(list, idx) (((list) && (list)->menu_stack[(idx)]) ? (list)->menu_stack[(idx)]->size : 0)
 
 #define MENU_ENTRIES_GET_SELECTION_BUF_PTR_INTERNAL(menu_st, idx) ((menu_st->entries.list) ? MENU_LIST_GET_SELECTION(menu_st->entries.list, (unsigned)idx) : NULL)

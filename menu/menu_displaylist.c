@@ -7419,11 +7419,9 @@ static void wifi_scan_callback(retro_task_t *task,
  **/
 static bool menu_displaylist_refresh(struct menu_state *menu_st, file_list_t *list)
 {
-   size_t list_size                = 0;
+   size_t list_size                = MENU_LIST_GET_SELECTION_SIZE(menu_st->entries.list, 0);
    if (list->size)
       menu_entries_build_scroll_indices(menu_st, list);
-   if (menu_st->entries.list)
-      list_size                    = MENU_LIST_GET_SELECTION(menu_st->entries.list, 0)->size;
 
    if (list_size)
    {

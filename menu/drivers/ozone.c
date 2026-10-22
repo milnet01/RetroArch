@@ -9113,7 +9113,7 @@ static enum menu_action ozone_parse_menu_entry_action(
             new_action    = MENU_ACTION_NOOP;
 
 #ifdef HAVE_AUDIOMIXER
-            if (new_selection != selection)
+            if (new_selection != tab_selection)
                audio_driver_mixer_play_scroll_sound(true);
 #endif
             break;
@@ -10826,7 +10826,7 @@ static void ozone_render(void *data,
    struct menu_state *menu_st         = menu_state_get_ptr();
    menu_input_t *menu_input           = &menu_st->input_state;
    menu_list_t *menu_list             = menu_st->entries.list;
-   unsigned entries_end               = menu_list ? (unsigned)MENU_LIST_GET_SELECTION(menu_list, 0)->size : 0;
+   unsigned entries_end               = (unsigned)MENU_LIST_GET_SELECTION_SIZE(menu_list, 0);
    bool pointer_enabled               = false;
    unsigned language                  = *msg_hash_get_uint(MSG_HASH_USER_LANGUAGE);
    ozone_handle_t *ozone              = (ozone_handle_t*)data;

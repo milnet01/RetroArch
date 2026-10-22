@@ -10008,7 +10008,7 @@ static void materialui_navigation_set(void *data, bool scroll)
    {
       menu_list_t *menu_list     = menu_st->entries.list;
       size_t entry_idx_selection = selection + 1;
-      size_t list_size           = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+      size_t list_size           = MENU_LIST_GET_SELECTION_SIZE(menu_list, 0);
       unsigned entry_idx_offset  = mui->entry_index_offset;
       bool show_entry_idx        = true;
 
@@ -10472,7 +10472,7 @@ static void materialui_populate_entries(void *data, const char *path,
    {
       menu_list_t *menu_list     = menu_st->entries.list;
       size_t entry_idx_selection = menu_st->selection_ptr + 1;
-      size_t list_size           = MENU_LIST_GET_SELECTION(menu_list, 0)->size;
+      size_t list_size           = MENU_LIST_GET_SELECTION_SIZE(menu_list, 0);
       unsigned entry_idx_offset  = 0;
       bool show_entry_idx        = true;
 
