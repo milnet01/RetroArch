@@ -345,11 +345,16 @@ static char *get_tmpdir_alloc(const char *override_dir)
    return path;
 }
 
-/* Whether the copy may go into @dir. On Windows and Android the temp
+/* ===== BEGIN runahead tmp dir check =====
+ * Whether the copy may go into @dir. On Windows and Android the temp
  * dir is the user's own. Elsewhere it is a shared one like /tmp, where
  * another user could have made @dir first, then planted a link to be
  * overwritten or swapped the copied core before it is loaded. So @dir
- * must be a real directory we own, closed to everyone else. */
+ * must be a real directory we own that no one else could have written
+ * to: a link left in it from then would be followed by the copy, which
+ * no change of mode now would undo. Group-writable is ours alone when
+ * the group is our own, as a user private group is. Readable by others
+ * is closed off. */
 static bool runahead_tmp_dir_private(const char *dir)
 {
 #if !defined(_WIN32) && !defined(ANDROID)
@@ -357,6 +362,8 @@ static bool runahead_tmp_dir_private(const char *dir)
    if (     lstat(dir, &st) != 0
          || !S_ISDIR(st.st_mode)
          || st.st_uid != geteuid()
+         || (st.st_mode & S_IWOTH)
+         || ((st.st_mode & S_IWGRP) && st.st_gid != getegid())
          || ((st.st_mode & 077) && chmod(dir, 0700) != 0))
    {
       RARCH_WARN("[Run-Ahead] \"%s\" is not private to this user; "
@@ -368,6 +375,7 @@ static bool runahead_tmp_dir_private(const char *dir)
 #endif
    return true;
 }
+/* ===== END runahead tmp dir check ===== */
 
 /* ===== BEGIN runahead core-copy fragment =====
  * Everything between the BEGIN/END markers depends only on
