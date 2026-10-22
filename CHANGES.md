@@ -36,6 +36,7 @@
 - INPUT: Autoconf profile load/save rework: saved profiles have now higher priority, several QoL improvements for saving
 - INPUT: Allow remap of gyro/accelerometer axes in autoconfig
 - INPUT: Fix "Sort Remaps by Gamepad" when launching from CLI
+- INPUT: Fix out-of-bounds reads from a Turbo Bind or Turbo Button outside its range in a config or remap file
 - INPUT/ANDROID: Default for input block timeout is now 1 instead of 0
 - INPUT/MFI: Controller disconnection fix
 - INPUT/SDL: Fix controller vid/pid detection on Windows
@@ -119,6 +120,8 @@
 - PS2: Improve driver usage
 - PS2: Fix booting from internal HDD
 - RECORD: Fix GPU recording performance
+- REPLAY: Running out of memory while writing or reading a replay checkpoint fails cleanly instead of crashing
+- RUNAHEAD: The second-instance core copy refuses a temp folder other users could have written to
 - RJPEG, RPNG: Optimizations, Add Neon and SSE2 optimized codepaths
 - SCAN: Fix 3DS content scanning skipping all files
 - SCAN: Fix CHD scanning skipping some files
