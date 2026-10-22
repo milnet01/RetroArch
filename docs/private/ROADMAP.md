@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=49 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=50 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2205,6 +2205,21 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: fix.
   Source: close-findings 2026-10-22 (found next door while fixing the menu group).
   Lanes: menu.
+
+- 📋 [RETR-0050] **MEDIUM — local-CI.sh act runs fail at actions/cache before any step runs.**
+  `./local-CI.sh act:Linux-menu-harness.yml` at 3aa9c12827 failed in
+  its "Restore ccache" step: act copying actions-cache@v4 into the
+  container got "statat var/run/act: path escapes from parent" from the
+  podman daemon.  Checkout had succeeded; no build or test step ran.
+  Every ACT_WORKFLOWS file that uses actions/cache is likely hit the
+  same way; only this one was run.  Until fixed, the menu harnesses
+  (playlist_nav, network_settings, playlists_scan, settings_display)
+  run only by hand in a non-Qt tree.  Take with the local-CI.sh group
+  (RETR-0021 ruled order).
+  **Layman:** The on-request local copy of the project's menu tests stops before testing anything, so those tests cannot be run locally that way.
+  Kind: fix.
+  Source: close-findings 2026-10-22 (menu group, running act:Linux-menu-harness.yml).
+  Lanes: local-CI.sh.
 
 ### 📝 Cold-eyes 2026-07-04
 

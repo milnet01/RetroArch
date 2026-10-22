@@ -12,7 +12,7 @@
    "ROADMAP closed entries citing Bundle 43/57/62, config_load_state, menu_setting_initialize": "frozen",
    "CHANGES.md # Future": "fixed: four user-visible entries (064c8f90cf)",
    "configuration.c retroarch.cfg chmod comment": "fixed in e93352a139 (was: retroarch.cfg holds credentials)",
-   ".github/workflows/Linux-menu-harness.yml": "fixed: runs the two new harnesses (3aa9c12827)",
+   ".github/workflows/Linux-menu-harness.yml": "fixed: runs the two new harnesses (3aa9c12827); unverified under act, which fails at actions/cache before any step (RETR-0050)",
    "old names searched tree-wide (config_load_state, menu_setting_initialize, Bundle refs in code, MENU_LIST_GET_SELECTION(...)->)": "agrees (none left in code)",
    ".claude/code-pairs.json": "absent"
   },
@@ -24,7 +24,8 @@
    "menu_playlist_random_selection overshoot one past the end: queued RETR-0049",
    "samples/menu/explore_build/build.sh: shellcheck SC2086 info on $MAKE_ARGS (upstream file)",
    "Linux-menu-harness.yml: actionlint shellcheck notes on two pre-existing steps (upstream file)",
-   "/mnt/Games/claude-scratch was deleted by something outside this session mid-run"
+   "/mnt/Games/claude-scratch was deleted by something outside this session mid-run",
+   "local-CI.sh act runs fail at actions/cache with podman \"path escapes from parent\": queued RETR-0050"
   ],
   "falsified": []
  },

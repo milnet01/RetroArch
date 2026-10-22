@@ -11,7 +11,7 @@ the user's ruled order (RETR-0021, 2026-10-21 ruling 3). Fixes are on
 | Self-updater | closed | table below |
 | Menu | closed: 21 fixed, 4 dismissed; next door queued (RETR-0049) | `ledger-menu.json` |
 | Replay / input | not started | `review-code-leads/lane-07-replay-runahead.result`; `review-readability-fork/return-L5-input-replay.md`, `return-L6-runloop-save-netplay.md` |
-| local-CI.sh | not started | `review-code-leads/lane-09-build-tooling.result`; `review-readability-fork/return-L9-build-tooling.md` |
+| local-CI.sh | not started | `review-code-leads/lane-09-build-tooling.result`; `review-readability-fork/return-L9-build-tooling.md`; also RETR-0050 (act fails at actions/cache), found by the menu group |
 | Rest | not started | `review-code-leads/lane-08-leaf-modules.result` (T1-T3, V1); `review-readability-fork/return-L4-*.md`, `return-L7-*.md`, `return-L8-*.md`. L4's correctness leads on `configuration.c` asserts, `cheat_manager.c` categories, the config `chmod` and `retroarch.c` `if (menu_st)` are the menu group's F1, F2, F3 and F4, closed there |
 
 ## Self-updater dispositions
