@@ -518,6 +518,7 @@ act_image() {
 
 # act exits 0 when every job is skipped or if-gated off, so a zero exit alone
 # is not a pass: at least one "Job succeeded" line must show a job ran.
+# --rm: without it act leaves a failed job's container running.
 job_act() {
     local wf="$1" out rc
     act_setup || return 1
@@ -525,7 +526,7 @@ job_act() {
     out="$LOGDIR/$wf.act.out"
     ( cd "$ACT_SRC" && DOCKER_HOST="unix://$ACT_SOCK" "$ACT_BIN" \
         -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_RUN_IMAGE" \
-        --pull=false --container-daemon-socket - --concurrent-jobs 1 ) 2>&1 | tee "$out"
+        --pull=false --rm --container-daemon-socket - --concurrent-jobs 1 ) 2>&1 | tee "$out"
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ] && ! grep -q 'Job succeeded' "$out"; then
         echo "act ran no job in $wf (every job skipped or if-gated off) — not a pass"
