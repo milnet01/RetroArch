@@ -10,7 +10,7 @@
    "CHANGES.md # Future": "fixed: three entries (87d183c902)",
    "Linux-samples-tasks.yml": "fixed: turbo_bind step came with 1d009c440c; bsv_statestream not wired (its no_layout lane fails until RETR-0051)",
    "Linux-state-runahead-tests.yml": "agrees: make check now also runs runahead_tmpdir_test",
-   "ROADMAP RETR-S0014 input_key_pressed option A": "surfaced: 4fb8369668 drops the public-API claim",
+   "ROADMAP RETR-S0014 input_key_pressed option A": "fixed: user kept 4fb8369668 on 2026-10-22; dated note on RETR-S0014",
    "ROADMAP RETR-0006 / RETR-0019 / bundle entries naming these functions": "frozen",
    "spec 2026-04-27 S5": "frozen (dated design doc)",
    "upstream-prs drafts": "frozen",
@@ -19,9 +19,7 @@
   "collateral": [
    "bsv_statestream harness first built against stale sanitizer objects left in the tree by another sample; make clean fixed it"
   ],
-  "surfaced": [
-   "input_key_pressed public-API claim vs RETR-S0014 option A"
-  ],
+  "surfaced": [],
   "out_of_scope": [
    "upstream replay fixes not on the fork (no-layout playback 73dde88f91, decoded-size check 52841a2258, bucket insert 35080c9ffc): queued RETR-0051",
    "fork far behind upstream/master; noted in RETR-0051"
@@ -284,7 +282,7 @@
    "severity": "MEDIUM",
    "verified": "yes, no caller in tree or upstream",
    "disposition": "fixed",
-   "why": "SURFACED: RETR-S0014 records option A (declare public API); the edit removes that claim; awaiting the user",
+   "why": "user decision 2026-10-22 keeps the edit over RETR-S0014's option A",
    "files": [
     "input/input_driver.c",
     "input/input_driver.h"

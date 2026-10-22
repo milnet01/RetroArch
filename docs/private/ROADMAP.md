@@ -226,6 +226,10 @@ These look intentional but lack a documented contract. Each was a candidate for 
 
 - ✅ [RETR-S0014] **S5 — `input_key_pressed()` public-API-or-delete decision.**
   `input/input_driver.c:5433-5476`. _(Fixed `233568bfe0` Bundle 34 — option A: declared public API in `input_driver.h:1097` with Doxygen comment, hardened entry with `if (key < 0 || key >= RARCH_BIND_LIST_END) return false`, simplified inner branch. The unbounded `input_config_binds[0][key]` joypad-fallback read at line 5443 is now unreachable for OOB key.)_
+  User decision 2026-10-22: the public-API claim is dropped from
+  input_key_pressed's comments (local/fixes-2026-09 4fb8369668);
+  nothing in the tree or upstream calls it. The function and its
+  range check stay. Readability review 2026-10-21, L5.
   Kind: implement.
 
 - ✅ [RETR-S0015] **S2 — `MENU_LIST_GET` / `MENU_LIST_GET_SELECTION` macro contract.**
@@ -2745,6 +2749,11 @@ current upstream first, so the player is built on current code.
   binary exit 139. Green: local/fixes-2026-09 5405079571 exits 1 with
   "Cannot open video driver". That build replaced it; the old one is kept
   as retroarch.2026-05-18-6570277331.OLD.
+  2026-10-22, from RetroDB (retrodb-ac, PASS-59-155): RetroDB plans
+  per-game cheats through cheat_database_path, a .cht copy under
+  <dir>/<core library_name>/<rom base>.cht, and
+  apply_cheats_after_load. The slim player build must keep
+  HAVE_CHEATS. Unverified: the layout inside the buildbot cheats.zip.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
