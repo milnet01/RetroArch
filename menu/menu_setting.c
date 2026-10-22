@@ -3500,7 +3500,11 @@ static size_t setting_get_string_representation_password(
       if (   setting->value.target.string
           && setting->value.target.string[0] != '\0')
          return strlcpy_lit(s, "********", len);
-      if (config_get_ptr()->arrays.cheevos_token[0])
+      /* The RetroAchievements password is cleared once a login token
+       * is held, and still counts as set; the cloud-sync rows share
+       * this callback and have no token. */
+      if (     setting->enum_idx == MENU_ENUM_LABEL_CHEEVOS_PASSWORD
+            && config_get_ptr()->arrays.cheevos_token[0])
          return strlcpy_lit(s, "********", len);
       /* The fall-through can arrive with no string allocated yet (an
        * early menu-build path); there is nothing to clear then. */
