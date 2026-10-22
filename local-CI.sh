@@ -4,38 +4,43 @@
 #               before pushing, so a red X is caught on this machine first.
 #
 # WHY THIS EXISTS
-#   The fork carries ~30 workflow files under .github/workflows/. All but the
-#   Linux ones target platforms (3DS, PS2, PSP, Android, MSVC, Wii, webOS, …)
-#   whose SDKs/cross-toolchains are not present on a desktop Linux host, so they
-#   cannot be reproduced here. This script mirrors the five *Linux* jobs — the
-#   ones that actually gate this fork's Linux-desktop source work — as faithfully
-#   as a single Linux box allows. The other Linux workflows run on request
-#   through act (--all). --list names every workflow in one of those sets or the
-#   GitHub-only skip list, and names any that is in none, so nothing looks
-#   silently covered.
+#   Most of the fork's workflow files target platforms (3DS, PS2, PSP, Android,
+#   MSVC, Wii, webOS, …) whose SDKs/cross-toolchains are not present on a
+#   desktop Linux host, so they cannot be reproduced here. This script runs the
+#   Linux jobs that gate this fork's Linux-desktop source work on every push;
+#   the other Linux workflows run on request through act (--all). --list names
+#   every workflow, and every job of a workflow run here, in one of those sets
+#   or the GitHub-only skip list; one in none fails the run.
 #
 # FIDELITY (what "matches the GitHub CI run" means here)
-#   Two of the five Linux jobs run inside a fixed container image on CI; those are
-#   reproduced bit-exactly via podman using that same image. The three ubuntu-runner
-#   jobs are reproduced natively with this host's toolchain. Native builds run the
-#   *identical* configure/make commands the workflow runs, but `./configure` detects
-#   this host's installed libraries, so the resulting HAVE_* feature set can differ
-#   from CI's ubuntu runner. The two i686 container jobs are therefore the
-#   bit-for-bit anchor; the native jobs catch compile / C89 / regression-test
-#   breakage fast without an image pull.
+#   Most jobs run the workflow's own steps: the job's `run:` blocks are read
+#   from the workflow file at the ref under test and run in order, each in its
+#   own shell, stopping at the first that fails (run_workflow_job). Nothing is
+#   copied, so a step added to the workflow runs here too. Left out: `uses:`
+#   steps (checkout, cache) and the steps that install packages with sudo —
+#   this host's packages stand in for the runner's. A job using a workflow
+#   feature the runner does not honour (`if:`, a template expression, a
+#   matrix, GITHUB_ENV) is refused rather than run differently.
+#
+#   linux-i686 runs Linux.yml's steps in the same container image CI uses.
+#   The rest run natively with this host's toolchain, so `./configure` can
+#   detect a different HAVE_* feature set from CI's ubuntu runner. Two jobs
+#   are hand-written, each for a stated reason at its body: c89 (host headers
+#   newer than CI's) and headless-i686 (borrows the i686 image).
 #
 #   Each job builds from `git archive` of the target ref into a throwaway directory
 #   (or, for container jobs, piped straight into the container). Your working tree
 #   and its incremental build are never touched — no `make clean` runs in-place.
 #
-#   Deviation from the workflows, documented deliberately: builds run in
-#   parallel, $LOCAL_CI_JOBS jobs at once (default 4, to bound RAM on this
-#   machine). The workflows build serially; parallelism changes only wall-clock,
-#   never the pass/fail result.
+#   Jobs run one at a time. Inside a job, make runs $LOCAL_CI_JOBS jobs at
+#   once (default 4, to bound RAM on this machine): `nproc` and `getconf
+#   _NPROCESSORS_ONLN` report that number to every step, native, container
+#   or act, so a workflow's `make -j$(nproc)` keeps to it.
 #
 #   Build trees and logs go under $LOCAL_CI_TMPDIR (default
 #   ~/.cache/local-ci), on disk: /tmp is tmpfs here, so a build tree there
-#   is held in RAM.
+#   is held in RAM. The build trees are removed when the run ends; a failed
+#   run keeps its logs.
 #
 # USAGE
 #   ./local-CI.sh                 # run every runnable Linux job against HEAD
@@ -96,28 +101,45 @@ GITHUB_ONLY=(
     "Source Release (SourceRelease.yml)"       "Crowdin sync (crowdin*.yml)"
     "CI Apple (Apple.yml)"                     "CI macOS PPC cross (MacOS-PPC-Cross.yml)"
     "CI Windows memmap area (Windows-memmap-area.yml)"
+    "CI FreeBSD (FreeBSD.yml)"
 )
 
 # Every runnable Linux job, in CI-cost order (native first, containers last).
-ALL_JOBS=(c89 samples-tasks common-samples linux-i686 headless-i686)
+ALL_JOBS=(c89 samples-tasks samples-tasks-http common-samples config-fuzz
+          linux-i686 headless-i686)
 
-# The workflow files ALL_JOBS mirror.
-NATIVE_WORKFLOWS=(retroarch.yml Linux-samples-tasks.yml Linux-libretro-common-samples.yml
-                  Linux.yml Linux-Headless.yml)
+# The workflow job each of ALL_JOBS runs, as <workflow>:<job>.
+declare -A JOB_SOURCE=(
+    [c89]=retroarch.yml:linux-c89
+    [samples-tasks]=Linux-samples-tasks.yml:samples-tasks
+    [samples-tasks-http]=Linux-samples-tasks.yml:samples-tasks-http
+    [common-samples]=Linux-libretro-common-samples.yml:samples
+    [config-fuzz]=Linux-libretro-common-samples.yml:config-file-fuzz-smoke
+    [linux-i686]=Linux.yml:build
+    [headless-i686]=Linux-Headless.yml:linux-nomenu
+)
 
-# Linux workflows run through act rather than mirrored by hand: the workflows
-# are upstream's, so local-gate.md § 3's inversion is unavailable and act
-# running the real file is its fallback. Too slow and RAM-hungry for every
-# push (the sanitizer builds, the Vulkan checks), so they run on request:
-# `--all`, or by name as act:<file>. A workflow with a Windows or macOS job
-# as well runs its ubuntu jobs only; act skips the other platforms.
+# Jobs in those same workflows that need a toolchain this host lacks.
+GITHUB_ONLY_JOBS=(
+    "Linux-libretro-common-samples.yml:emscripten-memmap (emsdk)"
+    "Linux-libretro-common-samples.yml:retro-atomic-cross (cross compilers, qemu-user)"
+    "Linux-libretro-common-samples.yml:crc32-cross (cross compilers, qemu-user)"
+)
+
+# Linux workflows run through act, whole, in a container. Too slow and
+# RAM-hungry for every push (the sanitizer builds, the Vulkan checks), so
+# they run on request: `--all`, or by name as act:<file>. A workflow with a
+# Windows or macOS job as well runs its ubuntu jobs only; act skips the
+# other platforms.
 ACT_WORKFLOWS=(
     Compile-Matrix.yml Cross-libc-vfs-samples.yml Ctx-Presentable-Check.yml
+    Extern-C-Prototype-Check.yml
     Linux-asan-ubsan.yml Linux-audio-transport.yml Linux-autoconf-tests.yml
-    Linux-driver-vtables.yml Linux-filter-plugins.yml Linux-gl1-upload.yml
+    Linux-driver-vtables.yml Linux-filter-plugins.yml Linux-frontend-overhead.yml
+    Linux-gl1-upload.yml Linux-library-net-backends.yml
     Linux-libretro-common-tests.yml Linux-libretro-db-samples.yml
-    Linux-menu-harness.yml Linux-no-pkg-config.yml Linux-overlay-on-screen.yml
-    Linux-pace-shadow.yml Linux-qt-companion.yml
+    Linux-menu-harness.yml Linux-network-clients.yml Linux-no-pkg-config.yml
+    Linux-overlay-on-screen.yml Linux-pace-shadow.yml Linux-qt-companion.yml
     Linux-samples-audio.yml Linux-samples-cores.yml Linux-samples-formats.yml
     Linux-samples-gfx.yml Linux-samples-input.yml Linux-samples-network.yml
     Linux-samples-record.yml Linux-samples-settings.yml Linux-samples-unclaimed.yml
@@ -128,18 +150,113 @@ ACT_WORKFLOWS=(
 ACT_BIN="${ACT_BIN:-$HOME/.local/bin/act}"
 # ubuntu-latest is 24.04; this is the image act's own picker offers for it.
 ACT_IMAGE="catthehacker/ubuntu:act-24.04"
+JOBS="${LOCAL_CI_JOBS:-4}"
+# act runs ACT_IMAGE with two changes, built once as a local image (act_image):
+#   /var/run is a real directory. In ACT_IMAGE it links to /run, and podman
+#   refuses to copy an action into /var/run/act through the link ("statat
+#   var/run/act: path escapes from parent"), so every `uses:` step failed.
+#   nproc and getconf are the CPU shims below, so steps build at -j$JOBS.
+ACT_RUN_IMAGE="localhost/local-ci-act:24.04-j$JOBS"
 
-# unclassified_workflows : print every workflow file in none of the three
-# lists above. An upstream sync that adds a workflow shows up here instead of
-# being silently uncovered.
+# workflow_tool jobs <workflow>
+#   Print the workflow's job ids, one per line.
+# workflow_tool steps <workflow> <job> <outdir> [<container image>]
+#   Write the job's runnable steps to <outdir> as NN.sh, in order: each
+#   enters the step's working directory, exports its env and runs its `run:`
+#   block (NN.body) in the shell a runner would use. `uses:` steps are left
+#   out; so are steps that install packages with sudo, named on stdout. A job
+#   or step using a feature this does not honour is refused with a reason,
+#   so the job fails instead of running something other than the workflow. A
+#   job with a container is refused unless its image is the one passed.
+workflow_tool() {
+    python3 -I - "$@" <<'PY'
+import os, shlex, sys, yaml
+
+cmd, wf = sys.argv[1], sys.argv[2]
+with open(wf) as f:
+    d = yaml.safe_load(f)
+if cmd == "jobs":
+    print("\n".join(d["jobs"]))
+    sys.exit(0)
+
+job, out = sys.argv[3], sys.argv[4]
+image = sys.argv[5] if len(sys.argv) > 5 else None
+j = d["jobs"][job]
+
+def refuse(why):
+    sys.exit("%s:%s: %s, which the step runner does not honour"
+             % (os.path.basename(wf), job, why))
+
+for k in ("defaults", "if", "strategy", "services", "continue-on-error"):
+    if j.get(k) or (k == "defaults" and d.get(k)):
+        refuse("it uses " + k)
+def hub(i):                          # Docker Hub's name with or without docker.io/
+    return i[len("docker.io/"):] if i and i.startswith("docker.io/") else i
+c = j.get("container")
+c = c.get("image") if isinstance(c, dict) else c
+if hub(c) != hub(image):
+    refuse("its container is %s where the caller expects %s"
+           % (c or "none", image or "none"))
+
+env0 = dict(d.get("env") or {})
+env0.update(j.get("env") or {})
+known = {"name", "id", "run", "shell", "working-directory", "env", "timeout-minutes"}
+os.makedirs(out)
+n = 0
+for s in j["steps"]:
+    if "uses" in s:
+        continue
+    name = s.get("name") or s["run"].splitlines()[0]
+    if "sudo " in s["run"]:
+        print("skipped, installs packages:", name)
+        continue
+    env = dict(env0)
+    env.update(s.get("env") or {})
+    wd = s.get("working-directory", ".")
+    if set(s) - known:
+        refuse("step '%s' uses %s" % (name, ", ".join(sorted(set(s) - known))))
+    if s.get("shell", "bash") != "bash":
+        refuse("step '%s' uses shell %s" % (name, s["shell"]))
+    if "${{" in s["run"] + wd + str(env):
+        refuse("step '%s' uses a template expression" % name)
+    for v in ("GITHUB_ENV", "GITHUB_PATH", "GITHUB_OUTPUT"):
+        if v in s["run"]:
+            refuse("step '%s' writes %s" % (name, v))
+    shell = ("bash --noprofile --norc -eo pipefail" if s.get("shell") == "bash"
+             else "bash -e")
+    if s.get("timeout-minutes"):
+        shell = "timeout %sm %s" % (s["timeout-minutes"], shell)
+    n += 1
+    with open(os.path.join(out, "%02d.body" % n), "w") as f:
+        f.write(s["run"])
+    with open(os.path.join(out, "%02d.sh" % n), "w") as f:
+        f.write("# %s\n" % name)
+        f.write("cd %s || exit 1\n" % shlex.quote(wd))
+        for k, v in env.items():
+            f.write("export %s=%s\n" % (k, shlex.quote(str(v))))
+        f.write('exec %s "${0%%/*}/%02d.body"\n' % (shell, n))
+if n == 0:
+    refuse("it has no runnable step")
+PY
+}
+
+# unclassified_workflows : print every workflow file in none of the lists
+# above, and every job of a workflow JOB_SOURCE runs from that is neither
+# run nor in GITHUB_ONLY_JOBS. An upstream sync that adds a workflow or a
+# job shows up here instead of being silently uncovered.
 unclassified_workflows() {
-    local f b g known
+    local f b g known jobs j src
     for f in "$ROOT"/.github/workflows/*.yml "$ROOT"/.github/workflows/*.yaml; do
         [ -e "$f" ] || continue          # an unmatched glob stays literal
         b="${f##*/}"; known=0
-        for g in "${NATIVE_WORKFLOWS[@]}" "${ACT_WORKFLOWS[@]}"; do
-            [ "$b" = "$g" ] && { known=1; break; }
+        for src in "${JOB_SOURCE[@]}"; do
+            [ "$b" = "${src%%:*}" ] && { known=2; break; }
         done
+        if [ "$known" -eq 0 ]; then
+            for g in "${ACT_WORKFLOWS[@]}"; do
+                [ "$b" = "$g" ] && { known=1; break; }
+            done
+        fi
         if [ "$known" -eq 0 ]; then
             for g in "${GITHUB_ONLY[@]}"; do
                 g="${g##*(}"; g="${g%)}"
@@ -148,6 +265,14 @@ unclassified_workflows() {
             done
         fi
         [ "$known" -eq 0 ] && echo "$b"
+        [ "$known" -eq 2 ] || continue
+        jobs="$(workflow_tool jobs "$f")" || { echo "$b (jobs unreadable)"; continue; }
+        for j in $jobs; do
+            for src in "${JOB_SOURCE[@]}" "${GITHUB_ONLY_JOBS[@]%% *}"; do
+                [ "$src" = "$b:$j" ] && continue 2
+            done
+            echo "$b:$j"
+        done
     done
 }
 
@@ -161,18 +286,18 @@ declare -a SELECTED=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --list)
-            echo "Runnable Linux jobs (this host):"
-            for j in "${ALL_JOBS[@]}"; do echo "  $j"; done
+            echo "Runnable Linux jobs (this host), and the workflow job each runs:"
+            for j in "${ALL_JOBS[@]}"; do printf '  %-20s %s\n' "$j" "${JOB_SOURCE[$j]}"; done
             echo
             echo "On-request Linux workflows (act; --all, or by name — not run by default):"
             for a in "${ACT_WORKFLOWS[@]}"; do echo "  act:$a"; done
             echo
-            echo "GitHub-only jobs (SDK/toolchain not available locally — not run):"
-            for g in "${GITHUB_ONLY[@]}"; do echo "  $g"; done
+            echo "GitHub-only (SDK/toolchain not available locally — not run):"
+            for g in "${GITHUB_ONLY[@]}" "${GITHUB_ONLY_JOBS[@]}"; do echo "  $g"; done
             u="$(unclassified_workflows)"
             if [ -n "$u" ]; then
                 echo
-                echo "UNCLASSIFIED workflows (in no list above — classify them in local-CI.sh):"
+                echo "UNCLASSIFIED workflows and jobs (in no list above — classify them in local-CI.sh):"
                 printf '%s\n' "$u" | sed 's/^/  /'
                 exit 1
             fi
@@ -200,9 +325,18 @@ fi
 
 CI_TMP="${LOCAL_CI_TMPDIR:-${XDG_CACHE_HOME:-$HOME/.cache}/local-ci}"
 mkdir -p "$CI_TMP"
-LOGDIR="$(mktemp -d "$CI_TMP/local-ci.XXXXXX")"
-JOBS="${LOCAL_CI_JOBS:-4}"
+LOGDIR="$(mktemp -d "$CI_TMP/local-ci.XXXXXX")" || {
+    echo "local-CI.sh: cannot create a log directory under $CI_TMP" >&2; exit 2; }
 JPAR="-j$JOBS"
+
+# nproc and getconf reporting $JOBS CPUs, first on PATH for every workflow
+# step, so a step's `make -j$(nproc)` keeps to this machine's limit.
+CPU_SHIM="$LOGDIR/cpu-shim"
+mkdir -p "$CPU_SHIM"
+printf '#!/bin/sh\necho %s\n' "$JOBS" >"$CPU_SHIM/nproc"
+printf '#!/bin/sh\ncase "$1" in _NPROCESSORS_ONLN|_NPROCESSORS_CONF) echo %s ;;\n*) exec /usr/bin/getconf "$@" ;; esac\n' \
+    "$JOBS" >"$CPU_SHIM/getconf"
+chmod +x "$CPU_SHIM/nproc" "$CPU_SHIM/getconf"
 
 echo "== local-CI.sh =="
 echo "repo:   $ROOT"
@@ -211,7 +345,7 @@ echo "branch: $(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
 echo "logs:   $LOGDIR"
 echo "jobs:   ${SELECTED[*]}"
 UNCLASSIFIED="$(unclassified_workflows)"
-[ -n "$UNCLASSIFIED" ] && echo "WARN:   unclassified workflows, run nowhere:" \
+[ -n "$UNCLASSIFIED" ] && echo "FAIL:   unclassified workflows or jobs, run nowhere:" \
     "$(printf '%s\n' "$UNCLASSIFIED" | paste -sd' ')"
 echo
 
@@ -232,11 +366,22 @@ ensure_image() {
     fi
 }
 
-# run_native <job> <logfile> : body reads the exported tree from $PWD.
-# Each native job cd's into its own fresh export dir.
+# run_workflow_job <job> : run the steps of the workflow job JOB_SOURCE
+# names for <job>, natively, from a fresh export of the ref, stopping at the
+# first step that fails, as a runner does.
+run_workflow_job() {
+    local wf="${JOB_SOURCE[$1]%%:*}" wj="${JOB_SOURCE[$1]#*:}" w st
+    w="$(mktemp -d "$LOGDIR/$1.XXXX")" && export_tree "$w" && mkdir "$w.tmp" \
+      && workflow_tool steps "$w/.github/workflows/$wf" "$wj" "$w.steps" || return 1
+    for st in "$w.steps"/*.sh; do
+        echo "== step: $(sed -n '1s/^# //p' "$st")"
+        ( cd "$w" && PATH="$CPU_SHIM:$PATH" RUNNER_TEMP="$w.tmp" GITHUB_WORKSPACE="$w" \
+            bash "$st" ) || { echo "== step FAILED: $(sed -n '1s/^# //p' "$st")"; return 1; }
+    done
+}
 
 # ---- job bodies -----------------------------------------------------------
-# Command strings below mirror the referenced workflow step verbatim (modulo -j).
+# The two hand-written jobs; every other job runs its workflow's own steps.
 
 # retroarch.yml :: linux-c89  (ubuntu-latest, native)
 #
@@ -250,19 +395,23 @@ ensure_image() {
 #   2. -k (keep-going) compiles the ENTIRE tree in one pass, so every
 #      repo-source C89 error surfaces at once and a host-header divergence in
 #      one TU doesn't hide our errors in the others.
-# The job FAILS iff a C89 error originates in a repo-tracked file. Linking is
-# NOT asserted here (a skipped host-divergent TU makes the local link
-# unreliable); the i686 container jobs are the authoritative full build+link.
+# The job FAILS if a C89 error originates in a repo-tracked file, or if make
+# fails with no host-header error to account for it (a missing rule, a
+# killed compiler). Linking is NOT asserted here (a skipped host-divergent
+# TU makes the local link unreliable); linux-i686 is the full build+link.
 job_c89() {
-    local w raw repo_err sys_err n
-    w="$(mktemp -d "$LOGDIR/c89.XXXX")"; export_tree "$w"
+    local w raw repo_err sys_err n make_rc
+    w="$(mktemp -d "$LOGDIR/c89.XXXX")" && export_tree "$w" || return 1
     raw="$LOGDIR/c89.build.log"
-    ( cd "$w"
+    ( cd "$w" || exit 1
       ./configure "${C89_ALIGN[@]}"
-      make $JPAR -k C89_BUILD=1
+      rc=0
+      make $JPAR -k C89_BUILD=1 || rc=1
       make $JPAR clean
-      make $JPAR -k DEBUG=1 GL_DEBUG=1 C89_BUILD=1 info all
+      make $JPAR -k DEBUG=1 GL_DEBUG=1 C89_BUILD=1 info all || rc=1
+      exit "$rc"
     ) >"$raw" 2>&1
+    make_rc=$?
     if [ ! -f "$w/config.h" ]; then
         echo "configure failed (no config.h produced) — see $raw"; return 1
     fi
@@ -280,115 +429,30 @@ job_c89() {
         printf '%s\n' "$repo_err" | sed 's/^/   /'
         return 1
     fi
+    if [ "$make_rc" -ne 0 ] && [ -z "$sys_err" ]; then
+        echo "make failed with no C89 error to account for it — see $raw"; return 1
+    fi
     echo "[pass] no repo-source C89 errors across the full tree (C89_BUILD + DEBUG)"
     return 0
 }
 
-# Linux-samples-tasks.yml :: samples-tasks  (ubuntu-latest, native)
-job_samples_tasks() {
-    local w; w="$(mktemp -d "$LOGDIR/stasks.XXXX")"; export_tree "$w"
-    # One command per line: set -e does not stop on a failure in the first
-    # half of `a && b`, so `./test && echo pass` could never fail the job.
-    ( set -e
-      cd "$w/samples/tasks/database"
-      make clean all
-      test -x database_task
-      rc=0; ./database_task >/dev/null 2>&1 || rc=$?
-      [ "$rc" -ne 0 ] || { echo "database_task no-args expected non-zero, got 0"; exit 1; }
-      echo "[pass] database_task no-args exit=$rc"
-
-      cd "$w/samples/tasks/decompress"
-      make clean all
-      timeout 60 ./archive_name_safety_test
-      echo "[pass] archive_name_safety_test"
-
-      cd "$w/samples/tasks/cloudsync"
-      make clean all
-      timeout 60 ./cloudsync_path_safety_test
-      echo "[pass] cloudsync_path_safety_test"
-
-      cd "$w/samples/tasks/natt_desc"
-      make clean all
-      timeout 60 ./natt_desc_parse_test
-      echo "[pass] natt_desc_parse_test"
-
-      cd "$w/samples/tasks/http"
-      make clean all SANITIZER=address
-      timeout 60 ./http_method_match_test
-      echo "[pass] http_method_match_test"
-      make -f Makefile.limits clean
-      make -f Makefile.limits SANITIZER=address,undefined
-      timeout 60 ./http_limits_test
-      echo "[pass] http_limits_test"
-
-      cd "$w/samples/tasks/self_update"
-      make clean all SANITIZER=address,undefined
-      timeout 120 ./self_update_test
-      echo "[pass] self_update_test"
-      make -f Makefile.net clean
-      make -f Makefile.net SANITIZER=address,undefined
-      timeout 120 ./self_update_net_test
-      echo "[pass] self_update_net_test"
-
-      cd "$w/samples/menu/content_downloads"
-      make clean
-      make SANITIZER=address,undefined
-      timeout 60 ./content_downloads_test
-      echo "[pass] content_downloads_test"
-
-      cd "$w/samples/tasks/bsv_replay_init"
-      make sweep
-      echo "[pass] bsv_replay_init_test sweep" )
-}
-
-# Linux-libretro-common-samples.yml :: samples  (ubuntu-latest, native)
-# The workflow inlines a ~90-line runner; invoke that exact block from the
-# exported tree so the run-allowlist / build-only logic stays the single source
-# of truth (extracted straight from the workflow's `run:` script).
-job_common_samples() {
-    local w; w="$(mktemp -d "$LOGDIR/csam.XXXX")"; export_tree "$w"
-    ( cd "$w/libretro-common/samples"
-      set -u; set -o pipefail
-      declare -a RUN_TARGETS=(
-        compat_fnmatch_test snprintf unbase64_test archive_zip_test archive_zstd_test
-        config_file_test path_resolve_realpath_test nbio_test rpng rzip_chunk_size_test
-        net_ifinfo vfs_read_overflow_test cdrom_cuesheet_overflow_test http_parse_test
-        rjson_test rtga_test rbmp_test rpng_chunk_overflow_test rpng_roundtrip_test )
-      declare -A RUN_ENV=( [config_file_test]="ASAN_OPTIONS=detect_leaks=0" )
-      declare -a BUILD_ONLY_DIRS=( formats/xml )
-      declare -a SKIP_DIRS=( )
-      is_in(){ local n=$1; shift; local h; for h in "$@"; do [ "$h" = "$n" ] && return 0; done; return 1; }
-      fails=0; builds=0; runs=0
-      mapfile -t MKDIRS < <(find . -name Makefile -printf '%h\n' | sort)
-      for d in "${MKDIRS[@]}"; do
-        rel=${d#./}
-        is_in "$rel" "${SKIP_DIRS[@]}" && { echo "[skip] $rel"; continue; }
-        if ! ( cd "$d" && make clean all ); then
-          echo "::error:: $rel failed to build"; fails=$((fails+1)); continue; fi
-        builds=$((builds+1))
-        is_in "$rel" "${BUILD_ONLY_DIRS[@]}" && { echo "[skip-run] $rel"; continue; }
-        mapfile -t targets < <(grep -hE '^(TARGET|TARGETS|TARGET_TEST[0-9]*)[[:space:]]*[:?]?=' "$d/Makefile" \
-          | sed -E 's/^[^=]*=[[:space:]]*//' | tr -s ' \t' '\n' | grep -v '^$' | sort -u)
-        for t in "${targets[@]}"; do
-          is_in "$t" "${RUN_TARGETS[@]}" || { echo "[skip-run] $rel/$t"; continue; }
-          [ -x "$d/$t" ] || { echo "::error:: $t missing after build"; fails=$((fails+1)); continue; }
-          if ( cd "$d" && env ${RUN_ENV[$t]:-} timeout 60 "./$t" ); then
-            echo "[pass] $t"; runs=$((runs+1))
-          else echo "::error:: $t exit $?"; fails=$((fails+1)); fi
-        done
-      done
-      echo "Built:$builds Ran:$runs Failed:$fails"
-      [ "$fails" -eq 0 ] )
-}
-
-# Linux.yml :: build  (i686 container — bit-exact)
+# Linux.yml :: build  (i686 container — the image CI uses)
+#   The job's steps run inside the container, from the workflow file at the
+#   ref under test; workflow_tool refuses them if Linux.yml's image is not
+#   IMG_I686.
 job_linux_i686() {
+    local s
     ensure_image || return 1
-    git -C "$ROOT" archive --format=tar "$ARCHIVE_REF" | podman run --rm -i --user root -e JOBS="$JOBS" "$IMG_I686" \
+    s="$(mktemp -d "$LOGDIR/linux-i686.XXXX")" \
+      && git -C "$ROOT" show "$ARCHIVE_REF:.github/workflows/Linux.yml" >"$s/Linux.yml" \
+      && workflow_tool steps "$s/Linux.yml" build "$s/steps" "$IMG_I686" || return 1
+    git -C "$ROOT" archive --format=tar "$ARCHIVE_REF" | podman run --rm -i --user root \
+      -v "$s/steps:/steps:ro,Z" -v "$CPU_SHIM:/shim:ro,Z" "$IMG_I686" \
       bash -c 'set -e; mkdir -p /b && cd /b && tar x
-               ./configure --disable-qt --enable-xdelta
-               make -j"$JOBS" clean
-               make -j"$JOBS" info all'
+               for st in /steps/*.sh; do
+                   echo "== step: $(sed -n "1s/^# //p" "$st")"
+                   PATH="/shim:$PATH" bash "$st"
+               done'
 }
 
 # Linux-Headless.yml :: linux-nomenu  ("(i686)" name, but CI runs it on ubuntu-latest)
@@ -396,7 +460,9 @@ job_linux_i686() {
 #   deviation from the workflow's bare --disable-menu. CI's headless job runs
 #   Qt-off (ubuntu-latest, no Qt dev, so HAVE_QT=0); --disable-qt reproduces that,
 #   and this image's bundled Qt5 doesn't link RA's Qt frontend anyway. Full
-#   rationale + the Qt-link detail: docs/private/DEPENDENCY-POLICY.md §4a.
+#   rationale + the Qt-link detail: docs/private/DEPENDENCY-POLICY.md §4a, on
+#   the local/audit-2026-04 branch. A different OS and compiler from CI's,
+#   so a warning or error only CI's newer gcc raises is not caught here.
 job_headless_i686() {
     ensure_image || return 1
     git -C "$ROOT" archive --format=tar "$ARCHIVE_REF" | podman run --rm -i --user root -e JOBS="$JOBS" "$IMG_I686" \
@@ -426,8 +492,21 @@ act_setup() {
     git clone -q --shared --no-checkout "$ROOT" "$LOGDIR/act-src" \
       && git -C "$LOGDIR/act-src" checkout -q --detach "$(git -C "$ROOT" rev-parse "$ARCHIVE_REF")" \
       || return 1
-    podman image exists "docker.io/$ACT_IMAGE" || podman pull "docker.io/$ACT_IMAGE" || return 1
+    act_image || return 1
     ACT_SRC="$LOGDIR/act-src"
+}
+
+# act_image : build ACT_RUN_IMAGE from ACT_IMAGE (see ACT_RUN_IMAGE for
+# why), when it is missing or --pull asked for a fresh base.
+act_image() {
+    if [ "$DO_PULL" -eq 0 ] && podman image exists "$ACT_RUN_IMAGE"; then return 0; fi
+    if [ "$DO_PULL" -eq 1 ] || ! podman image exists "docker.io/$ACT_IMAGE"; then
+        podman pull "docker.io/$ACT_IMAGE" || return 1
+    fi
+    printf '%s\n' "FROM docker.io/$ACT_IMAGE" \
+        'RUN rm /var/run && mkdir /var/run && ln -s /run/lock /var/run/lock' \
+        'COPY nproc getconf /usr/local/bin/' >"$CPU_SHIM/Containerfile"
+    podman build -q -t "$ACT_RUN_IMAGE" -f "$CPU_SHIM/Containerfile" "$CPU_SHIM"
 }
 
 # act exits 0 when every job is skipped or if-gated off, so a zero exit alone
@@ -438,7 +517,7 @@ job_act() {
     [ -f "$ACT_SRC/.github/workflows/$wf" ] || { echo "no such workflow at this ref: $wf"; return 1; }
     out="$LOGDIR/$wf.act.out"
     ( cd "$ACT_SRC" && DOCKER_HOST="unix://$ACT_SOCK" "$ACT_BIN" \
-        -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_IMAGE" \
+        -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_RUN_IMAGE" \
         --pull=false --container-daemon-socket - --concurrent-jobs 1 ) 2>&1 | tee "$out"
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ] && ! grep -q 'Job succeeded' "$out"; then
@@ -453,14 +532,20 @@ job_act() {
 
 declare -A DISPATCH=(
     [c89]=job_c89
-    [samples-tasks]=job_samples_tasks
-    [common-samples]=job_common_samples
+    [samples-tasks]=run_workflow_job
+    [samples-tasks-http]=run_workflow_job
+    [common-samples]=run_workflow_job
+    [config-fuzz]=run_workflow_job
     [linux-i686]=job_linux_i686
     [headless-i686]=job_headless_i686
 )
 
 declare -a RESULTS=()
 overall=0
+if [ -n "$UNCLASSIFIED" ]; then
+    RESULTS+=("FAIL  unclassified, run nowhere: $(printf '%s\n' "$UNCLASSIFIED" | paste -sd' ')")
+    overall=1
+fi
 
 for job in "${SELECTED[@]}"; do
     fn="${DISPATCH[$job]:-}"; arg=""
@@ -485,7 +570,7 @@ for job in "${SELECTED[@]}"; do
     # Called outside an if: inside one, bash ignores set -e in the job and
     # everything it runs, so a job's `( set -e ...)` would stop on nothing
     # and only its last command could fail it.
-    "$fn" ${arg:+"$arg"} >"$log" 2>&1
+    "$fn" "${arg:-$job}" >"$log" 2>&1
     rc=$?
     if [ "$rc" -eq 0 ]; then
         echo "PASS"; RESULTS+=("PASS  $job")
@@ -501,6 +586,9 @@ echo
 echo "== summary =="
 for r in "${RESULTS[@]}"; do echo "  $r"; done
 echo
+# Build trees are directories; logs are files. A kept log directory holds
+# logs only, so repeated failures do not fill the disk.
+find "$LOGDIR" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
 if [ "$overall" -eq 0 ]; then
     echo "All selected Linux CI jobs passed. (Cross-platform jobs are GitHub-only; see --list.)"
     rm -rf "$LOGDIR"
