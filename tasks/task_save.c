@@ -2491,13 +2491,14 @@ bool content_ram_state_to_file(const char *path)
       {
          /* rzip has no atomic writer: stage to "<path>.tmp", then rename. */
          char tmp_path[PATH_MAX_LENGTH];
-         if (!content_tmp_path(tmp_path, sizeof(tmp_path), path))
-            written = false;
-         else if (rzipstream_write_file(tmp_path,
-                  ram_buf.state_buf.data, ram_buf.state_buf.size))
-            written = content_replace_file(tmp_path, path);
-         else
-            filestream_delete(tmp_path);
+         if (content_tmp_path(tmp_path, sizeof(tmp_path), path))
+         {
+            if (rzipstream_write_file(tmp_path,
+                     ram_buf.state_buf.data, ram_buf.state_buf.size))
+               written = content_replace_file(tmp_path, path);
+            else
+               filestream_delete(tmp_path);
+         }
       }
       else
 #endif
