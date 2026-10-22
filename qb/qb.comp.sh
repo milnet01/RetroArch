@@ -73,10 +73,11 @@ fi
 
 # Checking whether the mold linker is usable (faster linking).
 #   mold is a drop-in, ld-compatible linker (Linux/BSD). Probe by
-#   link-testing -fuse-ld=mold with the detected compiler; that link
-#   test is the portability guarantee -- it fails cleanly when mold is
-#   absent or the (possibly cross) toolchain does not support it, and we
-#   fall back to the default linker. --disable-mold skips the probe;
+#   link-testing -fuse-ld=mold with the detected compiler and the user's
+#   CFLAGS and LDFLAGS; that link test is the portability guarantee -- it
+#   fails cleanly when mold is absent, the (possibly cross) toolchain does
+#   not support it, or a flag the build will pass is one mold rejects, and
+#   we fall back to the default linker. --disable-mold skips the probe;
 #   --enable-mold warns (non-fatal) if the probe then fails. The flag is
 #   appended to LDFLAGS in qb.make.sh, AFTER library detection, so the
 #   HAVE_* feature probes are unaffected by the linker choice.
@@ -87,7 +88,7 @@ if [ "$cc_works" = '1' ] && [ "$HAVE_MOLD" != 'no' ]; then
 int main(void) { return 0; }
 EOF
 
-	if $(printf %s "$CC") -fuse-ld=mold "$TEMP_C" -o "$TEMP_EXE" >/dev/null 2>&1; then
+	if $(printf %s "$CC") $CFLAGS $LDFLAGS -fuse-ld=mold "$TEMP_C" -o "$TEMP_EXE" >/dev/null 2>&1; then
 		HAVE_MOLD='yes'
 		printf %s\\n 'yes'
 	else
