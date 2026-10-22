@@ -25,6 +25,8 @@ on:
       - 'samples/menu/nav_repeat_stall/**'
       - 'runloop.c'
       - 'samples/menu/network_settings/**'
+      - 'samples/menu/playlists_scan/**'
+      - 'samples/menu/settings_display/**'
       - 'intl/msg_hash_lbl.h'
       - 'msg_hash_lbl_str.h'
       - 'samples/menu/resolution_reset/**'
@@ -42,6 +44,8 @@ on:
       - 'samples/menu/nav_repeat_stall/**'
       - 'runloop.c'
       - 'samples/menu/network_settings/**'
+      - 'samples/menu/playlists_scan/**'
+      - 'samples/menu/settings_display/**'
       - 'intl/msg_hash_lbl.h'
       - 'msg_hash_lbl_str.h'
       - 'samples/menu/resolution_reset/**'
@@ -214,6 +218,38 @@ jobs:
           samples/menu/network_settings/build.sh
           ./samples/menu/network_settings/menu_network_settings_test
           make -C samples/menu/network_settings clean
+
+      - name: Build and run playlists_scan_test
+        shell: bash
+        run: |
+          set -eu
+          # Scan on the Playlists tab jumps to a random other playlist.
+          # Each driver drew until it hit one, so with none to land on
+          # the menu froze. Runs every driver's tab with zero, one and
+          # two playlists, and Ozone's sidebar with zero, one and two
+          # playlist tabs; a watchdog turns a freeze into a failure.
+          # Shares the non-Qt build made above.
+          samples/menu/playlists_scan/build.sh
+          for d in rgui ozone xmb glui; do
+            ./samples/menu/playlists_scan/playlists_scan_test "$d"
+          done
+          for n in 0 1 2; do
+            ./samples/menu/playlists_scan/playlists_scan_test ozone "sidebar$n"
+          done
+          make -C samples/menu/playlists_scan clean
+
+      - name: Build and run menu_settings_display_test
+        shell: bash
+        run: |
+          set -eu
+          # Reads settings through the display callback the menu uses.
+          # An empty cloud-sync password showed as set whenever a
+          # RetroAchievements login token existed, because the two
+          # share one password callback. Shares the non-Qt build made
+          # above.
+          samples/menu/settings_display/build.sh
+          ./samples/menu/settings_display/menu_settings_display_test
+          make -C samples/menu/settings_display clean
 
       - name: Build and run resolution_reset_test
         shell: bash
