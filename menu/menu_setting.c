@@ -6155,14 +6155,10 @@ static int setting_action_left_libretro_device_type(
       break;
    }
 
-   /* `types` is libretro_device_get_size's return value; that helper
-    * unconditionally seeds devices[0]=NONE and devices[1]=JOYPAD
-    * before any conditional logic, so types >= 2 on return.  The
-    * analyzer can't trace into the helper to learn the invariant,
-    * so it reports a potential DivZero on the modulus — verified FP
-    * per audit Bundle 43.  Collapse onto one line so NOLINTNEXTLINE
-    * applies to the % token (otherwise it sits on the previous line
-    * of the spanned statement and the directive misses). */
+   /* libretro_device_get_size() always seeds devices[0]=NONE and
+    * devices[1]=JOYPAD, so types >= 2 and the modulus cannot divide
+    * by zero; the analyzer cannot see into the helper.  One line, so
+    * NOLINTNEXTLINE reaches the % token. */
    /* NOLINTNEXTLINE(clang-analyzer-core.DivideZero) */
    current_device = devices[(current_idx + types - 1) % types];
 
@@ -8839,8 +8835,9 @@ static int setting_action_right_libretro_device_type(
       break;
    }
 
-   current_device = devices
-      [(current_idx + 1) % types];
+   /* types >= 2: see setting_action_left_libretro_device_type(). */
+   /* NOLINTNEXTLINE(clang-analyzer-core.DivideZero) */
+   current_device = devices[(current_idx + 1) % types];
 
    input_config_set_device(port, current_device);
 
