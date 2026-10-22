@@ -17,6 +17,7 @@
  */
 
 #include <stdint.h>
+#include <limits.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -1078,15 +1079,6 @@ static void mylist_resize(my_list *list,
    void *element    = NULL;
    if (new_size < 0)
       new_size      = 0;
-   /* Defensive against signed-overflow on `list->capacity * 2` below
-    * (capacity grows geometrically; a wrap to negative would let the
-    * realloc(data, 0) branch run and the post-realloc walk underflow
-    * list->data[i].  Practical runahead bounds — MAX_RUNAHEAD_FRAMES
-    * (12) * MAX_USERS — keep capacity well under INT_MAX, so this is
-    * paranoid; closes the clang-analyzer security.ArrayBound path
-    * that traces through mylist_destroy → here. */
-   if (list->capacity < 0)
-      return;
    new_capacity     = new_size;
    old_size         = list->size;
 
@@ -1097,16 +1089,15 @@ static void mylist_resize(my_list *list,
    {
       void **new_data;
 
+      /* Doubling past INT_MAX / 2 would overflow; leave the list as
+       * it is. */
+      if (list->capacity > INT_MAX / 2)
+         return;
       if (new_capacity < list->capacity * 2)
          new_capacity = list->capacity * 2;
 
-      /* Try to realloc. On OOM, leave the list at its current
-       * capacity and silently no-op the resize - the caller
-       * (mylist_add_element) tolerates list->data[old_size]
-       * being NULL: runahead_input_state_set_last guards on
-       * 'if (element)' before writing to it, and downstream
-       * code already accepts that runahead state may be
-       * incomplete. */
+      /* On OOM, leave the list as it is; mylist_add_element then
+       * returns NULL. */
       new_data = (void**)realloc(
             (void*)list->data, new_capacity * sizeof(void*));
       if (!new_data)
@@ -1137,8 +1128,14 @@ static void mylist_resize(my_list *list,
       for (i = list->size; i < new_size; i++)
       {
          list->data[i] = NULL;
-         if (run_constructor)
-            list->data[i] = list->constructor();
+         /* A slot whose constructor failed is not counted, so the
+          * lookup in runahead_input_state_set_last never meets a
+          * NULL element. */
+         if (run_constructor && !(list->data[i] = list->constructor()))
+         {
+            new_size = i;
+            break;
+         }
       }
    }
 
@@ -1213,10 +1210,8 @@ static void *input_list_element_constructor(void)
 
    /* NULL-check the outer malloc: the field writes below
     * (port/device/index/state_size) would NULL-deref on OOM.
-    * The caller (runahead_input_state_set_last) already tolerates
-    * a NULL return: 'if (element) { ... }'.  mylist_resize also
-    * tolerates a NULL constructor result - it just leaves
-    * list->data[i] = NULL. */
+    * mylist_resize does not count a slot whose constructor returned
+    * NULL, and mylist_add_element then returns NULL. */
    if (!ptr)
       return NULL;
 
