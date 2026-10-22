@@ -9253,13 +9253,9 @@ static void general_write_handler(rarch_setting_t *setting)
 
    if (!setting)
       return;
-   /* config_get_ptr() returns the static `config_st` pointer which is
-    * NULL until config_load_state() runs.  Menu setting writes shouldn't
-    * be reachable before config is loaded — but clang-analyzer flags
-    * downstream `settings->...` reads (line ~9300 core_info_cache
-    * arm) as potentially-NULL and any unguarded path here would crash
-    * if the contract were violated.  Treat it as a no-op like the
-    * !setting branch above. */
+   /* config_get_ptr() is NULL until retroarch_config_init() runs.  No
+    * setting write should arrive before then; if one does, do nothing,
+    * as for !setting above, rather than crash on a settings-> read. */
    if (!settings)
       return;
 
@@ -11237,14 +11233,11 @@ static bool setting_append_list_input_player_options(
    const char *binds_group_label              = msg_hash_to_str
          ((enum msg_hash_enums)(MENU_ENUM_LABEL_INPUT_USER_1_BINDS + user));
 
-   /* Defensive: SETTINGS_LIST_APPEND short-circuits on `!*list`, then
-    * the post-macro `(*list)[list_info->index - 1].xxx = ...` writes
-    * deref `*list` unconditionally — NULL deref if *list was NULL on
-    * entry.  In practice the caller (menu_setting_initialize) populates
-    * *list before invoking us, but the analyzer flags the per-user loop
-    * write at line ~9894 as NULL-derefable.  Bail to keep the contract
-    * symmetric with the macro.  (Guard placed after the declarations
-    * above to satisfy C89's no-code-before-declarations rule.) */
+   /* SETTINGS_LIST_APPEND returns early when *list is NULL, but the
+    * per-user `(*list)[list_info->index - 1]` writes after it do not
+    * check.  settings_build_main_menu() fills *list before calling
+    * this; return rather than crash if it has not.  (After the
+    * declarations, for C89.) */
    if (!list || !*list || !list_info)
       return false;
 
@@ -11576,9 +11569,8 @@ static bool setting_append_list_input_libretro_device_options(
    char label_device_type[64];
    unsigned user;
 
-   /* Defensive: same shape as setting_append_list_input_player_options
-    * above — the per-user `(*list)[index-1].xxx` writes deref *list
-    * unconditionally after the SETTINGS_LIST_APPEND macro. */
+   /* The `(*list)[list_info->index - 1]` writes after
+    * SETTINGS_LIST_APPEND do not check *list. */
    if (!list || !*list || !list_info)
       return false;
 
@@ -11647,8 +11639,8 @@ static bool setting_append_list_input_remap_port_options(
    char label_port[64];
    settings_t *settings = config_get_ptr();
 
-   /* Defensive: same shape as the other two input-options populate
-    * helpers above — *list deref on the per-user assign block. */
+   /* The `(*list)[list_info->index - 1]` writes after
+    * SETTINGS_LIST_APPEND do not check *list. */
    if (!list || !*list || !list_info)
       return false;
 

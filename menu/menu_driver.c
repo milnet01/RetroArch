@@ -4790,11 +4790,8 @@ static bool menu_driver_init_internal(
          menu_st->driver_data               = (menu_handle_t*)
             menu_st->driver_ctx->init(&menu_st->userdata,
                   video_is_threaded);
-         /* The init vtable function is documented to be allowed to
-          * return NULL on alloc failure (xmb / ozone / rgui /
-          * materialui all do). The two field writes below previously
-          * NULL-derefed before the line 4543 check fired -- audio /
-          * video / input all NULL-check correctly; only menu didn't. */
+         /* init returns NULL when it cannot allocate; the check below
+          * handles that, so these fields are set only when it did not. */
          if (menu_st->driver_data)
          {
             menu_st->driver_data->userdata     = menu_st->userdata;
@@ -7100,10 +7097,8 @@ void retroarch_menu_running_finished(bool quit)
 #if HAVE_RUNAHEAD
       /* Preemptive Frames isn't run behind the menu,
        * so its savestate buffer is out of date.
-       * settings can be NULL early in lifecycle (config_get_ptr()
-       * returns the unset static — siblings at lines 6616/6626
-       * already gate the same field-read defensively); if so, the
-       * reset is moot because preempt hasn't been wired yet. */
+       * settings is NULL before configuration is set up, and then
+       * preempt is not running, so there is nothing to reset. */
       if (settings && !settings->bools.menu_pause_libretro)
          command_event(CMD_EVENT_PREEMPT_RESET_BUFFER, NULL);
 #endif

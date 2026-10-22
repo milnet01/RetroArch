@@ -35,16 +35,15 @@
 #include <TargetConditionals.h>
 #endif
 
-/* Audit S6: assert the bind-index decomposition invariant used by
- * action_scan_input_desc below.  The function divides
- * (type - MENU_SETTINGS_INPUT_DESC_BEGIN) by RARCH_ANALOG_BIND_LIST_END
- * to recover (user_idx, key) and writes
- * settings->uints.input_remap_ids[user_idx][key].  Both decomposed
- * indices must land inside their respective array dims; both relations
- * are true by construction today but adding a new bind keyword could
- * silently break them, so make the build fail instead. */
-/* C89-portable compile-time asserts (a negative array size fails the
- * build), matching libretro-common/include/retro_spsc.h. */
+/* Compile-time checks of the index split in action_scan_input_desc
+ * below, which divides (type - MENU_SETTINGS_INPUT_DESC_BEGIN) by
+ * RARCH_ANALOG_BIND_LIST_END to recover (user_idx, key) and writes
+ * settings->uints.input_remap_ids[user_idx][key].  They prove that
+ * BEGIN..END spans MAX_USERS rows of binds and that a bind index fits
+ * a remap row, so a new bind keyword fails the build rather than
+ * writing out of bounds.  They do not cover END itself, which no entry
+ * carries (it would give user_idx == MAX_USERS), nor the keyboard
+ * range.  A negative array size is what fails the build (C89). */
 typedef char menu_scan_desc_range_matches_binds[
    ((MENU_SETTINGS_INPUT_DESC_END - MENU_SETTINGS_INPUT_DESC_BEGIN)
     == (RARCH_ANALOG_BIND_LIST_END * MAX_USERS)) ? 1 : -1];
