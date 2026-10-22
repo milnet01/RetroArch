@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=48 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=49 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -565,6 +565,12 @@ These are exploitable now and have concrete reproducers.
 
 - ✅ [RETR-S0057] **MEDIUM — Heap overflow waiting in `configuration.c` static pools.**
   _(Fixed `9bf01aabdb` — added `assert(count <= SETTINGS_*_COUNT_MAX)` at the exit of every `populate_settings_*` function (bool/int/uint/float/size/array/path). The 514th `SETTING_BOOL` now produces an immediate assert in debug builds; release builds compile out the check but the invariant is documented in code.)_
+  2026-10-22: the asserts this item added checked the count only after
+  the rows were written, and were compiled out under NDEBUG
+  (review-code 2026-10-21 lane 5, F1). Replaced in 4fb733fb48:
+  GENERAL_SETTING writes only the rows that fit, and
+  config_settings_fit() logs the overflow and keeps them. Measured fill
+  on the non-Qt build: bool 413/512, uint 188/320.
   Kind: implement.
 
 - ✅ [RETR-0012] **Run the Vulkan driver under Khronos synchronization validation.**
@@ -1570,6 +1576,19 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   vendored); r7z reset comment with the 99919acb78 dictionary fix
   (db663de23b, vendored); r7z quadratic folder walk (RETR-0044). Not
   candidates: the save-file fix (upstream already has it, c24fd90825).
+  2026-10-22 upstream PR candidates from close-findings, menu group (fixed on
+  local/fixes-2026-09, upstream still has the bug): Playlists-tab Scan
+  freezes with no other playlist, all four drivers (473cd744ec, with the
+  samples/menu/playlists_scan harness and its Linux-menu-harness.yml step,
+  3aa9c12827); Ozone sidebar Scan freezes or opens a nonexistent tab
+  (3e54bd23ad); empty cloud-sync password shown as set with a
+  RetroAchievements token (7d8e85f900, settings_display harness);
+  config_file_write temporary created world-readable, and
+  config_save_credentials first save (e93352a139, vendored half in
+  libretro-common); cheat search 8/16/32-bit message categories
+  (6d9a85d2cc); GENERAL_SETTING writes past its pool unbounded (4fb733fb48,
+  without the fork's asserts, which upstream never had); Scan inside a
+  playlist past the end (RETR-0049, not yet fixed).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1922,6 +1941,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   the menu, replay/input, local-CI.sh and remaining groups. Ledger and
   per-group sources:
   docs/private/reviews/2026-10-21-findings/close-findings-ledger.md.
+  2026-10-22: close-findings menu group closed (ledger
+  docs/private/reviews/2026-10-21-findings/ledger-menu.json): 21 fixed,
+  4 dismissed, none queued; a defect found next door is RETR-0049. Next by the ruled order: replay /
+  input, then local-CI.sh, then the rest.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
@@ -2164,6 +2187,24 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: test.
   Source: close-findings 2026-10-21 (found while fixing cloud sync).
   Lanes: samples/network.
+
+- 📋 [RETR-0049] **LOW — Scan inside a playlist can, rarely, select one past the last entry.**
+  menu_playlist_random_selection() (menu_driver.c) draws with
+  random_range(start, total - 1), which returns total when rand() is
+  within 64 of RAND_MAX: the float rounds the ratio to exactly 1.0,
+  about 3 in 10^8 per draw.  The loop then exits, as the draw differs
+  from the selection, and Scan sets selection_ptr one past the end.
+  The same overshoot froze the Playlists-tab Scan until 473cd744ec,
+  whose loop drew millions of times per press; this one draws once or
+  twice, so it is rare.  Fix: treat a draw equal to total as total - 1,
+  or pick an index as menu_playlists_tab_random_selection() does.
+  Unverified: whether an empty list (total 0) can reach it; a playlist
+  view normally carries a placeholder row.  Upstream code: PR
+  candidate.
+  **Layman:** Very rarely, picking a random game in a playlist could point the menu one row past the end of the list.
+  Kind: fix.
+  Source: close-findings 2026-10-22 (found next door while fixing the menu group).
+  Lanes: menu.
 
 ### 📝 Cold-eyes 2026-07-04
 

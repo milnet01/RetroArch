@@ -1,0 +1,426 @@
+{
+ "run": {
+  "cited_by": [
+   "docs/private/specs/2026-04-27-audit-spec-needed-cluster.md S2",
+   "docs/private/ROADMAP.md RETR-S0057, RETR-S0115",
+   "review returns (frozen)",
+   "return-L4-frontend-drivers.md correctness leads (duplicates of F1-F4)"
+  ],
+  "swept": {
+   "spec 2026-04-27 S2 macro comment and sites": "frozen (dated design doc; the code now conforms to its option A)",
+   "ROADMAP RETR-S0057 (asserts)": "frozen; dated note added saying 4fb733fb48 replaced them",
+   "ROADMAP closed entries citing Bundle 43/57/62, config_load_state, menu_setting_initialize": "frozen",
+   "CHANGES.md # Future": "fixed: four user-visible entries (064c8f90cf)",
+   "configuration.c retroarch.cfg chmod comment": "fixed in e93352a139 (was: retroarch.cfg holds credentials)",
+   ".github/workflows/Linux-menu-harness.yml": "fixed: runs the two new harnesses (3aa9c12827)",
+   "old names searched tree-wide (config_load_state, menu_setting_initialize, Bundle refs in code, MENU_LIST_GET_SELECTION(...)->)": "agrees (none left in code)",
+   ".claude/code-pairs.json": "absent"
+  },
+  "collateral": [
+   "a1105542b6 consolidated upstream harness build.sh files (drift); reverted in f246c06737"
+  ],
+  "surfaced": [],
+  "out_of_scope": [
+   "menu_playlist_random_selection overshoot one past the end: queued RETR-0049",
+   "samples/menu/explore_build/build.sh: shellcheck SC2086 info on $MAKE_ARGS (upstream file)",
+   "Linux-menu-harness.yml: actionlint shellcheck notes on two pre-existing steps (upstream file)",
+   "/mnt/Games/claude-scratch was deleted by something outside this session mid-run"
+  ],
+  "falsified": []
+ },
+ "findings": [
+  {
+   "finding": "M1 SCAN random-playlist loop never ends with no other collection; four driver copies differ (lane-04 M1 MEDIUM + L2 stale entry_new.type + readability L1 Q1 HIGH dup)",
+   "source": "review-code lane-04; readability L1",
+   "dim": "16 / 7 / Q1",
+   "severity": "MEDIUM / HIGH",
+   "verified": "yes, ra-fixes 0a5adc7473: all four SCAN loops; red run reproduced freeze and past-the-end",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/drivers/materialui.c",
+    "menu/drivers/rgui.c",
+    "menu/drivers/ozone.c",
+    "menu/drivers/xmb.c"
+   ],
+   "was": null,
+   "now": "473cd744ec; red: frozen x4 drivers with no playlists, selection 5/6 on 5 rows with one; green x4; 2 mutations red",
+   "must_agree": [
+    "samples/menu/playlists_scan",
+    "RETR-S0115 note"
+   ]
+  },
+  {
+   "finding": "M2 ozone sidebar SCAN loop never ends with one playlist tab; zero tabs gives index past end; compares selection not tab_selection (lane-04 Low x2)",
+   "source": "review-code lane-04",
+   "dim": "16 / 2",
+   "severity": "LOW",
+   "verified": "yes, ozone.c sidebar SCAN; red: sidebar0 jumped to nonexistent tab then froze, sidebar1 froze",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/drivers/ozone.c"
+   ],
+   "was": null,
+   "now": "3e54bd23ad; green sidebar0-2; 3 mutations red",
+   "must_agree": [
+    "playlists_scan sidebar lanes"
+   ]
+  },
+  {
+   "finding": "M3 two list-size guard forms; menu_driver.h comment says guard the result, sites guard the list (lane-04 open question + readability L1 Q1 MEDIUM xmb.c:2415)",
+   "source": "review-code lane-04; readability L1",
+   "dim": "Q1",
+   "severity": "MEDIUM",
+   "verified": "yes; 14 list-guarded + 5 unguarded size reads; spec 2026-04-27 audit S2 chose option A (guard the result)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_driver.h",
+    "menu/drivers/xmb.c",
+    "menu/drivers/ozone.c"
+   ],
+   "was": null,
+   "now": "6b9ae30ccb MENU_LIST_GET_SELECTION_SIZE at 21 sites; no red run (nothing observable: list exists implies selection_buf[0])",
+   "must_agree": [
+    "docs/private/specs/2026-04-27-audit-spec-needed-cluster.md S2 (frozen)"
+   ]
+  },
+  {
+   "finding": "M4 ozone glyph_width unclamped beside materialui clamp (readability L1 Q1 HIGH; lane-04 M2 says cannot be 0)",
+   "source": "readability L1; review-code lane-04",
+   "dim": "Q1",
+   "severity": "HIGH",
+   "verified": "no: ozone_init_font raises font_size < 9 to 9 first, so glyph_width >= VIDEO_PX(6.75); lane-04 M2 agrees",
+   "disposition": "dismissed",
+   "why": "not a defect: the clamp is the font-size minimum just above the glyph width line",
+   "files": [
+    "menu/drivers/ozone.c"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "M5 ozone.c ozone_selection_changed guard comment gives only the filtered cause (readability L1 Q4)",
+   "source": "readability L1",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/drivers/ozone.c"
+   ],
+   "was": null,
+   "now": "00c1365670; comment only",
+   "must_agree": []
+  },
+  {
+   "finding": "M6 xmb.c comments cite Bundle 57 / Bundle 62 (readability L1 Q4)",
+   "source": "readability L1",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/drivers/xmb.c"
+   ],
+   "was": null,
+   "now": "00c1365670; comment only",
+   "must_agree": []
+  },
+  {
+   "finding": "M7 xmb.c tab_entry rename-history comment (readability L1 Q4)",
+   "source": "readability L1",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, comment at xmb.c tab_entry",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/drivers/xmb.c"
+   ],
+   "was": null,
+   "now": "00c1365670; comment only",
+   "must_agree": []
+  },
+  {
+   "finding": "M8 checker-driven /2 -> /2.0f changes move positions by sub-pixel, unstated (readability L1 tool?)",
+   "source": "readability L1",
+   "dim": "tool?",
+   "severity": "INFO",
+   "verified": "read: integer to float division on screen positions",
+   "disposition": "dismissed",
+   "why": "the /2.0f changes are the intended correction of truncating division; arithmetic that says what it means owes no comment",
+   "files": [],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "F1 configuration.c populate asserts fire after the unbounded write; gone under NDEBUG (lane-05 Low)",
+   "source": "review-code lane-05",
+   "dim": "7",
+   "severity": "LOW",
+   "verified": "yes, assert after unbounded GENERAL_SETTING write; measured fill bool 413/512",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "configuration.c"
+   ],
+   "was": null,
+   "now": "4fb733fb48; red/green by a scratch pool cut to 300: assert abort, then logged and passed; mutation: glibc heap abort",
+   "must_agree": [
+    "RETR-S0057 note"
+   ]
+  },
+  {
+   "finding": "F2 cheat_manager bits>=8 copy posts INFO for failure and success (lane-05 Low)",
+   "source": "review-code lane-05",
+   "dim": "4",
+   "severity": "LOW",
+   "verified": "yes, cheat_manager.c 8/16/32-bit copy all INFO",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "cheat_manager.c"
+   ],
+   "was": null,
+   "now": "6d9a85d2cc; no red run: styling only, no harness reaches cheat search",
+   "must_agree": []
+  },
+  {
+   "finding": "F3 config save writes credentials to 0644 .tmp and renames over 0600 file before chmod (lane-05 MEDIUM)",
+   "source": "review-code lane-05",
+   "dim": "9",
+   "severity": "MEDIUM",
+   "verified": "yes, but premise partly stale: credentials live in retroarch-keychain.cfg; same window there",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "configuration.c",
+    "libretro-common/file/config_file_io.c"
+   ],
+   "was": null,
+   "now": "e93352a139; red: 0600 and 0640 targets came back 0644; green 3 cases; 2 mutations red; e2e all 0600",
+   "must_agree": [
+    "CHANGES.md",
+    "configuration.c chmod comment"
+   ]
+  },
+  {
+   "finding": "N1 password setting shows set for empty WebDAV/S3 password when a cheevos token exists (lane-05 Low N1 + readability L2 lead)",
+   "source": "review-code lane-05; readability L2",
+   "dim": "2",
+   "severity": "LOW",
+   "verified": "yes, upstream binds the same callback to cloud-sync rows",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_setting.c"
+   ],
+   "was": null,
+   "now": "7d8e85f900; red: empty password shown ********; mutation red; S3 row not compiled (HAVE_S3 off)",
+   "must_agree": [
+    "CHANGES.md"
+   ]
+  },
+  {
+   "finding": "F4 retroarch.c main_exit dead if(menu_st) guard (lane-05, not a defect)",
+   "source": "review-code lane-05",
+   "dim": "-",
+   "severity": "INFO",
+   "verified": "read: retroarch.c main_exit if (menu_st)",
+   "disposition": "dismissed",
+   "why": "not a defect (lane-05 F4): menu_state_get_ptr() never returns NULL; the guard is dead and harmless in upstream code, and removing it is drift for no behaviour",
+   "files": [
+    "retroarch.c"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "G1 action_scan_input_desc inclusive <= END (lane-05 not a defect, latent; readability L2 lead + Q4 LOW menu_cbs_scan.c:38-45 overclaim)",
+   "source": "review-code lane-05; readability L2",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "read: <= END admits no real entry (only producer emits up to END-1); the comment overclaimed",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/cbs/menu_cbs_scan.c"
+   ],
+   "was": null,
+   "now": "019bc6d22b; comment states what the asserts prove",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-1 menu_setting.c comment names config_load_state and line ~9300 (readability L2 Q4 HIGH)",
+   "source": "readability L2",
+   "dim": "Q4",
+   "severity": "HIGH",
+   "verified": "yes, config_load_state does not exist",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_setting.c"
+   ],
+   "was": null,
+   "now": "019bc6d22b",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-2 menu_setting.c comment names menu_setting_initialize and line ~9894 (readability L2 Q4)",
+   "source": "readability L2",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, menu_setting_initialize does not exist; caller is settings_build_main_menu",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_setting.c"
+   ],
+   "was": null,
+   "now": "019bc6d22b",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-3 menu_driver.c comment cites lines 6616/6626 (readability L2 Q4)",
+   "source": "readability L2",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_driver.c"
+   ],
+   "was": null,
+   "now": "019bc6d22b",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-4 menu_driver.c history comment cites line 4543 (readability L2 Q4)",
+   "source": "readability L2",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_driver.c"
+   ],
+   "was": null,
+   "now": "019bc6d22b",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-5 task_pl_thumbnail_download.c dead if(pl_thumb) and history comment (readability L2 Q4)",
+   "source": "readability L2",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, pl_thumb checked at handler entry and used before",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_pl_thumbnail_download.c"
+   ],
+   "was": null,
+   "now": "cfe0305ac4",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-6 float-picker list loop pasted four times in menu_displaylist.c (readability L2 Q1 HIGH)",
+   "source": "readability L2",
+   "dim": "Q1",
+   "severity": "HIGH",
+   "verified": "yes, four copies in menu_displaylist.c",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_displaylist.c"
+   ],
+   "was": null,
+   "now": "92e1714540; 94 dropdowns dumped byte-identical before/after; mutation 86 differ",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-7 right-arrow libretro_device_type twin lacks the left-arrow's form and suppression (readability L2 Q1)",
+   "source": "readability L2",
+   "dim": "Q1",
+   "severity": "MEDIUM",
+   "verified": "yes; types >= 2 claim checked in libretro_device_get_size",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_setting.c"
+   ],
+   "was": null,
+   "now": "93b00d55f3",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-8 menu_cbs_scan.c points at retro_spsc.h for an assert pattern it lacks (readability L2 Q4)",
+   "source": "readability L2",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, retro_spsc.h has no such assert",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/cbs/menu_cbs_scan.c"
+   ],
+   "was": null,
+   "now": "019bc6d22b",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-10 menu_driver.h cites audit S2 / indie-review C1; calls STACK_SIZE sibling of GET_SELECTION (readability L2 Q4)",
+   "source": "readability L2",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_driver.h"
+   ],
+   "was": null,
+   "now": "6b9ae30ccb",
+   "must_agree": []
+  },
+  {
+   "finding": "R2-11 menu_setting.c guards explained by 'above' neighbours (readability L2 Q4)",
+   "source": "readability L2",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "menu/menu_setting.c"
+   ],
+   "was": null,
+   "now": "019bc6d22b",
+   "must_agree": []
+  },
+  {
+   "finding": "G2 explore_cancel size-2 read (lane-05 not a defect; readability L2 lead)",
+   "source": "review-code lane-05; readability L2",
+   "dim": "-",
+   "severity": "INFO",
+   "verified": "read: explore_cancel reached only above a pushed list; stack root never popped",
+   "disposition": "dismissed",
+   "why": "not a defect (lane-05 G2): size >= 2 holds whenever the line runs",
+   "files": [
+    "menu/menu_explore.c"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  }
+ ]
+}
