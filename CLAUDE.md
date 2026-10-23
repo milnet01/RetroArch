@@ -92,5 +92,7 @@ This checkout is a libretro/RetroArch fork carrying ongoing audit + refactor wor
 
 Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. When asked to "fold in" or "log a bundle", write it through `roadmap_log` on the audit branch — the roadmap store is the source of truth and the file is rendered from it; when asked to fix a finding, switch to the fixes-branch worktree.
 
+Before fixing a finding, fetch `upstream` and check `upstream/master` for a fix of the same defect. The fork lags upstream, and some upstream fixes are our own merged PRs. Where upstream has one, carry it with `git cherry-pick -x` rather than writing a second. Nothing checks this; the commit body names the upstream commit carried.
+
 `docs/private/audit/aggregate.py` is the fork's local audit-aggregator that drives `last_audit_summary` / `audit_run` MCP integrations; `.cppcheck-suppress.txt` at repo root holds the cppcheck inline-suppression set the aggregator respects. See `docs/private/AUDIT-POLICY.md` for the false-positive-pattern +
 suppression contract.
