@@ -166,6 +166,20 @@ jobs:
           timeout 60 ./natt_desc_parse_test
           echo "[pass] natt_desc_parse_test"
 
+      - name: Build and run translation_reply_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/tasks/translation_reply
+        run: |
+          set -eu
+          # The AI service's image reply is untrusted. The test
+          # #includes tasks/task_translation.c and feeds its frame path
+          # padded, top-down, short and malformed BMP and PNG replies,
+          # then reads back the frame the real scaler drew.
+          make clean all SANITIZER=address,undefined
+          test -x translation_reply_test
+          timeout 60 ./translation_reply_test
+          echo "[pass] translation_reply_test"
+
       - name: Build and run http_method_match_test (ASan)
         shell: bash
         working-directory: samples/tasks/http
