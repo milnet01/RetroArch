@@ -1453,9 +1453,7 @@ static void gl3_raster_font_render_msg(
    float video_msg_color_g;
    float video_msg_color_b;
 
-   /* Guard pointer derefs before reading dims/settings; the
-    * existing trailing check at the bottom of this prologue ran AFTER
-    * gl->video_dims was already dereferenced. */
+   /* Checked before gl->video_dims is read below. */
    if (!font || !msg || !*msg || !gl)
       return;
 

@@ -535,9 +535,6 @@ void gfx_ctx_wl_destroy_resources_common(gfx_ctx_wayland_data_t *wl)
    {
       display_output_t *od = wl_container_of(wl->all_outputs.next, od, link);
       output_info_t    *oi = od->output;
-      /* Unlink first so the list is in a consistent state before any
-       * downstream wl_output_destroy callback can re-enter and observe
-       * a half-freed entry. */
       wl_list_remove(&od->link);
       if (oi)
       {
@@ -1488,9 +1485,9 @@ bool gfx_ctx_wl_set_video_mode_common_fullscreen(gfx_ctx_wayland_data_t *wl,
       struct wl_output *output = NULL;
       int output_i             = 0;
 
-      /* Auto-monitor branch (index<=0) vs explicit-monitor branch (index>0).
-       * Hoisted out of the HAVE_LIBDECOR_H #ifdef so the else binding is
-       * unambiguous regardless of the preprocessor result.  See audit S3. */
+      /* Monitor index 0 is auto: a libdecor build leaves the output to
+       * the compositor, any other build uses the window's current
+       * output. An index above 0 names the output. */
       if (video_monitor_index <= 0)
       {
 #ifdef HAVE_LIBDECOR_H

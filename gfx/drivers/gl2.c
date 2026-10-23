@@ -2066,8 +2066,7 @@ static void gl2_renderchain_init(
 
    /* gl->shader and gl->shader_data are dereferenced below; guard
     * against NULL gl before reading them, and against zero shaders
-    * after. (Previously the gl deref happened before the gl NULL
-    * check, defeating it.) */
+    * after. */
    if (!gl)
       return;
 

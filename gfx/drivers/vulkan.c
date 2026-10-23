@@ -3260,9 +3260,8 @@ static int vulkan_font_get_message_width(void *data, const char *msg,
    vulkan_raster_t *font = (vulkan_raster_t*)data;
    int width             = 0;
 
-   /* Guard the font / font_driver / font_data derefs below; the
-    * earlier code read font->font_driver->get_glyph and font->font_data
-    * before the trailing NULL check fired. */
+   /* Checked before font_driver->get_glyph and font_data are read
+    * below. */
    if (     !font
          || !font->font_driver
          || !font->font_data )
