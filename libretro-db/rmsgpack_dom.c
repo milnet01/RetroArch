@@ -543,11 +543,7 @@ void rmsgpack_dom_reader_state_free(struct rmsgpack_dom_reader_state *state)
 
 int rmsgpack_dom_read(intfstream_t *fd, struct rmsgpack_dom_value *out)
 {
-   /* MAX_DEPTH is a #define constant (128), so this is a
-    * fixed-size C89 array, not a VLA - same lifetime as the prior
-    * alloca() but portable, and cppcheck no longer flags the
-    * "obsolete alloca" warning whose suggested fix (a VLA) is the
-    * project's explicit no-VLA C89 rule from CLAUDE.md. */
+   /* MAX_DEPTH is a compile-time constant: a fixed-size array. */
    struct rmsgpack_dom_value *stack_buf[MAX_DEPTH];
    struct rmsgpack_dom_reader_state s;
    s.i        = 0;

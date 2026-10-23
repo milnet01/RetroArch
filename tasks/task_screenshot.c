@@ -614,10 +614,8 @@ static bool screenshot_dump(
       }
       else
       {
-         /* The screenshot_dir-empty branch leaves new_screenshot_dir
-          * unwritten until the screenshots_in_content_dir fallback
-          * below; the original code then read its first byte at the
-          * `!*new_screenshot_dir` check, branching on garbage stack. */
+         /* Starts empty: when screenshot_dir is empty nothing writes
+          * it before the `!*new_screenshot_dir` check below reads it. */
          char new_screenshot_dir[DIR_MAX_LENGTH];
          new_screenshot_dir[0] = '\0';
 
@@ -718,8 +716,7 @@ static bool screenshot_dump(
    if (use_thread)
    {
       retro_task_t *task = task_init();
-      /* task_init() may return NULL on OOM. The recent OOM-hardening
-       * pass missed this site; the field writes below would NULL-deref. */
+      /* task_init() may return NULL on OOM. */
       if (!task)
       {
          if (state->out_buffer)

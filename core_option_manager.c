@@ -1158,10 +1158,8 @@ core_option_manager_t *core_option_manager_new(
       goto error;
 
    /* Create categories array. Size by cats_size (the number of
-    * declared categories), NOT by _len (the number of options). The
-    * old sizing -- calloc(_len, ...) but indexed up to cats_size in
-    * the parse loop below -- would heap-write OOB when a core
-    * declared more categories than options. */
+    * declared categories), NOT by _len (the number of options): the
+    * parse loop below indexes it up to cats_size. */
    if (cats_size > 0)
    {
       if (!(opt->cats = (struct core_category*)calloc(cats_size,

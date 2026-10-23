@@ -45,8 +45,8 @@ bool content_load_state_from_ram(void);
 /* Save a state to memory. */
 bool content_save_state_to_ram(void);
 
-/* Write "<path>.tmp" into @s. Returns false, and nothing may be
- * written, if the suffix does not fit in @len. */
+/* Write "<path>.tmp" into @s. Returns false if the suffix does not
+ * fit in @len; @s then holds a truncated path and must not be used. */
 bool content_tmp_path(char *s, size_t len, const char *path);
 
 /* Move a fully written temporary file over @path. Returns false if
