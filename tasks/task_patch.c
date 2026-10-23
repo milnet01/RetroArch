@@ -254,15 +254,12 @@ static enum patch_error bps_apply_patch(
    if (modify_source_size > bps.source_length)
       return PATCH_SOURCE_TOO_SMALL;
 
-   /* The patch declares a target size; ensure we have a valid buffer
-    * matching that size before any write. A malicious .bps with
-    * target_size == 0 (or with a buffer that wasn't supplied by the
-    * caller) would otherwise pass the > check and leave bps.target_data
-    * NULL, causing the SOURCE_READ/TARGET_READ/SOURCE_COPY/TARGET_COPY
-    * loops below to write through a NULL pointer. */
+   /* A patch whose output is empty yields no content to load. */
    if (modify_target_size == 0)
-      return PATCH_TARGET_ALLOC_FAILED;
+      return PATCH_PATCH_INVALID;
 
+   /* Every write below goes into bps.target_data, so allocate it when
+    * the caller supplied none or one smaller than the target. */
    if (modify_target_size > bps.target_length || !bps.target_data)
    {
       uint8_t *prov=(uint8_t*)malloc((size_t)modify_target_size);
