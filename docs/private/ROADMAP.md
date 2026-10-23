@@ -1606,6 +1606,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   resolution sort keys use unsigned format codes (4aa86abc37; upstream
   still has %d). The translation reply fixes are upstream's own
   a1bba98b1d, carried into the fork as 25b47aa239.
+  2026-10-23, user decision (asked directly): go ahead and open the
+  remaining candidate PRs one at a time, each checked against
+  upstream/master before it opens. First: the Playlists-tab Scan freeze
+  (473cd744ec).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2684,7 +2688,7 @@ current upstream first, so the player is built on current code.
   Kind: chore.
   Source: user-request-2026-09-25.
 
-- 📋 [RETR-0004] **PLAYER — RetroDB launches the fork's RetroArch in a player mode.**
+- 🚫 [RETR-0004] **PLAYER — RetroDB launches the fork's RetroArch in a player mode.**
   User's choices (2026-09-25): no new app, and no slim build for now. The
   fork provides a player profile: its own config directory, fullscreen, launch
   straight into the content, the in-game Quick Menu for settings, cheats and
@@ -2815,6 +2819,9 @@ current upstream first, so the player is built on current code.
   this item's premise, that RetroDB launches the fork, no longer holds;
   RetroDB sets the player profile through --config/--appendconfig. Kept
   open until the user says whether to drop it. Follow-up: RETR-0056.
+  2026-10-23, user decision: dropped. RetroDB plays official stable
+  RetroArch and sets its player profile through its own config files;
+  RETR-0056 carries the one follow-up.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
