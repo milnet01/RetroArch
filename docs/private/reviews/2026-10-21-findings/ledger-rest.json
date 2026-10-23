@@ -1,0 +1,428 @@
+{
+ "run": {
+  "cited_by": [
+   "network_cmd_bind_address: retroarch.cfg, command.h, configuration.c, mcp_server docs",
+   "audit S3 / Bundle 54 / line ~1175: no other hits"
+  ],
+  "swept": {
+   "retroarch.cfg network_cmd_bind_address": "agrees",
+   "command.h bind_address parameter": "agrees",
+   "samples/tasks/bps_patch mock": "agrees (no empty-target case)",
+   "dated review returns naming old comments": "frozen",
+   "pair list": "absent (.claude/code-pairs.json)"
+  },
+  "collateral": [],
+  "surfaced": [
+   "wayland libdecor: why a libdecor build lets the compositor pick the output is upstream's choice and unrecorded"
+  ],
+  "out_of_scope": [
+   "tasks/patch_stream.c streaming BPS: not checked for an empty target",
+   "task_overlay.c comment above the new one still tells history ('fixed in the same commit')",
+   "actionlint SC2046/SC2086 notes in Linux-samples-tasks.yml, pre-existing"
+  ],
+  "falsified": []
+ },
+ "findings": [
+  {
+   "finding": "T1 task_translation BMP: fixed 54-byte offset, no row padding, bfOffBits/biBitCount ignored",
+   "source": "review-code lane-08",
+   "dim": "2",
+   "severity": "LOW",
+   "verified": "yes, ra-fixes d18ec22158 task_translation.c BMP branch: fixed +54, stride w*3; upstream a1bba98b1d (#19743, ours, merged 2026-10-08) reads bfOffBits, pads rows, checks bpp; roadmap_query: no item",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_translation.c"
+   ],
+   "was": "fixed 54-byte offset, unpadded rows",
+   "now": "25b47aa239 carry of upstream a1bba98b1d; red 6 checks, green all lanes",
+   "must_agree": [
+    "samples/tasks/translation_reply in Linux-samples-tasks.yml"
+   ]
+  },
+  {
+   "finding": "T1a task_translation reads bytes 0-3 of a reply with only size>0 checked",
+   "source": "review-code lane-08",
+   "dim": "3",
+   "severity": "LOW",
+   "verified": "yes, widget path reads bytes 0-3 with no length check, in fork and in upstream/master",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_translation.c"
+   ],
+   "was": "bytes 0-3 read with size>0 only",
+   "now": "25b47aa239 (same carry: image_size >= 8 before both paths); widget half has no red run, harness lacks HAVE_GFX_WIDGETS",
+   "must_agree": []
+  },
+  {
+   "finding": "T1b task_translation RGB565 scaler out_stride in pixels, not bytes",
+   "source": "review-code lane-08",
+   "dim": "2",
+   "severity": "LOW",
+   "verified": "yes, RGB565 out_stride = W (pixels); upstream a1bba98b1d sets (int)pitch",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_translation.c"
+   ],
+   "was": "out_stride in pixels",
+   "now": "25b47aa239 (pitch); red: RGB565 lane bottom-right wrong",
+   "must_agree": []
+  },
+  {
+   "finding": "T2 ui_qt_widgets uint combo: duplicate items when step < 1",
+   "source": "review-code lane-08",
+   "dim": "2",
+   "severity": "LOW",
+   "verified": "no: only live UIntComboBox is the Aspect Ratio index (settings_def_aspect_ratio.h step 1); addUIntComboBox has no caller (grep); upstream code",
+   "disposition": "dismissed",
+   "why": "unreachable: no uint combo box has a step below 1; the populate loop is upstream's",
+   "files": [
+    "ui/drivers/ui_qt_widgets.cpp"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "T3 task_patch zero target size reported as ALLOC_FAILED; comment pins the wrong check (+ readability L8 Q5)",
+   "source": "review-code lane-08; readability L8",
+   "dim": "2 / Q5",
+   "severity": "LOW / MEDIUM",
+   "verified": "yes, task_patch.c: modify_target_size == 0 returns PATCH_TARGET_ALLOC_FAILED; fork-only line; !bps.target_data branch and per-action bound cover the NULL case",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_patch.c"
+   ],
+   "was": "empty target -> TARGET_ALLOC_FAILED",
+   "now": "ddbc4b489b PATCH_PATCH_INVALID; scratch #include test red rv=6, green rv=4",
+   "must_agree": [
+    "comment pins each check"
+   ]
+  },
+  {
+   "finding": "V1 wayland_common output teardown comment claims re-entrancy wl_output_destroy cannot cause (+ readability L7 lead)",
+   "source": "review-code lane-08; readability L7",
+   "dim": "2",
+   "severity": "LOW",
+   "verified": "yes, wayland_common.c output teardown comment; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "gfx/common/wayland_common.c"
+   ],
+   "was": "comment claimed wl_output_destroy re-entry",
+   "now": "cce9c3c187 comment removed",
+   "must_agree": []
+  },
+  {
+   "finding": "V2 v4l2_frame_times strdup failure skews debug timing",
+   "source": "review-code lane-08; readability L7 lead",
+   "dim": "-",
+   "severity": "INFO",
+   "verified": "read video_processor_v4l2.c v4l2_frame_times: strdup-failure return only skews the debug printout; both callers re-queue first",
+   "disposition": "dismissed",
+   "why": "not a defect: debug output only (lane-08 V2)",
+   "files": [
+    "cores/libretro-video-processor/video_processor_v4l2.c"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "V3 vulkan quad mvp sizeof data vs struct",
+   "source": "review-code lane-08; readability L7 lead",
+   "dim": "-",
+   "severity": "INFO",
+   "verified": "read matrix_4x4.h: struct holds only float data[16], so both sizeofs agree",
+   "disposition": "dismissed",
+   "why": "not a defect (lane-08 V3)",
+   "files": [
+    "gfx/drivers/vulkan.c"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "L4-1 network_cmd_bind_address comments still say the default is empty",
+   "source": "readability L4",
+   "dim": "Q4",
+   "severity": "HIGH",
+   "verified": "yes: fork default 127.0.0.1 (configuration.c); configuration.h and command.c comments (upstream text) still say empty is the default",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "configuration.h",
+    "command.c"
+   ],
+   "was": "comments said empty is the default",
+   "now": "82aecc53e7",
+   "must_agree": [
+    "retroarch.cfg network_cmd_bind_address text",
+    "command.h socket parameter note"
+   ]
+  },
+  {
+   "finding": "L4-2 cheat_manager two match-action switch copies diverge with no comment",
+   "source": "readability L4",
+   "dim": "Q1",
+   "severity": "MEDIUM",
+   "verified": "partly: both switch copies are upstream's; the category divergence was closed by menu F2 6d9a85d2cc",
+   "disposition": "dismissed",
+   "why": "the duplication is upstream's; the divergence the finding names was fixed in 6d9a85d2cc (menu F2); merging the copies is a refactor of upstream code, which the fork changes only for a fix (2026-10-22)",
+   "files": [
+    "cheat_manager.c"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "L4-3 retroarch.c FP note cites line ~1175",
+   "source": "readability L4",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, retroarch.c 'line ~1175'; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "retroarch.c"
+   ],
+   "was": "line ~1175",
+   "now": "5cd709a0a0",
+   "must_agree": []
+  },
+  {
+   "finding": "L4-4 retroarch.c menu_st comment cites line 1736 and Bundle 54",
+   "source": "readability L4",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, retroarch.c 'line 1736' and 'Bundle 54'; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "retroarch.c"
+   ],
+   "was": "line 1736, Bundle 54",
+   "now": "5cd709a0a0",
+   "must_agree": []
+  },
+  {
+   "finding": "L4-5 retroarch.c 'Other 8 driver tables' count",
+   "source": "readability L4",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, 'Other 8 driver tables'; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "retroarch.c"
+   ],
+   "was": "Other 8 driver tables",
+   "now": "5cd709a0a0",
+   "must_agree": []
+  },
+  {
+   "finding": "L4-6 driver.h says 'every' failure path; cloud_sync copy differs with no comment",
+   "source": "readability L4",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, driver.h 'every'; cloud_sync_driver.c copy is upstream's and differs",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "driver.h",
+    "network/cloud_sync_driver.c"
+   ],
+   "was": "'every'",
+   "now": "5cd709a0a0 (driver.h names the cloud-sync copy; upstream file untouched)",
+   "must_agree": []
+  },
+  {
+   "finding": "L4-7 configuration.c populate assert comment calls it a guard; TODO contradicts",
+   "source": "readability L4",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "no longer: the 'guard' comment was replaced by 4fb733fb48 (menu F1, runtime clamp); the to-do at the bool pool is upstream text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "configuration.c"
+   ],
+   "was": null,
+   "now": "fixed by 4fb733fb48 (menu group F1)",
+   "must_agree": []
+  },
+  {
+   "finding": "L4-8 content.h content_tmp_path doc: 'nothing may be written' but s holds a truncated path",
+   "source": "readability L4",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, content_tmp_path strlcpy's before the size check",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "content.h"
+   ],
+   "was": "'nothing may be written'",
+   "now": "7c20dcb545",
+   "must_agree": []
+  },
+  {
+   "finding": "L4-9 wasapi free: dead w checks after early return",
+   "source": "readability L4",
+   "dim": "Q5",
+   "severity": "LOW",
+   "verified": "yes, dead w checks; they are upstream lines, the early return is ours",
+   "disposition": "dismissed",
+   "why": "the dead checks are upstream lines and harmless; the fork changes upstream code only for a fix (2026-10-22)",
+   "files": [
+    "audio/drivers/wasapi.c"
+   ],
+   "was": null,
+   "now": null,
+   "must_agree": []
+  },
+  {
+   "finding": "L4-10 core_option_manager categories comment is bug history",
+   "source": "readability L4",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, core_option_manager.c categories comment; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "core_option_manager.c"
+   ],
+   "was": "bug-history comment",
+   "now": "7c20dcb545",
+   "must_agree": []
+  },
+  {
+   "finding": "L4-11 retroarch.c size_t i passed as int to find_driver_nonempty",
+   "source": "readability L4 (tool?)",
+   "dim": "tool?",
+   "severity": null,
+   "verified": "yes, driver_log_unknown size_t i into int parameter; fork function",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "retroarch.c"
+   ],
+   "was": "size_t i",
+   "now": "5cd709a0a0 int i; no red run",
+   "must_agree": []
+  },
+  {
+   "finding": "L7-1 gl3/vulkan/gl2 NULL-check comments tell history, cite a trailing check that is gone",
+   "source": "readability L7",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, gl3.c, vulkan.c, gl2.c; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "gfx/drivers/gl3.c",
+    "gfx/drivers/vulkan.c",
+    "gfx/drivers/gl2.c"
+   ],
+   "was": "history comments x3",
+   "now": "cce9c3c187",
+   "must_agree": []
+  },
+  {
+   "finding": "L7-2 wayland_common libdecor comment cites 'audit S3' and hoisting history; no reason given",
+   "source": "readability L7",
+   "dim": "Q4",
+   "severity": "MEDIUM",
+   "verified": "yes, 'See audit S3' and hoisting history; libdecor behaviour is upstream's, reason unrecorded",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "gfx/common/wayland_common.c"
+   ],
+   "was": "audit S3 + hoisting history",
+   "now": "cce9c3c187; why libdecor defers to the compositor is upstream's and unrecorded",
+   "must_agree": []
+  },
+  {
+   "finding": "L7-3 dispserv_win32 resolution format codes still %d beside fixed kms twin",
+   "source": "readability L7",
+   "dim": "Q1",
+   "severity": "LOW",
+   "verified": "yes, dispserv_win32.c %04dx%04d (%d Hz) with unsigned args; upstream code",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "gfx/display_servers/dispserv_win32.c"
+   ],
+   "was": "%d with unsigned",
+   "now": "4aa86abc37; mingw -Wformat 6 warnings -> 0",
+   "must_agree": []
+  },
+  {
+   "finding": "L8-1 task_overlay CANCELLED comment false (cleanup keys on pointers; cites lines 1071-1084)",
+   "source": "readability L8",
+   "dim": "Q4",
+   "severity": "HIGH",
+   "verified": "yes: task_overlay_free keys on pointers; the queue runs the callback whatever the flag (task_queue.c retire_callback)",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_overlay.c"
+   ],
+   "was": "false CANCELLED/line-range comment",
+   "now": "7c20dcb545",
+   "must_agree": []
+  },
+  {
+   "finding": "L8-3 rmsgpack_dom fixed array comment is history and repeats (128)",
+   "source": "readability L8",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, rmsgpack_dom.c comment; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "libretro-db/rmsgpack_dom.c"
+   ],
+   "was": "history + (128)",
+   "now": "7c20dcb545",
+   "must_agree": []
+  },
+  {
+   "finding": "L8-4 rmsgpack.c 'Explicit double cast' comment misleads",
+   "source": "readability L8",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, rmsgpack.c 'Explicit double cast'; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "libretro-db/rmsgpack.c"
+   ],
+   "was": "double cast comment",
+   "now": "7c20dcb545 line back to upstream's (int8_t)",
+   "must_agree": []
+  },
+  {
+   "finding": "L8-5 task_screenshot comments tell bug history ('original code', 'recent pass')",
+   "source": "readability L8",
+   "dim": "Q4",
+   "severity": "LOW",
+   "verified": "yes, task_screenshot.c two comments; fork text",
+   "disposition": "fixed",
+   "why": null,
+   "files": [
+    "tasks/task_screenshot.c"
+   ],
+   "was": "history comments x2",
+   "now": "7c20dcb545",
+   "must_agree": []
+  }
+ ]
+}

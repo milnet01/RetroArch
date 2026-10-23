@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=55 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=56 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1598,6 +1598,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   size_t values with %d (fixed on the fork in 4fb8369668). Small;
   send with another bsv change. The group's other fixes came from
   upstream.
+  2026-10-23: RetroDB relayed a user decision (retrodb-9d): submit the
+  remaining fork fixes upstream, each checked against upstream/master
+  first. Awaiting the user's direct go-ahead before any PR opens. Not a
+  candidate: the save-file fix, already upstream (c24fd90825, #19629).
+  New candidate from close-findings, rest group: dispserv_win32.c
+  resolution sort keys use unsigned format codes (4aa86abc37; upstream
+  still has %d). The translation reply fixes are upstream's own
+  a1bba98b1d, carried into the fork as 25b47aa239.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -1975,6 +1983,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   that does not compile with gcc 14+ (834e916357, carried from upstream
   a7dac33f35). Queued next door: RETR-0055. Next by the ruled order: the
   rest (lane-08 T1-T3, V1; return-L4, L7, L8).
+  2026-10-23: close-findings, rest group closed, the last of the ruled
+  order: 21 fixed, 5 dismissed (ledger-rest.json). Lane-08 T1, the short
+  reply read and the RGB565 stride were already fixed upstream by our own
+  #19743 (a1bba98b1d), carried as 25b47aa239 with its harness, now run
+  in Linux-samples-tasks.yml. T3 ddbc4b489b; dispserv_win32 4aa86abc37;
+  comment fixes 82aecc53e7, 5cd709a0a0, cce9c3c187, 7c20dcb545.
+  Dismissed: T2 (no combo box steps below 1), V2, V3 (not defects),
+  L4 cheat_manager merge and wasapi dead checks (upstream lines, changed
+  only for a fix). Local CI passed on the push of 7c20dcb545. All
+  2026-10-21 review groups are now closed.
   **Layman:** RetroArch will be able to update itself on Windows and as a Linux AppImage, asking first, and never where a store or package manager already handles updates.
   Kind: feature.
   Source: user-request-2026-10-02.
@@ -2791,6 +2809,12 @@ current upstream first, so the player is built on current code.
   <dir>/<core library_name>/<rom base>.cht, and
   apply_cheats_after_load. The slim player build must keep
   HAVE_CHEATS. Unverified: the layout inside the buildbot cheats.zip.
+  2026-10-23, user decision relayed by RetroDB (retrodb-9d, its message 838
+  and reply): RetroDB's player is official stable RetroArch 1.22.2,
+  pinned, moving to each next stable; no fork release for RetroDB. So
+  this item's premise, that RetroDB launches the fork, no longer holds;
+  RetroDB sets the player profile through --config/--appendconfig. Kept
+  open until the user says whether to drop it. Follow-up: RETR-0056.
   **Layman:** RetroDB starts a game straight away, fullscreen, with RetroArch's in-game menu for settings and cheats and no desktop menus.
   Kind: feature.
   Source: user-request-2026-09-25.
@@ -3671,3 +3695,15 @@ current upstream first, so the player is built on current code.
   Kind: audit-fix.
   Source: RETR-0033 fix pass 2026-10-09.
   Lanes: gfx/vita.
+
+- 📋 [RETR-0056] **Tell RetroDB when a stable RetroArch release carries network_cmd_bind_address.**
+  RetroDB pins official stable 1.22.2 (user decision 2026-10-23, see
+  RETR-0004). Upstream's network_cmd_bind_address (b5172edaa1) is in no
+  release tag yet. When a stable tag contains it (git tag --contains
+  b5172edaa1 after fetching upstream), send RetroDB (session_message to
+  "retrodb") the tag name, so it sets the address to 127.0.0.1 and bumps
+  its pin. Network commands are off by default in 1.22.2
+  (DEFAULT_NETWORK_CMD_ENABLE false), so nothing is exposed meanwhile.
+  **Layman:** When the next official RetroArch release includes the setting that keeps remote commands on this machine only, tell RetroDB so it can switch it on and update.
+  Kind: chore.
+  Source: retrodb-request-2026-10-23.
