@@ -153,8 +153,10 @@ int driver_find_index(const char *label, const char *drv);
 
 /**
  * Logs the canonical "Couldn't find any X named Y / available drivers
- * are: ... / default to first" warning sequence used by every
- * *_driver_find_driver() failure path. Driven by the same per-label
+ * are: ... / default to first" warning sequence used by the
+ * *_driver_find_driver() failure paths. cloud_sync_driver.c keeps its
+ * own copy: it is silent on an empty name and falls back to "null",
+ * not the first driver. Driven by the same per-label
  * registry as @c driver_find_index, so adding a new driver subsystem
  * to that dispatcher is enough to make this work for it too.
  *

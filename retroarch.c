@@ -1274,15 +1274,11 @@ static size_t find_driver_nonempty(
    }
    else if (!strcmp(label, "location_driver"))
    {
-      /* NULL-terminated driver table walked one-past-end intentionally
-       * (loop terminator).  clang-analyzer's security.ArrayBound check
-       * doesn't model the NULL sentinel and flags the in-bounds probe
-       * as OOB.  Same FP class as the audit's S4 / S11 driver-table
-       * suppressions in .cppcheck-suppress.txt (different tool, so
-       * NOLINT inline rather than a suppress file).  Other 8 driver
-       * tables in this function follow the same pattern but only the
-       * 2-element location_drivers (Linux default: location_null +
-       * NULL) tripped the checker. */
+      /* Reading the NULL that ends the table is in bounds, but
+       * clang-analyzer's security.ArrayBound check does not model the
+       * sentinel and flags it. The other driver tables here are read
+       * the same way; only the two-entry location_drivers (Linux:
+       * location_null and the NULL) trips the checker. */
       /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) */
       if (location_drivers[i])
          return strlcpy(s, location_drivers[i]->ident, len);
@@ -1389,7 +1385,7 @@ void driver_log_unknown(const char *label,
       const char *prefix, const char *drv,
       bool verbosity_enabled)
 {
-   size_t i;
+   int i;
    char ident[NAME_MAX_LENGTH];
 
    if (!verbosity_enabled)
@@ -1667,10 +1663,8 @@ void drivers_init(
 #endif
 #ifdef HAVE_MENU
    /* By default, we want the menu to persist through driver reinits.
-    * menu_state_get_ptr() returns &menu_driver_state (static struct
-    * address); the prior `if (menu_st)` defensive guard was dead and
-    * cued clang-analyzer to flag the unconditional read at line 1736
-    * as potentially-NULL.  Same dead-defensive class as Bundle 54. */
+    * menu_state_get_ptr() never returns NULL: it is the address of a
+    * static struct. */
    menu_st->flags             |= MENU_ST_FLAG_DATA_OWN;
 #endif
 
@@ -2456,7 +2450,7 @@ static struct string_list *string_list_new_special(
          break;
 #endif
       case STRING_LIST_LOCATION_DRIVERS:
-         /* See FP note at find_driver_nonempty (line ~1175). */
+         /* See the ArrayBound note in find_driver_nonempty. */
          /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) */
          for (i = 0; location_drivers[i]; i++)
          {
