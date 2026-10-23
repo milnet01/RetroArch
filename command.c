@@ -310,10 +310,9 @@ command_t* command_network_new(uint16_t port, const char *bind_address)
       goto error;
 
    /* An empty bind address means every interface (NULL server ->
-    * AI_PASSIVE -> 0.0.0.0), which is what this interface has always
-    * done. Anyone on that network can then send LOAD_CORE or
-    * WRITE_CORE_RAM, so users who only drive RetroArch from the same
-    * machine can set network_cmd_bind_address = "127.0.0.1". */
+    * AI_PASSIVE -> 0.0.0.0), where anyone on that network can send
+    * LOAD_CORE or WRITE_CORE_RAM. It is an opt-in: the default,
+    * 127.0.0.1, limits the interface to this machine. */
    if (bind_address && !*bind_address)
       bind_address = NULL;
 

@@ -1238,9 +1238,9 @@ typedef struct settings
        * desktop_menu_save_geometry is on. */
       char desktop_menu_options_window[48];
       char camera_device[NAME_MAX_LENGTH];
-      /* Address the network command interface binds to. Empty means
-       * every interface (the historical behaviour); 127.0.0.1 limits
-       * it to this machine. */
+      /* Address the network command interface binds to. The default,
+       * 127.0.0.1, limits it to this machine; empty means every
+       * interface. */
       char network_cmd_bind_address[NAME_MAX_LENGTH];
       char mcp_server_bind_address[NAME_MAX_LENGTH];
       char mcp_server_token[NAME_MAX_LENGTH];
