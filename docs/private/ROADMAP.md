@@ -1610,6 +1610,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   remaining candidate PRs one at a time, each checked against
   upstream/master before it opens. First: the Playlists-tab Scan freeze
   (473cd744ec).
+  2026-10-23: opened #19904 (pr/playlists-scan, on upstream 5333a7c5a5):
+  the Playlists-tab Scan freeze (fork 473cd744ec) and Ozone's sidebar
+  Scan freeze (fork 3e54bd23ad), with samples/menu/playlists_scan.
+  Non-Qt build in a temporary worktree: red on upstream (all four
+  drivers froze; sidebar 0 and 1 tabs failed), green after (seven
+  cases). review-readability ran first (one lane; return in
+  docs/private/reviews/2026-10-23-findings/): F1 was the sidebar loop,
+  now the second commit; F3, F4 and the random_range comment fixed in
+  the PR; F2 (copied build.sh) kept, as six upstream samples share it.
+  Those three comment fixes are in the PR only, not yet in the fork.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
