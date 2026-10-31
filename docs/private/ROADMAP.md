@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=56 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=57 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1632,6 +1632,21 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   #19837 and #19838 closed after landing under our authorship as
   8eb1f844e0, 6dd959ea8d and c88fc9b66e. Website session told all five
   on 2026-10-31. The remaining candidates stay unopened.
+  Checked 2026-10-31 against upstream 92b11d965b, by reading upstream's
+  code; the red/green run still comes with each PR.
+  Still live, can go: webdav rejected digest challenge (59e5bdd42a);
+  s3 query sort and out-of-memory signing (27b5c8d2fd, upstream's
+  s3_canonicalize_query_string does not sort at all); net_http
+  Content-Length garbage (ac53297f08); empty cloud-sync password shown
+  as set (7d8e85f900); config temporary and first credentials save
+  permissions (e93352a139); r7z folder walk (RETR-0044); bsv %d format
+  (in 4fb8369668); dispserv_win32 sort keys (4aa86abc37).
+  New candidate: game_ai_override_p1, _p2 and game_ai_show_debug are
+  never saved (fork fix in 87a23a5646); upstream has no code that
+  persists them. Not built here: HAVE_GAME_AI is off.
+  No longer candidates, upstream fixed them: r7z reset comment
+  (e51ea57c3f); cheat search message categories; GENERAL_SETTING's
+  bound (9033b5ef9d); Scan inside a playlist, RETR-0049 (bfb1a09ac4).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2208,6 +2223,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   checked against a published .sha256. Fix: store each folder's first
   pack index in the parse loop. Upstream code in vendored
   libretro-common: upstream PR candidate.
+  2026-10-31: still live on upstream 92b11d965b, now in four functions of
+  r7z_archive.c rather than one, so the fix is to store each folder's
+  first pack index once and use it at all four.
   **Layman:** Unpacking an archive with a huge number of tiny blocks gets slower and slower; only a tampered download could do this.
   Kind: perf.
   Source: review-code 2026-10-21 lane 3.
@@ -2262,7 +2280,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: close-findings 2026-10-21 (found while fixing cloud sync).
   Lanes: samples/network.
 
-- 📋 [RETR-0049] **LOW — Scan inside a playlist can, rarely, select one past the last entry.**
+- ✅ [RETR-0049] **LOW — Scan inside a playlist can, rarely, select one past the last entry.**
   menu_playlist_random_selection() (menu_driver.c) draws with
   random_range(start, total - 1), which returns total when rand() is
   within 64 of RAND_MAX: the float rounds the ratio to exactly 1.0,
@@ -2275,6 +2293,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Unverified: whether an empty list (total 0) can reach it; a playlist
   view normally carries a placeholder row.  Upstream code: PR
   candidate.
+  Fixed by upstream's random_range() in retro_math.h (bfb1a09ac4, which
+  landed our PR #19904 with the maintainer's change): the draw can no
+  longer pass max. In the fork since the 2026-10-31 merge, 6a44252e53.
   **Layman:** Very rarely, picking a random game in a playlist could point the menu one row past the end of the list.
   Kind: fix.
   Source: close-findings 2026-10-22 (found next door while fixing the menu group).
@@ -2395,6 +2416,24 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: fix.
   Source: close-findings 2026-10-22 (local-CI.sh group, next door: act:Linux-menu-harness.yml at 40fa0294e0).
   Lanes: samples/tasks/content_load, tasks/task_screenshot.c.
+
+- ✅ [RETR-0057] **SYNC — merge upstream master (92b11d965b) into local/fixes-2026-09.**
+  Merge commit 6a44252e53 on local/fixes-2026-09; its body lists how
+  the clashing files were settled and what the fork gave up. Follow-ups:
+  local-CI.sh rework (23ab0fe2af), self_update network
+  test link fix (1f6c129fb7). Pushed through the local gate, every job
+  PASS: c89, samples-tasks, samples-tasks-http, common-samples-codecs,
+  -formats and -core, config-fuzz, linux-i686, headless-i686.
+  Given up to upstream's versions: the fork's saving helpers, its
+  settings pool check, bsvmovie.c's checkpoint guards, and its copies
+  of samples upstream also added. No fork lane now covers a failed
+  rename keeping the old save; upstream's c24fd90825 made that fix.
+  Not checked: HAVE_GAME_AI builds (off here), and the act workflows,
+  which run on request. Upstream's new tools/ci_local.py also reads and
+  runs workflows; local-CI.sh was not compared against it.
+  **Layman:** Bring in the official project's month of changes without losing the fork's own features and fixes.
+  Kind: chore.
+  Source: user-request-2026-10-31.
 
 ### 📝 Cold-eyes 2026-07-04
 
