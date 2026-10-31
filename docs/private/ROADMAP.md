@@ -1668,6 +1668,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   length.
   2026-10-31: opened #19956 (pr/s3-query-order, on upstream 92b11d965b), two commits so either can land alone. First: the signer returns no signature when out of memory, for the canonical query (fork 27b5c8d2fd) and the canonical headers (new, found by the readability review, not yet in the fork). Second: s3_canonicalize_query_string sorts, which fixes nothing reachable today: every signed query is already in order; the PR says so. The fork's comparator is used; its canonicalizer was shortened, and the fork's copy still differs. Red on upstream for each; green under ASan+UBSan and TSan; mutations red (whole-string compare; leak on the out-of-memory exit). Full build and a real server not run. review-readability ran first (one lane; return in docs/private/reviews/2026-10-31-findings/): s3.c comment and name findings and the test's header comment fixed in the PR.
   #19954 at the same check: open, 75 passed, 76 pending, one failure: libsmb2 in Linux-library-net-backends ("seek/read/tell" in samples/network/smb_retro). The PR touches only webdav.c and its sample; the same job failed on another contributor's PR, gl2-views-init, on 2026-10-30 at a different stage, so it looks intermittent upstream, not ours. Not rerun: we have no rights there.
+  2026-10-31 evening: #19954 and #19956 are both open, no comments, 150
+  passed, one skipped, one failed: libsmb2, with the same message on
+  both ("SMB 2.0.2, HMAC-SHA256 signing (rc=5)", "seek/read/tell"). This
+  corrects the earlier note on #19954: the failure is not the PRs' and
+  does not look intermittent. retroarch-49 traced it to libsmb2
+  565460de50, which made smb2_context_active() return 0 for client
+  contexts (reported 6/6 fail with it, 6/6 pass on its parent; not rerun
+  here). Upstream fixed it in 2855f460d8, on upstream/master since
+  2026-10-31 13:12 and not in the PRs' base 92b11d965b. Neither PR was
+  rebased: CI on a rebase or re-run should clear the job, but that is
+  not yet shown.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
