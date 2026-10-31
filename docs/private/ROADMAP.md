@@ -1620,6 +1620,18 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   now the second commit; F3, F4 and the random_range comment fixed in
   the PR; F2 (copied build.sh) kept, as six upstream samples share it.
   Those three comment fixes are in the PR only, not yet in the fork.
+  Checked 2026-10-31: no upstream PR of ours is open. #19904 was closed
+  on 2026-10-24 by LibretroAdmin, who landed it under our authorship as
+  bfb1a09ac4 and 83776d8403. Their additions: random_range() fixed in
+  retro_math.h in place of the two local workarounds, with
+  samples/menu/random_range, and the sidebar scroll sound now checks
+  tab_selection. Neither commit is in local/fixes-2026-09 yet; the fork
+  gets them at the next upstream merge, and its merge base with
+  upstream/master is still 2026-10-01.
+  The 2026-10-15 set also ended: #19835 merged (92d9c02637); #19836,
+  #19837 and #19838 closed after landing under our authorship as
+  8eb1f844e0, 6dd959ea8d and c88fc9b66e. Website session told all five
+  on 2026-10-31. The remaining candidates stay unopened.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
