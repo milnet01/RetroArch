@@ -166,9 +166,19 @@ static uint64_t clock_step = 0;
 
 retro_time_t cpu_features_get_time_usec(void)
 {
-   retro_time_t t = (retro_time_t)clock_now;
-   clock_now     += clock_step;
-   return t;
+   /* Atomic: with a task parked, the worker's queue reads the clock
+    * while this thread's gather may too. */
+   return (retro_time_t)__atomic_fetch_add(&clock_now,
+         __atomic_load_n(&clock_step, __ATOMIC_RELAXED), __ATOMIC_RELAXED);
+}
+
+/* task_save.c's parks, counted on the way into the real queue. */
+static unsigned park_calls = 0;
+void __real_task_queue_park(retro_task_t *task, retro_time_t horizon_usec);
+void __wrap_task_queue_park(retro_task_t *task, retro_time_t horizon_usec)
+{
+   __atomic_fetch_add(&park_calls, 1, __ATOMIC_RELAXED);
+   __real_task_queue_park(task, horizon_usec);
 }
 
 /* The other half of not linking features_cpu.c.  intfstream_get_crc()
@@ -236,21 +246,19 @@ static void alloc_count_begin(void)
 
 static void alloc_count_end(void) { alloc_count_on = 0; }
 
-/* rename() as the VFS sees it.  With renames_fail set it refuses with
- * EBUSY and leaves both files alone: a sharing violation, which no
- * delete of the destination can clear. */
-static int renames_fail = 0;
+/* While set, every calloc() of a path-carrying size fails: what a
+ * save or load task allocating its result when it finishes would ask
+ * for.  The task's own state is allocated when it is pushed, before
+ * this is set. */
+static int calloc_fail_big = 0;
 
-extern int __real_rename(const char *old_path, const char *new_path);
+extern void *__real_calloc(size_t n, size_t size);
 
-int __wrap_rename(const char *old_path, const char *new_path)
+void *__wrap_calloc(size_t n, size_t size)
 {
-   if (renames_fail)
-   {
-      errno = EBUSY;
-      return -1;
-   }
-   return __real_rename(old_path, new_path);
+   if (calloc_fail_big && size && n >= PATH_MAX_LENGTH / size)
+      return NULL;
+   return __real_calloc(n, size);
 }
 
 static int ser_dest_calls = 0;
@@ -537,6 +545,75 @@ static void test_serialize_failure(void)
 }
 
 /* -----------------------------------------------------------------
+ * A save is written beside its slot and moved in only once whole: a
+ * save that fails over an existing state leaves that state as it was,
+ * and none leaves its temporary file behind.
+ * ----------------------------------------------------------------- */
+static bool tmp_exists(const char *path)
+{
+   char tmp[256];
+   snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+   return file_size(tmp) >= 0;
+}
+
+/* The slot no longer holds @old: a write into it has begun. */
+static bool written_into(const char *path, const void *old, int64_t n_old)
+{
+   void   *now = NULL;
+   int64_t n   = 0;
+   bool    changed;
+   if (!filestream_read_file(path, &now, &n))
+      return true;
+   changed = n != n_old || memcmp(now, old, (size_t)n_old);
+   free(now);
+   return changed;
+}
+
+static void test_failed_save_keeps_old(void)
+{
+   const char *path = "sst_keep.state";
+   size_t   sz      = 12 * TEST_SAVE_STATE_CHUNK;
+   void    *before  = NULL, *after = NULL;
+   int64_t  n_before = 0, n_after = 0;
+
+   frontend_reset();
+   core_fill(sz);
+   filestream_delete(path);
+   content_save_state(path, true);
+   pump(1000);
+   okf(!tmp_exists(path), "a save leaves nothing beside its slot");
+   if (!filestream_read_file(path, &before, &n_before))
+      n_before = -1;
+
+   /* A quantum a tick, cancelled two ticks into the write: whatever
+    * the save does first (keeping the old state for undo), the write
+    * has begun once the slot is open, beside it or in it. */
+   memset(core_mem, 0x5A, sz);
+   clock_step = TEST_TICK_BUDGET_US;
+   content_save_state(path, true);
+   {
+      int i;
+      for (i = 0; i < 1000 && !tmp_exists(path) && !written_into(path, before, n_before); i++)
+         task_queue_check();
+   }
+   task_queue_check();
+   task_queue_check();
+   task_queue_reset();
+   pump(1000);
+   clock_step = 0;
+
+   if (!filestream_read_file(path, &after, &n_after))
+      n_after = -2;
+   okf(n_before > 0 && n_after == n_before && !memcmp(before, after, (size_t)n_before),
+       "a save cancelled part-way over a state leaves that state as it was");
+   okf(!tmp_exists(path), "a cancelled save leaves nothing beside its slot");
+
+   free(before);
+   free(after);
+   filestream_delete(path);
+}
+
+/* -----------------------------------------------------------------
  * A background save defers only the core's serialize to the handler
  * - that deferral is the whole point of the core's
  * SET_SAVE_STATE_IN_BACKGROUND request - and a foreground save pays
@@ -775,6 +852,25 @@ static void test_blocking_exclusion(void)
    okf(file_size(second) == -1,
        "a second save is refused while one is in flight");
 
+   /* A load refused the same way leaves no load pending: left set, the
+    * flag held a content close and a movie recording waiting forever on
+    * a load that never comes. LeakSan covers what the refusal frees. */
+   {
+      const char *third = "sst_excl_c.state";
+      FILE       *f     = fopen(third, "wb");
+      bool        ok;
+      if (f)
+      {
+         fputs("not a state, never read", f);
+         fclose(f);
+      }
+      ok = content_load_state(third, false, false);
+      okf(!ok, "a load is refused while a save is in flight");
+      okf(!content_load_state_in_progress(NULL),
+          "the refused load is not left pending");
+      filestream_delete(third);
+   }
+
    pump(1000);
 
    okf(!queue_busy(), "the queue drains after the refusals");
@@ -853,6 +949,66 @@ static void test_threaded_roundtrip(void)
    okf(memcmp(expect, core_mem, sz) == 0,
        "threaded queue: round-trip is byte-exact");
 
+   free(expect);
+   filestream_delete(path);
+}
+
+/* A load pushed before the core's second frame waits for it parked, a
+ * look about once a frame, and loads once the frame is in.  The clock
+ * advances here so a park's horizon can pass. */
+static void test_threaded_load_waits_for_frames(void)
+{
+   const char *path = "sst_gate.state";
+   size_t sz        = 3 * TEST_SAVE_STATE_CHUNK + 5;
+   uint8_t *expect;
+   unsigned parks;
+   int i;
+
+   frontend_reset();
+   core_fill(sz);
+   expect = (uint8_t*)malloc(sz);
+   memcpy(expect, core_mem, sz);
+   filestream_delete(path);
+
+   content_save_state(path, true);
+   pump_threaded();
+   memset(core_mem, 0xA5, sz);
+
+   stub_video.frame_count = 0;
+   __atomic_store_n(&clock_step, 2000, __ATOMIC_RELAXED);
+   __atomic_store_n(&park_calls, 0, __ATOMIC_RELAXED);
+   content_load_state(path, false, false);
+   for (i = 0; i < 50; i++)
+   {
+      task_queue_check();
+      retro_sleep(1);
+   }
+   parks = __atomic_load_n(&park_calls, __ATOMIC_RELAXED);
+   okf(parks >= 1,
+       "threaded queue: a load before the second frame parks");
+   okf(parks <= 50,
+       "threaded queue: it looks about once a frame while it waits");
+   okf(memcmp(expect, core_mem, sz) != 0,
+       "threaded queue: nothing is loaded before the second frame");
+
+   /* With the clock stopped a parked task cannot come due, so once a
+    * pass in flight has settled the handler is not looking; a gather
+    * orders its last look before the write and the write before its
+    * next one. */
+   __atomic_store_n(&clock_step, 0, __ATOMIC_RELAXED);
+   for (i = 0; i < 20; i++)
+   {
+      task_queue_check();
+      retro_sleep(1);
+   }
+   stub_video.frame_count = 2;
+   task_queue_check();
+   __atomic_store_n(&clock_step, 2000, __ATOMIC_RELAXED);
+   pump_threaded();
+   okf(memcmp(expect, core_mem, sz) == 0,
+       "threaded queue: the state loads once the second frame is in");
+
+   __atomic_store_n(&clock_step, 0, __ATOMIC_RELAXED);
    free(expect);
    filestream_delete(path);
 }
@@ -1102,62 +1258,53 @@ static void test_close_waits_for_save(void)
 }
 
 /* -----------------------------------------------------------------
- * A rename that fails keeps the old file.
- *
- * Both replace paths - content_replace_file for states and SRAM,
- * filestream_write_file_atomic for the rest - used to delete the
- * destination and retry after any failed rename.  The VFS rename
- * already replaces, so the retry failed the same way and the last
- * good save was gone.
+ * A caller of content_save_state_notify / content_load_state_notify
+ * is told how its task ended even when nothing more can be
+ * allocated by then: a finishing task hands its own state to the
+ * callback rather than allocating a copy that may fail.
  * ----------------------------------------------------------------- */
-static long file_first_byte(const char *p)
+static unsigned told_calls;
+static int      told_error;
+static char     told_path[PATH_MAX_LENGTH];
+
+static void told_cb(retro_task_t *task, void *task_data,
+      void *user_data, const char *error)
 {
-   RFILE *f = filestream_open(p, RETRO_VFS_FILE_ACCESS_READ,
-         RETRO_VFS_FILE_ACCESS_HINT_NONE);
-   int c;
-   if (!f)
-      return -1;
-   c = filestream_getc(f);
-   filestream_close(f);
-   return c;
+   (void)task; (void)user_data;
+   told_calls++;
+   told_error = error != NULL;
+   strlcpy(told_path, task_data ? (const char*)task_data : "",
+         sizeof(told_path));
 }
 
-static void test_failed_rename_keeps_old_file(void)
+static void test_notify_without_allocation(void)
 {
-   const char *path     = "sst_replace.srm";
-   const char *tmp_path = "sst_replace.srm.tmp";
+   const char *path = "sst_notify.state";
+
+   frontend_reset();
+   core_fill(3 * TEST_SAVE_STATE_CHUNK);
+   filestream_delete(path);
+   clock_step = 0;
+
+   told_calls = 0;
+   okf(content_save_state_notify(path, true, told_cb, NULL),
+         "notified save is pushed");
+   calloc_fail_big = 1;
+   pump(1000);
+   calloc_fail_big = 0;
+   okf(told_calls == 1 && !told_error && !strcmp(told_path, path),
+         "notified save is told it was written, allocation failing");
+
+   told_calls = 0;
+   okf(content_load_state_notify(path, false, false, told_cb, NULL),
+         "notified load is pushed");
+   calloc_fail_big = 1;
+   pump(1000);
+   calloc_fail_big = 0;
+   okf(told_calls == 1 && !told_error && !strcmp(told_path, path),
+         "notified load is told it was applied, allocation failing");
 
    filestream_delete(path);
-   filestream_delete(tmp_path);
-   filestream_write_file(path, "O", 1);
-   filestream_write_file(tmp_path, "N", 1);
-
-   renames_fail = 1;
-   okf(!content_replace_file(tmp_path, path),
-       "content_replace_file reports a failed rename");
-   renames_fail = 0;
-   okf(file_first_byte(path) == 'O',
-       "content_replace_file keeps the old file when the rename fails");
-
-   filestream_write_file(tmp_path, "N", 1);
-   okf(content_replace_file(tmp_path, path)
-         && file_first_byte(path) == 'N'
-         && !path_is_valid(tmp_path),
-       "content_replace_file replaces the old file when the rename works");
-
-   filestream_write_file(path, "O", 1);
-   renames_fail = 1;
-   okf(!filestream_write_file_atomic(path, "N", 1),
-       "filestream_write_file_atomic reports a failed rename");
-   renames_fail = 0;
-   okf(file_first_byte(path) == 'O',
-       "filestream_write_file_atomic keeps the old file when the "
-       "rename fails");
-   okf(!path_is_valid(tmp_path),
-       "filestream_write_file_atomic leaves no temporary file behind");
-
-   filestream_delete(path);
-   filestream_delete(tmp_path);
 }
 
 static int run_default_lane(void)
@@ -1174,8 +1321,8 @@ static int run_default_lane(void)
    test_roundtrip(TEST_TICK_BUDGET_US,
          "round-trip is byte-exact at one quantum per tick");
    test_close_waits_for_save();
-   test_failed_rename_keeps_old_file();
    test_serialize_failure();
+   test_failed_save_keeps_old();
    test_background_serialize_timing();
    test_open_failure();
    test_truncated_state();
@@ -1185,6 +1332,7 @@ static int run_default_lane(void)
    test_undo_snapshot_grows();
    test_undo_snapshot_failure_keeps_previous();
    test_undo_allocates_nothing();
+   test_notify_without_allocation();
 
    content_reset_savestate_backups();
    task_queue_deinit();
@@ -1200,6 +1348,7 @@ static int run_threaded_lane(void)
    task_queue_init(true, msg_push_stub);
 
    test_threaded_roundtrip();
+   test_threaded_load_waits_for_frames();
 
    content_reset_savestate_backups();
    task_queue_deinit();

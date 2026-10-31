@@ -7,10 +7,11 @@
 /* Descriptor and configuration rows are #if defined(HAVE_NETWORKING) #if defined(HAVE_NETWORK_CMD); the string
  * tables always carry this row via the strings pass. */
 #if defined(HAVE_NETWORKING) && defined(HAVE_NETWORK_CMD) || defined(SETTINGS_DEF_STRINGS_PASS)
-S_BOOL_EX_NS(network_cmd_enable, NETWORK_CMD_ENABLE,
+S_BOOL_EX(network_cmd_enable, NETWORK_CMD_ENABLE,
       "network_cmd_enable",
       DEFAULT_NETWORK_CMD_ENABLE, SD_FLAG_ADVANCED, 0, 0, setting_bool_action_left_with_refresh, NULL, NULL, NULL, setting_bool_action_left_with_refresh, setting_bool_action_right_with_refresh, 0,
-      "Network Commands")
+      "Network Commands",
+      "Take commands from other programs over UDP, on the Network Command Port: what the hotkeys do, and more, such as loading content or reading a core's memory. Nothing is asked of the sender, so use it on a network you trust.")
 #endif
 /* The MCP server: the commands, as tools for AI assistants over the
  * Model Context Protocol. Off unless chosen; the token is registered
@@ -27,7 +28,9 @@ S_UINT_EX(mcp_server_port, MCP_SERVER_PORT,
       "MCP Server Port",
       "TCP port of the MCP server.")
 #endif
-#if defined(HAVE_MCP) && !defined(SETTINGS_DEF_CONFIG_PASS)
+/* Its label has to exist in every build, as the two above do: the
+ * translations name it whether or not the build has the server. */
+#if (defined(HAVE_MCP) || defined(SETTINGS_DEF_STRINGS_PASS)) && !defined(SETTINGS_DEF_CONFIG_PASS)
 S_STRING(mcp_server_token, MCP_SERVER_TOKEN,
       "mcp_server_token",
       "", SD_FLAG_ALLOW_INPUT, 0, NULL, NULL, setting_generic_action_start_default, NULL, NULL, NULL, ST_UI_TYPE_STRING_LINE_EDIT,

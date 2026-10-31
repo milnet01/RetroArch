@@ -33,7 +33,8 @@ cc_line=$(mktemp)
 ld_line=$(mktemp)
 trap 'rm -f "$cc_line" "$ld_line"' EXIT
 
-# The project's own compile line for retroarch.o ...
+# The project's own compile line for retroarch.o ...  make -n prints
+# it only for an out-of-date object, so mark the source changed.
 touch retroarch.c
 make -n 2>/dev/null | grep -E '\-o obj-unix/release/retroarch\.o' | head -1 > "$cc_line"
 if [ ! -s "$cc_line" ]; then

@@ -4,6 +4,8 @@
 #   make clean all SANITIZER=address,undefined && ./net_http_semantics_test
 #   make clean all SANITIZER=thread && ./net_http_semantics_test
 
+include ../../sample_objdir.mk
+
 compiler     := gcc
 TARGET       := net_http_semantics_test
 
@@ -33,10 +35,13 @@ SOURCES_C := \
 	$(LIBRETRO_COMM_DIR)/compat/compat_posix_string.c \
 	$(LIBRETRO_COMM_DIR)/compat/fopen_utf8.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_utf.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_base64.c \
 	$(LIBRETRO_COMM_DIR)/time/rtime.c
 
-CFLAGS  += -Wall -std=gnu99 -O1 -g $(INCDIRS)
+CFLAGS  += -Wall -std=gnu99 -O1 -g1 $(INCDIRS)
 CFLAGS  += -DHAVE_NETWORKING -DHAVE_THREADS -D_GNU_SOURCE
+# A stall bound short enough to test: STALL_MS in the test.
+CFLAGS  += "-DNET_HTTP_STALL_TIMEOUT=((retro_time_t)600 * 1000)"
 # The buffer-growth cases read the largest realloc() net_http asks for,
 # the header cases count allocations.
 LDFLAGS += -Wl,--wrap=realloc,--wrap=malloc,--wrap=calloc,--wrap=strdup -lpthread -lm
@@ -46,11 +51,15 @@ ifneq ($(SANITIZER),)
    LDFLAGS := -fsanitize=$(SANITIZER) $(LDFLAGS)
 endif
 
-OBJS := $(SOURCES_C:.c=.o)
+OBJS := $(call sample_objs,$(SOURCES_C:.c=.o))
 
 all: $(TARGET)
 
 %.o: %.c
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+$(SAMPLE_OBJDIR)/%.o: $$(call sample_src,$$*).c
+	@mkdir -p $(@D)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 $(TARGET): $(OBJS)
@@ -60,6 +69,7 @@ check: $(TARGET)
 	./$(TARGET)
 
 clean:
+	rm -rf $(SAMPLE_OBJDIR)
 	rm -f $(TARGET) $(OBJS)
 
 .PHONY: all check clean

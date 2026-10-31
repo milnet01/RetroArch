@@ -359,6 +359,62 @@ static void test_redirect_scheme(void)
    net_http_deinit();
 }
 
+#define CRED_HEADERS "Authorization: Basic dTpw\r\n" \
+                     "X-Keep: 1\r\n" \
+                     "cookie: s=1\r\n"
+
+static struct http_t *cred_state(const char *url)
+{
+   struct http_t *h;
+   struct http_connection_t *conn =
+      net_http_connection_new(url, "GET", NULL);
+   net_http_connection_set_headers(conn, CRED_HEADERS);
+   net_http_connection_iterate(conn);
+   net_http_connection_done(conn);
+   h = net_http_new(conn);
+   net_http_connection_free(conn);
+   return h;
+}
+
+/* Authorization and Cookie stay with the host and port they were sent
+ * to; other headers follow every redirect. */
+static void test_redirect_credentials(void)
+{
+   struct http_t *h;
+
+   net_http_init();
+   h = cred_state("https://example.invalid/a");
+   check(h && !net_http_redirect(h, "/b")
+         && !strcmp(h->request.headers, CRED_HEADERS),
+         "a redirect on the same host keeps the credentials");
+   net_http_delete(h);
+
+   h = cred_state("https://example.invalid/a");
+   check(h && !net_http_redirect(h, "https://EXAMPLE.invalid/b")
+         && !strcmp(h->request.headers, CRED_HEADERS),
+         "the host compares without case");
+   net_http_delete(h);
+
+   h = cred_state("https://example.invalid/a");
+   check(h && !net_http_redirect(h, "https://other.invalid/b")
+         && !strcmp(h->request.headers, "X-Keep: 1\r\n"),
+         "another host gets neither Authorization nor Cookie");
+   net_http_delete(h);
+
+   h = cred_state("https://example.invalid/a");
+   check(h && !net_http_redirect(h, "https://example.invalid:8443/b")
+         && !strcmp(h->request.headers, "X-Keep: 1\r\n"),
+         "another port gets neither Authorization nor Cookie");
+   net_http_delete(h);
+
+   h = cred_state("http://example.invalid/a");
+   check(h && !net_http_redirect(h, "https://example.invalid/b")
+         && h->ssl && !strcmp(h->request.headers, CRED_HEADERS),
+         "the same host moving onto https keeps the credentials");
+   net_http_delete(h);
+   net_http_deinit();
+}
+
 int main(void)
 {
    test_dns_cap();
@@ -366,6 +422,7 @@ int main(void)
    test_family_fallback();
    test_ipv6_literals();
    test_redirect_scheme();
+   test_redirect_credentials();
    if (failures)
    {
       printf("%d check(s) failed\n", failures);

@@ -1,7 +1,10 @@
+include ../../sample_objdir.mk
+
 TARGET := rpng
 TARGET_TEST := rpng_chunk_overflow_test
 TARGET_TEST2 := rpng_roundtrip_test
 TARGET_TEST3 := rpng_decode_corpus_test
+TARGET_TEST4 := rpng_apng_bounds_test
 
 CORE_DIR          := .
 LIBRETRO_PNG_DIR  := ../../../formats/png
@@ -96,26 +99,47 @@ TEST2_SOURCES_C := \
 # filter type forced per scanline, across every colour type, bit depth
 # and a width sweep - and decodes them with rpng, so it needs the
 # decoder, the CRC used to seal the chunks it writes, and the deflate
-# backend it compresses them with.  No file I/O and no second decoder as
-# an oracle: the expected pixels are a function of position, so the
-# generator knows them.
+# backend it compresses them with (rtime.c for features_cpu.c, whose
+# retro_sleep_us is a function only on Windows).  No file I/O and no
+# second decoder as an oracle: the expected pixels are a function of
+# position, so the generator knows them.
 TEST3_SOURCES_C := \
 	$(CORE_DIR)/rpng_decode_corpus_test.c \
 	$(LIBRETRO_PNG_DIR)/rpng.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_crc32.c \
 	$(LIBRETRO_COMM_DIR)/features/features_cpu.c \
+	$(LIBRETRO_COMM_DIR)/time/rtime.c \
 	$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
 	$(LIBRETRO_COMM_DIR)/streams/trans_stream.c \
 	$(LIBRETRO_COMM_DIR)/streams/trans_stream_pipe.c \
 	$(LIBRETRO_COMM_DIR)/streams/trans_stream_deflate.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_deflate.c
 
-OBJS := $(SOURCES_C:.c=.o)
-TEST_OBJS := $(TEST_SOURCES_C:.c=.o)
-TEST2_OBJS := $(TEST2_SOURCES_C:.c=.o)
-TEST3_OBJS := $(TEST3_SOURCES_C:.c=.corpus.o)
+# The APNG bounds test builds animated PNGs in memory from stored
+# deflate blocks and opens them through the APNG stream, so it needs the
+# APNG indexer/compositor, the still decoder it hands each frame to, and
+# the CRC that seals the chunks it writes.  rtime.c is there for
+# features_cpu.c, whose retro_sleep_us is a function only on Windows.
+TEST4_SOURCES_C := \
+	$(CORE_DIR)/rpng_apng_bounds_test.c \
+	$(LIBRETRO_PNG_DIR)/rpng_apng.c \
+	$(LIBRETRO_PNG_DIR)/rpng.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_crc32.c \
+	$(LIBRETRO_COMM_DIR)/features/features_cpu.c \
+	$(LIBRETRO_COMM_DIR)/time/rtime.c \
+	$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
+	$(LIBRETRO_COMM_DIR)/streams/trans_stream.c \
+	$(LIBRETRO_COMM_DIR)/streams/trans_stream_pipe.c \
+	$(LIBRETRO_COMM_DIR)/streams/trans_stream_deflate.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_deflate.c
 
-CFLAGS += -Wall -pedantic -std=gnu99 -O0 -g -I$(LIBRETRO_COMM_DIR)/include
+OBJS := $(call sample_objs,$(SOURCES_C:.c=.o))
+TEST4_OBJS := $(call sample_objs,$(TEST4_SOURCES_C:.c=.o))
+TEST_OBJS := $(call sample_objs,$(TEST_SOURCES_C:.c=.o))
+TEST2_OBJS := $(call sample_objs,$(TEST2_SOURCES_C:.c=.o))
+TEST3_OBJS := $(call sample_objs,$(TEST3_SOURCES_C:.c=.corpus.o))
+
+CFLAGS += -Wall -pedantic -std=gnu99 -O0 -g1 -I$(LIBRETRO_COMM_DIR)/include
 
 # The corpus test decodes ~2000 generated images.  RPNG_TEST turns on
 # rpng.c's per-image IHDR trace, which would bury the CI log (and any
@@ -125,16 +149,25 @@ CORPUS_CFLAGS := $(CFLAGS)
 CFLAGS        += -DRPNG_TEST
 
 ifneq ($(SANITIZER),)
-   CFLAGS  := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer $(CFLAGS)
-   LDFLAGS := -fsanitize=$(SANITIZER) $(LDFLAGS)
+   CFLAGS        := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer $(CFLAGS)
+   CORPUS_CFLAGS := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer $(CORPUS_CFLAGS)
+   LDFLAGS       := -fsanitize=$(SANITIZER) $(LDFLAGS)
 endif
 
-all: $(TARGET) $(TARGET_TEST) $(TARGET_TEST2) $(TARGET_TEST3)
+all: $(TARGET) $(TARGET_TEST) $(TARGET_TEST2) $(TARGET_TEST3) $(TARGET_TEST4)
 
 %.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
+$(SAMPLE_OBJDIR)/%.o: $$(call sample_src,$$*).c
+	@mkdir -p $(@D)
+	$(CC) -c -o $@ $< $(CFLAGS)
+
 %.corpus.o: %.c
+	$(CC) -c -o $@ $< $(CORPUS_CFLAGS)
+
+$(SAMPLE_OBJDIR)/%.corpus.o: $$(call sample_src,$$*).c
+	@mkdir -p $(@D)
 	$(CC) -c -o $@ $< $(CORPUS_CFLAGS)
 
 $(TARGET): $(OBJS)
@@ -149,8 +182,12 @@ $(TARGET_TEST2): $(TEST2_OBJS)
 $(TARGET_TEST3): $(TEST3_OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+$(TARGET_TEST4): $(TEST4_OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
 clean:
-	rm -f $(TARGET) $(TARGET_TEST) $(TARGET_TEST2) $(TARGET_TEST3) \
-		$(OBJS) $(TEST_OBJS) $(TEST2_OBJS) $(TEST3_OBJS)
+	rm -rf $(SAMPLE_OBJDIR)
+	rm -f $(TARGET) $(TARGET_TEST) $(TARGET_TEST2) $(TARGET_TEST3) $(TARGET_TEST4) \
+		$(OBJS) $(TEST_OBJS) $(TEST2_OBJS) $(TEST3_OBJS) $(TEST4_OBJS)
 
 .PHONY: clean

@@ -8,7 +8,11 @@
  * to a real identifier (a label missing from msg_hash_lbl.h resolves
  * to "null", and the push then finds no list: the screen came up as
  * an empty "null" browser, which is the field report), and opening
- * each screen yields its rows. */
+ * each screen yields its rows. With Cloud Sync on the SMB or NFS
+ * driver, the entry that opens the share settings it uses is in the
+ * Cloud Sync screen too, under that driver only, and does what the
+ * Network one does. Minimum Audio Latency is reachable from Settings >
+ * Latency, and picking from its list sets the value picked. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +33,8 @@
 #include "../../../configuration.h"
 #include "../../../retroarch.h"
 #include "../../../config.def.h"
+#include "../../../gfx/gfx_display.h"
+#include "../../../gfx/gfx_animation.h"
 #include "../../../menu/menu_setting.h"
 #include "../../../menu/menu_entries.h"
 #include "../../../frontend/frontend_driver.h"
@@ -83,6 +89,28 @@ static bool list_has_label(const char *label)
    return false;
 }
 
+static menu_file_list_cbs_t *entry_cbs(const char *label)
+{
+   file_list_t *buf = selection_buf();
+   size_t i;
+   for (i = 0; buf && i < buf->size; i++)
+      if (string_is_equal(buf->list[i].label, label))
+         return (menu_file_list_cbs_t*)buf->list[i].actiondata;
+   return NULL;
+}
+
+#ifdef HAVE_CLOUDSYNC
+/* Opens Settings > Cloud Sync with @driver as the Cloud Sync driver. */
+static size_t open_cloud_sync(const char *driver)
+{
+   strlcpy(config_get_ptr()->arrays.cloud_sync_driver, driver,
+         sizeof(config_get_ptr()->arrays.cloud_sync_driver));
+   return open_list(DISPLAYLIST_CLOUD_SYNC_SETTINGS_LIST,
+         msg_hash_to_str(MENU_ENUM_LABEL_DEFERRED_CLOUD_SYNC_SETTINGS_LIST),
+         MENU_ENUM_LABEL_DEFERRED_CLOUD_SYNC_SETTINGS_LIST);
+}
+#endif
+
 /* Opens @e's dropdown, the list a click on the setting shows, and runs
  * the OK action of the row reading @want, as picking it does. Returns
  * the setting's value afterwards, or -1 when the row is not listed. */
@@ -128,15 +156,77 @@ static long pick_uint(enum msg_hash_enums e, const char *want)
    return -1;
 }
 
+static void media_settings(const char *cfg_path)
+{
+   settings_t *settings = config_get_ptr();
+   file_list_t *buf;
+   menu_file_list_cbs_t *cbs;
+   size_t i;
+   bool found = false;
+   bool show_browser = settings->bools.settings_show_file_browser;
+   bool kiosk = settings->bools.kiosk_mode_enable;
+   config_file_t *cfg;
+   unsigned seek = 0, timeout = 1;
+   CHECK(settings->uints.media_player_seek_seconds == 5
+         && settings->uints.media_player_controls_timeout == 3, "media control defaults");
+   settings->bools.settings_show_file_browser = true;
+   settings->bools.kiosk_mode_enable = false;
+   open_list(DISPLAYLIST_LOAD_CONTENT_LIST,
+         MENU_ENUM_LABEL_LOAD_CONTENT_LIST_STR, MENU_ENUM_LABEL_LOAD_CONTENT_LIST);
+   buf = selection_buf();
+   for (i = 0; buf && i + 1 < buf->size; i++)
+      if (string_is_equal(buf->list[i].label, MENU_ENUM_LABEL_MENU_FILE_BROWSER_SETTINGS_STR))
+      {
+         found = string_is_equal(buf->list[i + 1].label, MENU_ENUM_LABEL_MEDIA_PLAYER_SETTINGS_STR);
+         break;
+      }
+   CHECK(found, "Media Player appears directly below File Browser");
+   cbs = entry_cbs(MENU_ENUM_LABEL_MEDIA_PLAYER_SETTINGS_STR);
+   CHECK(cbs && cbs->action_ok, "Media Player has an OK action");
+   CHECK(string_is_equal(msg_hash_to_str(MENU_ENUM_LABEL_DEFERRED_MEDIA_PLAYER_SETTINGS_LIST),
+            MENU_ENUM_LABEL_DEFERRED_MEDIA_PLAYER_SETTINGS_LIST_STR), "deferred media label resolves");
+   if (found && cbs && cbs->action_ok)
+   {
+      i++;
+      cbs->action_ok(buf->list[i].path, buf->list[i].label, buf->list[i].type, i, 0);
+      menu_driver_iterate(menu_state_get_ptr(), disp_get_ptr(), anim_get_ptr(),
+            settings, MENU_ACTION_NOOP, cpu_features_get_time_usec());
+      CHECK(list_has_label(MENU_ENUM_LABEL_MEDIA_PLAYER_SEEK_SECONDS_STR)
+            && list_has_label(MENU_ENUM_LABEL_MEDIA_PLAYER_CONTROLS_TIMEOUT_STR),
+            "Media Player OK opens both backed settings");
+   }
+   CHECK(pick_uint(MENU_ENUM_LABEL_MEDIA_PLAYER_SEEK_SECONDS, "12") == 12, "seek step is editable");
+   CHECK(pick_uint(MENU_ENUM_LABEL_MEDIA_PLAYER_SEEK_SECONDS, "0") == -1, "zero seek step is not offered");
+   CHECK(pick_uint(MENU_ENUM_LABEL_MEDIA_PLAYER_CONTROLS_TIMEOUT, "0") == 0, "controls can remain visible");
+   CHECK(config_save_file(cfg_path), "media settings save");
+   cfg = config_file_new_from_path_to_string(cfg_path);
+   CHECK(cfg && config_get_uint(cfg, "media_player_seek_seconds", &seek) && seek == 12
+         && config_get_uint(cfg, "media_player_controls_timeout", &timeout) && timeout == 0,
+         "saved media settings retain selected values");
+   if (cfg) config_file_free(cfg);
+   settings->bools.kiosk_mode_enable = true;
+   open_list(DISPLAYLIST_LOAD_CONTENT_LIST,
+         MENU_ENUM_LABEL_LOAD_CONTENT_LIST_STR, MENU_ENUM_LABEL_LOAD_CONTENT_LIST);
+   CHECK(!list_has_label(MENU_ENUM_LABEL_MEDIA_PLAYER_SETTINGS_STR), "kiosk hides media settings");
+   settings->bools.kiosk_mode_enable = false;
+   settings->bools.settings_show_file_browser = false;
+   open_list(DISPLAYLIST_LOAD_CONTENT_LIST,
+         MENU_ENUM_LABEL_LOAD_CONTENT_LIST_STR, MENU_ENUM_LABEL_LOAD_CONTENT_LIST);
+   CHECK(!list_has_label(MENU_ENUM_LABEL_MEDIA_PLAYER_SETTINGS_STR), "browser settings visibility respected");
+   settings->bools.settings_show_file_browser = show_browser;
+   settings->bools.kiosk_mode_enable = kiosk;
+}
+
 int main(int argc, char *argv[])
 {
    static char cfg_path[640];
    char fixture_dir[128], cmd[300];
    char *rarch_argv[8];
    int rarch_argc = 0;
+   const char *menu_driver = argc > 1 ? argv[1] : "rgui";
    size_t n;
 
-   (void)argc; (void)argv;
+
    snprintf(fixture_dir, sizeof(fixture_dir), "/tmp/menu_net_%ld", (long)getpid());
    snprintf(cmd, sizeof(cmd), "mkdir -p %s", fixture_dir);
    if (system(cmd) != 0)
@@ -148,8 +238,11 @@ int main(int argc, char *argv[])
          return 1;
       fprintf(cfg, "video_driver = \"null\"\naudio_driver = \"null\"\n"
             "input_driver = \"null\"\ninput_joypad_driver = \"null\"\n"
-            "menu_driver = \"rgui\"\nvideo_threaded = \"false\"\n"
-            "smb_client_enable = \"true\"\n");
+            "menu_driver = \"%s\"\nvideo_threaded = \"false\"\n"
+            "smb_client_enable = \"true\"\n", menu_driver);
+#if defined(HAVE_CLOUDSYNC) && defined(HAVE_NFSCLIENT)
+      fprintf(cfg, "cloud_sync_nfs_subdir = \"retroarch\"\n");
+#endif
       fclose(cfg);
    }
    rarch_argv[rarch_argc++] = (char*)"retroarch";
@@ -172,6 +265,9 @@ int main(int argc, char *argv[])
       fprintf(stderr, "FAIL: the menu came up without an entry list\n");
       return 1;
    }
+
+   CHECK(string_is_equal(menu_driver_ident(), menu_driver), "requested menu initialized");
+   media_settings(cfg_path);
 
    /* the labels the deferred lists are pushed with must be identifiers */
 #ifdef HAVE_SMBCLIENT
@@ -198,6 +294,83 @@ int main(int argc, char *argv[])
 #ifdef HAVE_NFSCLIENT
    CHECK(list_has_label(MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS_STR), "NFS Network Settings is under Settings > Network");
 #endif
+
+   /* the OK action each Network entry runs, to compare with the
+    * Cloud Sync screen's */
+   {
+#if defined(HAVE_CLOUDSYNC) && (defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT))
+      menu_file_list_cbs_t *cbs;
+#endif
+#if defined(HAVE_CLOUDSYNC) && defined(HAVE_SMBCLIENT)
+      int (*smb_ok)(const char*, const char*, unsigned, size_t, size_t) = NULL;
+#endif
+#if defined(HAVE_CLOUDSYNC) && defined(HAVE_NFSCLIENT)
+      int (*nfs_ok)(const char*, const char*, unsigned, size_t, size_t) = NULL;
+#endif
+#if defined(HAVE_CLOUDSYNC) && defined(HAVE_SMBCLIENT)
+      if ((cbs = entry_cbs(MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS_STR)))
+         smb_ok = cbs->action_ok;
+#endif
+#if defined(HAVE_CLOUDSYNC) && defined(HAVE_NFSCLIENT)
+      if ((cbs = entry_cbs(MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS_STR)))
+         nfs_ok = cbs->action_ok;
+#endif
+#ifdef HAVE_CLOUDSYNC
+#ifdef HAVE_NFSCLIENT
+      n = open_cloud_sync("nfs");
+      CHECK(n > 0 && list_has_label(MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS_STR),
+            "Cloud Sync on NFS shows NFS Network Settings");
+      CHECK(list_has_label(MENU_ENUM_LABEL_CLOUD_SYNC_NFS_SUBDIR_STR),
+            "Cloud Sync on NFS shows its sync subdirectory");
+      CHECK(string_is_equal(config_get_ptr()->arrays.cloud_sync_nfs_subdir, "retroarch"),
+            "NFS sync subdirectory loads from config");
+      CHECK(config_save_file(cfg_path), "NFS sync settings save to config");
+      {
+         config_file_t *cfg = config_file_new_from_path_to_string(cfg_path);
+         char subdir[PATH_MAX_LENGTH];
+         CHECK(cfg && config_get_array(cfg, "cloud_sync_nfs_subdir", subdir, sizeof(subdir))
+               && string_is_equal(subdir, "retroarch"),
+               "NFS sync subdirectory is preserved in saved config");
+         if (cfg)
+            config_file_free(cfg);
+      }
+      CHECK(nfs_ok && (cbs = entry_cbs(MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS_STR))
+            && cbs->action_ok == nfs_ok,
+            "... and it opens what the Network entry opens");
+#ifdef HAVE_SMBCLIENT
+      CHECK(!list_has_label(MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS_STR),
+            "Cloud Sync on NFS does not show SMB Network Settings");
+#endif
+#endif
+#ifdef HAVE_SMBCLIENT
+      n = open_cloud_sync("smb");
+      CHECK(n > 0 && list_has_label(MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS_STR),
+            "Cloud Sync on SMB shows SMB Network Settings");
+      CHECK(smb_ok && (cbs = entry_cbs(MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS_STR))
+            && cbs->action_ok == smb_ok,
+            "... and it opens what the Network entry opens");
+#ifdef HAVE_NFSCLIENT
+      CHECK(!list_has_label(MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS_STR),
+            "Cloud Sync on SMB does not show NFS Network Settings");
+      CHECK(!list_has_label(MENU_ENUM_LABEL_CLOUD_SYNC_NFS_SUBDIR_STR),
+            "Cloud Sync on SMB does not show NFS sync subdirectory");
+#endif
+#endif
+      n = open_cloud_sync("webdav");
+      CHECK(n > 0 && list_has_label(MENU_ENUM_LABEL_CLOUD_SYNC_URL_STR),
+            "Cloud Sync on WebDAV still shows its URL");
+#ifdef HAVE_SMBCLIENT
+      CHECK(!list_has_label(MENU_ENUM_LABEL_SMB_CLIENT_SETTINGS_STR),
+            "Cloud Sync on WebDAV shows no SMB Network Settings");
+#endif
+#ifdef HAVE_NFSCLIENT
+      CHECK(!list_has_label(MENU_ENUM_LABEL_NFS_CLIENT_SETTINGS_STR),
+            "Cloud Sync on WebDAV shows no NFS Network Settings");
+      CHECK(!list_has_label(MENU_ENUM_LABEL_CLOUD_SYNC_NFS_SUBDIR_STR),
+            "Cloud Sync on WebDAV shows no NFS sync subdirectory");
+#endif
+#endif
+   }
 
    /* each screen opens with its rows */
 #ifdef HAVE_SMBCLIENT
@@ -240,6 +413,22 @@ int main(int argc, char *argv[])
          "SMB Read-Ahead: picking 1024 sets 1024");
    CHECK(DEFAULT_SMB_CLIENT_READAHEAD == 0, "SMB Read-Ahead is off by default");
 #endif
+
+   /* Minimum Audio Latency is under Settings > Latency as well as Audio
+    * > Output, and its list starts at its minimum of 1 */
+   n = open_list(DISPLAYLIST_LATENCY_SETTINGS_LIST,
+         msg_hash_to_str(MENU_ENUM_LABEL_DEFERRED_LATENCY_SETTINGS_LIST),
+         MENU_ENUM_LABEL_DEFERRED_LATENCY_SETTINGS_LIST);
+   CHECK(n > 0 && list_has_label(MENU_ENUM_LABEL_AUDIO_LATENCY_FLOOR_STR),
+         "Minimum Audio Latency is under Settings > Latency");
+   CHECK(pick_uint(MENU_ENUM_LABEL_AUDIO_LATENCY_FLOOR, "1") == 1,
+         "Minimum Audio Latency: picking 1 sets 1");
+   CHECK(pick_uint(MENU_ENUM_LABEL_AUDIO_LATENCY_FLOOR, "2") == 2,
+         "Minimum Audio Latency: picking 2 sets 2");
+   CHECK(pick_uint(MENU_ENUM_LABEL_AUDIO_LATENCY_FLOOR, "16") == 16,
+         "Minimum Audio Latency: picking 16 sets 16");
+   CHECK(pick_uint(MENU_ENUM_LABEL_AUDIO_LATENCY_FLOOR, "0") == -1,
+         "Minimum Audio Latency: 0 is not offered");
 
    /* and neither sits in the Quick Menu */
    n = open_list(DISPLAYLIST_CONTENT_SETTINGS,

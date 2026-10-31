@@ -131,25 +131,18 @@ static struct tls_session tls_cache[TLS_CACHE_SLOTS];
 #ifdef HAVE_THREADS
 #include <rthreads/rthreads.h>
 #include <retro_atomic.h>
-static retro_atomic_ptr_t tls_cache_lock_ptr;
-static slock_t *tls_cache_lock_get(void)
+/* A flag, not an slock: every section it guards is a lookup, a few
+ * copies and at most one allocation, nothing that waits on another
+ * thread, and with no lock object to make there is none that can fail
+ * to be made. */
+static retro_atomic_int_t tls_cache_busy;
+static void tls_cache_lock(void)
 {
-   slock_t *l = (slock_t*)retro_atomic_load_acquire_ptr(&tls_cache_lock_ptr);
-   if (!l)
-   {
-      slock_t *fresh = slock_new();
-      if (retro_atomic_cas_ptr(&tls_cache_lock_ptr, NULL, fresh))
-         l = fresh;
-      else
-      {
-         slock_free(fresh);
-         l = (slock_t*)retro_atomic_load_acquire_ptr(&tls_cache_lock_ptr);
-      }
-   }
-   return l;
+   while (!retro_atomic_cas_int(&tls_cache_busy, 0, 1))
+      sthread_yield();
 }
-#define TLS_CACHE_LOCK()   slock_lock(tls_cache_lock_get())
-#define TLS_CACHE_UNLOCK() slock_unlock(tls_cache_lock_get())
+#define TLS_CACHE_LOCK()   tls_cache_lock()
+#define TLS_CACHE_UNLOCK() retro_atomic_store_release_int(&tls_cache_busy, 0)
 #else
 #define TLS_CACHE_LOCK()   do { } while (0)
 #define TLS_CACHE_UNLOCK() do { } while (0)
@@ -193,30 +186,23 @@ static struct tls_session *tls_cache_slot(const char *host)
    return e;
 }
 
-/* The trust bundle is net/cacert.h's parts unless a test swapped one
- * in, which is then the single part. */
-static const char         *tls_test_pem[1];
-static size_t              tls_test_pem_len[1];
-static const char *const  *tls_trust_parts = cacert_pem_parts;
-static const size_t       *tls_trust_sizes = cacert_pem_sizes;
-static unsigned            tls_trust_count = CACERT_PEM_PARTS;
+/* The trust bundle is net/cacert.h's DER parts unless a test swapped
+ * a PEM in. */
+static const char *tls_test_pem     = NULL;
+static size_t      tls_test_pem_len = 0;
 
 void ssl_socket_retro_set_trust_pem(const char *pem, size_t len)
 {
-   if (pem)
-   {
-      tls_test_pem[0]     = pem;
-      tls_test_pem_len[0] = len;
-      tls_trust_parts     = (const char *const*)tls_test_pem;
-      tls_trust_sizes     = tls_test_pem_len;
-      tls_trust_count     = 1;
-   }
-   else
-   {
-      tls_trust_parts     = cacert_pem_parts;
-      tls_trust_sizes     = cacert_pem_sizes;
-      tls_trust_count     = CACERT_PEM_PARTS;
-   }
+   tls_test_pem     = pem;
+   tls_test_pem_len = len;
+}
+
+static int tls_trust_load(void)
+{
+   if (tls_test_pem)
+      return x509_trust_load_pem(tls_test_pem, tls_test_pem_len);
+   return x509_trust_load_der_parts(cacert_der_parts, cacert_der_sizes,
+         CACERT_DER_PARTS);
 }
 
 struct ssl_state
@@ -630,6 +616,27 @@ static int tls_send_record(struct ssl_state *s, uint8_t type,
    return 0;
 }
 
+/* The socket is in blocking mode, so recv() itself would wait for good
+ * on a server that stops mid-handshake or mid-record; each recv() here
+ * waits for the socket to be readable first, for at most
+ * SSL_SOCKET_IO_TIMEOUT_MS, and a wait that runs out fails the read. */
+static bool tls_recv_exact(struct ssl_state *s, uint8_t *buf, size_t len)
+{
+   while (len)
+   {
+      bool    rd  = true;
+      bool    err = false;
+      ssize_t n;
+      if (!socket_wait(s->fd, &rd, NULL, SSL_SOCKET_IO_TIMEOUT_MS) || !rd)
+         return false;
+      if ((n = socket_receive_all_nonblocking(s->fd, &err, buf, len)) < 0)
+         return false;
+      buf += n;
+      len -= (size_t)n;
+   }
+   return true;
+}
+
 /* Reads one record into s->rx, decrypting in place once the server
  * write keys are in force. On return *type is the content type, and
  * *body / *len the plaintext. */
@@ -642,7 +649,7 @@ static int tls_read_record_to(struct ssl_state *s, uint8_t *type,
 {
    size_t rlen;
 
-   if (socket_receive_all_blocking(s->fd, s->rx, 5) <= 0)
+   if (!tls_recv_exact(s, s->rx, 5))
    {
       s->last_err = TLS_ERR_SOCKET;
       return -1;
@@ -653,7 +660,7 @@ static int tls_read_record_to(struct ssl_state *s, uint8_t *type,
       s->last_err = TLS_ERR_RECORD;
       return -1;
    }
-   if (socket_receive_all_blocking(s->fd, s->rx + 5, rlen) <= 0)
+   if (!tls_recv_exact(s, s->rx + 5, rlen))
    {
       s->last_err = TLS_ERR_SOCKET;
       return -1;
@@ -1265,7 +1272,7 @@ static int tls_recv_certificate(struct ssl_state *s, struct x509_cert *leaf)
       ssl_socket_log_verify_disabled(s->domain);
       return 0;
    }
-   x509_trust_load_pem_parts(tls_trust_parts, tls_trust_sizes, tls_trust_count);
+   tls_trust_load();
    info[0] = '\0';
    if (x509_verify_chain(ders, lens, n, s->domain, time(NULL), info, sizeof(info)) != 0)
    {
@@ -1786,9 +1793,9 @@ static int tls13_recv_certificate(struct ssl_state *s, struct x509_cert *leaf)
       ssl_socket_log_verify_disabled(s->domain);
       return 0;
    }
-   x509_trust_load_pem_parts(tls_trust_parts, tls_trust_sizes, tls_trust_count);
+   tls_trust_load();
    info[0] = '\0';
-   if (x509_verify_chain(ders, lens, n, s->domain, time(NULL), info, sizeof(info)) != 0)
+   if (x509_verify_chain(ders, lens, (unsigned)n, s->domain, time(NULL), info, sizeof(info)) != 0)
    {
       ssl_socket_log_verify_fail(s->verify_mode == 0, s->domain, info);
       if (s->verify_mode == 0)

@@ -111,7 +111,28 @@ enum rarch_state_flags
    RARCH_FLAGS_CLI_DATABASE_SCAN            = (1 << 14),
    RARCH_FLAGS_HAS_SET_XDELTA_PREF          = (1 << 15),
    RARCH_FLAGS_XDELTA_PREF                  = (1 << 16),
-   RARCH_FLAGS_HAS_SET_OVERLAY_PRESET       = (1 << 17)
+   RARCH_FLAGS_HAS_SET_OVERLAY_PRESET       = (1 << 17),
+   /* An unload asked for a cloud sync, which waits for the content's
+    * deinit to finish. */
+   RARCH_FLAGS_CLOUD_SYNC_ON_DEINIT         = (1 << 18),
+   /* Initialisation failed; the menu goes to the dummy core rather
+    * than back to content on exit. */
+   RARCH_FLAGS_ERR_ON_INIT                  = (1 << 19),
+   RARCH_FLAGS_LAUNCHED_FROM_CLI            = (1 << 20),
+   RARCH_FLAGS_CLI_LOAD_MENU_ON_ERR         = (1 << 21),
+   /* Set on entry to retroarch_main_init (right after its setjmp
+    * is established) and cleared on every exit. retroarch_fail
+    * checks this flag before longjmp'ing - the jmp_buf is only
+    * valid while retroarch_main_init is on the stack; calling
+    * retroarch_fail from any other context (e.g. a reinit-time
+    * drivers_init invoked via command_event_reinit) with the flag
+    * clear means the longjmp would land in stale stack memory. */
+   RARCH_FLAGS_INIT_IN_PROGRESS             = (1 << 22),
+   /* Content from the command line waited for the startup cloud sync
+    * before loading; rarch_main() does not push another. */
+   RARCH_FLAGS_CLOUD_SYNC_AT_INIT           = (1 << 23),
+   /* See retroarch_user_dirs_hold(). */
+   RARCH_FLAGS_USER_DIRS_HELD               = (1 << 24)
 };
 
 bool retroarch_ctl(enum rarch_ctl_state state, void *data);
@@ -126,6 +147,10 @@ void retroarch_override_setting_unset(enum rarch_override_setting enum_idx, void
 bool retroarch_override_setting_is_set(enum rarch_override_setting enum_idx, void *data);
 
 const char* video_shader_get_current_shader_preset(void);
+
+/* The platform is taking the application away and may not give it
+ * back: SRAM, core options and the main config are written now. */
+void retroarch_save_for_suspend(void);
 
 /* Cancels and drains the task queue (bounded) so in-flight tasks
  * retire while the subsystems their callbacks reach are alive.
@@ -168,7 +193,11 @@ bool retroarch_main_init_drivers(bool staged,
 
 bool retroarch_main_quit(void);
 
-global_t *global_get_ptr(void);
+/* A quit from inside the frame loop: returns to the loop while an auto
+ * save-state is still being written, and runloop_iterate() finishes it
+ * through retroarch_main_quit_poll(), which is true once it has. */
+bool retroarch_main_quit_staged(void);
+bool retroarch_main_quit_poll(void);
 
 content_state_t *content_state_get_ptr(void);
 
@@ -227,6 +256,10 @@ void retroarch_init_task_queue(void);
 /* Applies the task-queue settings to the running queue. */
 void retroarch_task_queue_configure(void);
 
+/* Schedules the main thread ahead of ordinary threads, or puts it back;
+ * called on the main thread. */
+void retroarch_main_thread_priority(bool raise);
+
 /**
  * retroarch_main_deinit_begin:
  * retroarch_main_deinit_pending:
@@ -260,6 +293,12 @@ void retroarch_fail(int error_code, const char *error);
 bool should_quit_on_close(void);
 
 uint32_t retroarch_get_flags(void);
+
+/* For a platform that asks the user for access to the folder the
+ * user directories live in: until the release, the main thread
+ * leaves them alone and the playlists they hold load afterwards. */
+void retroarch_user_dirs_hold(void);
+void retroarch_user_dirs_release(void);
 
 RETRO_END_DECLS
 

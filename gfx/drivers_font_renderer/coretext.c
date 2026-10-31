@@ -94,12 +94,14 @@ static unsigned font_rasterizer_ct_glyph_index(void *data, uint32_t code)
 
 /* The missing-glyph mark: a rectangle inset into the cell */
 static void ct_render_missing(ct_face_t *self, uint8_t *dst,
-      unsigned pitch, unsigned cell_w, unsigned cell_h,
+      unsigned pitch, unsigned cell_dims,
       enum font_atlas_format fmt, struct font_glyph *glyph)
 {
    unsigned r, c;
-   bool fmt16 = (fmt == FONT_ATLAS_FORMAT_A16);
-   size_t esz = fmt16 ? sizeof(uint16_t) : sizeof(uint8_t);
+   unsigned cell_w = VIDEO_SCALE_W(cell_dims);
+   unsigned cell_h = VIDEO_SCALE_H(cell_dims);
+   bool fmt16      = (fmt == FONT_ATLAS_FORMAT_A16);
+   size_t esz      = fmt16 ? sizeof(uint16_t) : sizeof(uint8_t);
 
    for (r = 0; r < cell_h; r++)
       memset(dst + (size_t)r * pitch * esz, 0, (size_t)cell_w * esz);
@@ -138,8 +140,7 @@ static void ct_render_missing(ct_face_t *self, uint8_t *dst,
       }
    }
 
-   glyph->width         = cell_w;
-   glyph->height        = cell_h;
+   glyph->dims          = cell_dims;
    glyph->draw_offset_x = 0;
    glyph->draw_offset_y = (int)floor(-self->cached_ascent);
    glyph->advance_x     = cell_w;
@@ -147,29 +148,30 @@ static void ct_render_missing(ct_face_t *self, uint8_t *dst,
 }
 
 static bool font_rasterizer_ct_render_glyph(void *data, uint32_t code,
-      unsigned gi, uint8_t *dst, unsigned pitch, unsigned cell_w,
-      unsigned cell_h, enum font_atlas_format fmt, struct font_glyph *glyph)
+      unsigned gi, uint8_t *dst, unsigned pitch, unsigned cell_dims,
+      enum font_atlas_format fmt, struct font_glyph *glyph)
 {
    CGGlyph glyphs[1];
    CGRect bounds;
    CGSize advance;
    CGContextRef offscreen;
-   void *bitmap;
    UniChar utf16[2];
    CFIndex utf16_len;
    CFStringRef glyph_cfstr;
    CFAttributedStringRef attr_string;
    CTLineRef line;
-   unsigned r;
+   unsigned r, cell_w, cell_h;
    ct_face_t *self = (ct_face_t*)data;
    bool fmt16      = (fmt == FONT_ATLAS_FORMAT_A16);
    size_t esz      = fmt16 ? sizeof(uint16_t) : sizeof(uint8_t);
 
    if (!gi || !(utf16_len = ct_utf16(code, utf16)))
    {
-      ct_render_missing(self, dst, pitch, cell_w, cell_h, fmt, glyph);
+      ct_render_missing(self, dst, pitch, cell_dims, fmt, glyph);
       return true;
    }
+   cell_w    = VIDEO_SCALE_W(cell_dims);
+   cell_h    = VIDEO_SCALE_H(cell_dims);
    glyphs[0] = (CGGlyph)(gi - 1);
 
    /* kCTFontDefaultOrientation was renamed kCTFontOrientationDefault
@@ -180,8 +182,7 @@ static bool font_rasterizer_ct_render_glyph(void *data, uint32_t code,
    CTFontGetAdvancesForGlyphs(self->font_face, (CTFontOrientation)0,
          glyphs, &advance, 1);
 
-   glyph->width         = cell_w;
-   glyph->height        = cell_h;
+   glyph->dims          = cell_dims;
    glyph->draw_offset_x = (int)ceil(bounds.origin.x);
    glyph->draw_offset_y = (int)floor(-bounds.origin.y)
       - (int)floor(self->cached_ascent) + 1;
@@ -190,34 +191,27 @@ static bool font_rasterizer_ct_render_glyph(void *data, uint32_t code,
    glyph->advance_x     = (int)floor(advance.width + 0.5);
    glyph->advance_y     = (int)floor(advance.height + 0.5);
 
-   if (!(bitmap = calloc(cell_h, (size_t)cell_w * esz)))
-      return false;
-
+   /* Drawn straight into the cell: rows run top first in memory, as
+    * the atlas's do, and a context writes only its own width of each */
    if (fmt16)
    {
       /* 16 bits-per-component DeviceGray, host byte order:
-       * white-on-transparent gray is copied out as 16-bit coverage */
+       * white-on-transparent gray is 16-bit coverage */
       CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray();
       if (!gray)
-      {
-         free(bitmap);
          return false;
-      }
-      offscreen = CGBitmapContextCreate(bitmap, cell_w, cell_h,
-            16, (size_t)cell_w * 2, gray,
+      offscreen = CGBitmapContextCreate(dst, cell_w, cell_h,
+            16, (size_t)pitch * 2, gray,
             kCGImageAlphaNone | kCGBitmapByteOrder16Host);
       CGColorSpaceRelease(gray);
    }
    else
       /* 8-bit alpha-only coverage */
-      offscreen = CGBitmapContextCreate(bitmap, cell_w, cell_h,
-            8, cell_w, NULL, kCGImageAlphaOnly);
+      offscreen = CGBitmapContextCreate(dst, cell_w, cell_h,
+            8, pitch, NULL, kCGImageAlphaOnly);
 
    if (!offscreen)
-   {
-      free(bitmap);
       return false;
-   }
 
    /* Fill color for kCTForegroundColorFromContextAttributeName:
     * full-white coverage in the gray context, ignored by the
@@ -226,11 +220,11 @@ static bool font_rasterizer_ct_render_glyph(void *data, uint32_t code,
    CGContextSetTextMatrix(offscreen, CGAffineTransformIdentity);
 
    /* Each CF/CT allocation is checked: passing NULL onwards or
-    * CFRelease(NULL) would crash rather than fail. */
+    * CFRelease(NULL) would crash rather than fail. Nothing is
+    * written to the cell until all of them are had. */
    if (!(glyph_cfstr = CFStringCreateWithCharacters(NULL, utf16, utf16_len)))
    {
       CGContextRelease(offscreen);
-      free(bitmap);
       return false;
    }
    attr_string = CFAttributedStringCreate(NULL, glyph_cfstr, self->attr_dict);
@@ -238,7 +232,6 @@ static bool font_rasterizer_ct_render_glyph(void *data, uint32_t code,
    if (!attr_string)
    {
       CGContextRelease(offscreen);
-      free(bitmap);
       return false;
    }
    line = CTLineCreateWithAttributedString(attr_string);
@@ -246,21 +239,16 @@ static bool font_rasterizer_ct_render_glyph(void *data, uint32_t code,
    if (!line)
    {
       CGContextRelease(offscreen);
-      free(bitmap);
       return false;
    }
+
+   for (r = 0; r < cell_h; r++)
+      memset(dst + (size_t)r * pitch * esz, 0, (size_t)cell_w * esz);
 
    CGContextSetTextPosition(offscreen, -bounds.origin.x, -bounds.origin.y);
    CTLineDraw(line, offscreen);
    CFRelease(line);
-
-   for (r = 0; r < cell_h; r++)
-      memcpy(dst + (size_t)r * pitch * esz,
-            (const uint8_t*)bitmap + (size_t)r * cell_w * esz,
-            (size_t)cell_w * esz);
-
    CGContextRelease(offscreen);
-   free(bitmap);
    return true;
 }
 

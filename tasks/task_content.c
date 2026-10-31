@@ -41,7 +41,7 @@
 
 #ifdef __WINRT__
 #include <Fileapifromapp.h>
-#include <uwp/uwp_func.h>
+#include "../os/uwp/uwp_func.h"
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -74,8 +74,18 @@
 #include "../gfx/gfx_widgets.h"
 #endif
 
-#if defined(HAVE_WAYLAND) && defined(WEBOS)
-#include "../input/common/wayland_common_webos.h"
+#ifdef HAVE_WAYLAND
+/* gfx/common/wayland_common.c */
+void gfx_ctx_wl_release_kept(void);
+#endif
+/* Desktop Windows: __WINRT__ is what says a build is not
+ * (retro_environment.h). WINAPI_FAMILY says nothing - <windows.h>
+ * defines it in every build - and asking that it not be defined
+ * compiled this out on the desktop too. */
+#include <retro_environment.h>
+#if defined(_WIN32) && !defined(_XBOX) && !defined(__WINRT__)
+/* gfx/common/win32_common.c */
+void win32_window_release_kept(void);
 #endif
 
 #if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
@@ -2018,6 +2028,9 @@ enum content_load_stage
    /* A save or load state task is still inside the old core: the
     * close waits for it, presenting, and finishes when it is out. */
    CONTENT_LOAD_STAGE_CLOSE_WAIT,
+   /* The new core's library is opened on the task worker, presenting,
+    * now that the old one is closed. */
+   CONTENT_LOAD_STAGE_CORE_PRELOAD,
    /* The new core comes up behind those drivers: configuration,
     * task queue, dlopen, retro_init, the content read, retro_load_game. */
    CONTENT_LOAD_STAGE_CORE,
@@ -2139,6 +2152,8 @@ static void content_load_job_fall_back(struct content_load_job *job)
    path_clear(RARCH_PATH_CONTENT);
    runloop_set_current_core_type(CORE_TYPE_DUMMY, true);
    content_load_job_args(job);
+   /* An opened library the failed core stage did not take */
+   runloop_core_preload_cancel();
 }
 
 /* The close of the old session.  Staged, the drivers stay up
@@ -2235,6 +2250,18 @@ static void task_push_to_history_list(content_state_t *p_content,
       bool launched_from_menu, bool launched_from_cli,
       bool launched_from_companion_ui);
 
+void task_content_load_notify_finish(const char *error)
+{
+   const char *path = path_get(RARCH_PATH_CONTENT);
+   task_notify_fire(&content_state_get_ptr()->load_notify,
+         (path && *path) ? (void*)path : NULL, error);
+}
+
+bool task_content_load_pending(void)
+{
+   return content_load_job.stage != CONTENT_LOAD_STAGE_NONE;
+}
+
 /* The entry point's after-load work, and the job's end. */
 static void content_load_finish(struct content_load_job *job,
       content_state_t *p_content)
@@ -2244,6 +2271,17 @@ static void content_load_finish(struct content_load_job *job,
    bool ok                     = job->ok;
 
    runloop_st->content_switching = false;
+   /* A library opened for a core stage that never took it */
+   runloop_core_preload_cancel();
+#ifdef HAVE_MENU
+   /* A Load State slot asked for with this load, left over when the
+    * load failed before the content came up */
+   {
+      menu_handle_t *menu = menu_state_get_ptr()->driver_data;
+      if (menu)
+         menu->state_slot_run_pending = false;
+   }
+#endif
 
    if (ok)
       content_load_tail(job, p_content);
@@ -2294,6 +2332,8 @@ static void content_load_finish(struct content_load_job *job,
 #endif
    content_load_job_result = ok;
    content_load_job_free(job);
+   task_content_load_notify_finish(ok ? NULL
+         : msg_hash_to_str(MSG_FAILED_TO_LOAD_CONTENT));
 }
 
 /* Runs the job's current stage and moves it on. */
@@ -2305,7 +2345,9 @@ static void content_load_step(struct content_load_job *job,
       case CONTENT_LOAD_STAGE_DEINIT:
          if (!content_load_stage_deinit(job))
          {
-            job->stage = CONTENT_LOAD_STAGE_CORE;
+            job->stage = (job->staged && runloop_core_preload_begin())
+               ? CONTENT_LOAD_STAGE_CORE_PRELOAD
+               : CONTENT_LOAD_STAGE_CORE;
             break;
          }
          job->stage = CONTENT_LOAD_STAGE_CLOSE_WAIT;
@@ -2314,6 +2356,14 @@ static void content_load_step(struct content_load_job *job,
          if (retroarch_main_deinit_pending())
             break;
          retroarch_main_deinit_finish();
+         /* The old core is closed now: its library open may start */
+         job->stage = (job->staged && runloop_core_preload_begin())
+            ? CONTENT_LOAD_STAGE_CORE_PRELOAD
+            : CONTENT_LOAD_STAGE_CORE;
+         break;
+      case CONTENT_LOAD_STAGE_CORE_PRELOAD:
+         if (!runloop_core_preload_ready())
+            break;
          job->stage = CONTENT_LOAD_STAGE_CORE;
          break;
       case CONTENT_LOAD_STAGE_CORE:
@@ -2333,11 +2383,15 @@ static void content_load_step(struct content_load_job *job,
              * unstaged failure leaves them. */
             if (job->staged)
                driver_uninit(DRIVERS_CMD_ALL, (enum driver_lifetime_flags)0);
-#if defined(HAVE_WAYLAND) && defined(WEBOS)
-            /* Nothing is coming for the surface kept across the
+#ifdef HAVE_WAYLAND
+            /* Nothing is coming for the window kept across the
              * reinit: hand it back, and webOS returns to its
              * dashboard rather than a window nothing draws into. */
-            gfx_ctx_wl_webos_release_kept_surface();
+            gfx_ctx_wl_release_kept();
+#endif
+#if defined(_WIN32) && !defined(_XBOX) && !defined(__WINRT__)
+            /* nor for a Windows one */
+            win32_window_release_kept();
 #endif
             content_load_finish(job, p_content);
             break;
@@ -2408,7 +2462,7 @@ static bool content_load_push_stage(struct content_load_job *job)
 {
    static const char *titles[] = {
       NULL, "Closing content", "Closing content",
-      "Loading core", "Starting drivers" };
+      "Loading core", "Loading core", "Starting drivers" };
    retro_task_t *task = task_init();
    if (!task)
       return false;
@@ -2476,6 +2530,14 @@ static bool content_load(content_ctx_info_t *info,
          content_load_job_free(job);
          return false;
       }
+#ifdef HAVE_MENU
+      /* The core title the menu holds while the load runs: the one
+       * this load is for, when its library is already open. */
+      {
+         char title[NAME_MAX_LENGTH + 64];
+         menu_entries_get_core_title(title, sizeof(title));
+      }
+#endif
       runloop_state_get_ptr()->content_switching = true;
       return true;
    }
@@ -2582,7 +2644,7 @@ static void task_push_to_history_list(
          switch (path_is_media_type(tmp))
          {
             case RARCH_CONTENT_MOVIE:
-#ifdef HAVE_FFMPEG
+#if defined(HAVE_FFMPEG) || defined(HAVE_MPV) || defined(HAVE_WEBMPLAYER)
                playlist_hist        = g_defaults.video_history;
                core_name            = "movieplayer";
                core_path            = "builtin";
@@ -2717,7 +2779,7 @@ static bool task_push_to_history_list_from_playlist_pre_load_static(
    switch (path_is_media_type(content_path))
    {
       case RARCH_CONTENT_MOVIE:
-#ifdef HAVE_FFMPEG
+#if defined(HAVE_FFMPEG) || defined(HAVE_MPV) || defined(HAVE_WEBMPLAYER)
          playlist_hist       = g_defaults.video_history;
          core_name           = "movieplayer";
          core_path           = "builtin";
@@ -3053,6 +3115,8 @@ bool task_push_load_new_core(
       retro_task_callback_t cb,
       void *user_data)
 {
+   bool ret;
+
    /* Set core path */
    path_set(RARCH_PATH_CORE, core_path);
 
@@ -3061,7 +3125,7 @@ bool task_push_load_new_core(
       path_set(RARCH_PATH_CORE_LAST, core_path);
 
    /* Load core */
-   command_event(CMD_EVENT_LOAD_CORE, NULL);
+   ret = command_event(CMD_EVENT_LOAD_CORE, NULL);
 
 #ifndef HAVE_DYNAMIC
    /* Fork core? */
@@ -3073,7 +3137,7 @@ bool task_push_load_new_core(
     * load the actual content. Can differ per mode. */
    runloop_set_current_core_type(type, true);
 
-   return true;
+   return ret;
 }
 
 #ifdef HAVE_MENU
@@ -3293,16 +3357,17 @@ static bool task_content_defer_menu_load(content_state_t *p_content,
     * reached only for a file the load reads into memory.  A
     * need_fullpath core is handed the path instead, so a prefetch
     * would fill an allocation nothing takes.  Mirror the load's own
-    * BLCK_NEED_FULLPATH decision from the live system info and the
-    * per-extension override - both current here, LOAD_CORE has run.
-    * (The caller's content_ctx is built before LOAD_CORE and without
-    * sys info; it cannot answer this.) */
+    * BLCK_NEED_FULLPATH decision for the core being loaded: its
+    * need_fullpath and its own per-extension overrides, as it
+    * declared them when LOAD_CORE asked it.  The override list held
+    * here is still the running core's.  (The caller's content_ctx is
+    * built before LOAD_CORE and without sys info; it cannot answer
+    * this.) */
    {
-      const content_file_override_t *override = NULL;
       bool need_fullpath = runloop_st->system.info.need_fullpath;
-      if (content_file_override_get_ext(p_content,
-            path_get_extension(fullpath), &override))
-         need_fullpath = override->need_fullpath;
+      if (!runloop_core_probe_need_fullpath(path_get(RARCH_PATH_CORE),
+               path_get_extension(fullpath), &need_fullpath))
+         return false;             /* its overrides are not known   */
       if (need_fullpath)
          return false;             /* the load hands the core a path */
    }
@@ -3348,7 +3413,7 @@ static bool task_content_defer_menu_load(content_state_t *p_content,
     * off, nothing is shown and no progress is reported.
     *
     * Widgets persist across the driver reinit the load performs
-    * (DISPGFX_WIDGET_FLAG_PERSISTING), so the card started here
+    * (dispgfx_widget_t.persisting), so the card started here
     * survives into the loaded core. */
    {
       settings_t *settings = config_get_ptr();
@@ -3540,7 +3605,6 @@ bool task_push_load_content_with_new_core_from_companion_ui(
       retro_task_callback_t cb,
       void *user_data)
 {
-   global_t *global            = global_get_ptr();
    runloop_state_t *runloop_st = runloop_state_get_ptr();
    content_state_t  *p_content = content_state_get_ptr();
 
@@ -3562,7 +3626,7 @@ bool task_push_load_content_with_new_core_from_companion_ui(
    command_event(CMD_EVENT_LOAD_CORE, NULL);
 #endif
 
-   global->flags &= ~GLOB_FLG_LAUNCHED_FROM_CLI;
+   retroarch_ctl(RARCH_CTL_UNSET_LAUNCHED_FROM_CLI, NULL);
 
    if (label)
       strlcpy(runloop_st->name.label, label, sizeof(runloop_st->name.label));

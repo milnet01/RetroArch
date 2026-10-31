@@ -40,7 +40,6 @@
 #include <streams/file_stream.h>
 #include <queues/task_queue.h>
 #include <time/rtime.h>
-#include <features/features_cpu.h>
 
 #include <compat/strl.h>
 
@@ -90,39 +89,134 @@ static int16_t *runahead_dense_slot(runahead_dense_cache_t *c,
 }
 /* ===== END runahead dense input cache ===== */
 
+/* ===== BEGIN runahead input list =====
+ * Tuples the dense cache has no slot for, one flat array; each
+ * tuple's ids are sized by the highest id written to it. */
 static runahead_dense_cache_t *runahead_dense;
+
+/* Last value of every id of one (port, device, index)
+ * tuple; ids past state_size read 0 */
+typedef struct input_list_element
+{
+   int16_t *state;
+   unsigned port;
+   unsigned device;
+   unsigned index;
+   unsigned state_size;
+} input_list_element;
+
+typedef struct runahead_input_list
+{
+   input_list_element *elems;
+   unsigned size;
+   unsigned cap;
+} runahead_input_list_t;
+
+static runahead_input_list_t runahead_input_list;
+
+/* The list entry of a (port, device, index) tuple, or NULL */
+static input_list_element *runahead_input_list_find(
+      const runahead_input_list_t *list,
+      unsigned port, unsigned device, unsigned index)
+{
+   unsigned i;
+   for (i = 0; i < list->size; i++)
+   {
+      input_list_element *element = &list->elems[i];
+      if (     (element->port   == port)
+            && (element->device == device)
+            && (element->index  == index))
+         return element;
+   }
+   return NULL;
+}
+
+static void runahead_input_list_free(runahead_input_list_t *list)
+{
+   unsigned i;
+   for (i = 0; i < list->size; i++)
+      free(list->elems[i].state);
+   free(list->elems);
+   list->elems = NULL;
+   list->size  = 0;
+   list->cap   = 0;
+}
+
+/* Grows the state of @element so that @id indexes it;
+ * the new ids read 0 */
+static bool runahead_input_element_expand(
+      input_list_element *element, unsigned id)
+{
+   int16_t *state;
+   unsigned new_size = element->state_size ? element->state_size : 32;
+   while (id >= new_size)
+      new_size *= 2;
+   if (!(state = (int16_t*)realloc(element->state,
+               new_size * sizeof(int16_t))))
+      return false;
+   memset(&state[element->state_size], 0,
+         (new_size - element->state_size) * sizeof(int16_t));
+   element->state      = state;
+   element->state_size = new_size;
+   return true;
+}
+
+static void runahead_input_state_set_last(
+      unsigned port, unsigned device,
+      unsigned index, unsigned id, int16_t value)
+{
+   runahead_input_list_t *list = &runahead_input_list;
+   input_list_element *element;
+   int16_t *slot = runahead_dense_slot(runahead_dense, port, device, index, id);
+
+   if (slot)
+   {
+      *slot = value;
+      return;
+   }
+
+   if (!(element = runahead_input_list_find(list, port, device, index)))
+   {
+      if (list->size == list->cap)
+      {
+         unsigned new_cap = list->cap ? list->cap * 2 : 8;
+         input_list_element *elems = (input_list_element*)realloc(
+               list->elems, new_cap * sizeof(*elems));
+         if (!elems)
+            return;
+         list->elems = elems;
+         list->cap   = new_cap;
+      }
+      element             = &list->elems[list->size++];
+      element->state      = NULL;
+      element->port       = port;
+      element->device     = device;
+      element->index      = index;
+      element->state_size = 0;
+   }
+
+   if (     id >= element->state_size
+         && !runahead_input_element_expand(element, id))
+      return;
+   element->state[id] = value;
+}
 
 static int16_t input_state_get_last(unsigned port,
       unsigned device, unsigned index, unsigned id)
 {
-   runloop_state_t      *runloop_st = runloop_state_get_ptr();
+   const input_list_element *element;
    const int16_t *slot = runahead_dense_slot(runahead_dense, port, device, index, id);
 
    if (slot)
       return *slot;
 
-   if (runloop_st->input_state_list)
-   {
-      int i;
-      /* find list item */
-      for (i = 0; i < runloop_st->input_state_list->size; i++)
-      {
-         input_list_element *element =
-            (input_list_element*)runloop_st->input_state_list->data[i];
-
-         if (     (element->port   == port)
-               && (element->device == device)
-               && (element->index  == index))
-         {
-            if (id < element->state_size)
-               return element->state[id];
-            break;
-         }
-      }
-   }
-
+   element = runahead_input_list_find(
+         &runahead_input_list, port, device, index);
+   if (element && id < element->state_size)
+      return element->state[id];
    return 0;
 }
+/* ===== END runahead input list ===== */
 
 static void free_retro_ctx_load_content_info(struct
       retro_ctx_load_content_info *dest)
@@ -261,6 +355,9 @@ void runahead_secondary_core_destroy(void *data)
 {
    runloop_state_t *runloop_st      = (runloop_state_t*)data;
 
+   /* Nothing calls into the copy once it is closed */
+   runloop_st->secondary_key_event  = NULL;
+
    /* Drop any unconsumed async copy result (deleting its temp
     * file) and tell an in-flight copy task to discard its result;
     * this runs regardless of whether a secondary instance was
@@ -386,7 +483,11 @@ static bool runahead_tmp_dir_private(const char *dir)
  * Duplicating the core binary for the secondary instance is pure
  * file IO sized by the core (MAME and friends run hundreds of
  * megabytes), so it must not run synchronously on the thread that
- * drives frames. The copy runs as a task; while it is in flight,
+ * drives frames. Neither should opening the copy: mapping the image,
+ * resolving its imports and running its constructors are the
+ * system loader's work, sized by the core again, and the copy's
+ * path is its own, so no other handle can share the instance. The
+ * copy and the open run as a task; while it is in flight,
  * secondary_core_create() reports 'pending' and run-ahead falls
  * back to the single-instance savestate method for those frames -
  * identical output, no stall - then upgrades to the secondary
@@ -404,6 +505,7 @@ static bool runahead_tmp_dir_private(const char *dir)
 /* Result slot, published by the task callback (main thread) */
 static char *runahead_copy_slot_path     = NULL;
 static char *runahead_copy_slot_src      = NULL; /* identity of the copy */
+static dylib_t runahead_copy_slot_lib    = NULL; /* the copy, opened      */
 static bool  runahead_copy_slot_done     = false;
 static bool  runahead_copy_slot_failed   = false;
 /* Bumped by runahead_copy_reset(); a task publishes its result only
@@ -435,6 +537,8 @@ typedef struct runahead_copy_handle
     * copy has been closed. */
    struct retro_vfs_copy_handle *copy;
    char *copy_dst;   /* destination the open copy is writing to */
+   dylib_t lib;      /* out_path opened by the task; NULL if it
+                      * could not be, and the caller opens it */
    bool  started;    /* the open was attempted (once, on pass one) */
    bool  failed;
    unsigned generation;
@@ -648,6 +752,11 @@ static void runahead_copy_task_handler(retro_task_t *task)
       h->out_path = h->copy_dst;
       h->copy_dst = NULL;
       h->failed   = false;
+      /* On the worker under the threaded queue: the frame loop goes
+       * on while the loader maps the copy. A copy that will not
+       * open is still published; the main thread's own open of it
+       * then reports why. */
+      h->lib      = dylib_load(h->out_path);
    }
    else
    {
@@ -678,7 +787,13 @@ static void runahead_copy_task_cb(retro_task_t *task,
    if (h->generation != runahead_copy_generation)
    {
       /* Teardown happened while this copy was running (or after it
-       * finished but before this callback ran): discard. */
+       * finished but before this callback ran): discard.  Closed
+       * first: a library still open cannot be deleted on Windows. */
+      if (h->lib)
+      {
+         dylib_close(h->lib);
+         h->lib = NULL;
+      }
       if (h->out_path)
          filestream_delete(h->out_path);
       return;
@@ -686,6 +801,8 @@ static void runahead_copy_task_cb(retro_task_t *task,
 
    runahead_copy_slot_path   = h->out_path;
    h->out_path               = NULL;
+   runahead_copy_slot_lib    = h->lib;
+   h->lib                    = NULL;
    runahead_copy_slot_src    = h->src_path;
    h->src_path               = NULL;
    runahead_copy_slot_failed = h->failed;
@@ -703,6 +820,8 @@ static void runahead_copy_task_free(retro_task_t *task)
        * unfinished copy removes the partial destination. */
       if (h->copy)
          filestream_copy_close(h->copy);
+      if (h->lib)
+         dylib_close(h->lib);
       if (h->copy_dst)
          free(h->copy_dst);
       if (h->src_path)
@@ -726,6 +845,11 @@ static bool runahead_copy_in_flight(void)
  * an already-published (but unconsumed) temp file. */
 static void runahead_copy_reset(bool delete_file)
 {
+   if (runahead_copy_slot_lib)
+   {
+      dylib_close(runahead_copy_slot_lib);
+      runahead_copy_slot_lib = NULL;
+   }
    if (runahead_copy_slot_path)
    {
       if (delete_file)
@@ -755,10 +879,12 @@ static void runahead_copy_reset(bool delete_file)
  * - finished with failure -> UNAVAILABLE (slot reset, so a later
  *                            attempt starts a fresh copy)
  * - finished ok           -> READY; ownership of the temp path is
- *                            transferred to *out_path */
+ *                            transferred to *out_path, and of its
+ *                            open handle (NULL if the task could not
+ *                            open it) to *out_lib */
 static enum runahead_copy_status runahead_copy_poll(
       const char *core_path, const char *dir_libretro,
-      char **out_path)
+      char **out_path, dylib_t *out_lib)
 {
    /* A published result for a different core binary is stale
     * (e.g. core switched without an intervening teardown, or any
@@ -812,6 +938,8 @@ static enum runahead_copy_status runahead_copy_poll(
 
    *out_path               = runahead_copy_slot_path;
    runahead_copy_slot_path = NULL;
+   *out_lib                = runahead_copy_slot_lib;
+   runahead_copy_slot_lib  = NULL;
    runahead_copy_reset(false);
    return RUNAHEAD_COPY_READY;
    /* note: the generation bump in the reset above also invalidates
@@ -820,11 +948,67 @@ static enum runahead_copy_status runahead_copy_poll(
 }
 /* ===== END runahead core-copy fragment ===== */
 
+/* What run-ahead's second instance may not register.  The frontend
+ * holds one of each, keeps a pointer into the instance that declared
+ * it - a callback, a table or string in its image, its RAM - and the
+ * second instance is a copy of the running core, which has declared
+ * all of them already: taking the copy's would hand the running core's
+ * callbacks and memory to the copy, and leave them dangling once the
+ * copy is closed.
+ *
+ * Returns 1 to answer the declaration as accepted without storing it,
+ * 0 to refuse it (a hardware context is the running core's alone, so
+ * a hardware core has no second instance), -1 to pass it on. */
+#define RUNAHEAD_ENV_BASE(cmd) ((cmd) & ~RETRO_ENVIRONMENT_EXPERIMENTAL)
+static int runahead_secondary_env_filter(unsigned cmd)
+{
+   switch (RUNAHEAD_ENV_BASE(cmd))
+   {
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_HW_RENDER):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT):
+         return 0;
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_MEMORY_MAPS):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_NETPACKET_INTERFACE):
+         return 1;
+      default:
+         break;
+   }
+   return -1;
+}
+#undef RUNAHEAD_ENV_BASE
+
 static bool runloop_environment_secondary_core_hook(
       unsigned cmd, void *data)
 {
    runloop_state_t *runloop_st    = runloop_state_get_ptr();
-   bool result                    = runloop_environment_cb(cmd, data);
+   int filtered                   = runahead_secondary_env_filter(cmd);
+   bool result;
+
+   if (filtered >= 0)
+      return filtered != 0;
+
+   /* The running core keeps its keyboard callback; the copy's has a
+    * slot of its own, emptied when the copy is closed */
+   if (     (cmd & ~RETRO_ENVIRONMENT_EXPERIMENTAL)
+         == RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK)
+   {
+      const struct retro_keyboard_callback *info =
+         (const struct retro_keyboard_callback*)data;
+      runloop_st->secondary_key_event = info ? info->callback : NULL;
+      return true;
+   }
+
+   result                         = runloop_environment_cb(cmd, data);
 
    if (runloop_st->flags & RUNLOOP_FLAG_HAS_VARIABLE_UPDATE)
    {
@@ -855,6 +1039,7 @@ static enum runahead_copy_status secondary_core_create(
 {
    enum runahead_copy_status copy_status;
    char *copied_path             = NULL;
+   dylib_t copied_lib            = NULL;
    const enum rarch_core_type
       last_core_type             = runloop_st->last_core_type;
    rarch_system_info_t *sys_info = &runloop_st->system;
@@ -870,13 +1055,16 @@ static enum runahead_copy_status secondary_core_create(
     * single-instance fallback for the frame - no stall. */
    copy_status = runahead_copy_poll(
          path_get(RARCH_PATH_CORE), path_directory_libretro,
-         &copied_path);
+         &copied_path, &copied_lib);
    if (copy_status != RUNAHEAD_COPY_READY)
       return copy_status;
 
    if (runloop_st->secondary_library_path)
       free(runloop_st->secondary_library_path);
    runloop_st->secondary_library_path = copied_path;
+   /* Opened by the task; runloop_init_libretro_symbols takes it as
+    * it is and opens the path itself only when this is NULL. */
+   runloop_st->secondary_lib_handle   = copied_lib;
 
    /* Load Core */
    if (!runloop_init_libretro_symbols(runloop_st,
@@ -1078,279 +1266,6 @@ void runahead_remember_controller_port_device(void *data,
 }
 #endif
 
-static void mylist_resize(my_list *list,
-      int new_size, bool run_constructor)
-{
-   int i;
-   int new_capacity;
-   int old_size;
-   void *element    = NULL;
-   if (new_size < 0)
-      new_size      = 0;
-   new_capacity     = new_size;
-   old_size         = list->size;
-
-   if (new_size == old_size)
-      return;
-
-   if (new_size > list->capacity)
-   {
-      void **new_data;
-
-      /* Doubling past INT_MAX / 2 would overflow; leave the list as
-       * it is. */
-      if (list->capacity > INT_MAX / 2)
-         return;
-      if (new_capacity < list->capacity * 2)
-         new_capacity = list->capacity * 2;
-
-      /* On OOM, leave the list as it is; mylist_add_element then
-       * returns NULL. */
-      new_data = (void**)realloc(
-            (void*)list->data, new_capacity * sizeof(void*));
-      if (!new_data)
-         return;
-      list->data = new_data;
-
-      for (i = list->capacity; i < new_capacity; i++)
-         list->data[i] = NULL;
-
-      list->capacity = new_capacity;
-   }
-
-   if (new_size <= list->size)
-   {
-      for (i = new_size; i < list->size; i++)
-      {
-         element = list->data[i];
-
-         if (element)
-         {
-            list->destructor(element);
-            list->data[i] = NULL;
-         }
-      }
-   }
-   else
-   {
-      for (i = list->size; i < new_size; i++)
-      {
-         list->data[i] = NULL;
-         /* A slot whose constructor failed is not counted, so the
-          * lookup in runahead_input_state_set_last never meets a
-          * NULL element. */
-         if (run_constructor && !(list->data[i] = list->constructor()))
-         {
-            new_size = i;
-            break;
-         }
-      }
-   }
-
-   list->size = new_size;
-}
-
-static void *mylist_add_element(my_list *list)
-{
-   int old_size;
-   if (!list)
-      return NULL;
-   old_size = list->size;
-   mylist_resize(list, old_size + 1, true);
-   /* mylist_resize may have failed to grow on OOM, in which case
-    * list->size is still old_size and list->data[old_size] is
-    * out of bounds. Re-check before returning. */
-   if (list->size <= old_size)
-      return NULL;
-   return list->data[old_size];
-}
-
-static void mylist_destroy(my_list **list_p)
-{
-   my_list *list = NULL;
-   if (!list_p)
-      return;
-
-   list = *list_p;
-
-   if (list)
-   {
-      mylist_resize(list, 0, false);
-      free(list->data);
-      free(list);
-      *list_p = NULL;
-   }
-}
-
-static void mylist_create(my_list **list_p, int initial_capacity,
-      constructor_t constructor, destructor_t destructor)
-{
-   my_list *list      = NULL;
-
-   if (!list_p)
-      return;
-
-   list               = *list_p;
-   if (list)
-      mylist_destroy(list_p);
-
-   list               = (my_list*)malloc(sizeof(my_list));
-   if (!list)
-   {
-      *list_p         = NULL;
-      return;
-   }
-   *list_p            = list;
-   list->size         = 0;
-   list->constructor  = constructor;
-   list->destructor   = destructor;
-   list->data         = (void**)calloc(initial_capacity, sizeof(void*));
-   /* On calloc OOM, leave list->data NULL and capacity 0;
-    * mylist_resize's realloc grows from there on first add and
-    * a subsequent realloc(NULL, n) is well-defined. */
-   list->capacity     = list->data ? initial_capacity : 0;
-}
-
-static void *input_list_element_constructor(void)
-{
-   void *ptr                   = malloc(sizeof(input_list_element));
-   input_list_element *element;
-
-   /* NULL-check the outer malloc: the field writes below
-    * (port/device/index/state_size) would NULL-deref on OOM.
-    * mylist_resize does not count a slot whose constructor returned
-    * NULL, and mylist_add_element then returns NULL. */
-   if (!ptr)
-      return NULL;
-
-   element                     = (input_list_element*)ptr;
-   element->port               = 0;
-   element->device             = 0;
-   element->index              = 0;
-   element->state              = (int16_t*)calloc(NAME_MAX_LENGTH,
-         sizeof(int16_t));
-   /* NULL-check the inner calloc too.  If it fails the caller's
-    * 'element->state[id] = value' NULL-derefs.  No way to signal
-    * partial-failure through the constructor callback's return
-    * type, so free the outer allocation and return NULL to match
-    * the outer-OOM behaviour. */
-   if (!element->state)
-   {
-      free(ptr);
-      return NULL;
-   }
-   element->state_size         = NAME_MAX_LENGTH;
-
-   return ptr;
-}
-
-static bool input_list_element_realloc(input_list_element *element,
-      unsigned int new_size)
-{
-   if (new_size > element->state_size)
-   {
-      /* realloc-to-tmp: the pre-patch 'element->state = realloc(
-       * element->state, ...)' self-assigns NULL on OOM, which
-       * then made the very next line '&element->state[element->
-       * state_size]' perform pointer arithmetic on NULL (UB) and
-       * the memset trap on a garbage address. */
-      int16_t *tmp = (int16_t*)realloc(element->state,
-            new_size * sizeof(int16_t));
-      if (!tmp)
-         return false;
-      element->state = tmp;
-      memset(&element->state[element->state_size], 0,
-            (new_size - element->state_size) * sizeof(int16_t));
-      element->state_size = new_size;
-   }
-   return true;
-}
-
-static bool input_list_element_expand(input_list_element *element,
-      unsigned int new_index)
-{
-   unsigned int new_size = element->state_size;
-   if (new_size == 0)
-      new_size = 32;
-   while (new_index >= new_size)
-      new_size *= 2;
-   return input_list_element_realloc(element, new_size);
-}
-
-static void input_list_element_destructor(void* element_ptr)
-{
-   input_list_element *element = (input_list_element*)element_ptr;
-   if (!element)
-      return;
-
-   free(element->state);
-   free(element_ptr);
-}
-
-static void runahead_input_state_set_last(
-      runloop_state_t *runloop_st,
-      unsigned port, unsigned device,
-      unsigned index, unsigned id, int16_t value)
-{
-   size_t i;
-   input_list_element *element = NULL;
-   int16_t *slot = runahead_dense_slot(runahead_dense, port, device, index, id);
-
-   if (slot)
-   {
-      *slot = value;
-      return;
-   }
-
-   if (!runloop_st->input_state_list)
-      mylist_create(&runloop_st->input_state_list, 16,
-            input_list_element_constructor,
-            input_list_element_destructor);
-
-   /* mylist_create can fail with OOM and leave *list_p NULL; the
-    * loop below would NULL-deref ->size.  Skip this input-state
-    * update on alloc failure - the next dirty-input check will
-    * retry. */
-   if (!runloop_st->input_state_list)
-      return;
-
-   /* Find list item */
-   for (i = 0; i < (unsigned)runloop_st->input_state_list->size; i++)
-   {
-      element = (input_list_element*)runloop_st->input_state_list->data[i];
-      if (     (element->port   == port)
-            && (element->device == device)
-            && (element->index  == index)
-         )
-      {
-         /* Gate the state[id] write on expand success: if expand
-          * OOM'd, state_size is still too small and writing to
-          * state[id] would corrupt memory past the buffer. */
-         if (id >= element->state_size
-               && !input_list_element_expand(element, id))
-            return;
-         element->state[id] = value;
-         return;
-      }
-   }
-
-   element               = NULL;
-   if (runloop_st->input_state_list)
-      element            = (input_list_element*)
-         mylist_add_element(runloop_st->input_state_list);
-   if (element)
-   {
-      element->port         = port;
-      element->device       = device;
-      element->index        = index;
-      /* Same expand-OOM guard as the lookup branch above. */
-      if (id >= element->state_size
-            && !input_list_element_expand(element, id))
-         return;
-      element->state[id]    = value;
-   }
-}
-
 static int16_t runahead_input_state_with_logging(unsigned port,
       unsigned device, unsigned index, unsigned id)
 {
@@ -1367,7 +1282,7 @@ static int16_t runahead_input_state_with_logging(unsigned port,
          runloop_st->flags     |= RUNLOOP_FLAG_INPUT_IS_DIRTY;
       /*arbitrary limit of up to 65536 elements in state array*/
       if (id < 65536)
-         runahead_input_state_set_last(runloop_st, port, device, index, id, result);
+         runahead_input_state_set_last(port, device, index, id, result);
       return result;
    }
    return 0;
@@ -1429,12 +1344,9 @@ static void runahead_remove_input_state_hook(runloop_state_t *runloop_st)
          runloop_st->input_state_callback_original;
       runloop_st->current_core.retro_set_input_state(cbs->state_cb);
       runloop_st->input_state_callback_original = NULL;
-      mylist_destroy(&runloop_st->input_state_list);
-   if (runahead_dense)
-   {
+      runahead_input_list_free(&runahead_input_list);
       free(runahead_dense);
       runahead_dense = NULL;
-   }
    }
 
    if (runloop_st->retro_reset_callback_original)
@@ -1657,114 +1569,28 @@ static void runahead_core_run_use_last_input(runloop_state_t *runloop_st)
    runloop_st->current_core.retro_set_input_state(cbs->state_cb);
 
    runloop_st->current_core.retro_run();
+   if (runloop_st->auto_state_load_pending)
+      runloop_st->auto_state_load_core_ran = true;
    audio_driver_frame_end();
 
    cbs->poll_cb                           = old_poll_function;
    cbs->state_cb                          = old_input_function;
 
-   runloop_st->current_core.retro_set_input_poll(cbs->poll_cb);
+   /* The core gets back the poll callback it was given at load, which
+    * polls only when the poll mode says the core's call is the one
+    * that does. cbs->poll_cb is not that: it is the frontend's own
+    * "poll now", input_driver_poll(). Handing it to the core made the
+    * core's input_poll an unconditional poll from the first frame of
+    * run-ahead on, so under late or early polling every frame polled
+    * twice - and went on doing so after run-ahead was switched off,
+    * until the core was reloaded. Turbo counts polls, so it ran at
+    * twice its rate. */
+   runloop_st->current_core.retro_set_input_poll(
+         runloop_st->input_poll_callback_original);
    runloop_st->current_core.retro_set_input_state(cbs->state_cb);
 }
 
-/* ===== BEGIN runahead budget gate =====
- * Runahead is N + 1 core steps per visible frame, plus a serialize and
- * a deserialize whose cost is set by the core's state size, not by the
- * frontend. When that no longer fits in the frame, runahead does not
- * lower latency - it drops frames and stretches audio, which is worse
- * than not running ahead at all. So the cost of one step is measured
- * every frame (the whole of runahead_run() divided by the core steps
- * it made, so the save and load are folded in), IIR-averaged, and the
- * frame count is clamped to what fits in RUNAHEAD_BUDGET_LOWER_PCT of
- * the core's frame period. The count only climbs back once it fits
- * within RUNAHEAD_BUDGET_RAISE_PCT, so a core sitting on the boundary
- * does not flip between N and N - 1 every frame. Samples above
- * RUNAHEAD_SAMPLE_CEIL_USEC (a JIT warm-up, a page-in) are dropped
- * rather than dragging the average. */
-#define RUNAHEAD_BUDGET_LOWER_PCT  70
-#define RUNAHEAD_BUDGET_RAISE_PCT  60
-#define RUNAHEAD_SAMPLE_CEIL_USEC  250000
-
-static retro_time_t runahead_frame_period_usec(video_driver_state_t *video_st)
-{
-   double fps = video_st->av_info.timing.fps;
-   if (fps <= 1.0 || fps > 1000.0)
-      fps = 60.0;
-   return (retro_time_t)(1000000.0 / fps);
-}
-
-static void runahead_budget_sample(runloop_state_t *runloop_st,
-      retro_time_t total_usec, int steps)
-{
-   retro_time_t unit;
-   if (steps <= 0 || total_usec < 0 || total_usec > RUNAHEAD_SAMPLE_CEIL_USEC)
-      return;
-   unit = total_usec / steps;
-   if (runloop_st->runahead_unit_usec == 0)
-      runloop_st->runahead_unit_usec = unit;
-   else
-      runloop_st->runahead_unit_usec +=
-         (unit - runloop_st->runahead_unit_usec) / 8;
-}
-
-/* Returns the frame count to run this frame: the requested count, or
- * fewer when the measured step cost says the request does not fit. 0
- * means run the core once with no lookahead. */
-static int runahead_budget_clamp(runloop_state_t *runloop_st,
-      video_driver_state_t *video_st, int requested, bool hide_warnings)
-{
-   retro_time_t unit   = runloop_st->runahead_unit_usec;
-   int used            = runloop_st->runahead_count_used;
-   int chosen          = used;
-   retro_time_t period, lower, raise;
-   int fits_lower, fits_raise;
-
-   if (unit <= 0)
-   {
-      /* No sample yet: run what was asked and measure it. */
-      runloop_st->runahead_count_used = requested;
-      return requested;
-   }
-   period     = runahead_frame_period_usec(video_st);
-   lower      = period * RUNAHEAD_BUDGET_LOWER_PCT / 100;
-   raise      = period * RUNAHEAD_BUDGET_RAISE_PCT / 100;
-   /* N frames of runahead is N + 1 core steps on either instance path. */
-   fits_lower = (int)(lower / unit) - 1;
-   fits_raise = (int)(raise / unit) - 1;
-   if (fits_lower < 0) fits_lower = 0;
-   if (fits_raise < 0) fits_raise = 0;
-
-   if (used > requested)
-      chosen = requested;
-   if (chosen > fits_lower)
-      chosen = fits_lower;
-   else if (chosen < requested && chosen < fits_raise)
-      chosen = (fits_raise < requested) ? fits_raise : requested;
-
-   if (chosen != used)
-   {
-      runloop_st->runahead_count_used = chosen;
-      if (chosen < requested)
-      {
-         char msg[128];
-         size_t _len = snprintf(msg, sizeof(msg),
-               "Run-Ahead: %d frame%s requested, %d fit%s the frame (%d us/step)",
-               requested, requested == 1 ? "" : "s",
-               chosen, chosen == 1 ? "s" : "",
-               (int)unit);
-         RARCH_WARN("[Run-Ahead] %s\n", msg);
-         if (!hide_warnings)
-            runloop_msg_queue_push(msg, _len, 0, 3 * 60, true, NULL,
-                  MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
-      }
-      else
-         RARCH_LOG("[Run-Ahead] %d frame%s fit%s the frame again (%d us/step).\n",
-               chosen, chosen == 1 ? "" : "s", chosen == 1 ? "s" : "", (int)unit);
-   }
-   return chosen;
-}
-/* ===== END runahead budget gate ===== */
-
-void runahead_run(void *data,
+bool runahead_run(void *data,
       int runahead_count,
       bool runahead_hide_warnings,
       bool use_secondary)
@@ -1773,6 +1599,7 @@ void runahead_run(void *data,
    int frame_number        = 0;
    bool last_frame         = false;
    bool suspended_frame    = false;
+   bool advanced           = false;
 #if defined(HAVE_DYNAMIC)
    const bool have_dynamic = true;
    settings_t *settings    = config_get_ptr();
@@ -1790,16 +1617,8 @@ void runahead_run(void *data,
    audio_driver_state_t
       *audio_st            = audio_state_get_ptr();
 
-   retro_time_t t_start    = cpu_features_get_time_usec();
-   int steps               = 0;
-
    if (      runahead_count <= 0
          || !(runloop_st->flags & RUNLOOP_FLAG_RUNAHEAD_AVAILABLE))
-      goto force_input_dirty;
-
-   runahead_count = runahead_budget_clamp(runloop_st, video_st,
-         runahead_count, runahead_hide_warnings);
-   if (runahead_count <= 0)
       goto force_input_dirty;
 
    if (!(runloop_st->flags & RUNLOOP_FLAG_RUNAHEAD_SAVE_STATE_SIZE_KNOWN))
@@ -1888,10 +1707,9 @@ void runahead_run(void *data,
          }
 
          if (frame_number == 0)
-            core_run();
+            advanced = core_run();
          else
             runahead_core_run_use_last_input(runloop_st);
-         steps++;
 
          if (suspended_frame)
          {
@@ -1903,6 +1721,9 @@ void runahead_run(void *data,
             AUDIO_FLAGS_CLEAR(audio_st, AUDIO_FLAG_SUSPENDED);
          }
 
+         if (!advanced)
+            return false;
+
          if (frame_number == 0)
          {
             if (!runahead_save_state(runloop_st))
@@ -1912,7 +1733,7 @@ void runahead_run(void *data,
                runloop_msg_queue_push(_msg, strlen(_msg), 0, 3 * 60, true, NULL,
                      MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
                RARCH_WARN("[Run-Ahead] %s\n", _msg);
-               return;
+               return advanced;
             }
          }
 
@@ -1924,7 +1745,7 @@ void runahead_run(void *data,
                runloop_msg_queue_push(_msg, strlen(_msg), 0, 3 * 60, true, NULL,
                      MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
                RARCH_WARN("[Run-Ahead] %s\n", _msg);
-               return;
+               return advanced;
             }
          }
       }
@@ -1936,12 +1757,14 @@ void runahead_run(void *data,
 
       /* run main core with video suspended */
       video_st->main_flags &= ~VIDEO_FLAG_ACTIVE;
-      core_run();
-      steps++;
+      advanced = core_run();
       if ((uint32_t)retro_atomic_load_relaxed_int(&video_st->flags) & VIDEO_FLAG_RUNAHEAD_IS_ACTIVE)
          video_st->main_flags |=  VIDEO_FLAG_ACTIVE;
       else
          video_st->main_flags &= ~VIDEO_FLAG_ACTIVE;
+
+      if (!advanced)
+         return false;
 
       if (     (runloop_st->flags & RUNLOOP_FLAG_INPUT_IS_DIRTY)
             || (runloop_st->flags & RUNLOOP_FLAG_RUNAHEAD_FORCE_INPUT_DIRTY))
@@ -1954,7 +1777,7 @@ void runahead_run(void *data,
             runloop_msg_queue_push(_msg, strlen(_msg), 0, 3 * 60, true, NULL,
                   MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
             RARCH_WARN("[Run-Ahead] %s\n", _msg);
-            return;
+            return advanced;
          }
 
          if (!runahead_load_state_secondary(runloop_st, settings))
@@ -1963,7 +1786,7 @@ void runahead_run(void *data,
             runloop_msg_queue_push(_msg, strlen(_msg), 0, 3 * 60, true, NULL,
                   MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
             RARCH_WARN("[Run-Ahead] %s\n", _msg);
-            return;
+            return advanced;
          }
 
          for (frame_number = 0; frame_number < runahead_count - 1; frame_number++)
@@ -1974,7 +1797,6 @@ void runahead_run(void *data,
                runloop_st->flags        |=  RUNLOOP_FLAG_RUNAHEAD_SECONDARY_CORE_AVAILABLE;
             else
                runloop_st->flags        &= ~RUNLOOP_FLAG_RUNAHEAD_SECONDARY_CORE_AVAILABLE;
-            steps++;
             AUDIO_FLAGS_CLEAR(audio_st, AUDIO_FLAG_SUSPENDED | AUDIO_FLAG_HARD_DISABLE);
             if ((uint32_t)retro_atomic_load_relaxed_int(&video_st->flags) & VIDEO_FLAG_RUNAHEAD_IS_ACTIVE)
                video_st->main_flags |=  VIDEO_FLAG_ACTIVE;
@@ -1987,18 +1809,16 @@ void runahead_run(void *data,
          runloop_st->flags              |=  RUNLOOP_FLAG_RUNAHEAD_SECONDARY_CORE_AVAILABLE;
       else
          runloop_st->flags              &= ~RUNLOOP_FLAG_RUNAHEAD_SECONDARY_CORE_AVAILABLE;
-      steps++;
       AUDIO_FLAGS_CLEAR(audio_st, AUDIO_FLAG_SUSPENDED | AUDIO_FLAG_HARD_DISABLE);
 #endif
    }
    runloop_st->flags &= ~RUNLOOP_FLAG_RUNAHEAD_FORCE_INPUT_DIRTY;
-   runahead_budget_sample(runloop_st,
-         cpu_features_get_time_usec() - t_start, steps);
-   return;
+   return advanced;
 
 force_input_dirty:
-   core_run();
+   advanced = core_run();
    runloop_st->flags |=  RUNLOOP_FLAG_RUNAHEAD_FORCE_INPUT_DIRTY;
+   return advanced;
 }
 
 /* Preemptive Frames */
@@ -2177,6 +1997,8 @@ bool preempt_init(void *data)
    if (video_state_get_ptr()->frame_count == 0)
    {
       runloop_st->current_core.retro_run();
+      if (runloop_st->auto_state_load_pending)
+         runloop_st->auto_state_load_core_ran = true;
       audio_driver_frame_end();
    }
 
@@ -2330,7 +2152,7 @@ static INLINE void preempt_input_poll(preempt_t *preempt,
  *
  * Call in place of core_run() for preemptive frames.
  **/
-void preempt_run(preempt_t *preempt, void *data)
+bool preempt_run(preempt_t *preempt, void *data)
 {
    runloop_state_t     *runloop_st   = (runloop_state_t*)data;
    struct retro_core_t *current_core = &runloop_st->current_core;
@@ -2371,6 +2193,8 @@ void preempt_run(preempt_t *preempt, void *data)
       }
 
       current_core->retro_run();
+      if (runloop_st->auto_state_load_pending)
+         runloop_st->auto_state_load_core_ran = true;
       preempt->replay_ptr = PREEMPT_NEXT_PTR(preempt->start_ptr);
 
       while (preempt->replay_ptr != preempt->start_ptr)
@@ -2383,6 +2207,8 @@ void preempt_run(preempt_t *preempt, void *data)
          }
 
          current_core->retro_run();
+         if (runloop_st->auto_state_load_pending)
+            runloop_st->auto_state_load_core_ran = true;
          preempt->replay_ptr = PREEMPT_NEXT_PTR(preempt->replay_ptr);
       }
 
@@ -2404,9 +2230,11 @@ void preempt_run(preempt_t *preempt, void *data)
 
    /* Run normal frame */
    current_core->retro_run();
+   if (runloop_st->auto_state_load_pending)
+      runloop_st->auto_state_load_core_ran = true;
    audio_driver_frame_end();
    preempt->frame_count++;
-   return;
+   return true;
 
 error:
    runloop_st->flags &= ~(RUNLOOP_FLAG_REQUEST_SPECIAL_SAVESTATE
@@ -2419,6 +2247,7 @@ error:
       runloop_msg_queue_push(_msg, strlen(_msg), 0, 2 * 60, true, NULL,
             MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
    RARCH_ERR("[Run-Ahead Preemptive] %s\n", _msg);
+   return false;
 }
 
 void runahead_clear_variables(void *data)
@@ -2430,6 +2259,4 @@ void runahead_clear_variables(void *data)
                                           | RUNLOOP_FLAG_RUNAHEAD_SECONDARY_CORE_AVAILABLE
                                           | RUNLOOP_FLAG_RUNAHEAD_FORCE_INPUT_DIRTY;
    runloop_st->runahead_last_frame_count  = 0;
-   runloop_st->runahead_unit_usec         = 0;
-   runloop_st->runahead_count_used        = 0;
 }

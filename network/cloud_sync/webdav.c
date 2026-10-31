@@ -14,11 +14,15 @@
 
 #include <compat/strl.h>
 #include <encodings/base64.h>
+#include <features/features_cpu.h>
 #include <lists/string_list.h>
 #include <lrc_hash.h>
 #include <net/net_http.h>
 #include <time/rtime.h>
 #include <string/stdstring.h>
+#ifdef HAVE_CRYPTO
+#include <crypto/kdf.h>
+#endif
 
 #include "../cloud_sync_driver.h"
 #include "../../retroarch.h"
@@ -67,13 +71,13 @@ typedef struct
    char *nonce;
    char *algo;
    char *opaque;
-   char *cnonce;
    unsigned nc;
+   char cnonce[33];
    bool qop_auth;
    bool dav_verified;
 } webdav_state_t;
 
-static webdav_state_t webdav_driver_st = {0};
+static webdav_state_t webdav_driver_st;
 
 webdav_state_t *webdav_state_get_ptr(void)
 {
@@ -158,51 +162,38 @@ static void webdav_cleanup_digest(void)
       free(webdav_st->opaque);
    webdav_st->opaque = NULL;
 
-   if (webdav_st->cnonce)
-      free(webdav_st->cnonce);
-   webdav_st->cnonce = NULL;
+   webdav_st->cnonce[0] = '\0';
 
    webdav_st->qop_auth = false;
    webdav_st->nc = 1;
 }
 
-/* Generate a fresh client-nonce (cnonce) per RFC 7616 §3.4.4.
- * The previous hardcoded "1a2b3c4f" defeated digest-auth replay
- * protection entirely (server's `nonce` was fresh per challenge,
- * but the client side reused the same cnonce indefinitely so an
- * attacker who recorded one Authorization header could replay it).
- *
- * RetroArch / libretro-common does not currently wrap a CSPRNG
- * (getrandom / BCryptGenRandom / arc4random); when one is added,
- * this helper should switch to using it.  Until then we mix three
- * sources that an off-machine attacker cannot jointly observe:
- *   - time(NULL) to second resolution
- *   - clock() to clock-tick resolution
- *   - &mix (ASLR-randomised stack address)
- * @nc is mixed in too, but adds nothing: every caller passes it just
- * after webdav_cleanup_digest() reset it to 1.
- * MD5 the mix into 16 bytes and hex-encode.  This is NOT a CSPRNG
- * and would not stop a co-resident attacker; it does stop the
- * wire-only replay attack the digest scheme is meant to defend. */
-static char *webdav_create_cnonce(unsigned nc)
+/* A new client nonce for each challenge, as 32 hex digits. The cnonce
+ * is the client's own input to the digest: with a fixed one, a hostile
+ * server (or anyone in the middle of plain HTTP) picks every other input
+ * and can test password guesses against tables computed in advance.
+ * From the platform entropy source where the crypto library has one,
+ * otherwise from the microsecond clock and a counter, which still
+ * differs per challenge but is not unpredictable. */
+static void webdav_create_cnonce(char *out)
 {
-   size_t        i;
-   MD5_CTX       md5;
-   unsigned char digest[16];
-   uint64_t      mix[4];
-   char         *out = (char*)malloc(33);
-   if (!out)
-      return NULL;
-   mix[0] = (uint64_t)time(NULL);
-   mix[1] = (uint64_t)clock();
-   mix[2] = (uint64_t)(uintptr_t)&mix;
-   mix[3] = (uint64_t)nc;
-   MD5_Init(&md5);
-   MD5_Update(&md5, (const unsigned char*)mix, sizeof(mix));
-   MD5_Final(digest, &md5);
-   for (i = 0; i < 16; i++)
-      snprintf(out + i * 2, 3, "%02x", digest[i]);
-   return out;
+   static unsigned counter = 0;
+   unsigned char   bytes[16];
+   size_t          i;
+#ifdef HAVE_CRYPTO
+   if (crypto_random_bytes(bytes, sizeof(bytes)) != 0)
+#endif
+   {
+      MD5_CTX  md5;
+      retro_time_t now = cpu_features_get_time_usec();
+      counter++;
+      MD5_Init(&md5);
+      MD5_Update(&md5, &now, sizeof(now));
+      MD5_Update(&md5, &counter, sizeof(counter));
+      MD5_Final(bytes, &md5);
+   }
+   for (i = 0; i < sizeof(bytes); i++)
+      snprintf(out + i * 2, 3, "%02x", bytes[i]);
 }
 
 static char *webdav_create_ha1_hash(char *user, char *realm, char *pass)
@@ -370,10 +361,7 @@ static bool webdav_create_digest_auth(const char *digest)
    if (!webdav_st->ha1hash || !webdav_st->nonce)
       goto parse_fail;
 
-   webdav_st->cnonce = webdav_create_cnonce(webdav_st->nc);
-   if (!webdav_st->cnonce)
-      goto parse_fail;
-
+   webdav_create_cnonce(webdav_st->cnonce);
    webdav_st->basic = false;
 
    return true;
@@ -499,7 +487,7 @@ static char *webdav_create_digest_auth_header(const char *method, const char *ur
    /* A challenge the parser rejected leaves no digest to answer with,
     * and basic auth stays off once one challenge has been accepted. */
    if (   !webdav_st->ha1hash || !webdav_st->realm
-       || !webdav_st->nonce   || !webdav_st->cnonce)
+       || !webdav_st->nonce   || !webdav_st->cnonce[0])
       return NULL;
 
    /* Skip scheme and host to get at the path.  strchr() returns NULL
@@ -1524,5 +1512,6 @@ cloud_sync_driver_t cloud_sync_webdav = {
    webdav_read,
    webdav_update,
    webdav_delete,
-   "webdav" /* ident */
+   "webdav", /* ident */
+   0 /* flags */
 };

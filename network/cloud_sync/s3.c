@@ -422,12 +422,10 @@ static char* s3_url_encode(const char *input)
    {
       unsigned char c = (unsigned char)input[i];
 
-      /* Paths only (queries go through s3_url_encode_query_value):
-       * RFC 3986 unreserved characters stay literal, and so does '/',
-       * so the canonical URI keeps its segments.  Everything else is
-       * encoded, '?', '&' and '=' included: a literal '?' in an object
-       * key would end the path in s3_build_canonical_uri_from_url, and
-       * the request would be signed for the wrong path. */
+      /* RFC 3986 unreserved characters: A-Z, a-z, 0-9, -, ., _, ~ */
+      /* Path delimiters that should not be encoded: / */
+      /* This encodes the object key only, so '&', '=' and '?' are
+       * key characters and must be encoded like any other. */
       if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
           (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' ||
           c == '~' || c == '/')
@@ -2332,5 +2330,6 @@ cloud_sync_driver_t cloud_sync_s3 = {
    s3_read,
    s3_update,
    s3_free,
-   "s3"
+   "s3",
+   0
 };

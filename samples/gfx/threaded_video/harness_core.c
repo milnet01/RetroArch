@@ -33,7 +33,10 @@ static unsigned runs;
  * frontend, which is what a core is entitled to do in context_destroy.
  * It can also withdraw the image in mid-session the way a core does
  * before it rebuilds its renderer: set_image(NULL), then destroy. Either
- * way the frontend must not draw from the image again. */
+ * way the frontend must not draw from the image again.
+ * harness_core_hw_ring() switches it to an image per sync index instead,
+ * each cleared on the core's side of the sync index protocol and handed
+ * over behind a semaphore, as a core with a renderer of its own does. */
 static int hw_mode;
 /* HARNESS_CORE_HW_VULKAN=2: the core creates the device, through the
  * negotiation interface's create_device, the way Beetle PSX and the
@@ -43,6 +46,12 @@ static int hw_mode;
  * frontend then does on the strength of an optional extension is a
  * validation error here. */
 static int hw_own_device;
+/* HARNESS_CORE_HW_VULKAN=3: the core caches its context across a video
+ * reinit (hw_render.cache_context), as Azahar does: the frontend keeps
+ * the instance and device and calls neither context_destroy nor
+ * context_reset. */
+static int hw_cache_context;
+static unsigned hw_resets;
 static const struct retro_hw_render_interface_vulkan *hw_vk;
 static struct retro_hw_render_callback hw_cb;
 static struct retro_vulkan_image hw_image;
@@ -67,15 +76,40 @@ static PFN_vkEndCommandBuffer           hw_vkEndCommandBuffer;
 static PFN_vkCmdPipelineBarrier         hw_vkCmdPipelineBarrier;
 static PFN_vkCmdClearColorImage         hw_vkCmdClearColorImage;
 static PFN_vkQueueSubmit                hw_vkQueueSubmit;
+static PFN_vkQueueWaitIdle              hw_vkQueueWaitIdle;
 static PFN_vkCreateFence                hw_vkCreateFence;
 static PFN_vkDestroyFence               hw_vkDestroyFence;
 static PFN_vkWaitForFences              hw_vkWaitForFences;
+static PFN_vkResetFences                hw_vkResetFences;
+static PFN_vkCreateSemaphore            hw_vkCreateSemaphore;
+static PFN_vkDestroySemaphore           hw_vkDestroySemaphore;
 static PFN_vkGetPhysicalDeviceMemoryProperties hw_vkGetPhysicalDeviceMemoryProperties;
+
+/* harness_core_hw_ring(): 0 off, 1 every third frame a dupe, 2 every
+ * third frame a software frame, 3 every frame a hardware one. */
+#define HW_RING_SLOTS 8
+static int           hw_ring;
+static unsigned      hw_ring_sent;
+/* Told each image the core is about to clear, as its 64 bits. */
+static void        (*hw_ring_clear_hook)(uint64_t image);
+static VkCommandPool hw_ring_pool;
+static struct hw_ring_slot
+{
+   struct retro_vulkan_image image;
+   VkImage         vkimage;
+   VkDeviceMemory  memory;
+   VkCommandBuffer cmd;
+   VkSemaphore     semaphore;
+   VkFence         fence;
+   int             pending;
+   unsigned        uses;
+} hw_ring_slots[HW_RING_SLOTS];
 
 #define HW_SYM(name) \
    hw_##name = (PFN_##name)hw_vk->get_device_proc_addr(hw_vk->device, #name)
 
-static void hw_barrier(VkCommandBuffer cmd, VkImageLayout from, VkImageLayout to,
+static void hw_barrier(VkCommandBuffer cmd, VkImage image,
+      VkImageLayout from, VkImageLayout to,
       VkAccessFlags src_access, VkAccessFlags dst_access,
       VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage)
 {
@@ -88,7 +122,7 @@ static void hw_barrier(VkCommandBuffer cmd, VkImageLayout from, VkImageLayout to
    b.newLayout                   = to;
    b.srcQueueFamilyIndex         = VK_QUEUE_FAMILY_IGNORED;
    b.dstQueueFamilyIndex         = VK_QUEUE_FAMILY_IGNORED;
-   b.image                       = hw_vkimage;
+   b.image                       = image;
    b.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
    b.subresourceRange.levelCount = 1;
    b.subresourceRange.layerCount = 1;
@@ -108,23 +142,14 @@ static void hw_image_destroy(void)
    hw_have_image = 0;
 }
 
-/* A cleared W x H image in the layout the frontend samples it in. */
-static int hw_image_create(void)
+/* A W x H image, its memory and the view the frontend samples. */
+static int hw_image_alloc(VkImage *image, VkDeviceMemory *memory,
+      struct retro_vulkan_image *out)
 {
    VkImageCreateInfo ici;
    VkMemoryRequirements reqs;
    VkPhysicalDeviceMemoryProperties props;
    VkMemoryAllocateInfo mai;
-   VkCommandPoolCreateInfo cpi;
-   VkCommandBufferAllocateInfo cai;
-   VkCommandBufferBeginInfo cbi;
-   VkFenceCreateInfo fci;
-   VkSubmitInfo si;
-   VkImageSubresourceRange range;
-   VkClearColorValue colour;
-   VkCommandPool pool  = VK_NULL_HANDLE;
-   VkCommandBuffer cmd = VK_NULL_HANDLE;
-   VkFence fence       = VK_NULL_HANDLE;
    uint32_t i;
 
    memset(&ici, 0, sizeof(ici));
@@ -141,10 +166,10 @@ static int hw_image_create(void)
    ici.usage         = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
    ici.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
    ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-   if (hw_vkCreateImage(hw_vk->device, &ici, NULL, &hw_vkimage) != VK_SUCCESS)
+   if (hw_vkCreateImage(hw_vk->device, &ici, NULL, image) != VK_SUCCESS)
       return 0;
 
-   hw_vkGetImageMemoryRequirements(hw_vk->device, hw_vkimage, &reqs);
+   hw_vkGetImageMemoryRequirements(hw_vk->device, *image, &reqs);
    hw_vkGetPhysicalDeviceMemoryProperties(hw_vk->gpu, &props);
    for (i = 0; i < props.memoryTypeCount; i++)
       if (reqs.memoryTypeBits & (1u << i))
@@ -154,27 +179,46 @@ static int hw_image_create(void)
    mai.allocationSize  = reqs.size;
    mai.memoryTypeIndex = i;
    if (     i == props.memoryTypeCount
-         || hw_vkAllocateMemory(hw_vk->device, &mai, NULL, &hw_memory) != VK_SUCCESS)
+         || hw_vkAllocateMemory(hw_vk->device, &mai, NULL, memory) != VK_SUCCESS)
    {
-      hw_vkDestroyImage(hw_vk->device, hw_vkimage, NULL);
+      hw_vkDestroyImage(hw_vk->device, *image, NULL);
       return 0;
    }
-   hw_vkBindImageMemory(hw_vk->device, hw_vkimage, hw_memory, 0);
+   hw_vkBindImageMemory(hw_vk->device, *image, *memory, 0);
 
-   memset(&hw_image, 0, sizeof(hw_image));
-   hw_image.image_layout                            = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-   hw_image.create_info.sType                       = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-   hw_image.create_info.image                       = hw_vkimage;
-   hw_image.create_info.viewType                    = VK_IMAGE_VIEW_TYPE_2D;
-   hw_image.create_info.format                      = VK_FORMAT_R8G8B8A8_UNORM;
-   hw_image.create_info.components.r                = VK_COMPONENT_SWIZZLE_R;
-   hw_image.create_info.components.g                = VK_COMPONENT_SWIZZLE_G;
-   hw_image.create_info.components.b                = VK_COMPONENT_SWIZZLE_B;
-   hw_image.create_info.components.a                = VK_COMPONENT_SWIZZLE_A;
-   hw_image.create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-   hw_image.create_info.subresourceRange.levelCount = 1;
-   hw_image.create_info.subresourceRange.layerCount = 1;
-   hw_vkCreateImageView(hw_vk->device, &hw_image.create_info, NULL, &hw_image.image_view);
+   memset(out, 0, sizeof(*out));
+   out->image_layout                            = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+   out->create_info.sType                       = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+   out->create_info.image                       = *image;
+   out->create_info.viewType                    = VK_IMAGE_VIEW_TYPE_2D;
+   out->create_info.format                      = VK_FORMAT_R8G8B8A8_UNORM;
+   out->create_info.components.r                = VK_COMPONENT_SWIZZLE_R;
+   out->create_info.components.g                = VK_COMPONENT_SWIZZLE_G;
+   out->create_info.components.b                = VK_COMPONENT_SWIZZLE_B;
+   out->create_info.components.a                = VK_COMPONENT_SWIZZLE_A;
+   out->create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+   out->create_info.subresourceRange.levelCount = 1;
+   out->create_info.subresourceRange.layerCount = 1;
+   hw_vkCreateImageView(hw_vk->device, &out->create_info, NULL, &out->image_view);
+   return 1;
+}
+
+/* A cleared W x H image in the layout the frontend samples it in. */
+static int hw_image_create(void)
+{
+   VkCommandPoolCreateInfo cpi;
+   VkCommandBufferAllocateInfo cai;
+   VkCommandBufferBeginInfo cbi;
+   VkFenceCreateInfo fci;
+   VkSubmitInfo si;
+   VkImageSubresourceRange range;
+   VkClearColorValue colour;
+   VkCommandPool pool  = VK_NULL_HANDLE;
+   VkCommandBuffer cmd = VK_NULL_HANDLE;
+   VkFence fence       = VK_NULL_HANDLE;
+
+   if (!hw_image_alloc(&hw_vkimage, &hw_memory, &hw_image))
+      return 0;
 
    memset(&cpi, 0, sizeof(cpi));
    cpi.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -190,7 +234,7 @@ static int hw_image_create(void)
    cbi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
    cbi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
    hw_vkBeginCommandBuffer(cmd, &cbi);
-   hw_barrier(cmd, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+   hw_barrier(cmd, hw_vkimage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
          0, VK_ACCESS_TRANSFER_WRITE_BIT,
          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
    memset(&range, 0, sizeof(range));
@@ -203,7 +247,7 @@ static int hw_image_create(void)
    colour.float32[3] = 1.0f;
    hw_vkCmdClearColorImage(cmd, hw_vkimage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
          &colour, 1, &range);
-   hw_barrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+   hw_barrier(cmd, hw_vkimage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
          VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
    hw_vkEndCommandBuffer(cmd);
@@ -227,8 +271,164 @@ static int hw_image_create(void)
    return 1;
 }
 
+static void hw_ring_slot_free(struct hw_ring_slot *s)
+{
+   if (s->image.image_view)
+      hw_vkDestroyImageView(hw_vk->device, s->image.image_view, NULL);
+   if (s->vkimage)
+      hw_vkDestroyImage(hw_vk->device, s->vkimage, NULL);
+   if (s->memory)
+      hw_vkFreeMemory(hw_vk->device, s->memory, NULL);
+   if (s->semaphore)
+      hw_vkDestroySemaphore(hw_vk->device, s->semaphore, NULL);
+   if (s->fence)
+      hw_vkDestroyFence(hw_vk->device, s->fence, NULL);
+   memset(s, 0, sizeof(*s));
+}
+
+static int hw_ring_slot_init(struct hw_ring_slot *s)
+{
+   VkCommandBufferAllocateInfo cai;
+   VkSemaphoreCreateInfo sci;
+   VkFenceCreateInfo fci;
+   if (!hw_image_alloc(&s->vkimage, &s->memory, &s->image))
+   {
+      s->vkimage = VK_NULL_HANDLE;
+      s->memory  = VK_NULL_HANDLE;
+      return 0;
+   }
+   memset(&cai, 0, sizeof(cai));
+   cai.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+   cai.commandPool        = hw_ring_pool;
+   cai.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+   cai.commandBufferCount = 1;
+   memset(&sci, 0, sizeof(sci));
+   sci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+   memset(&fci, 0, sizeof(fci));
+   fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+   return hw_vkAllocateCommandBuffers(hw_vk->device, &cai, &s->cmd) == VK_SUCCESS
+       && hw_vkCreateSemaphore(hw_vk->device, &sci, NULL, &s->semaphore) == VK_SUCCESS
+       && hw_vkCreateFence(hw_vk->device, &fci, NULL, &s->fence) == VK_SUCCESS;
+}
+
+/* The images go with the context. The frontend's reads of them are on
+ * the queue, and so are its waits on their semaphores. */
+static void hw_ring_free(void)
+{
+   unsigned i;
+   if (!hw_ring_pool)
+      return;
+   hw_vk->lock_queue(hw_vk->handle);
+   hw_vkQueueWaitIdle(hw_vk->queue);
+   hw_vk->unlock_queue(hw_vk->handle);
+   for (i = 0; i < HW_RING_SLOTS; i++)
+      hw_ring_slot_free(&hw_ring_slots[i]);
+   hw_vkDestroyCommandPool(hw_vk->device, hw_ring_pool, NULL);
+   hw_ring_pool = VK_NULL_HANDLE;
+}
+
+/* The core's side of the sync index protocol: wait for the index, then
+ * clear its image, which the frontend must no longer read, and hand it
+ * over behind the clear's semaphore. */
+static int hw_ring_send(void)
+{
+   VkCommandBufferBeginInfo cbi;
+   VkSubmitInfo si;
+   VkClearColorValue colour;
+   struct hw_ring_slot *s;
+   uint32_t index;
+
+   if (!hw_ring_pool)
+   {
+      VkCommandPoolCreateInfo cpi;
+      memset(&cpi, 0, sizeof(cpi));
+      cpi.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+      cpi.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+      cpi.queueFamilyIndex = hw_vk->queue_index;
+      if (hw_vkCreateCommandPool(hw_vk->device, &cpi, NULL, &hw_ring_pool) != VK_SUCCESS)
+         return 0;
+   }
+   hw_vk->wait_sync_index(hw_vk->handle);
+   index = hw_vk->get_sync_index(hw_vk->handle);
+   if (index >= HW_RING_SLOTS)
+      return 0;
+   s = &hw_ring_slots[index];
+   if (!s->semaphore && !hw_ring_slot_init(s))
+   {
+      hw_ring_slot_free(s);
+      return 0;
+   }
+   if (s->pending)
+   {
+      hw_vkWaitForFences(hw_vk->device, 1, &s->fence, VK_TRUE, UINT64_MAX);
+      hw_vkResetFences(hw_vk->device, 1, &s->fence);
+      s->pending = 0;
+      /* wait_sync_index says the frontend is done with the index, its
+       * semaphore included. Every other use signals the same semaphore
+       * again, a validation error if the frontend never waited it; the
+       * rest recycle it, one if a wait of it is still on the queue. */
+      if (s->uses++ & 1)
+      {
+         VkSemaphoreCreateInfo sci;
+         hw_vkDestroySemaphore(hw_vk->device, s->semaphore, NULL);
+         memset(&sci, 0, sizeof(sci));
+         sci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+         if (hw_vkCreateSemaphore(hw_vk->device, &sci, NULL, &s->semaphore) != VK_SUCCESS)
+         {
+            s->semaphore = VK_NULL_HANDLE;
+            hw_ring_slot_free(s);
+            return 0;
+         }
+      }
+   }
+   if (hw_ring_clear_hook)
+   {
+      uint64_t image = 0;
+      memcpy(&image, &s->vkimage, sizeof(s->vkimage));
+      hw_ring_clear_hook(image);
+   }
+
+   memset(&cbi, 0, sizeof(cbi));
+   cbi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+   cbi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+   hw_vkBeginCommandBuffer(s->cmd, &cbi);
+   hw_barrier(s->cmd, s->vkimage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         0, VK_ACCESS_TRANSFER_WRITE_BIT,
+         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+   colour.float32[0] = (float)(runs & 0xff) / 255.0f;
+   colour.float32[1] = 0.5f;
+   colour.float32[2] = 0.25f;
+   colour.float32[3] = 1.0f;
+   hw_vkCmdClearColorImage(s->cmd, s->vkimage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         &colour, 1, &s->image.create_info.subresourceRange);
+   hw_barrier(s->cmd, s->vkimage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+         VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+   hw_vkEndCommandBuffer(s->cmd);
+
+   memset(&si, 0, sizeof(si));
+   si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+   si.commandBufferCount   = 1;
+   si.pCommandBuffers      = &s->cmd;
+   si.signalSemaphoreCount = 1;
+   si.pSignalSemaphores    = &s->semaphore;
+   hw_vk->lock_queue(hw_vk->handle);
+   if (hw_vkQueueSubmit(hw_vk->queue, 1, &si, s->fence) != VK_SUCCESS)
+   {
+      hw_vk->unlock_queue(hw_vk->handle);
+      return 0;
+   }
+   hw_vk->unlock_queue(hw_vk->handle);
+   s->pending = 1;
+   hw_vk->set_image(hw_vk->handle, &s->image, 1, &s->semaphore,
+         VK_QUEUE_FAMILY_IGNORED);
+   hw_ring_sent++;
+   return 1;
+}
+
 static void hw_context_reset(void)
 {
+   hw_resets++;
    hw_vk = NULL;
    if (     !environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void*)&hw_vk)
          || !hw_vk
@@ -253,9 +453,13 @@ static void hw_context_reset(void)
    HW_SYM(vkCmdPipelineBarrier);
    HW_SYM(vkCmdClearColorImage);
    HW_SYM(vkQueueSubmit);
+   HW_SYM(vkQueueWaitIdle);
    HW_SYM(vkCreateFence);
    HW_SYM(vkDestroyFence);
    HW_SYM(vkWaitForFences);
+   HW_SYM(vkResetFences);
+   HW_SYM(vkCreateSemaphore);
+   HW_SYM(vkDestroySemaphore);
    hw_vkGetPhysicalDeviceMemoryProperties = (PFN_vkGetPhysicalDeviceMemoryProperties)
       hw_vk->get_instance_proc_addr(hw_vk->instance, "vkGetPhysicalDeviceMemoryProperties");
    if (!hw_withdrawn)
@@ -354,7 +558,10 @@ static const struct retro_hw_render_context_negotiation_interface_vulkan hw_nego
 static void hw_context_destroy(void)
 {
    if (hw_vk)
+   {
       hw_image_destroy();
+      hw_ring_free();
+   }
    hw_vk = NULL;
 }
 
@@ -364,6 +571,11 @@ RETRO_API unsigned harness_core_hw_active(void)
 {
    return (hw_mode && hw_vk && hw_have_image) ? 1 : 0;
 }
+
+RETRO_API unsigned harness_core_hw_cached(void) { return hw_cache_context; }
+
+/* context_reset calls so far: a cached context takes none on a reinit. */
+RETRO_API unsigned harness_core_hw_resets(void) { return hw_resets; }
 
 /* Withdraw the image and destroy it; retro_run pushes dupes until
  * harness_core_hw_restore(). */
@@ -386,14 +598,25 @@ RETRO_API unsigned harness_core_hw_restore(void)
    return hw_image_create() ? 1 : 0;
 }
 
+RETRO_API void harness_core_hw_ring(int mode) { hw_ring = mode; }
+
+/* Images handed over in the ring mode. */
+RETRO_API unsigned harness_core_hw_ring_sent(void) { return hw_ring_sent; }
+
+RETRO_API void harness_core_hw_ring_on_clear(void (*hook)(uint64_t image))
+{
+   hw_ring_clear_hook = hook;
+}
+
 void retro_set_environment(retro_environment_t cb)
 {
    bool no_content = true;
    environ_cb = cb;
    {
       const char *hw = getenv("HARNESS_CORE_HW_VULKAN");
-      hw_mode       = (hw && *hw) ? 1 : 0;
-      hw_own_device = (hw && *hw == '2') ? 1 : 0;
+      hw_mode          = (hw && *hw) ? 1 : 0;
+      hw_own_device    = (hw && *hw == '2') ? 1 : 0;
+      hw_cache_context = (hw && *hw == '3') ? 1 : 0;
    }
    /* RGB565 by default; XRGB8888 with HARNESS_CORE_XRGB8888 set. The
     * two take different paths through a driver - Vulkan converts
@@ -421,8 +644,10 @@ void retro_set_audio_sample(retro_audio_sample_t cb) { (void)cb; }
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb) { (void)cb; }
 void retro_set_input_poll(retro_input_poll_t cb) { (void)cb; }
 void retro_set_input_state(retro_input_state_t cb) { (void)cb; }
-void retro_init(void) { }
-void retro_deinit(void) { }
+static void harness_env_init(void);
+static void harness_env_report(void);
+void retro_init(void) { harness_env_init(); }
+void retro_deinit(void) { harness_env_report(); }
 unsigned retro_api_version(void) { return RETRO_API_VERSION; }
 void retro_get_system_info(struct retro_system_info *info)
 {
@@ -455,6 +680,9 @@ void retro_reset(void) { }
 #define CROP_Y 4
 static int      harness_use_fb;
 static unsigned harness_fb_granted;
+/* Grants of memory the frontend did not report cached: slow to read
+ * back on a device that maps its video memory (resizable BAR). */
+static unsigned harness_fb_uncached;
 
 /* RETRO_API, like the core's own entry points: a Windows DLL exports
  * only what is marked, and the harness looks these two up by name. */
@@ -465,6 +693,13 @@ RETRO_API void harness_core_use_framebuffer(int on) { harness_use_fb = on; }
  * the frame can be written. */
 static unsigned                harness_run_us;
 static retro_perf_get_time_usec_t harness_time_usec;
+/* How many times retro_run has run, for the lanes that check the core
+ * keeps its own rate under a menu running at another */
+RETRO_API unsigned harness_core_runs(void)
+{
+   return runs;
+}
+
 RETRO_API void harness_core_set_run_us(unsigned us)
 {
    struct retro_perf_callback perf;
@@ -479,12 +714,73 @@ RETRO_API void harness_core_set_run_us(unsigned us)
       harness_run_us    = us;
    }
 }
+/* Nonzero: every frame carries this number instead of the run's, at
+ * the base size, so two ways of drawing it can be compared on screen */
+static unsigned harness_frozen;
+RETRO_API void harness_core_freeze(unsigned n) { harness_frozen = n; }
+/* Says a new pixel format, as a core restarting its video would, and
+ * draws in it from the next run: 16-bit pixels for RGB565 and 0RGB1555,
+ * 32-bit for XRGB8888 and XRGB2101010. False when the frontend refuses. */
+RETRO_API bool harness_core_set_format(unsigned fmt)
+{
+   enum retro_pixel_format f = (enum retro_pixel_format)fmt;
+   if (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &f))
+      return false;
+   pixel_format = f;
+   bpp          = (f == RETRO_PIXEL_FORMAT_XRGB8888
+         || f == RETRO_PIXEL_FORMAT_XRGB2101010) ? 4 : 2;
+   return true;
+}
+/* The access a framebuffer is asked with: read and write by default,
+ * as a core that snapshots its frame for a wipe asks; write only for
+ * one that only draws */
+static unsigned harness_fb_access = RETRO_MEMORY_ACCESS_WRITE
+                                  | RETRO_MEMORY_ACCESS_READ;
+RETRO_API void harness_core_fb_access(unsigned a) { harness_fb_access = a; }
+/* Nonzero: every frame is the run's number, its low 8 bits as eight
+ * bands across the frame, each all ones or all zeroes, so the number a
+ * scaled, filtered frame on screen came from can still be read; at the
+ * base size always */
+static unsigned harness_stamp;
+/* The number the last frame pushed, not a dupe, carried */
+static unsigned harness_last_pushed;
+RETRO_API void harness_core_stamp(unsigned on)      { harness_stamp = on; }
+RETRO_API unsigned harness_core_last_pushed(void)   { return harness_last_pushed; }
 RETRO_API unsigned harness_core_fb_granted(void)   { return harness_fb_granted; }
+RETRO_API unsigned harness_core_fb_uncached(void)  { return harness_fb_uncached; }
+
+/* The same switches from the environment, for a core RetroArch loads
+ * itself (samples/gfx/menu_wine/swfb.py): HARNESS_CORE_SW_FB as
+ * harness_core_use_framebuffer, HARNESS_CORE_FREEZE and
+ * HARNESS_CORE_STAMP as theirs, and HARNESS_CORE_REPORT, which prints
+ * how many framebuffers were asked for and lent at deinit. */
+static void harness_env_init(void)
+{
+   const char *v;
+   if ((v = getenv("HARNESS_CORE_SW_FB")) && *v)
+      harness_use_fb = atoi(v);
+   if ((v = getenv("HARNESS_CORE_FREEZE")) && *v)
+      harness_frozen = (unsigned)atoi(v);
+   if ((v = getenv("HARNESS_CORE_STAMP")) && *v)
+      harness_stamp  = (unsigned)atoi(v);
+}
+
+static void harness_env_report(void)
+{
+   const char *v = getenv("HARNESS_CORE_REPORT");
+   if (v && *v)
+   {
+      fprintf(stderr, "harness: %u runs, %u framebuffers lent\n",
+            runs, harness_fb_granted);
+      fflush(stderr);
+   }
+}
 
 void retro_run(void)
 {
-   unsigned h = (runs % 61 == 60) ? H_OVERSIZE : H;
-   unsigned i;
+   unsigned h = (runs % 61 == 60 && !harness_frozen && !harness_stamp)
+      ? H_OVERSIZE : H;
+   unsigned i, n;
    uint8_t *dst   = frame;
    size_t   pitch = W * bpp;
    unsigned out_w = W, out_h = h;
@@ -495,6 +791,17 @@ void retro_run(void)
    {
       retro_time_t until = harness_time_usec() + (retro_time_t)harness_run_us;
       while (harness_time_usec() < until) { }
+   }
+
+   if (hw_mode && hw_vk && hw_ring)
+   {
+      if (runs % 3 == 0 && hw_ring == 2)
+         video_cb(frame, W, H, W * bpp);
+      else if ((runs % 3 != 0 || hw_ring == 3) && hw_ring_send())
+         video_cb(RETRO_HW_FRAME_BUFFER_VALID, W, H, 0);
+      else
+         video_cb(NULL, W, H, 0);
+      return;
    }
 
    if (hw_mode && hw_vk)
@@ -519,16 +826,15 @@ void retro_run(void)
       memset(&fb, 0, sizeof(fb));
       fb.width        = W;
       fb.height       = H;
-      /* Read as well as write, as a core that snapshots its frame
-       * for a wipe asks: the lend must not be refused for it. */
-      fb.access_flags = RETRO_MEMORY_ACCESS_WRITE
-                      | RETRO_MEMORY_ACCESS_READ;
+      fb.access_flags = harness_fb_access;
       if (     environ_cb(RETRO_ENVIRONMENT_GET_CURRENT_SOFTWARE_FRAMEBUFFER, &fb)
             && fb.format == pixel_format)
       {
          dst   = (uint8_t*)fb.data;
          pitch = fb.pitch;
          harness_fb_granted++;
+         if (!(fb.memory_flags & RETRO_MEMORY_TYPE_CACHED))
+            harness_fb_uncached++;
       }
    }
 
@@ -536,13 +842,17 @@ void retro_run(void)
     * lane reading the first pixel as 16-bit sees the run number
     * move whichever format is on. Rows at the pitch: a loan may pad
     * them. */
+   n = harness_frozen ? harness_frozen : runs;
    for (i = 0; i < W * h; i++)
    {
       uint8_t *px = dst + (i / W) * pitch + (i % W) * bpp;
+      uint32_t v  = (uint32_t)(n + i);
+      if (harness_stamp)
+         v = ((n >> ((i % W) / (W / 8))) & 1) ? 0xffffffffu : 0;
       if (bpp == 4)
-         *(uint32_t*)px = (uint32_t)(runs + i);
+         *(uint32_t*)px = v;
       else
-         *(uint16_t*)px = (uint16_t)(runs + i);
+         *(uint16_t*)px = (uint16_t)v;
    }
    push = dst;
    if (harness_use_fb == 2 && h == H)
@@ -556,7 +866,10 @@ void retro_run(void)
    if (runs % 3 == 0)
       video_cb(NULL, out_w, out_h, pitch);
    else
+   {
+      harness_last_pushed = n;
       video_cb(push, out_w, out_h, pitch);
+   }
 }
 size_t retro_serialize_size(void) { return 0; }
 bool retro_serialize(void *data, size_t size) { (void)data; (void)size; return false; }
@@ -573,6 +886,7 @@ bool retro_load_game(const struct retro_game_info *game)
       hw_cb.version_major   = VK_MAKE_VERSION(1, 0, 18);
       hw_cb.context_reset   = hw_context_reset;
       hw_cb.context_destroy = hw_context_destroy;
+      hw_cb.cache_context   = hw_cache_context ? true : false;
       /* Refused (another driver): a software core after all. */
       if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &hw_cb))
          hw_mode = 0;

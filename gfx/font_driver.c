@@ -14,6 +14,12 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/* First: whether the VFS maps files depends on HAVE_MMAP, which
+ * vfs/vfs.h - pulled in by streams/file_stream.h - reads */
+#ifdef HAVE_CONFIG_H
+#include "../config.h"
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <streams/file_stream.h>
@@ -22,10 +28,9 @@
 #include <file/file_path.h>
 #include <math.h>
 
-#ifdef HAVE_CONFIG_H
-#include "../config.h"
-#endif
+#include <vfs/vfs.h>
 
+#include "../configuration.h"
 #include "../msg_hash.h"
 #include "../verbosity.h"
 #include "font_driver.h"
@@ -57,147 +62,233 @@
 
 typedef struct font_file_ref
 {
+   /* The list's: fixed once the entry is published */
    struct font_file_ref *next;
+   /* Fixed once published; NULL for a private copy, which is never
+    * in the list */
    char                 *path;
+   /* Published by the store that makes refs positive */
    uint8_t              *data;
+   /* The open file, when data is mapped from it rather than read */
+   RFILE                *mapped;
    size_t                len;
-   unsigned              refs;
+   /* How many fonts hold the bytes; 0 with none read, or one of the
+    * two states below while one thread reads them in or lets them
+    * go. A thread that finds either takes a private copy rather than
+    * waiting. */
+   retro_atomic_int_t    refs;
 } font_file_ref_t;
 
-static font_file_ref_t *font_file_refs;
+#define FONT_REF_LOADING  (-1)
+#define FONT_REF_DROPPING (-2)
 
-/* A plain int rather than an slock_t, because an slock_t has to be
- * created and there is nowhere race-free to create it: rthreads has no
- * one-time-init primitive, and the first font is not reliably built on
- * a known thread - with threaded video, init is dispatched to the video
- * thread.  A statically initialised word needs no such moment.
- *
- * Spinning is only acceptable because every critical section here is a
- * walk of a list that holds one entry per distinct font file - two, in
- * the case this exists for.  The file read deliberately happens outside
- * the lock; spinning while another thread pulls megabytes off a memory
- * card would be far worse than the contention it avoids. */
-/* Gate on the primitives rather than on a platform list, so a target
- * that gains atomics gains the locking with them.  Both gates are
- * needed: the fallback backend has no compare-and-swap at all, and the
- * PS2 backend has one that is atomic but not lock-free, taken with the
- * interrupts masked.  Spinning on it would hang the EE outright -- one
- * core, and a kernel that reschedules only out of an interrupt, so the
- * thread holding the word never runs again.  Those targets keep the
- * unlocked path, where the list is only ever touched from one
- * thread. */
-#if defined(HAVE_THREADS) && defined(retro_atomic_cas_int) \
- && defined(RETRO_ATOMIC_LOCK_FREE)
-static retro_atomic_int_t font_file_lock_word;
-#define FONT_FILE_LOCK() \
-   do { while (!retro_atomic_cas_int(&font_file_lock_word, 0, 1)) { } } while (0)
-#define FONT_FILE_UNLOCK() \
-   retro_atomic_store_release_int(&font_file_lock_word, 0)
+/* Entries are only ever added, at the head, and never taken out: there
+ * is one per distinct font file, a handful, and an entry whose fonts
+ * are gone holds no bytes. */
+#ifdef RETRO_ATOMIC_HAS_PTR
+typedef retro_atomic_ptr_t font_list_head_t;
+#define FONT_HEAD_LOAD(h)       retro_atomic_load_acquire_ptr(h)
+#define FONT_HEAD_CAS(h, o, n)  retro_atomic_cas_ptr((h), (o), (n))
 #else
-#define FONT_FILE_LOCK()   do { } while (0)
-#define FONT_FILE_UNLOCK() do { } while (0)
+/* The fallback backend serves single-context targets */
+typedef void *font_list_head_t;
+#define FONT_HEAD_LOAD(h)       (*(h))
+#define FONT_HEAD_CAS(h, o, n) \
+   (*(h) == (void*)(o) ? (*(h) = (void*)(n), true) : false)
 #endif
 
-/* Caller holds the lock. */
-static font_file_ref_t *font_file_ref_lookup(const char *path)
-{
-   font_file_ref_t *entry;
+static font_list_head_t font_file_refs;
+#define FONT_REFS_HEAD() \
+   ((font_file_ref_t*)FONT_HEAD_LOAD(&font_file_refs))
+#define FONT_REFS_PUSH(head, entry) \
+   FONT_HEAD_CAS(&font_file_refs, (head), (entry))
 
-   for (entry = font_file_refs; entry; entry = entry->next)
-      if (string_is_equal(entry->path, path))
-      {
-         entry->refs++;
-         return entry;
-      }
-   return NULL;
+/* Lets go of a face's bytes: closing the file unmaps them, or they were
+ * read into memory of their own. */
+static void font_file_data_free(RFILE *mapped, void *data)
+{
+#if defined(VFS_HAVE_FILE_MAPPING) && defined(HAVE_MMAP)
+   if (mapped)
+   {
+      filestream_close(mapped);
+      return;
+   }
+#else
+   (void)mapped;
+#endif
+   free(data);
 }
 
-/* Takes the lock itself, and does the file read outside it.  A second
- * thread asking for the same path while the read is in flight will
- * read it too and lose the race to insert; that costs one redundant
- * read in a case that does not arise in this codebase, and is the
- * price of not holding a lock across storage I/O. */
-static font_file_ref_t *font_file_ref_acquire(const char *path)
+/* The bytes of @path, mapped or read into @ref */
+static bool font_file_ref_read(font_file_ref_t *ref, const char *path)
 {
-   font_file_ref_t *entry;
-   font_file_ref_t *raced;
-   void            *data = NULL;
-   int64_t          len  = 0;
+   RFILE   *mapped = NULL;
+   void    *data   = NULL;
+   int64_t  len    = 0;
 
-   FONT_FILE_LOCK();
-   entry = font_file_ref_lookup(path);
-   FONT_FILE_UNLOCK();
-
-   if (entry)
-      return entry;
-
+#if defined(VFS_HAVE_FILE_MAPPING) && defined(HAVE_MMAP)
+   /* Mapped where there is mmap(): the pages of a face are only read in
+    * as its glyphs are drawn, and stay the file's, so a fallback font
+    * of megabytes costs what is used of it rather than all of it. Every
+    * rasterizer only reads the bytes; one that keeps them is handed a
+    * copy. The file has to be replaced rather than rewritten while it
+    * is mapped - archive extraction renames each file into place - as
+    * a mapping does not survive the file being truncated under it.
+    * Win32 is left reading: a mapped file there cannot be replaced at
+    * all, which would stop the assets updating. */
+   {
+      RFILE *f = filestream_open(path, RETRO_VFS_FILE_ACCESS_READ,
+            RETRO_VFS_FILE_ACCESS_HINT_FREQUENT_ACCESS);
+      if (f)
+      {
+         int64_t        map_len = 0;
+         int64_t        size    = filestream_get_size(f);
+         const uint8_t *map     = filestream_get_mapped_ptr(f, &map_len);
+         if (map && size > 0 && map_len == size)
+         {
+            mapped = f;
+            data   = (void*)map;
+            len    = size;
+         }
+         else
+            filestream_close(f);
+      }
+   }
+   if (!mapped)
+#endif
    if (!filestream_read_file(path, &data, &len) || len <= 0)
    {
       if (data)
          free(data);
-      return NULL;
+      return false;
    }
 
-   if (!(entry = (font_file_ref_t*)calloc(1, sizeof(*entry))))
-   {
-      free(data);
-      return NULL;
-   }
-   {
-      /* strlcpy rather than strdup: the latter is not declared under
-       * a strict C89 compile, and this file is built that way. */
-      size_t path_len = strlen(path) + 1;
-      if (!(entry->path = (char*)malloc(path_len)))
-      {
-         free(data);
-         free(entry);
-         return NULL;
-      }
-      strlcpy(entry->path, path, path_len);
-   }
-
-   entry->data    = (uint8_t*)data;
-   entry->len     = (size_t)len;
-   entry->refs    = 1;
-
-   FONT_FILE_LOCK();
-   if ((raced = font_file_ref_lookup(path)))
-   {
-      FONT_FILE_UNLOCK();
-      free(entry->data);
-      free(entry->path);
-      free(entry);
-      return raced;
-   }
-   entry->next    = font_file_refs;
-   font_file_refs = entry;
-   FONT_FILE_UNLOCK();
-   return entry;
+   ref->data   = (uint8_t*)data;
+   ref->mapped = mapped;
+   ref->len    = (size_t)len;
+   return true;
 }
 
-/* Caller holds the lock. */
-static void font_file_ref_release(font_file_ref_t *entry)
+/* The list's entry for @path, added if there is none */
+static font_file_ref_t *font_file_ref_entry(const char *path)
 {
-   font_file_ref_t **link;
+   font_file_ref_t *added = NULL;
 
-   if (!entry || --entry->refs)
+   for (;;)
+   {
+      font_file_ref_t *e;
+      font_file_ref_t *head = FONT_REFS_HEAD();
+
+      for (e = head; e; e = e->next)
+         if (string_is_equal(e->path, path))
+         {
+            if (added)
+            {
+               free(added->path);
+               free(added);
+            }
+            return e;
+         }
+
+      if (!added)
+      {
+         /* strlcpy rather than strdup: the latter is not declared
+          * under a strict C89 compile, and this file is built that
+          * way. */
+         size_t path_len = strlen(path) + 1;
+         if (!(added = (font_file_ref_t*)calloc(1, sizeof(*added))))
+            return NULL;
+         if (!(added->path = (char*)malloc(path_len)))
+         {
+            free(added);
+            return NULL;
+         }
+         strlcpy(added->path, path, path_len);
+         retro_atomic_int_init(&added->refs, 0);
+      }
+      added->next = head;
+      if (FONT_REFS_PUSH(head, added))
+         return added;
+   }
+}
+
+/* A reference to the bytes of @path: the list's, shared, or a private
+ * copy when another thread is reading them in or letting them go - a
+ * redundant read in a case that hardly arises, and never a wait. */
+static font_file_ref_t *font_file_ref_acquire(const char *path)
+{
+   font_file_ref_t *ref;
+   font_file_ref_t *entry = font_file_ref_entry(path);
+
+   while (entry)
+   {
+      int r = retro_atomic_load_acquire_int(&entry->refs);
+      if (r > 0)
+      {
+         if (retro_atomic_cas_int(&entry->refs, r, r + 1))
+            return entry;
+      }
+      else if (r == 0)
+      {
+         if (retro_atomic_cas_int(&entry->refs, 0, FONT_REF_LOADING))
+         {
+            if (!font_file_ref_read(entry, path))
+            {
+               retro_atomic_store_release_int(&entry->refs, 0);
+               return NULL;
+            }
+            retro_atomic_store_release_int(&entry->refs, 1);
+            return entry;
+         }
+      }
+      else
+         break;
+   }
+
+   if (!(ref = (font_file_ref_t*)calloc(1, sizeof(*ref))))
+      return NULL;
+   if (!font_file_ref_read(ref, path))
+   {
+      free(ref);
+      return NULL;
+   }
+   retro_atomic_int_init(&ref->refs, 1);
+   return ref;
+}
+
+static void font_file_ref_release(font_file_ref_t *ref)
+{
+   if (!ref)
       return;
 
-   for (link = &font_file_refs; *link; link = &(*link)->next)
-      if (*link == entry)
-      {
-         *link = entry->next;
-         break;
-      }
+   if (!ref->path)
+   {
+      font_file_data_free(ref->mapped, ref->data);
+      free(ref);
+      return;
+   }
 
-   free(entry->data);
-   free(entry->path);
-   free(entry);
+   for (;;)
+   {
+      int r = retro_atomic_load_acquire_int(&ref->refs);
+      if (r > 1)
+      {
+         if (retro_atomic_cas_int(&ref->refs, r, r - 1))
+            return;
+      }
+      /* The last: the bytes go, and the entry stays for the next */
+      else if (retro_atomic_cas_int(&ref->refs, 1, FONT_REF_DROPPING))
+      {
+         font_file_data_free(ref->mapped, ref->data);
+         ref->data   = NULL;
+         ref->mapped = NULL;
+         ref->len    = 0;
+         retro_atomic_store_release_int(&ref->refs, 0);
+         return;
+      }
+   }
 }
 
-/* Caller holds the lock.  On failure the reference is dropped rather
- * than leaked: a font whose use cannot be recorded would keep the
- * buffer alive for the rest of the run. */
 /* ------------------------------------------------------------------
  * Glyph cache.
  *
@@ -218,11 +309,18 @@ static void font_file_ref_release(font_file_ref_t *entry)
 #define FONT_CACHE_ROWS      16
 #define FONT_CACHE_COLS      16
 #define FONT_CACHE_SLOTS     (FONT_CACHE_ROWS * FONT_CACHE_COLS)
+/* Each growth doubles the columns and rows: 1024, then 4096 cells */
+#define FONT_CACHE_GROWTHS   2
+/* The oldest cells a search for one to take remembers */
+#define FONT_CACHE_CANDIDATES 32
 /* Padding between cells, so linear filtering does not bleed one
  * glyph into the next */
 #define FONT_CACHE_PADDING   1
 #define FONT_CACHE_HASH_SIZE 0x100
-#define FONT_CACHE_HASH(c)   (((c) ^ ((c) >> 8)) & (FONT_CACHE_HASH_SIZE - 1))
+/* A bucket of @c's map: as many buckets as cells, so a chain is a cell
+ * long on average however far the cache has grown */
+#define FONT_CACHE_HASH(c, code) \
+   ((c)->map[((code) ^ ((code) >> 8)) & (c)->map_mask])
 /* No codepoint: an evicted cell whose redraw failed */
 #define FONT_CACHE_NO_CODE   0xFFFFFFFFu
 
@@ -231,6 +329,7 @@ enum font_fallback_id
    FONT_FALLBACK_CJK = 0,
    FONT_FALLBACK_KOREAN,
    FONT_FALLBACK_THAI,
+   FONT_FALLBACK_ETHIOPIC,
    FONT_FALLBACK_GENERAL,
    FONT_FALLBACK_COUNT
 };
@@ -255,20 +354,62 @@ static const char * const font_fallback_files[FONT_FALLBACK_COUNT] = {
    "chinese-fallback-font.ttf",
    "korean-fallback-font.ttf",
    "thai-fallback-font.ttf",
+   "ethiopic-fallback-font.ttf",
    "fallback-font.ttf"
 };
 #endif
 
 /* Where the fallback files are: the assets' pkg/ directory, as the menu
- * and the widgets give it when they set up their language fonts.
- * Guarded by the file lock. */
-static char font_fallback_pkg_dir[PATH_MAX_LENGTH];
+ * and the widgets give it when they set up their language fonts, from
+ * whichever thread builds them. Each value is a node of its own,
+ * published at the head and kept, so a reader on any thread reads the
+ * head's string; a run sets one or two. */
+typedef struct font_pkg_dir
+{
+   struct font_pkg_dir *next;
+   char                 path[1];
+} font_pkg_dir_t;
+
+static font_list_head_t font_fallback_pkg_dirs;
+
+#ifdef FONT_FALLBACK_LOADS
+static const char *font_fallback_pkg_dir(void)
+{
+   font_pkg_dir_t *head = (font_pkg_dir_t*)
+      FONT_HEAD_LOAD(&font_fallback_pkg_dirs);
+   return head ? head->path : "";
+}
+#endif
+
+static void font_fallback_pkg_dir_set(const char *dir)
+{
+   size_t          len  = strlen(dir) + 1;
+   font_pkg_dir_t *node = NULL;
+
+   for (;;)
+   {
+      font_pkg_dir_t *head = (font_pkg_dir_t*)
+         FONT_HEAD_LOAD(&font_fallback_pkg_dirs);
+      if (head && string_is_equal(head->path, dir))
+      {
+         free(node);
+         return;
+      }
+      if (!node && !(node = (font_pkg_dir_t*)malloc(
+                  sizeof(*node) + len)))
+         return;
+      strlcpy(node->path, dir, len);
+      node->next = head;
+      if (FONT_HEAD_CAS(&font_fallback_pkg_dirs, head, node))
+         return;
+   }
+}
 
 /* One read per fallback file per process. The bytes are published
  * before the state flips to READY, and are kept for the life of the
  * process once read. */
-static retro_atomic_int_t font_fallback_state[FONT_FALLBACK_COUNT];
 #ifdef FONT_FALLBACK_LOADS
+static retro_atomic_int_t font_fallback_state[FONT_FALLBACK_COUNT];
 static font_file_ref_t   *font_fallback_ref[FONT_FALLBACK_COUNT];
 #endif
 
@@ -278,12 +419,41 @@ typedef struct font_cache_slot
    struct font_glyph glyph;
    uint32_t charcode;
    unsigned last_used;
+   /* font_frame_epoch when it was last looked up */
+   unsigned last_frame;
 } font_cache_slot_t;
 
 typedef struct font_cache
 {
-   font_cache_slot_t *map[FONT_CACHE_HASH_SIZE];
+   /* The hash of the cells in use: map_small until a growth makes a
+    * larger one */
+   font_cache_slot_t **map;
+   unsigned map_mask;
+   font_cache_slot_t *map_small[FONT_CACHE_HASH_SIZE];
    font_cache_slot_t slots[FONT_CACHE_SLOTS];
+   /* The cells each growth added, so no cell ever moves */
+   font_cache_slot_t *grown[FONT_CACHE_GROWTHS];
+   /* The oldest cells the last search found, oldest first, with when
+    * each was last used then: a later miss in the frame the search ran
+    * in takes the first still untouched instead of searching again.
+    * Every other cell was younger, or looked up in that frame. */
+   font_cache_slot_t *cand[FONT_CACHE_CANDIDATES];
+   unsigned cand_used[FONT_CACHE_CANDIDATES];
+   unsigned grown_len[FONT_CACHE_GROWTHS];
+   unsigned growths;
+   unsigned cols;
+   unsigned rows;
+   /* A frame wanted more cells than there were: grow when the next one
+    * asks for the atlas */
+   unsigned grow_frame;
+   unsigned cand_count;
+   unsigned cand_next;
+   unsigned cand_frame;
+   /* The frame a search found every cell looked up in, when full_set:
+    * no cell is free again before the next one */
+   unsigned full_frame;
+   bool full_set;
+   bool grow_wanted;
    struct font_atlas atlas;
    const font_rasterizer_t *rast;
    void *face;
@@ -314,6 +484,12 @@ static int font_fallback_for(uint32_t code)
       return FONT_FALLBACK_KOREAN;
    if (code >= 0x0E00 && code <= 0x0E7F)
       return FONT_FALLBACK_THAI;
+   /* Ethiopic and its supplement and extensions */
+   if (     (code >= 0x1200 && code <= 0x139F)
+         || (code >= 0x2D80 && code <= 0x2DDF)
+         || (code >= 0xAB00 && code <= 0xAB2F)
+         || (code >= 0x1E7E0 && code <= 0x1E7FF))
+      return FONT_FALLBACK_ETHIOPIC;
    /* CJK radicals, punctuation, kana, bopomofo, the unified ideographs
     * and their extensions, compatibility forms and the full-width
     * forms */
@@ -324,6 +500,31 @@ static int font_fallback_for(uint32_t code)
          || (code >= 0x20000 && code <= 0x3FFFF))
       return FONT_FALLBACK_CJK;
    return FONT_FALLBACK_GENERAL;
+}
+
+/* Where a codepoint goes when the fallback font_fallback_for() picked
+ * has no glyph for it, or -1. The ranges are those where, with the
+ * fallback fonts the assets ship, the other face draws what the picked
+ * one lacks - Hangul jamo and circled numbers in the CJK face, circled
+ * Hangul in the Korean one, and so on - so a codepoint no face has
+ * does not have every fallback font read in search of it. */
+static int font_fallback_next_for(uint32_t code)
+{
+   /* Hangul jamo and compatibility jamo; enclosed alphanumerics (①);
+    * vertical and small form variants */
+   if (     (code >= 0x1100 && code <= 0x11FF)
+         || (code >= 0x3130 && code <= 0x318F)
+         || (code >= 0x2460 && code <= 0x24FF)
+         || (code >= 0xFE10 && code <= 0xFE1F)
+         || (code >= 0xFE50 && code <= 0xFE6F))
+      return FONT_FALLBACK_CJK;
+   /* Enclosed CJK letters and months: circled Hangul */
+   if (code >= 0x3200 && code <= 0x32FF)
+      return FONT_FALLBACK_KOREAN;
+   /* Yijing hexagram symbols */
+   if (code >= 0x4DC0 && code <= 0x4DFF)
+      return FONT_FALLBACK_GENERAL;
+   return -1;
 }
 
 #ifdef FONT_FALLBACK_LOADS
@@ -360,13 +561,11 @@ static void font_fallback_request(int id)
       return;
    }
    load->id = id;
-   FONT_FILE_LOCK();
-   if (*font_fallback_pkg_dir)
-      fill_pathname_join_special(load->path, font_fallback_pkg_dir,
+   if (*font_fallback_pkg_dir())
+      fill_pathname_join_special(load->path, font_fallback_pkg_dir(),
             font_fallback_files[id], sizeof(load->path));
    else
       *load->path = '\0';
-   FONT_FILE_UNLOCK();
 
    if (     !*load->path
          || !(thread = sthread_create(font_fallback_load_thread, load)))
@@ -375,7 +574,7 @@ static void font_fallback_request(int id)
       /* Nowhere to read it from yet: let a later miss try again once
        * the pkg directory is known */
       retro_atomic_store_release_int(&font_fallback_state[id],
-            *font_fallback_pkg_dir ? FONT_FALLBACK_FAILED
+            *font_fallback_pkg_dir() ? FONT_FALLBACK_FAILED
                                    : FONT_FALLBACK_IDLE);
       return;
    }
@@ -438,85 +637,209 @@ static void *font_cache_fallback_face(font_cache_t *c, int id,
 #endif
 }
 
-/* The least recently used cell, taken out of the hash */
-static font_cache_slot_t *font_cache_take_slot(font_cache_t *c)
-{
-   unsigned i;
-   unsigned oldest     = 0;
-   /* Unsigned subtraction handles the counter wrapping */
-   unsigned oldest_age = c->usage_counter - c->slots[0].last_used;
-   font_cache_slot_t **link;
+/* Advanced once a video frame by font_driver_frame_begin(). A cell
+ * looked up in the current frame may already have glyphs queued from
+ * it, so it is not handed to another codepoint until the frame is over:
+ * reusing it would draw the new glyph in the earlier one's place. 0
+ * until the first frame, which leaves plain LRU in place for a cache
+ * used outside the video loop.  It is only ever compared, never used
+ * to publish anything, so it is read relaxed: a plain load on every
+ * backend, where the glyph lookup reads it once a glyph. */
+static retro_atomic_int_t font_frame_epoch;
 
-   for (i = 1; i < FONT_CACHE_SLOTS; i++)
+void font_driver_frame_begin(void)
+{
+   retro_atomic_fetch_add_int(&font_frame_epoch, 1);
+}
+
+/* Searches every cell for the least recently used one not looked up
+ * in @frame, keeping the oldest few in c->cand for the misses after */
+static font_cache_slot_t *font_cache_search(font_cache_t *c, unsigned frame)
+{
+   unsigned i, b, k;
+   unsigned n = 0;
+
+   for (b = 0; b <= c->growths; b++)
    {
-      unsigned age = c->usage_counter - c->slots[i].last_used;
-      if (age > oldest_age)
+      font_cache_slot_t *blk = b ? c->grown[b - 1] : c->slots;
+      unsigned           len = b ? c->grown_len[b - 1] : FONT_CACHE_SLOTS;
+      for (i = 0; i < len; i++)
       {
-         oldest_age = age;
-         oldest     = i;
+         /* Unsigned subtraction handles the counter wrapping */
+         unsigned age = c->usage_counter - blk[i].last_used;
+         if (frame && blk[i].last_frame == frame)
+            continue;
+         if (     n == FONT_CACHE_CANDIDATES
+               && age <= c->usage_counter - c->cand_used[n - 1])
+            continue;
+         /* After any of the same age, so the first found goes first */
+         for (k = (n < FONT_CACHE_CANDIDATES) ? n++ : n - 1;
+               k > 0 && age > c->usage_counter - c->cand_used[k - 1]; k--)
+         {
+            c->cand[k]      = c->cand[k - 1];
+            c->cand_used[k] = c->cand_used[k - 1];
+         }
+         c->cand[k]      = &blk[i];
+         c->cand_used[k] = blk[i].last_used;
       }
    }
 
-   if (c->slots[oldest].charcode != FONT_CACHE_NO_CODE)
+   c->cand_count = n;
+   c->cand_next  = n ? 1 : 0;
+   c->cand_frame = frame;
+   return n ? c->cand[0] : NULL;
+}
+
+/* The least recently used cell not looked up in this frame, taken out
+ * of the hash; NULL when every cell is in use this frame */
+static font_cache_slot_t *font_cache_take_slot(font_cache_t *c)
+{
+   unsigned frame            = (unsigned)retro_atomic_load_relaxed_int(
+         &font_frame_epoch);
+   font_cache_slot_t *victim = NULL;
+   font_cache_slot_t **link;
+
+   if (c->full_set && c->full_frame == frame)
+      return NULL;
+
+   if (c->cand_frame == frame)
    {
-      for (link = &c->map[FONT_CACHE_HASH(c->slots[oldest].charcode)];
-            *link; link = &(*link)->next)
+      while (c->cand_next < c->cand_count)
       {
-         if (*link == &c->slots[oldest])
+         font_cache_slot_t *s = c->cand[c->cand_next];
+         unsigned        used = c->cand_used[c->cand_next++];
+         if (s->last_used == used && !(frame && s->last_frame == frame))
          {
-            *link = c->slots[oldest].next;
+            victim = s;
             break;
          }
       }
    }
-   c->slots[oldest].charcode = FONT_CACHE_NO_CODE;
-   c->slots[oldest].next     = NULL;
-   return &c->slots[oldest];
+   if (!victim)
+      victim = font_cache_search(c, frame);
+
+   if (!victim)
+   {
+      if (frame)
+      {
+         c->full_set   = true;
+         c->full_frame = frame;
+      }
+      /* Room is made at the start of a later frame, when nothing drawn
+       * from the atlas at its present size is still waiting */
+      if (c->atlas.max_dims && c->growths < FONT_CACHE_GROWTHS)
+      {
+         c->grow_wanted = true;
+         c->grow_frame  = frame;
+      }
+      return NULL;
+   }
+
+   if (victim->charcode != FONT_CACHE_NO_CODE)
+   {
+      for (link = &FONT_CACHE_HASH(c, victim->charcode);
+            *link; link = &(*link)->next)
+      {
+         if (*link == victim)
+         {
+            *link = victim->next;
+            break;
+         }
+      }
+   }
+   victim->charcode   = FONT_CACHE_NO_CODE;
+   victim->next       = NULL;
+   victim->last_frame = frame;
+   return victim;
 }
 
+/* @pos and @dims add packed: the atlas never outgrows
+ * VIDEO_SCALE_DIM_MAX, so nothing carries between halves */
 static void font_cache_dirty_cell(struct font_atlas *atlas,
-      unsigned x, unsigned y, unsigned w, unsigned h)
+      unsigned pos, unsigned dims)
 {
+   unsigned i;
+   unsigned end = pos + dims;
+
    if (!atlas->dirty)
    {
-      atlas->dirty_x0 = x;
-      atlas->dirty_y0 = y;
-      atlas->dirty_x1 = x + w;
-      atlas->dirty_y1 = y + h;
-      atlas->dirty    = true;
+      atlas->dirty_xy0        = pos;
+      atlas->dirty_xy1        = end;
+      atlas->dirty_rect[0][0] = pos;
+      atlas->dirty_rect[0][1] = end;
+      atlas->dirty_rects      = 1;
+      atlas->dirty            = true;
+      return;
    }
-   else
+   atlas->dirty_xy0 = VIDEO_SCALE_MIN(atlas->dirty_xy0, pos);
+   atlas->dirty_xy1 = VIDEO_SCALE_MAX(atlas->dirty_xy1, end);
+
+   /* Only the corners describe a region someone else made */
+   if (!atlas->dirty_rects)
+      return;
+   if (atlas->dirty_rects < FONT_ATLAS_DIRTY_MAX)
    {
-      if (x < atlas->dirty_x0)
-         atlas->dirty_x0 = x;
-      if (y < atlas->dirty_y0)
-         atlas->dirty_y0 = y;
-      if (x + w > atlas->dirty_x1)
-         atlas->dirty_x1 = x + w;
-      if (y + h > atlas->dirty_y1)
-         atlas->dirty_y1 = y + h;
+      atlas->dirty_rect[atlas->dirty_rects][0]   = pos;
+      atlas->dirty_rect[atlas->dirty_rects++][1] = end;
+      return;
+   }
+
+   /* Full: of the rectangles and the cell, the two whose union adds
+    * least are joined */
+   {
+      unsigned j, bi = 0, bj = 1;
+      unsigned (*r)[2]  = atlas->dirty_rect;
+      unsigned  cand[FONT_ATLAS_DIRTY_MAX + 1][2];
+      size_t    best_add = (size_t)-1;
+      memcpy(cand, r, sizeof(atlas->dirty_rect));
+      cand[FONT_ATLAS_DIRTY_MAX][0] = pos;
+      cand[FONT_ATLAS_DIRTY_MAX][1] = end;
+      for (i = 0; i < FONT_ATLAS_DIRTY_MAX; i++)
+         for (j = i + 1; j <= FONT_ATLAS_DIRTY_MAX; j++)
+         {
+            size_t both = VIDEO_SCALE_AREA(
+                     VIDEO_SCALE_MAX(cand[i][1], cand[j][1])
+                   - VIDEO_SCALE_MIN(cand[i][0], cand[j][0]));
+            size_t each = VIDEO_SCALE_AREA(cand[i][1] - cand[i][0])
+                        + VIDEO_SCALE_AREA(cand[j][1] - cand[j][0]);
+            size_t add  = both > each ? both - each : 0;
+            if (add < best_add)
+            {
+               bi       = i;
+               bj       = j;
+               best_add = add;
+            }
+         }
+      cand[bi][0] = VIDEO_SCALE_MIN(cand[bi][0], cand[bj][0]);
+      cand[bi][1] = VIDEO_SCALE_MAX(cand[bi][1], cand[bj][1]);
+      cand[bj][0] = cand[FONT_ATLAS_DIRTY_MAX][0];
+      cand[bj][1] = cand[FONT_ATLAS_DIRTY_MAX][1];
+      memcpy(r, cand, sizeof(atlas->dirty_rect));
    }
 }
 
-static const struct font_glyph *font_cache_miss(font_cache_t *c,
-      uint32_t code)
+/* Out of line, so a hit needs none of the registers a miss saves */
+VIDEO_NOINLINE static const struct font_glyph *font_cache_miss(
+      font_cache_t *c, uint32_t code)
 {
    unsigned gi                   = c->rast->glyph_index(c->face, code);
    const font_rasterizer_t *rast = c->rast;
    void *face                    = c->face;
    font_cache_slot_t *slot;
-   unsigned cell_w, cell_h;
    size_t   esz;
    uint8_t *dst;
 
    if (!gi)
    {
-      int id = font_fallback_for(code);
-      if (id >= 0)
+      int ids[2];
+      int i;
+      ids[0] = font_fallback_for(code);
+      ids[1] = (ids[0] >= 0) ? font_fallback_next_for(code) : -1;
+      for (i = 0; i < 2 && ids[i] >= 0; i++)
       {
          bool pending                     = false;
          const font_rasterizer_t *fb_rast = NULL;
-         void *fb_face = font_cache_fallback_face(c, id, &fb_rast,
+         void *fb_face = font_cache_fallback_face(c, ids[i], &fb_rast,
                &pending);
          unsigned fb_gi;
 
@@ -527,33 +850,38 @@ static const struct font_glyph *font_cache_miss(font_cache_t *c,
             rast = fb_rast;
             face = fb_face;
             gi   = fb_gi;
+            break;
          }
       }
    }
 
-   slot   = font_cache_take_slot(c);
-   cell_w = VIDEO_SCALE_W(c->cell_dims);
-   cell_h = VIDEO_SCALE_H(c->cell_dims);
+   /* Every cell already holds a glyph drawn this frame: this one goes
+    * undrawn - the caller draws its stand-in - rather than overwrite
+    * one, and is drawn once a frame frees a cell */
+   if (!(slot = font_cache_take_slot(c)))
+      return NULL;
    esz    = (c->atlas.format == FONT_ATLAS_FORMAT_A16)
       ? sizeof(uint16_t) : sizeof(uint8_t);
    dst    = c->atlas.buffer
-      + ((size_t)slot->glyph.atlas_offset_x
-      +  (size_t)slot->glyph.atlas_offset_y * c->atlas.width) * esz;
+      + ((size_t)VIDEO_SCALE_W(slot->glyph.atlas_pos)
+      +  (size_t)VIDEO_SCALE_H(slot->glyph.atlas_pos) * c->atlas.width)
+      * esz;
 
    if (!rast->render_glyph(face, code, gi, dst, c->atlas.width,
-            cell_w, cell_h, c->atlas.format, &slot->glyph))
+            c->cell_dims, c->atlas.format, &slot->glyph))
    {
       /* Nothing to draw: the cell goes back as the oldest there is */
-      slot->last_used = c->usage_counter - 0x80000000u;
+      slot->last_used  = c->usage_counter - 0x80000000u;
+      slot->last_frame--;
+      c->cand_count    = 0;
       return NULL;
    }
 
    slot->charcode               = code;
-   slot->next                   = c->map[FONT_CACHE_HASH(code)];
-   c->map[FONT_CACHE_HASH(code)] = slot;
+   slot->next                   = FONT_CACHE_HASH(c, code);
+   FONT_CACHE_HASH(c, code)     = slot;
    slot->last_used              = c->usage_counter++;
-   font_cache_dirty_cell(&c->atlas, slot->glyph.atlas_offset_x,
-         slot->glyph.atlas_offset_y, cell_w, cell_h);
+   font_cache_dirty_cell(&c->atlas, slot->glyph.atlas_pos, c->cell_dims);
    return &slot->glyph;
 }
 
@@ -566,11 +894,13 @@ static const struct font_glyph *font_cache_get_glyph(void *data,
    if (!c)
       return NULL;
 
-   for (slot = c->map[FONT_CACHE_HASH(code)]; slot; slot = slot->next)
+   for (slot = FONT_CACHE_HASH(c, code); slot; slot = slot->next)
    {
       if (slot->charcode == code)
       {
-         slot->last_used = c->usage_counter++;
+         slot->last_used  = c->usage_counter++;
+         slot->last_frame = (unsigned)retro_atomic_load_relaxed_int(
+               &font_frame_epoch);
          return &slot->glyph;
       }
    }
@@ -578,10 +908,122 @@ static const struct font_glyph *font_cache_get_glyph(void *data,
    return font_cache_miss(c, code);
 }
 
+/* Makes the map as many buckets as there are cells and puts every cell
+ * in use in it; without the memory, the map stays as it was */
+static void font_cache_rehash(font_cache_t *c)
+{
+   unsigned b, i;
+   unsigned cells          = c->cols * c->rows;
+   font_cache_slot_t **map = (font_cache_slot_t**)calloc(cells,
+         sizeof(*map));
+
+   if (!map)
+      return;
+   if (c->map != c->map_small)
+      free(c->map);
+   c->map      = map;
+   c->map_mask = cells - 1;
+
+   for (b = 0; b <= c->growths; b++)
+   {
+      font_cache_slot_t *blk = b ? c->grown[b - 1] : c->slots;
+      unsigned           len = b ? c->grown_len[b - 1] : FONT_CACHE_SLOTS;
+      for (i = 0; i < len; i++)
+      {
+         if (blk[i].charcode == FONT_CACHE_NO_CODE)
+            continue;
+         blk[i].next = FONT_CACHE_HASH(c, blk[i].charcode);
+         FONT_CACHE_HASH(c, blk[i].charcode) = &blk[i];
+      }
+   }
+}
+
+/* Doubles the columns and the rows, leaving every cell where it was so
+ * no glyph's offsets change; the new cells start empty. False, with
+ * nothing changed, when the atlas would outgrow the consumer's texture
+ * or memory runs out. */
+static bool font_cache_grow(font_cache_t *c)
+{
+   unsigned x, y, i;
+   unsigned cell_w     = VIDEO_SCALE_W(c->cell_dims);
+   unsigned cell_h     = VIDEO_SCALE_H(c->cell_dims);
+   unsigned cols       = c->cols * 2;
+   unsigned rows       = c->rows * 2;
+   unsigned width      = (cell_w + FONT_CACHE_PADDING) * cols;
+   unsigned height     = (cell_h + FONT_CACHE_PADDING) * rows;
+   size_t   esz        = (c->atlas.format == FONT_ATLAS_FORMAT_A16)
+      ? sizeof(uint16_t) : sizeof(uint8_t);
+   unsigned added      = cols * rows - c->cols * c->rows;
+   uint8_t *buffer;
+   font_cache_slot_t *blk;
+
+   if (     c->growths >= FONT_CACHE_GROWTHS
+         || width  > VIDEO_SCALE_W(c->atlas.max_dims)
+         || height > VIDEO_SCALE_H(c->atlas.max_dims))
+      return false;
+   if (!(buffer = (uint8_t*)calloc(height, (size_t)width * esz)))
+      return false;
+   if (!(blk = (font_cache_slot_t*)calloc(added, sizeof(*blk))))
+   {
+      free(buffer);
+      return false;
+   }
+
+   for (y = 0; y < c->atlas.height; y++)
+      memcpy(buffer + (size_t)y * width * esz,
+            c->atlas.buffer + (size_t)y * c->atlas.width * esz,
+            (size_t)c->atlas.width * esz);
+
+   for (i = 0, y = 0; y < rows; y++)
+   {
+      for (x = 0; x < cols; x++)
+      {
+         if (x < c->cols && y < c->rows)
+            continue;
+         blk[i].charcode             = FONT_CACHE_NO_CODE;
+         blk[i].glyph.atlas_pos      = VIDEO_SCALE_PACK(
+               x * (cell_w + FONT_CACHE_PADDING),
+               y * (cell_h + FONT_CACHE_PADDING));
+         /* Unused: older than any cell in use */
+         blk[i].last_used            = c->usage_counter - 0x80000000u;
+         i++;
+      }
+   }
+
+   free(c->atlas.buffer);
+   c->atlas.buffer             = buffer;
+   c->atlas.width              = width;
+   c->atlas.height             = height;
+   c->grown[c->growths]        = blk;
+   c->grown_len[c->growths++]  = added;
+   c->cols                     = cols;
+   c->rows                     = rows;
+   c->cand_count               = 0;
+   font_cache_rehash(c);
+   /* All of it, for a consumer making its texture anew */
+   c->atlas.dirty              = true;
+   c->atlas.dirty_xy0          = 0;
+   c->atlas.dirty_xy1          = VIDEO_SCALE_PACK(width, height);
+   c->atlas.dirty_rects        = 0;
+   return true;
+}
+
+/* The atlas, grown first when a past frame ran out of cells: the
+ * consumer asks for it before drawing anything in a frame, so nothing
+ * drawn from the atlas at its old size is still waiting when its size
+ * changes. */
 static struct font_atlas *font_cache_get_atlas(void *data)
 {
    font_cache_t *c = (font_cache_t*)data;
-   return c ? &c->atlas : NULL;
+   if (!c)
+      return NULL;
+   if (c->grow_wanted && (unsigned)retro_atomic_load_relaxed_int(
+            &font_frame_epoch) != c->grow_frame)
+   {
+      c->grow_wanted = false;
+      font_cache_grow(c);
+   }
+   return &c->atlas;
 }
 
 static void font_cache_get_line_metrics(void *data,
@@ -607,10 +1049,12 @@ static void font_cache_free(void *data)
       c->rast->free(c->face);
    if (c->ref)
    {
-      FONT_FILE_LOCK();
       font_file_ref_release(c->ref);
-      FONT_FILE_UNLOCK();
    }
+   for (i = 0; i < c->growths; i++)
+      free(c->grown[i]);
+   if (c->map != c->map_small)
+      free(c->map);
    free(c->atlas.buffer);
    free(c);
 }
@@ -640,6 +1084,8 @@ static font_cache_t *font_cache_new(const font_rasterizer_t *rast,
       goto error;
 
    c->rast      = rast;
+   c->map       = c->map_small;
+   c->map_mask  = FONT_CACHE_HASH_SIZE - 1;
    c->face      = face;
    c->ref       = ref;
    c->font_size = font_size;
@@ -652,6 +1098,8 @@ static font_cache_t *font_cache_new(const font_rasterizer_t *rast,
    if (!cell_w || !cell_h || cell_w > 255 || cell_h > 255)
       goto error;
 
+   c->cols         = FONT_CACHE_COLS;
+   c->rows         = FONT_CACHE_ROWS;
    c->atlas.width  = (cell_w + FONT_CACHE_PADDING) * FONT_CACHE_COLS;
    c->atlas.height = (cell_h + FONT_CACHE_PADDING) * FONT_CACHE_ROWS;
    c->atlas.format = fmt;
@@ -665,8 +1113,11 @@ static font_cache_t *font_cache_new(const font_rasterizer_t *rast,
       for (x = 0; x < FONT_CACHE_COLS; x++, i++)
       {
          c->slots[i].charcode             = FONT_CACHE_NO_CODE;
-         c->slots[i].glyph.atlas_offset_x = x * (cell_w + FONT_CACHE_PADDING);
-         c->slots[i].glyph.atlas_offset_y = y * (cell_h + FONT_CACHE_PADDING);
+         c->slots[i].glyph.atlas_pos      = VIDEO_SCALE_PACK(
+               x * (cell_w + FONT_CACHE_PADDING),
+               y * (cell_h + FONT_CACHE_PADDING));
+         /* Unused: older than any cell in use */
+         c->slots[i].last_used            = c->usage_counter - 0x80000000u;
       }
    }
 
@@ -688,9 +1139,7 @@ error:
    rast->free(face);
    if (ref)
    {
-      FONT_FILE_LOCK();
       font_file_ref_release(ref);
-      FONT_FILE_UNLOCK();
    }
    return NULL;
 }
@@ -706,9 +1155,38 @@ error:
 static retro_atomic_int_t font_driver_generation
    = RETRO_ATOMIC_INT_INITIALIZER(0);
 
-/* Every live font, so they can be rebuilt when the file behind them
- * should change. Singly linked through font_data_t::next. */
-static font_data_t *font_live = NULL;
+/* A font belongs to the thread that made it: the main thread, or the
+ * threaded video wrapper's thread, which makes the OSD font and the
+ * widgets' fonts. Each thread keeps its own fonts - the list of the
+ * live ones, the retired ones waiting out their frames, the language
+ * they were last made for - so no list is shared and none is locked.
+ * A font is freed on its own thread: one retired elsewhere is handed
+ * to it (font_driver_free_deferred()). */
+enum
+{
+   FONT_OWNER_MAIN = 0,
+   FONT_OWNER_VIDEO,
+   FONT_OWNER_COUNT
+};
+
+static unsigned font_driver_owner_here(void)
+{
+#ifdef HAVE_THREADS
+   if (video_thread_is_video_thread())
+      return FONT_OWNER_VIDEO;
+#endif
+   return FONT_OWNER_MAIN;
+}
+
+/* Every live font of each thread, so it can be rebuilt when the file
+ * behind it should change. Singly linked through font_data_t::next. */
+static font_data_t *font_live[FONT_OWNER_COUNT];
+
+/* Bumped by font_driver_reload_fonts(); each thread rebuilds its fonts
+ * that follow the language when it sees a new value. */
+static retro_atomic_int_t font_language_epoch
+   = RETRO_ATOMIC_INT_INITIALIZER(0);
+static int font_language_seen[FONT_OWNER_COUNT];
 
 /* Fonts whose replacement has already been built, waiting out the
  * frames in which the GPU may still be reading their atlas.
@@ -725,18 +1203,12 @@ static font_data_t *font_live = NULL;
  * Two frames is the interval the old XMB open-coded countdown used and
  * is what the D3D12 report was tested against: by the time two frames
  * have gone out, the one that could have referenced the atlas has been
- * submitted and waited on. The queue is global because only one menu
- * driver is live at a time and the widget and screensaver fonts share
- * the same frame clock; sizing is per handle in flight, not per
+ * submitted and waited on. Sizing is per handle in flight, not per
  * caller.
  *
- * Unlocked, like font_live and unlike the font file cache above: every
- * caller is on the main thread. The retires come from menu and widget
- * render paths, and the ageing from video_driver_frame(), which the
- * runloop calls on the main thread and which the threaded wrapper
- * forwards from rather than runs on the video thread. That invariant
- * is not new here — video_driver_frame() already keeps its frame
- * timing in function statics, which would race far more visibly. */
+ * One queue per thread, aged on that thread's frame clock: the main
+ * thread's by video_driver_frame(), the video thread's by the threaded
+ * wrapper after each frame it presents. */
 #define FONT_FREE_DEFERRED_MAX 16
 #define FONT_FREE_DEFERRED_FRAMES 2
 
@@ -744,7 +1216,12 @@ static struct
 {
    font_data_t *font;
    unsigned     frames;
-} font_free_deferred[FONT_FREE_DEFERRED_MAX];
+} font_free_deferred[FONT_OWNER_COUNT][FONT_FREE_DEFERRED_MAX];
+
+/* Fonts retired by a thread other than their owner, linked through
+ * font_data_t::retired_next; the owner takes them at its next
+ * font_driver_free_pending(). */
+static font_list_head_t font_retired[FONT_OWNER_COUNT];
 
 static void font_driver_release_renderer_state(
       const font_renderer_t *renderer, void *renderer_data,
@@ -810,10 +1287,7 @@ void font_driver_set_language_font(font_data_t *font,
    /* The fallback fonts live beside the language fonts */
    if (pkg_dir && *pkg_dir)
    {
-      FONT_FILE_LOCK();
-      strlcpy(font_fallback_pkg_dir, pkg_dir,
-            sizeof(font_fallback_pkg_dir));
-      FONT_FILE_UNLOCK();
+      font_fallback_pkg_dir_set(pkg_dir);
    }
 
    free(font->lang_pkg_dir);
@@ -904,12 +1378,18 @@ static bool font_driver_rebuild(font_data_t *font,
    return true;
 }
 
-unsigned font_driver_reload_fonts(void)
+unsigned font_driver_follow_language(void)
 {
    font_data_t *font;
-   unsigned     n = 0;
+   unsigned     n     = 0;
+   unsigned     owner = font_driver_owner_here();
+   int          epoch = retro_atomic_load_acquire_int(&font_language_epoch);
 
-   for (font = font_live; font; font = font->next)
+   if (font_language_seen[owner] == epoch)
+      return 0;
+   font_language_seen[owner] = epoch;
+
+   for (font = font_live[owner]; font; font = font->next)
    {
       char resolved[PATH_MAX_LENGTH];
       const char *want;
@@ -942,6 +1422,12 @@ unsigned font_driver_reload_fonts(void)
       retro_atomic_fetch_add_int(&font_driver_generation, 1);
 
    return n;
+}
+
+unsigned font_driver_reload_fonts(void)
+{
+   retro_atomic_fetch_add_int(&font_language_epoch, 1);
+   return font_driver_follow_language();
 }
 
 uint32_t font_driver_get_generation(void)
@@ -1037,9 +1523,7 @@ int font_renderer_create_default(
                   memcpy(data, entry->data, entry->len);
                   len = (int64_t)entry->len;
                }
-               FONT_FILE_LOCK();
                font_file_ref_release(entry);
-               FONT_FILE_UNLOCK();
                entry = NULL;
             }
          }
@@ -1063,9 +1547,7 @@ int font_renderer_create_default(
 
       if (entry)
       {
-         FONT_FILE_LOCK();
          font_file_ref_release(entry);
-         FONT_FILE_UNLOCK();
       }
    }
 
@@ -1640,6 +2122,54 @@ void font_flush(
    font_data->raster_block.carr.coords.vertices = 0;
 }
 
+void font_driver_resolve_params(const struct font_params *params,
+      font_params_resolved_t *out)
+{
+   if (params)
+   {
+      out->color_hp    = params->color_hp;
+      out->x           = params->x;
+      out->y           = params->y;
+      out->scale       = params->scale;
+      out->drop_mod    = params->drop_mod;
+      out->drop_alpha  = params->drop_alpha;
+      out->drop_x      = params->drop_x;
+      out->drop_y      = params->drop_y;
+      out->text_align  = params->text_align;
+      out->full_screen = params->full_screen;
+      out->rgba[0]     = FONT_COLOR_GET_RED(params->color);
+      out->rgba[1]     = FONT_COLOR_GET_GREEN(params->color);
+      out->rgba[2]     = FONT_COLOR_GET_BLUE(params->color);
+      out->rgba[3]     = FONT_COLOR_GET_ALPHA(params->color);
+      out->color[0]    = out->rgba[0] / 255.0f;
+      out->color[1]    = out->rgba[1] / 255.0f;
+      out->color[2]    = out->rgba[2] / 255.0f;
+      out->color[3]    = out->rgba[3] / 255.0f;
+   }
+   else
+   {
+      settings_t *settings = config_get_ptr();
+      out->color_hp    = NULL;
+      out->x           = settings->floats.video_msg_pos_x;
+      out->y           = settings->floats.video_msg_pos_y;
+      out->scale       = 1.0f;
+      out->drop_mod    = 0.3f;
+      out->drop_alpha  = 1.0f;
+      out->drop_x      = -2;
+      out->drop_y      = -2;
+      out->text_align  = TEXT_ALIGN_LEFT;
+      out->full_screen = true;
+      out->color[0]    = settings->floats.video_msg_color_r;
+      out->color[1]    = settings->floats.video_msg_color_g;
+      out->color[2]    = settings->floats.video_msg_color_b;
+      out->color[3]    = 1.0f;
+      out->rgba[0]     = (unsigned)(out->color[0] * 255);
+      out->rgba[1]     = (unsigned)(out->color[1] * 255);
+      out->rgba[2]     = (unsigned)(out->color[2] * 255);
+      out->rgba[3]     = 255;
+   }
+}
+
 int font_renderer_get_message_width(
       const font_renderer_driver_t *renderer, void *renderer_data,
       const char *msg, size_t msg_len, float scale)
@@ -1754,7 +2284,7 @@ void font_driver_free(font_data_t *font)
    if (font)
    {
       bool is_threaded        = false;
-      font_data_t **link      = &font_live;
+      font_data_t **link      = &font_live[font->owner];
 
       /* Invalidate any externally cached per-font derived data */
       retro_atomic_fetch_add_int(&font_driver_generation, 1);
@@ -1806,7 +2336,8 @@ bool font_driver_matches(const font_data_t *font,
     * would otherwise turn this into a use-after-free, and "no" is the
     * answer it needs in that case anyway. The list holds one entry
     * per live font, so this is a walk of a handful of pointers. */
-   for (live = font_live; live; live = live->next)
+   for (live = font_live[font_driver_owner_here()]; live;
+         live = live->next)
       if (live == font)
          break;
    if (!live)
@@ -1825,19 +2356,16 @@ bool font_driver_matches(const font_data_t *font,
    return string_is_equal(font->path, path);
 }
 
-void font_driver_free_deferred(font_data_t *font)
+static void font_driver_defer(unsigned owner, font_data_t *font)
 {
    unsigned i;
 
-   if (!font)
-      return;
-
    for (i = 0; i < FONT_FREE_DEFERRED_MAX; i++)
    {
-      if (!font_free_deferred[i].font)
+      if (!font_free_deferred[owner][i].font)
       {
-         font_free_deferred[i].font   = font;
-         font_free_deferred[i].frames = FONT_FREE_DEFERRED_FRAMES;
+         font_free_deferred[owner][i].font   = font;
+         font_free_deferred[owner][i].frames = FONT_FREE_DEFERRED_FRAMES;
          return;
       }
    }
@@ -1851,22 +2379,62 @@ void font_driver_free_deferred(font_data_t *font)
    font_driver_free(font);
 }
 
+void font_driver_free_deferred(font_data_t *font)
+{
+   unsigned owner;
+
+   if (!font)
+      return;
+   if ((owner = font_driver_owner_here()) != font->owner)
+   {
+      font_list_head_t *head = &font_retired[font->owner];
+      for (;;)
+      {
+         void *top          = FONT_HEAD_LOAD(head);
+         font->retired_next = top;
+         if (FONT_HEAD_CAS(head, top, font))
+            return;
+      }
+   }
+   font_driver_defer(owner, font);
+}
+
 void font_driver_free_pending(bool flush)
 {
    unsigned i;
+   unsigned owner         = font_driver_owner_here();
+   font_list_head_t *head = &font_retired[owner];
+   font_data_t *retired;
+
+   /* What other threads retired: into the queue, or gone on a flush */
+   for (;;)
+   {
+      retired = (font_data_t*)FONT_HEAD_LOAD(head);
+      if (!retired || FONT_HEAD_CAS(head, retired, NULL))
+         break;
+   }
+   while (retired)
+   {
+      font_data_t *next = (font_data_t*)retired->retired_next;
+      if (flush)
+         font_driver_free(retired);
+      else
+         font_driver_defer(owner, retired);
+      retired           = next;
+   }
 
    for (i = 0; i < FONT_FREE_DEFERRED_MAX; i++)
    {
-      if (!font_free_deferred[i].font)
+      if (!font_free_deferred[owner][i].font)
          continue;
 
-      if (flush || --font_free_deferred[i].frames == 0)
+      if (flush || --font_free_deferred[owner][i].frames == 0)
       {
-         font_data_t *font          = font_free_deferred[i].font;
+         font_data_t *font          = font_free_deferred[owner][i].font;
          /* Cleared before the free: font_driver_free() can marshal to
           * the video thread, and this slot must not look occupied to
           * anything that runs in the meantime. */
-         font_free_deferred[i].font = NULL;
+         font_free_deferred[owner][i].font = NULL;
          font_driver_free(font);
       }
    }
@@ -1916,12 +2484,15 @@ font_data_t *font_driver_init_first(
          font->lang_default_path = NULL;
          font->is_threaded   = is_threaded;
          font->threading_hint= threading_hint;
+         /* No block is bound until the first one is */
+         font->block_bound   = false;
 
          font_driver_cache_metrics(font);
 
          /* Track it so font_driver_reload_fonts() can find it. */
-         font->next          = font_live;
-         font_live           = font;
+         font->owner         = (uint8_t)font_driver_owner_here();
+         font->next          = font_live[font->owner];
+         font_live[font->owner] = font;
 
          return font;
       }

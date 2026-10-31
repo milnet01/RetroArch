@@ -99,7 +99,7 @@
          while (fl_scan < fl_delim)
          {
             const struct font_glyph *fl_g;
-            uint32_t fl_code = utf8_walk(&fl_scan);
+            uint32_t fl_code = utf8_walk_inline(&fl_scan);
 
             if (!(fl_g = get_glyph(font_data, fl_code)))
                if (!(fl_g = glyph_q))
@@ -112,12 +112,15 @@
 
       FONT_LAYOUT_LINE(fl_line, fl_width, fl_count,
             (size_t)(fl_delim - fl_m));
+      /* a driver's FONT_LAYOUT_LINE need not use either */
+      (void)fl_width;
+      (void)fl_count;
 
       fl_scan = fl_m;
       while (fl_scan < fl_delim)
       {
          const struct font_glyph *fl_g;
-         uint32_t fl_code = utf8_walk(&fl_scan);
+         uint32_t fl_code = utf8_walk_inline(&fl_scan);
 
          if (!(fl_g = get_glyph(font_data, fl_code)))
             if (!(fl_g = glyph_q))

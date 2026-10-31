@@ -16,6 +16,7 @@ typedef NS_ENUM(NSUInteger, MTLPixelFormat) {
    MTLPixelFormatBGRA8Unorm_sRGB,
    MTLPixelFormatR16Uint,
    MTLPixelFormatR16Unorm,
+   MTLPixelFormatRG16Unorm,
    MTLPixelFormatR8Unorm,
    MTLPixelFormatRGB10A2Unorm,
    MTLPixelFormatRGBA16Float,
@@ -92,8 +93,14 @@ typedef NS_ENUM(NSUInteger, MTLStorageMode) {
 typedef NS_ENUM(NSUInteger, MTLVertexFormat) {
    MTLVertexFormatFloat2,
    MTLVertexFormatFloat3,
+   MTLVertexFormatUShort2Normalized,
+   MTLVertexFormatUChar4Normalized,
    MTLVertexFormatFloat4,
    MTLVertexFormatUShort4Normalized
+};
+typedef NS_ENUM(NSUInteger, MTLIndexType) {
+   MTLIndexTypeUInt16,
+   MTLIndexTypeUInt32
 };
 typedef NS_ENUM(NSUInteger, MTLVertexStepFunction) {
    MTLVertexStepFunctionPerVertex
@@ -105,7 +112,7 @@ typedef NS_ENUM(NSUInteger, MTLCPUCacheMode) {
    MTLCPUCacheModeDefaultCache
 };
 typedef NS_ENUM(NSUInteger, MTLTextureType) {
-   MTLTextureTypeType2D
+   MTLTextureType2D = 2
 };
 typedef NS_ENUM(NSUInteger, MTLCullMode) {
    MTLCullModeNone
@@ -142,6 +149,9 @@ static inline MTLRegion MTLRegionMake2D(NSUInteger x, NSUInteger y, NSUInteger w
 @property (readonly) id<MTLDevice> device;
 @end
 @protocol MTLTexture <MTLResource>
+@property (readonly) MTLTextureType textureType;
+@property (readonly) MTLTextureUsage usage;
+@property (readonly) NSUInteger sampleCount, arrayLength, depth;
 @property (readonly) NSUInteger width;
 @property (readonly) NSUInteger height;
 @property (readonly) MTLPixelFormat pixelFormat;
@@ -166,6 +176,9 @@ static inline MTLRegion MTLRegionMake2D(NSUInteger x, NSUInteger y, NSUInteger w
 @property (readonly) NSString *label;
 @end
 @protocol MTLComputePipelineState <NSObject>
+@property (readonly) id<MTLDevice> device;
+@property (readonly) NSUInteger maxTotalThreadsPerThreadgroup;
+@property (readonly) NSUInteger threadExecutionWidth;
 @end
 @protocol MTLSamplerState <NSObject>
 @end
@@ -191,6 +204,7 @@ static inline MTLRegion MTLRegionMake2D(NSUInteger x, NSUInteger y, NSUInteger w
 - (void)setViewport:(MTLViewport)v;
 - (void)setScissorRect:(MTLScissorRect)r;
 - (void)drawPrimitives:(MTLPrimitiveType)t vertexStart:(NSUInteger)s vertexCount:(NSUInteger)c;
+- (void)drawIndexedPrimitives:(MTLPrimitiveType)t indexCount:(NSUInteger)c indexType:(MTLIndexType)it indexBuffer:(id<MTLBuffer>)b indexBufferOffset:(NSUInteger)o;
 @end
 @protocol MTLBlitCommandEncoder <MTLCommandEncoder>
 - (void)synchronizeResource:(id<MTLResource>)r;
@@ -203,9 +217,21 @@ static inline MTLRegion MTLRegionMake2D(NSUInteger x, NSUInteger y, NSUInteger w
 - (void)setComputePipelineState:(id<MTLComputePipelineState>)s;
 - (void)setBuffer:(id<MTLBuffer>)b offset:(NSUInteger)o atIndex:(NSUInteger)i;
 - (void)setTexture:(id<MTLTexture>)t atIndex:(NSUInteger)i;
+- (void)setBytes:(const void *)b length:(NSUInteger)l atIndex:(NSUInteger)i;
 - (void)dispatchThreadgroups:(MTLSize)g threadsPerThreadgroup:(MTLSize)t;
 @end
+typedef NS_ENUM(NSUInteger, MTLCommandBufferStatus) {
+   MTLCommandBufferStatusNotEnqueued = 0,
+   MTLCommandBufferStatusEnqueued    = 1,
+   MTLCommandBufferStatusCommitted   = 2,
+   MTLCommandBufferStatusScheduled   = 3,
+   MTLCommandBufferStatusCompleted   = 4,
+   MTLCommandBufferStatusError       = 5
+};
 @protocol MTLCommandBuffer <NSObject>
+@property (readonly) id<MTLDevice> device;
+@property (readonly) MTLCommandBufferStatus status;
+@property (readonly) BOOL retainedReferences;
 - (id<MTLRenderCommandEncoder>)renderCommandEncoderWithDescriptor:(id)d;
 - (id<MTLBlitCommandEncoder>)blitCommandEncoder;
 - (id<MTLComputeCommandEncoder>)computeCommandEncoder;

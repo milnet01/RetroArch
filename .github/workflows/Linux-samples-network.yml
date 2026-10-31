@@ -23,49 +23,41 @@ jobs:
   samples-network:
     name: Build and run samples/network
     runs-on: ubuntu-latest
+    env:
+      APT_PKGS: build-essential libmbedtls-dev libbearssl-dev ccache
     timeout-minutes: 15
 
     steps:
-      - name: Install dependencies
-        timeout-minutes: 20
-        run: |
-          pkgs="build-essential libmbedtls-dev libbearssl-dev"
-          if dpkg -s $pkgs >/dev/null 2>&1; then
-            echo "All packages already present on runner image; skipping apt."
-            exit 0
-          fi
-          for i in 1 2 3; do
-            sudo timeout 90 apt-get update -y \
-              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
-            echo "apt-get update failed (attempt $i); retrying in 10s"
-            sleep 10
-          done
-          # Fetch first, under a bound: a download is safe to stop and
-          # resumes, an install is not. A mirror that stalls is left for
-          # the main archive on the next attempt.
-          for i in 1 2 3; do
-            sudo timeout 240 apt-get install -y --download-only \
-              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
-              $pkgs && break
-            [ $i = 3 ] && exit 1
-            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
-            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
-              [ -f "$f" ] || continue
-              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
-                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
-            done
-            sudo timeout 90 apt-get update -y \
-              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
-          done
-          sudo apt-get install -y \
-            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
-            $pkgs
-
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Apt cache key
+        id: apt
+        run: sh .github/workflows/scripts/apt-cache-key.sh "$APT_PKGS"
+
+      - name: Restore apt cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.apt-cache
+          key: ${{ steps.apt.outputs.key }}
+          restore-keys: ${{ steps.apt.outputs.prefix }}
+
+      - name: Install dependencies
+        timeout-minutes: 20
+        run: sh .github/workflows/scripts/apt-install.sh $APT_PKGS
+
+      - name: Save apt cache
+        if: env.APT_CACHE_SAVE == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.apt-cache
+          key: ${{ steps.apt.outputs.key }}
+
+      - name: Link with lld
+        run: sh .github/workflows/scripts/use-lld.sh
+
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.ccache
           key: ccache-${{ github.workflow }}-${{ github.job }}-${{ github.sha }}
@@ -75,11 +67,10 @@ jobs:
       - name: Enable ccache
         run: |
           set -eu
-          command -v ccache >/dev/null 2>&1 || sudo apt-get install -y -qq ccache
           export CCACHE_DIR="$HOME/.ccache"
           echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
           echo "/usr/lib/ccache" >> "$GITHUB_PATH"
-          ccache -M 500M
+          ccache -M 250M
           ccache -z
 
       - name: Build and run webdav_options_test (ASan + UBSan, TSan)
@@ -99,13 +90,13 @@ jobs:
           # WebDAV methods, HTTP/2 lowercase field names, plain HTTP
           # with and without PUT, empty and NULL header lists, and
           # whole-token matching (PROPFINDX must not match PROPFIND).
-          make clean all SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           test -x webdav_options_test
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1 timeout 60 \
              ./webdav_options_test
           echo "[pass] webdav_options_test (ASan)"
-          make clean all SANITIZER=thread
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 120 ./webdav_options_test
           echo "[pass] webdav_options_test (TSan)"
 
@@ -127,13 +118,13 @@ jobs:
           # A malformed challenge (a value with no closing quote, a
           # trailing unquoted parameter) must be refused, not crash the
           # parser or send it reading past the end of the line.
-          make clean all SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           test -x webdav_reauth_test
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1 timeout 60 \
              ./webdav_reauth_test
           echo "[pass] webdav_reauth_test (ASan)"
-          make clean all SANITIZER=thread
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 120 ./webdav_reauth_test
           echo "[pass] webdav_reauth_test (TSan)"
 
@@ -152,13 +143,13 @@ jobs:
           # back up", a failed backup stopping the upload, destructive
           # sync and the server manifest skipping the backup, and COPY
           # and PUT each getting their own Digest retry.
-          make clean all SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           test -x webdav_backup_test
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1 timeout 60 \
              ./webdav_backup_test
           echo "[pass] webdav_backup_test (ASan)"
-          make clean all SANITIZER=thread
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 120 ./webdav_backup_test
           echo "[pass] webdav_backup_test (TSan)"
 
@@ -177,13 +168,13 @@ jobs:
           # failed copy (including a 200 with an <Error> body) stopping
           # the delete or upload, and destructive sync and the server
           # manifest skipping the copy.
-          make clean all SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           test -x s3_backup_test
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1 timeout 60 \
              ./s3_backup_test
           echo "[pass] s3_backup_test (ASan)"
-          make clean all SANITIZER=thread
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 120 ./s3_backup_test
           echo "[pass] s3_backup_test (TSan)"
 
@@ -204,15 +195,42 @@ jobs:
           # the old file intact with no temporary file left, no backup
           # for destructive sync, a new file or the manifest, an empty
           # upload and the configured subdirectory.
-          make clean all SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           test -x smb_backup_test
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1 timeout 60 \
              ./smb_backup_test
           echo "[pass] smb_backup_test (ASan)"
-          make clean all SANITIZER=thread
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 120 ./smb_backup_test
           echo "[pass] smb_backup_test (TSan)"
+
+      - name: Build and run nfs_backup_test (ASan + UBSan, TSan)
+        shell: bash
+        working-directory: samples/network/nfs_backup
+        run: |
+          set -eu
+          # Includes network/cloud_sync/nfs.c and runs it against an
+          # in-memory export (fake_nfs.c) keeping net_nfs3.c's status
+          # contract. A download is written beside the local file and
+          # renamed over it once complete; only the server answering
+          # NOENT reads as "not there"; an upload is one RENAME over the
+          # old file, kept as <path>-<time>[-n] with destructive sync
+          # off. Covers failed opens and partial reads leaving the local
+          # save intact, unanswered stat/unlink failing instead of
+          # reporting a missing file or a delete, failed write, backup
+          # and final rename leaving the old file and no temporary, the
+          # manifest skipping the backup, refused over-long names, the
+          # subdirectory and a concurrent MKDIR.
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
+          test -x nfs_backup_test
+          ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
+             UBSAN_OPTIONS=print_stacktrace=1 timeout 60 \
+             ./nfs_backup_test
+          echo "[pass] nfs_backup_test (ASan)"
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
+          TSAN_OPTIONS=halt_on_error=1 timeout 120 ./nfs_backup_test
+          echo "[pass] nfs_backup_test (TSan)"
 
       - name: Build and run gdrive_backup_test (ASan + UBSan, TSan)
         shell: bash
@@ -229,13 +247,13 @@ jobs:
           # copy and on the PATCH each refreshing the token once (the
           # PATCH retry repeating only the PATCH, not the backup), and
           # destructive sync, a new file and the manifest skipping it.
-          make clean all SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           test -x gdrive_backup_test
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1 timeout 60 \
              ./gdrive_backup_test
           echo "[pass] gdrive_backup_test (ASan)"
-          make clean all SANITIZER=thread
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 120 ./gdrive_backup_test
           echo "[pass] gdrive_backup_test (TSan)"
 
@@ -259,22 +277,22 @@ jobs:
           # net_http must send the same upload a slice per update, plain
           # and over TLS - it used to go out in one blocking send, a call
           # of a second or more (spinning at 100% CPU on a plain socket).
-          make clean all SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           test -x cheevos_login_test
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 timeout 120 \
              make check
           echo "[pass] cheevos_login_test (BearSSL, ASan)"
-          make clean all SANITIZER=thread
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 180 make check
           echo "[pass] cheevos_login_test (BearSSL, TSan)"
-          make clean all SSL_BACKEND=mbed SANITIZER=address,undefined
+          make clean SSL_BACKEND=mbed SANITIZER=address,undefined && make -j$(nproc) all SSL_BACKEND=mbed SANITIZER=address,undefined
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 timeout 120 \
              make check SSL_BACKEND=mbed
           echo "[pass] cheevos_login_test (mbedTLS, ASan)"
           # The built-in client, RetroArch's default backend.
-          make clean all SSL_BACKEND=retro SANITIZER=address,undefined
+          make clean SSL_BACKEND=retro SANITIZER=address,undefined && make -j$(nproc) all SSL_BACKEND=retro SANITIZER=address,undefined
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 timeout 120 \
              make check SSL_BACKEND=retro
@@ -294,7 +312,7 @@ jobs:
              echo "$mbed_sha  $mbed_tar" | sha256sum -c -
              tar -xjf "$mbed_tar" -C "$RUNNER_TEMP"
              make -C "$RUNNER_TEMP/mbedtls-$mbed_ver" -j"$(nproc)" lib >/dev/null
-             make clean all SSL_BACKEND=mbed SANITIZER=address,undefined \
+             make clean SSL_BACKEND=mbed SANITIZER=address,undefined && make -j$(nproc) all SSL_BACKEND=mbed SANITIZER=address,undefined \
                 MBEDTLS_DIR="$RUNNER_TEMP/mbedtls-$mbed_ver"
              ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
                 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 timeout 120 \
@@ -349,11 +367,25 @@ jobs:
              echo "::error title=net_http lock::net_http.c must not take locks"
              exit 1
           fi
-          make clean all SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 timeout 120 \
              ./net_http_semantics_test
           echo "[pass] net_http_semantics_test (ASan)"
-          make clean all SANITIZER=thread
+          make clean SANITIZER=thread && make -j$(nproc) all SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 300 ./net_http_semantics_test
           echo "[pass] net_http_semantics_test (TSan)"
+
+      - name: ccache statistics
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: ccache -sv
+
+      - name: Save ccache
+        # Only master's pushes keep a cache: pull requests restore
+        # master's, so one push does not evict the next one's.
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ github.workflow }}-${{ github.job }}-${{ github.sha }}

@@ -4,9 +4,13 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <pthread.h>
+#include <sched.h>
 #include <boolean.h>
+#include <compat/strl.h>
 #include "gfx/font_driver.h"
 #include "gfx/video_driver.h"
+#include "configuration.h"
 
 extern int read_should_fail;
 
@@ -21,10 +25,30 @@ bool video_driver_is_hw_context(void) { return false; }
 
 bool path_is_valid(const char *path) { (void)path; return true; }
 
+/* font_driver_resolve_params() reads the on-screen message settings */
+static settings_t test_settings;
+settings_t *config_get_ptr(void) { return &test_settings; }
+
 const char *last_read_path = NULL;
 
-/* Set by the fallback test, which reads a real font from disk */
-int read_real_files = 0;
+/* Set by the fallback tests, which read real fonts from disk, and the
+ * files they read, in order. Fallback files are read on threads of
+ * their own, so the record is kept under a lock. */
+int  read_real_files = 0;
+static char real_reads[16][512];
+static int  real_reads_n = 0;
+static pthread_mutex_t real_reads_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* Whether a file whose path contains @name has been read */
+int stub_real_read(const char *name)
+{
+   int i, found = 0;
+   pthread_mutex_lock(&real_reads_lock);
+   for (i = 0; i < real_reads_n && !found; i++)
+      found = strstr(real_reads[i], name) != NULL;
+   pthread_mutex_unlock(&real_reads_lock);
+   return found;
+}
 
 bool filestream_read_file(const char *path, void **buf, int64_t *len)
 {
@@ -32,8 +56,12 @@ bool filestream_read_file(const char *path, void **buf, int64_t *len)
     * reads the lifecycle tests make are recorded */
    if (read_real_files)
    {
-      FILE *f = fopen(path, "rb");
       long  n;
+      FILE *f = fopen(path, "rb");
+      pthread_mutex_lock(&real_reads_lock);
+      if (real_reads_n < (int)(sizeof(real_reads) / sizeof(real_reads[0])))
+         strlcpy(real_reads[real_reads_n++], path, sizeof(real_reads[0]));
+      pthread_mutex_unlock(&real_reads_lock);
       *buf    = NULL;
       if (!f)
          return false;
@@ -107,6 +135,16 @@ bool video_driver_is_threaded(void) { return true; }
  * whole subject is what the wrapper does to a font's lifetime - so it
  * answers the same as video_driver_is_threaded() above. */
 bool video_driver_thread_wrapper_active(void) { return true; }
+
+/* The thread a test treats as the threaded video thread; the others
+ * make and free their fonts as the main thread does */
+pthread_t test_video_thread;
+int       test_video_thread_set = 0;
+bool video_thread_is_video_thread(void)
+{
+   return test_video_thread_set
+      && pthread_equal(pthread_self(), test_video_thread);
+}
 
 uintptr_t video_thread_texture_handle(void *data,
       uintptr_t (*handle_get)(void *data))
@@ -189,6 +227,8 @@ void slock_unlock(slock_t *l) { pthread_mutex_unlock((pthread_mutex_t*)l); }
 sthread_t *sthread_create(void (*fn)(void*), void *userdata)
 { (void)fn; (void)userdata; return NULL; }
 int sthread_detach(sthread_t *thread) { (void)thread; return 0; }
+/* rtime_localtime()'s guard yields while another caller holds it. */
+void sthread_yield(void) { sched_yield(); }
 #endif
 #endif
 

@@ -1,3 +1,5 @@
+include ../../sample_objdir.mk
+
 TARGET := retro_eventcount_test
 
 LIBRETRO_COMM_DIR := ../../..
@@ -9,9 +11,10 @@ SOURCES := \
 	retro_eventcount_test.c \
 	$(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c \
 	$(LIBRETRO_COMM_DIR)/rthreads/rthreads.c \
+	$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
 	$(LIBRETRO_COMM_DIR)/features/features_cpu.c
 
-CFLAGS  += -Wall -W -std=gnu99 -g -O1 \
+CFLAGS  += -Wall -W -std=gnu99 -g1 -O1 \
            -DHAVE_THREADS -I$(LIBRETRO_COMM_DIR)/include
 LDFLAGS += -lpthread
 # rthreads.c uses clock_gettime + CLOCK_REALTIME on Linux glibc; on
@@ -31,9 +34,14 @@ LDFLAGS += -lrt
 #   x86_64-w64-mingw32-gcc -o ec.exe retro_eventcount_test.c \
 #       ../../../rthreads/retro_eventcount.c \
 #       ../../../rthreads/rthreads.c \
+#       ../../../features/features_cpu.c ../../../time/rtime.c \
 #       -Wall -W -std=gnu99 -O1 -DHAVE_THREADS -I../../../include
-#   for t in alert keyed event none; do \
-#       RETRO_EVENTCOUNT_WIN32=$$t wine64 ./ec.exe; done
+#   for h in 1 0; do for t in alert keyed event none; do \
+#       RETRO_EVENTCOUNT_HIRES=$$h RETRO_EVENTCOUNT_WIN32=$$t \
+#       wine64 ./ec.exe; done; done
+#
+# RETRO_EVENTCOUNT_HIRES=0 bounds timed waits with the kernel timeout
+# alone rather than the high resolution timer, to compare against it.
 #
 # RETRO_EVENTCOUNT_WIN32 pins the sleep tier.  'none' pins the case
 # where no tier is available at all, which otherwise needs the process
@@ -61,6 +69,17 @@ ifneq ($(SEMPOOL),)
    CFLAGS += -DRETRO_EVENTCOUNT_FORCE_SEM_POOL
    TARGET := retro_eventcount_test_sempool
 endif
+# Built for Linux, both take the semaphore past ThreadSanitizer's
+# interceptors, through sem_hidden_shim.c, so it sees no more order
+# than Darwin's Mach semaphore gives it.
+ifneq ($(SEM)$(SEMPOOL),)
+   ifneq ($(findstring linux,$(shell $(CC) -dumpmachine)),)
+      SOURCES += sem_hidden_shim.c
+      CFLAGS  += -Dsem_wait=hidden_sem_wait -Dsem_post=hidden_sem_post \
+                 -Dsem_timedwait=hidden_sem_timedwait
+      LDFLAGS += -ldl
+   endif
+endif
 # CTR=1 builds the 3DS address-arbiter backend on this host, against
 # hostctr/3ds - the slice of libctru it uses - with the two arbiter
 # wrappers stood in for over futex in ctr_arbiter_shim.c.
@@ -80,7 +99,7 @@ ifneq ($(SWITCH),)
    TARGET := retro_eventcount_test_switch
 endif
 
-OBJS := $(SOURCES:.c=.o)
+OBJS := $(call sample_objs,$(SOURCES:.c=.o))
 
 ifneq ($(SAN),)
    SANITIZER := $(SAN)
@@ -95,10 +114,18 @@ all: $(TARGET)
 %.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
+$(SAMPLE_OBJDIR)/%.o: $$(call sample_src,$$*).c
+	@mkdir -p $(@D)
+	$(CC) -c -o $@ $< $(CFLAGS)
+
 $(TARGET): $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-check: all
+deadline_test: deadline_test.c $(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c
+	$(CC) $(CFLAGS) -o $@ deadline_test.c $(filter-out retro_eventcount_test.c $(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c,$(SOURCES)) $(LDFLAGS)
+
+check: all deadline_test
+	./deadline_test
 	./$(TARGET)
 	@$(MAKE) -s clean
 	@$(MAKE) -s SCOND=1 $(if $(SANITIZER),SANITIZER=$(SANITIZER))
@@ -118,9 +145,12 @@ check: all
 	./retro_eventcount_test_ctr
 
 clean:
-	rm -f $(OBJS) switch_arbiter_shim.o ctr_arbiter_shim.o retro_eventcount_test \
+	rm -rf $(SAMPLE_OBJDIR)
+	rm -f $(OBJS) switch_arbiter_shim.o ctr_arbiter_shim.o sem_hidden_shim.o \
+	      retro_eventcount_test \
 	      retro_eventcount_test_scond retro_eventcount_test_sem \
 	      retro_eventcount_test_sempool retro_eventcount_test_switch \
 	      retro_eventcount_test_ctr
+	rm -f deadline_test deadline_test.exe
 
 .PHONY: all check clean

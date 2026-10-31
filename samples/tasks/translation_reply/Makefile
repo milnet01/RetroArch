@@ -1,3 +1,5 @@
+include ../../sample_objdir.mk
+
 TARGET := translation_reply_test
 
 REPO_ROOT         := ../../..
@@ -18,8 +20,8 @@ SOURCES := translation_reply_test.c \
            $(LIBRETRO_COMM_DIR)/string/stdstring.c \
            $(LIBRETRO_COMM_DIR)/encodings/encoding_utf.c
 
-CFLAGS  += -Wall -std=gnu99 -g -O1 -DRARCH_INTERNAL -DHAVE_RPNG \
-           -DHAVE_TRANSLATE -DHAVE_NETWORKING -DHAVE_ACCESSIBILITY \
+CFLAGS  += -Wall -std=gnu99 -g1 -O1 -DRARCH_INTERNAL -DHAVE_RPNG \
+           -DHAVE_TRANSLATE -DHAVE_NETWORKING -DHAVE_ACCESSIBILITY -DHAVE_AUDIOMIXER \
            -I$(REPO_ROOT) -I$(LIBRETRO_COMM_DIR)/include -I$(REPO_ROOT)/deps
 
 ifneq ($(SANITIZER),)
@@ -29,7 +31,7 @@ endif
 
 LDFLAGS += -lm
 
-OBJS := $(SOURCES:.c=.o)
+OBJS := $(call sample_objs,$(SOURCES:.c=.o))
 
 all: $(TARGET)
 
@@ -42,10 +44,15 @@ translation_reply_test.o: translation_reply_test.c $(REPO_ROOT)/tasks/task_trans
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(SAMPLE_OBJDIR)/%.o: $$(call sample_src,$$*).c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 check: $(TARGET)
 	./$(TARGET)
 
 clean:
+	rm -rf $(SAMPLE_OBJDIR)
 	rm -f $(OBJS) $(TARGET) $(TARGET).exe
 
 .PHONY: all check clean

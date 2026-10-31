@@ -112,6 +112,8 @@
 #include "../../../gfx/common/vulkan_common.h"
 #include "../../../configuration.h"
 
+bool video_driver_thread_wrapper_active(void) { return false; }
+
 /* Scored by the RARCH_LOG hook in stubs_retroarch.c. */
 extern int g_vk_validation_errors;
 extern int g_vk_validation_warnings;
@@ -288,6 +290,7 @@ static unsigned s_num_queues;
 static int      s_hazards;
 static int      s_idle_waits;      /* vkQueueWaitIdle + vkDeviceWaitIdle calls */
 static int      s_fail_present;    /* the next presents report out-of-date */
+static int      s_suboptimal;      /* the next presents report suboptimal */
 
 static PFN_vkQueuePresentKHR      s_real_present;
 static PFN_vkQueueSubmit          s_real_submit;
@@ -339,6 +342,12 @@ static VKAPI_ATTR VkResult VKAPI_CALL track_present_khr(VkQueue queue,
       res = VK_ERROR_OUT_OF_DATE_KHR;
       if (info->pResults)
          info->pResults[0] = VK_ERROR_OUT_OF_DATE_KHR;
+   }
+   else if (s_suboptimal && res == VK_SUCCESS)
+   {
+      res = VK_SUBOPTIMAL_KHR;
+      if (info->pResults)
+         info->pResults[0] = VK_SUBOPTIMAL_KHR;
    }
    for (i = 0; i < info->waitSemaphoreCount && s_num_pending < TRACK_MAX; i++)
    {
@@ -449,6 +458,7 @@ static void track_install(void)
    s_hazards     = 0;
    s_idle_waits  = 0;
    s_fail_present = 0;
+   s_suboptimal   = 0;
    s_real_present           = vkQueuePresentKHR;
    s_real_submit            = vkQueueSubmit;
    s_real_wait              = vkWaitForFences;
@@ -966,6 +976,105 @@ static void mailbox_frame(gfx_ctx_vulkan_data_t *vk, VkCommandBuffer cmd)
    vulkan_present(vk, index);
 }
 
+/* A suboptimal present is a WSI asking for a new swapchain: on
+ * Wayland the compositor's dma-buf feedback has changed - a window
+ * gone fullscreen is offered the scanout tranche - and only a rebuild
+ * lets the WSI allocate from it, so only a rebuild puts the window on
+ * the display plane (issue #19841, NVIDIA on GNOME). The answer used
+ * to be rewritten to success and the swapchain kept for good.
+ *
+ * One rebuild per answer, though: a surface that stays suboptimal
+ * (Android without prerotate) would otherwise rebuild every frame. So
+ * the first suboptimal present tears the swapchain down, a suboptimal
+ * present from the swapchain built in its place is kept, and an
+ * optimal present arms the rebuild again. */
+static int test_suboptimal_present(void)
+{
+   gfx_ctx_vulkan_data_t vk;
+   VkCommandPoolCreateInfo pool_info;
+   VkCommandBufferAllocateInfo cmd_info;
+   VkCommandPool pool   = VK_NULL_HANDLE;
+   VkCommandBuffer cmd  = VK_NULL_HANDLE;
+   int fail             = 0;
+   unsigned step;
+   /* present answer, swapchain expected standing afterwards */
+   static const struct { int suboptimal; int standing; } plan[] = {
+      { 1, 0 },   /* first suboptimal: rebuilt */
+      { 1, 1 },   /* the rebuilt one is suboptimal too: kept */
+      { 1, 1 },   /* still kept */
+      { 0, 1 },   /* optimal: the rebuild is armed again */
+      { 1, 0 }    /* and taken */
+   };
+
+   reset_counts();
+
+   if (!context_up(&vk))
+   {
+      fputs("FAIL: context setup failed for the suboptimal-present test\n", stderr);
+      return 1;
+   }
+   track_install();
+
+   memset(&pool_info, 0, sizeof(pool_info));
+   pool_info.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+   pool_info.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+   pool_info.queueFamilyIndex = vk.context.graphics_queue_index;
+   vkCreateCommandPool(vk.context.device, &pool_info, NULL, &pool);
+   memset(&cmd_info, 0, sizeof(cmd_info));
+   cmd_info.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+   cmd_info.commandPool        = pool;
+   cmd_info.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+   cmd_info.commandBufferCount = 1;
+   vkAllocateCommandBuffers(vk.context.device, &cmd_info, &cmd);
+
+   for (step = 0; step < sizeof(plan) / sizeof(plan[0]) && !fail; step++)
+   {
+      unsigned asks = 0;
+
+      /* An image to draw into: the surface create acquired the first,
+       * a rebuilt swapchain's first acquire makes the swapchain. */
+      while (!(vk.context.flags & VK_CTX_FLAG_HAS_ACQUIRED_SWAPCHAIN)
+            && asks++ < 1000)
+         vulkan_acquire_next_image(&vk);
+      if (!(vk.context.flags & VK_CTX_FLAG_HAS_ACQUIRED_SWAPCHAIN))
+      {
+         fprintf(stderr, "FAIL: step %u: no image acquired\n", step);
+         fail = 1;
+         break;
+      }
+      vk.context.flags &= ~VK_CTX_FLAG_INVALID_SWAPCHAIN;
+
+      vkDeviceWaitIdle(vk.context.device);
+      s_suboptimal = plan[step].suboptimal;
+      mailbox_frame(&vk, cmd);
+      s_suboptimal = 0;
+
+      if ((vk.swapchain != VK_NULL_HANDLE) != plan[step].standing)
+      {
+         fprintf(stderr, "FAIL: step %u: a%s present %s the swapchain\n",
+               step, plan[step].suboptimal ? " suboptimal" : "n optimal",
+               plan[step].standing ? "tore down" : "left standing");
+         fail = 1;
+      }
+   }
+
+   vulkan_surface_destroy(&vk);
+   vkDeviceWaitIdle(vk.context.device);
+   vkDestroyCommandPool(vk.context.device, pool, NULL);
+   vulkan_context_destroy(&vk, true);
+   track_remove();
+
+   if (fail)
+      return 1;
+   if (s_hazards)
+   {
+      fprintf(stderr, "FAIL: the rebuild behind a suboptimal present"
+            " destroyed %d object(s) the present still needed\n", s_hazards);
+      return 1;
+   }
+   return report("a suboptimal present rebuilds the swapchain once");
+}
+
 /* Emulated mailbox: with vsync on and a swap interval of 0 asked for
  * (fast-forward), the swapchain stays in FIFO and a second thread does
  * the acquiring, so the presenting thread never blocks on the display:
@@ -991,7 +1100,6 @@ static int test_emulated_mailbox(void)
    VkCommandBufferAllocateInfo cmd_info;
    VkCommandPool pool   = VK_NULL_HANDLE;
    VkCommandBuffer cmd  = VK_NULL_HANDLE;
-   settings_t *settings = (settings_t*)config_get_ptr();
    unsigned frames      = 0;
    unsigned asks        = 0;
    unsigned round;
@@ -1034,8 +1142,9 @@ static int test_emulated_mailbox(void)
    {
       unsigned want = frames + 40;
 
-      /* Fast-forward with vsync on: emulation comes up. */
-      settings->bools.video_vsync = true;
+      /* Fast-forward with vsync on: emulation comes up. The swapchain
+       * is made from the context's copy, as a frame would set it. */
+      vk.context.swapchain_settings.vsync = true;
       if (     !vulkan_create_swapchain(&vk, vk.context.swapchain_dims, 0)
             || !(vk.flags & VK_DATA_FLAG_EMULATING_MAILBOX)
             || vk.mailbox.swapchain == VK_NULL_HANDLE)
@@ -1084,7 +1193,7 @@ static int test_emulated_mailbox(void)
       }
       vk.context.flags &= ~VK_CTX_FLAG_INVALID_SWAPCHAIN;
    }
-   settings->bools.video_vsync = false;
+   vk.context.swapchain_settings.vsync = false;
 
    vulkan_surface_destroy(&vk);
    vkDeviceWaitIdle(vk.context.device);
@@ -1194,6 +1303,8 @@ int main(void)
    else if (test_unsubmitted_acquires())
       ret = 1;
    else if (test_failed_present())
+      ret = 1;
+   else if (test_suboptimal_present())
       ret = 1;
    else if (test_emulated_mailbox())
       ret = 1;

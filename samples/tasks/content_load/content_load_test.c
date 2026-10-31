@@ -20,10 +20,33 @@
  *    refused, and the first still completes;
  *  - reinit deferred: a driver reinit asked for while the load is in
  *    flight leaves the drivers as they are - the load rebuilds them;
+ *  - midi boot / midi requested: a core that asks for the MIDI
+ *    interface in its load - at boot, or in a staged load on the old
+ *    session's drivers - plays through the device, through a driver
+ *    reinit too; its note-off at unload reaches the device, and a core
+ *    that does not ask has it shut;
  *  - fallback: a core that cannot be loaded ends on the dummy core
  *    with the drivers rebuilt and the menu up;
  *  - not a core: a library that opens but lacks retro_init does the
- *    same, and the failure is said.
+ *    same, and the failure is said;
+ *  - user dirs held: the frontend boots with the user directories
+ *    held - nothing is made or read under the playlist directory,
+ *    the playlists tab lists nothing - and the release makes the
+ *    builtin folder, loads favorites and history, and lists the tab;
+ *  - playlist state slot: an entry run from its Load State list loads
+ *    the slot picked there, over an auto state and with none, and Auto
+ *    loads the auto state with Auto Load State off, though the menu has
+ *    moved on by the time the load reaches the content;
+ *  - core title held: the menu's core title shows the title from
+ *    before a playlist Run or the one after it, nothing in between;
+ *  - menu sound close: a menu sound playing when Close Content is
+ *    confirmed plays on through the staged close and past it - the
+ *    device carried through the driver stage, never stopped, the
+ *    sound not reloaded under itself - and the tone handed over whole;
+ *  - quit waits for a save: a quit from the frame loop while a state
+ *    is being written returns to the loop at once, which presents
+ *    frames - the core not run - until the state is written, and only
+ *    then finishes the quit and ends.  Runs last: the session ends.
  *
  * Requires a completed non-Qt build:
  *
@@ -32,6 +55,8 @@
  */
 
 #include <stdint.h>
+#include <math.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +66,7 @@
 #include <dynamic/dylib.h>
 #include <file/config_file.h>
 #include <file/file_path.h>
+#include <lists/string_list.h>
 #include <streams/file_stream.h>
 #include <time/rtime.h>
 #include <retro_timers.h>
@@ -56,6 +82,8 @@
 #include "../../../frontend/frontend.h"
 #include "../../../verbosity.h"
 #include "../../../gfx/video_driver.h"
+#include "../../../audio/audio_driver.h"
+#include "../../../midi_driver.h"
 #include "../../../gfx/video_defines.h"
 #include "../../../menu/menu_driver.h"
 #include "../../../tasks/task_content.h"
@@ -66,7 +94,10 @@
 #include "../../../playlist.h"
 #include "../../../paths.h"
 #include "../../../content.h"
+#include "../../../defaults.h"
 #include "../../../input/input_driver.h"
+#include "../../../runahead.h"
+#include "../../../state_manager.h"
 #ifdef HAVE_NETWORKING
 #include "../../../network/netplay/netplay.h"
 #endif
@@ -91,6 +122,8 @@ static unsigned failures = 0;
 #define LOAD_FRAMES 10
 
 static char core_path[512];
+/* The harness's own temporary directory */
+static char harness_dir[400];
 
 /* ------------------------------------------------------------------ */
 /* The presented-frame hook                                            */
@@ -152,6 +185,14 @@ static unsigned core_export(const char *name)
 static unsigned core_inits(void)
 {
    return core_export("harness_core_inits");
+}
+
+static unsigned long core_export_ul(const char *name)
+{
+   dylib_t lib = runloop_state_get_ptr()->lib_handle;
+   unsigned long (*fn)(void) = lib
+      ? (unsigned long (*)(void))dylib_proc(lib, name) : NULL;
+   return fn ? fn() : 0;
 }
 
 /* What one frame of the load looked like. */
@@ -228,6 +269,66 @@ static void open_menu(void)
 /* Lane: staged                                                        */
 /* ------------------------------------------------------------------ */
 
+#ifdef HAVE_MENU
+static unsigned playlists_tab_size(const char *dir_playlist)
+{
+   menu_displaylist_info_t info;
+   file_list_t list = {0};
+   unsigned size;
+   menu_displaylist_info_init(&info);
+   info.list         = &list;
+   info.path         = strdup(dir_playlist);
+   info.label        = strdup(MENU_ENUM_LABEL_PLAYLISTS_TAB_STR);
+   info.exts         = strdup("lpl");
+   info.type_default = FILE_TYPE_PLAIN;
+   info.enum_idx     = MENU_ENUM_LABEL_PLAYLISTS_TAB;
+   menu_displaylist_ctl(DISPLAYLIST_DATABASE_PLAYLISTS_HORIZONTAL,
+         &info, config_get_ptr());
+   size = (unsigned)list.size;
+   menu_displaylist_info_free(&info);
+   file_list_deinitialize(&list);
+   return size;
+}
+#endif
+
+/* Runs first: main() boots the frontend held. */
+static void lane_user_dirs_held(const char *dir)
+{
+   char dir_playlist[600];
+   char builtin[640];
+   snprintf(dir_playlist, sizeof(dir_playlist), "%s/playlists", dir);
+   snprintf(builtin, sizeof(builtin), "%s/builtin", dir_playlist);
+
+   CHECK(retroarch_get_flags() & RARCH_FLAGS_USER_DIRS_HELD,
+         "held: the boot dropped the hold");
+   CHECK(!path_is_directory(builtin),
+         "held: the builtin playlist folder was made");
+#ifdef HAVE_MENU
+   CHECK(!g_defaults.content_favorites, "held: favorites were loaded");
+   CHECK(!g_defaults.content_history, "held: history was loaded");
+   retroarch_favorites_init();
+   command_event(CMD_EVENT_HISTORY_INIT, NULL);
+   CHECK(!g_defaults.content_favorites && !g_defaults.content_history,
+         "held: a playlist init read the playlist directory");
+   CHECK(playlists_tab_size(dir_playlist) == 0,
+         "held: the playlists tab listed the playlist directory");
+#endif
+
+   retroarch_user_dirs_release();
+
+   CHECK(!(retroarch_get_flags() & RARCH_FLAGS_USER_DIRS_HELD),
+         "release: the hold is still set");
+   CHECK(path_is_directory(builtin),
+         "release: the builtin playlist folder was not made");
+#ifdef HAVE_MENU
+   CHECK(g_defaults.content_favorites, "release: favorites not loaded");
+   CHECK(g_defaults.content_history, "release: history not loaded");
+   CHECK(playlists_tab_size(dir_playlist) == 1,
+         "release: the playlists tab does not list the playlist");
+#endif
+   fprintf(stderr, "user dirs held: ok\n");
+}
+
 static void lane_staged(void)
 {
    struct load_frame log[LOAD_FRAMES];
@@ -302,6 +403,845 @@ static void lane_staged(void)
 /* ------------------------------------------------------------------ */
 /* Lane: one at a time                                                 */
 /* ------------------------------------------------------------------ */
+
+/* The running core is opened once per load: nothing after its init
+ * reopens it to re-read its system info, so its retro_set_environment
+ * runs exactly once on the live instance, and what the menu shows -
+ * library name and version, no-game support - comes from that open. */
+static void lane_core_opened_once(void)
+{
+   struct load_frame log[LOAD_FRAMES];
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   unsigned n;
+   unsigned had = failures;
+
+   open_menu();
+
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   n = run_load(log, LOAD_FRAMES);
+   CHECK(n < LOAD_FRAMES && core_is_up(),
+         "the load did not bring the core up within %u frames", LOAD_FRAMES);
+   CHECK(core_export("harness_core_env_sets") == 1,
+         "retro_set_environment ran %u times on the running core, "
+         "not once", core_export("harness_core_env_sets"));
+   CHECK(string_is_equal(runloop_st->current_library_name,
+            "content_load_harness")
+         && string_is_equal(runloop_st->current_library_version, "1"),
+         "the library strings are \"%s\" \"%s\"",
+         runloop_st->current_library_name,
+         runloop_st->current_library_version);
+   CHECK(runloop_st->system.load_no_content,
+         "the core's no-game support was not recorded");
+
+   if (failures == had)
+      fprintf(stderr, "[pass] core opened once lane\n");
+}
+
+/* The audio device across a content load: kept and taken back, not
+ * closed and opened again; with RETROARCH_AUDIO_KEEP=0, closed and
+ * opened again. The null driver gets a device that counts. */
+extern audio_driver_t audio_null;
+static unsigned kept_opens, kept_frees;
+static int      kept_token;
+static void *kept_init(const char *device, unsigned rate, unsigned latency,
+      unsigned *new_rate)
+{
+   (void)device; (void)latency;
+   *new_rate = rate;
+   kept_opens++;
+   return &kept_token;
+}
+static ssize_t kept_write(void *data, const void *buf, size_t len)
+{ (void)data; (void)buf; return (ssize_t)len; }
+static bool kept_true(void *data) { (void)data; return true; }
+static bool kept_start(void *data, bool shutdown)
+{ (void)data; (void)shutdown; return true; }
+static void kept_nonblock(void *data, bool state) { (void)data; (void)state; }
+static bool kept_float(void *data) { (void)data; return false; }
+static void kept_free(void *data) { (void)data; kept_frees++; }
+
+static void lane_audio_kept(void)
+{
+   struct load_frame log[LOAD_FRAMES];
+   audio_driver_t saved = audio_null;
+   unsigned had         = failures;
+   bool time_stretch    = config_get_ptr()->bools.audio_time_stretch;
+   unsigned n;
+
+   audio_null.init               = kept_init;
+   audio_null.write              = kept_write;
+   audio_null.stop               = kept_true;
+   audio_null.start              = kept_start;
+   audio_null.alive              = kept_true;
+   audio_null.set_nonblock_state = kept_nonblock;
+   audio_null.free               = kept_free;
+   audio_null.use_float          = kept_float;
+   command_event(CMD_EVENT_AUDIO_REINIT, NULL);
+   pump(5);
+   CHECK(audio_state_get_ptr()->context_audio_data == &kept_token,
+         "the counting audio device did not come up");
+
+   kept_opens = kept_frees = 0;
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   n = run_load(log, LOAD_FRAMES);
+   CHECK(n < LOAD_FRAMES && core_is_up(),
+         "the load did not bring the core up within %u frames", LOAD_FRAMES);
+   CHECK(kept_opens == 0 && kept_frees == 0
+         && audio_state_get_ptr()->context_audio_data == &kept_token,
+         "across the load the audio device was closed %u and opened %u time(s)",
+         kept_frees, kept_opens);
+
+   /* Time stretch keeps the rate from changing in place: the device
+    * is set aside through the driver stage and taken back instead. */
+   kept_opens = kept_frees = 0;
+   configuration_set_bool(config_get_ptr(),
+         config_get_ptr()->bools.audio_time_stretch, true);
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the time-stretch load was not started");
+   n = run_load(log, LOAD_FRAMES);
+   configuration_set_bool(config_get_ptr(),
+         config_get_ptr()->bools.audio_time_stretch, time_stretch);
+   CHECK(n < LOAD_FRAMES && core_is_up(),
+         "the time-stretch load did not bring the core up within %u frames",
+         LOAD_FRAMES);
+   CHECK(kept_opens == 0 && kept_frees == 0
+         && audio_state_get_ptr()->context_audio_data == &kept_token,
+         "with time stretch, across the load the audio device was closed"
+         " %u and opened %u time(s)", kept_frees, kept_opens);
+
+   kept_opens = kept_frees = 0;
+   putenv((char*)"RETROARCH_AUDIO_KEEP=0");
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the second load was not started");
+   n = run_load(log, LOAD_FRAMES);
+   putenv((char*)"RETROARCH_AUDIO_KEEP=");
+   CHECK(n < LOAD_FRAMES && core_is_up(),
+         "the second load did not bring the core up within %u frames", LOAD_FRAMES);
+   CHECK(kept_opens == 1 && kept_frees == 1,
+         "kept off, across the load the audio device was closed %u and opened %u time(s)",
+         kept_frees, kept_opens);
+
+   audio_null = saved;
+   command_event(CMD_EVENT_AUDIO_REINIT, NULL);
+   pump(5);
+   if (failures == had)
+      fprintf(stderr, "[pass] audio kept lane: the device stays open across"
+            " a content load; with keeping off it is closed and opened\n");
+}
+
+#ifdef HAVE_AUDIOMIXER
+/* ------------------------------------------------------------------ */
+/* Lane: menu sound through a confirmed Close Content                  */
+/* ------------------------------------------------------------------ */
+
+/* The null driver gets a device that records what it is handed, and
+ * whether it was running when it was handed it. */
+#define TAP_MAX (48000 * 2 * 4)
+static int16_t  tap_buf[TAP_MAX];
+static size_t   tap_len;
+static unsigned tap_stops, tap_writes_stopped;
+static bool     tap_running;
+static int      tap_token;
+static void *tap_init(const char *device, unsigned rate, unsigned latency,
+      unsigned *new_rate)
+{
+   (void)device; (void)latency;
+   *new_rate   = rate;
+   tap_running = true;
+   return &tap_token;
+}
+static ssize_t tap_write(void *data, const void *buf, size_t len)
+{
+   size_t n = len / sizeof(int16_t);
+   (void)data;
+   if (!tap_running)
+      tap_writes_stopped++;
+   if (tap_len + n > TAP_MAX)
+      n = TAP_MAX - tap_len;
+   memcpy(tap_buf + tap_len, buf, n * sizeof(int16_t));
+   tap_len += n;
+   return (ssize_t)len;
+}
+static bool tap_stop(void *data)
+{
+   (void)data;
+   tap_stops++;
+   tap_running = false;
+   return true;
+}
+static bool tap_start(void *data, bool shutdown)
+{
+   (void)data; (void)shutdown;
+   tap_running = true;
+   return true;
+}
+static bool tap_alive(void *data) { (void)data; return tap_running; }
+static void tap_nonblock(void *data, bool state) { (void)data; (void)state; }
+static bool tap_float(void *data) { (void)data; return false; }
+static void tap_free(void *data) { (void)data; tap_running = false; }
+
+/* One second of a 440 Hz stereo tone, ramped in and out over 10 ms */
+#define TONE_RATE 48000
+#define TONE_AMP  12000.0
+static bool write_tone(const char *path)
+{
+   static const unsigned frames = TONE_RATE;
+   unsigned char hdr[44];
+   FILE *f;
+   unsigned i;
+
+   memcpy(hdr, "RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0"
+         "\0\0\0\0\0\0\0\0\x04\0\x10\0data\0\0\0\0", 44);
+#define PUT32(o, v) do { uint32_t v_ = (uint32_t)(v); hdr[(o)] = v_ & 0xff; \
+   hdr[(o) + 1] = (v_ >> 8) & 0xff; hdr[(o) + 2] = (v_ >> 16) & 0xff; \
+   hdr[(o) + 3] = (v_ >> 24) & 0xff; } while (0)
+   PUT32(4,  36 + frames * 4);
+   PUT32(24, TONE_RATE);
+   PUT32(28, TONE_RATE * 4);
+   PUT32(40, frames * 4);
+#undef PUT32
+   if (!(f = fopen(path, "wb")))
+      return false;
+   fwrite(hdr, 1, sizeof(hdr), f);
+   for (i = 0; i < frames; i++)
+   {
+      unsigned char s[4];
+      double env  = 1.0;
+      int16_t v;
+      if (i < 480)
+         env = i / 480.0;
+      else if (frames - i < 480)
+         env = (frames - i) / 480.0;
+      v    = (int16_t)(TONE_AMP * env
+            * sin(2.0 * 3.14159265358979 * 440.0 * i / TONE_RATE));
+      s[0] = s[2] = (unsigned char)((uint16_t)v & 0xff);
+      s[1] = s[3] = (unsigned char)(((uint16_t)v >> 8) & 0xff);
+      fwrite(s, 1, sizeof(s), f);
+   }
+   fclose(f);
+   return true;
+}
+
+/* The largest step between neighbouring left samples from @from on:
+ * the tone moves at most 2*pi*440/48000*TONE_AMP (~690) per sample,
+ * a cut or a splice moves much further. */
+static int tap_worst_step(size_t from)
+{
+   size_t i;
+   int worst = 0;
+   for (i = from + 2; i < tap_len; i += 2)
+   {
+      int d = tap_buf[i] - tap_buf[i - 2];
+      if (d < 0)
+         d = -d;
+      if (d > worst)
+         worst = d;
+   }
+   return worst;
+}
+
+/* A menu sound playing when Close Content is confirmed keeps playing
+ * through the staged close: the device is not stopped while the menu
+ * feeds it between the stages, and what it is handed is the tone,
+ * whole, on both sides of the driver stage. */
+static void lane_menu_sound_close(void)
+{
+   audio_driver_t saved       = audio_null;
+   settings_t *settings       = config_get_ptr();
+   struct menu_state *menu_st = menu_state_get_ptr();
+   bool menu_audio            = settings->bools.audio_enable_menu;
+   bool menu_audio_ok         = settings->bools.audio_enable_menu_ok;
+   char assets[sizeof(settings->paths.directory_assets)];
+   char sounds[600], tone[640];
+   size_t i, last_heard = 0, switch_end = 0;
+   unsigned n;
+   unsigned had = failures;
+   int worst;
+
+   audio_null.init               = tap_init;
+   audio_null.write              = tap_write;
+   audio_null.stop               = tap_stop;
+   audio_null.start              = tap_start;
+   audio_null.alive              = tap_alive;
+   audio_null.set_nonblock_state = tap_nonblock;
+   audio_null.free               = tap_free;
+   audio_null.use_float          = tap_float;
+   configuration_set_bool(settings, settings->bools.audio_enable_menu, true);
+   configuration_set_bool(settings, settings->bools.audio_enable_menu_ok, true);
+   command_event(CMD_EVENT_AUDIO_REINIT, NULL);
+   pump(5);
+
+   /* The tone is the menu's OK sound, found where an install keeps its
+    * sounds and loaded the way the frontend loads them - and loads
+    * them again after every driver stage. */
+   strlcpy(assets, settings->paths.directory_assets, sizeof(assets));
+   strlcpy(settings->paths.directory_assets, harness_dir,
+         sizeof(settings->paths.directory_assets));
+   snprintf(sounds, sizeof(sounds), "%s/sounds", harness_dir);
+   path_mkdir(sounds);
+   snprintf(tone, sizeof(tone), "%s/ok.wav", sounds);
+   CHECK(write_tone(tone), "the tone was not written");
+   audio_driver_load_system_sounds();
+   pump(10);
+
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the load did not go through");
+   open_menu();
+   pump(5);
+
+   /* The OK of the confirmation plays; the confirmed command runs on
+    * the next iteration, as from the dialog. Each frame takes a
+    * display period, so the menu's feed is the device's. */
+   tap_len   = 0;
+   tap_stops = tap_writes_stopped = 0;
+   audio_driver_mixer_play_menu_sound(AUDIO_MIXER_SYSTEM_SLOT_OK);
+   pump(1);
+   retro_sleep(16);
+   menu_st->dialog_st.pending_cmd = CMD_EVENT_CLOSE_CONTENT;
+   for (n = 0; n < 30; n++)
+   {
+      bool was_switching = runloop_is_content_switching();
+      pump(1);
+      if (was_switching && !runloop_is_content_switching())
+         switch_end = tap_len;
+      retro_sleep(16);
+   }
+   CHECK(!runloop_is_content_switching() && switch_end
+         && runloop_state_get_ptr()->current_core_type == CORE_TYPE_DUMMY,
+         "the close did not finish");
+
+   CHECK(tap_stops == 0 && tap_writes_stopped == 0,
+         "the device was stopped %u time(s) across the close, and handed"
+         " %u write(s) while stopped", tap_stops, tap_writes_stopped);
+   worst = tap_worst_step(0);
+   CHECK(worst < 1000,
+         "the sound handed to the device jumps by %d in one sample", worst);
+   for (i = 0; i < tap_len; i += 2)
+      if (tap_buf[i] > 1000 || tap_buf[i] < -1000)
+         last_heard = i;
+   CHECK(last_heard > switch_end,
+         "the sound did not play on past the close"
+         " (last heard at %lu, the close done at %lu)",
+         (unsigned long)last_heard, (unsigned long)switch_end);
+
+   /* Start Core, as the menu would, to leave a core running. */
+   {
+      content_ctx_info_t content_info = {0};
+      CHECK(task_push_start_current_core(&content_info),
+            "Start Core was not started");
+      pump(LOAD_FRAMES);
+   }
+   configuration_set_bool(settings, settings->bools.audio_enable_menu,
+         menu_audio);
+   configuration_set_bool(settings, settings->bools.audio_enable_menu_ok,
+         menu_audio_ok);
+   strlcpy(settings->paths.directory_assets, assets,
+         sizeof(settings->paths.directory_assets));
+   audio_null = saved;
+   command_event(CMD_EVENT_AUDIO_REINIT, NULL);
+   pump(5);
+   remove(tone);
+   rmdir(sounds);
+   if (failures == had)
+      fprintf(stderr, "[pass] menu-sound-close lane\n");
+}
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Lanes: MIDI                                                         */
+/* ------------------------------------------------------------------ */
+
+/* Stands in for the null MIDI driver (same ident, same one "Null"
+ * output), installed in midi_drivers[] before the frontend boots, and
+ * counts what reaches it: device opens and frees, and the note-ons and
+ * note-offs the harness core plays through its interface. */
+static unsigned midi_opens, midi_frees, midi_note_ons, midi_note_offs;
+static int      midi_token;
+static bool count_midi_avail(struct string_list *list)
+{
+   union string_list_elem_attr attr;
+   attr.i = 0;
+   return string_list_append(list, "Null", attr);
+}
+static void *count_midi_init(const char *input, const char *output)
+{
+   (void)input; (void)output;
+   midi_opens++;
+   return &midi_token;
+}
+static void count_midi_free(void *p) { (void)p; midi_frees++; }
+static bool count_midi_set(void *p, const char *name)
+{ (void)p; return !name || string_is_equal(name, "Null"); }
+static bool count_midi_read(void *p, midi_event_t *event)
+{ (void)p; (void)event; return false; }
+static bool count_midi_write(void *p, const midi_event_t *event)
+{
+   (void)p;
+   if (event->data_size == 3 && (event->data[0] & 0xF0) == 0x90)
+      midi_note_ons++;
+   else if (event->data_size == 3 && (event->data[0] & 0xF0) == 0x80)
+      midi_note_offs++;
+   return true;
+}
+static bool count_midi_flush(void *p) { (void)p; return true; }
+static midi_driver_t count_midi = {
+   "null",
+   count_midi_avail,
+   count_midi_avail,
+   count_midi_init,
+   count_midi_free,
+   count_midi_set,
+   count_midi_set,
+   count_midi_read,
+   count_midi_write,
+   count_midi_flush
+};
+
+static void midi_install_counting_driver(void)
+{
+   unsigned i;
+   /* "null" is always the last entry */
+   for (i = 0; !string_is_equal(midi_drivers[i]->ident, "null"); i++) { }
+   midi_drivers[i] = &count_midi;
+}
+
+/* The core plays a note per frame while its output is enabled: every
+ * note it plays reaches the driver. */
+static void midi_check_plays(const char *when)
+{
+   unsigned core_before   = core_export("harness_core_midi_notes");
+   unsigned driver_before = midi_note_ons;
+   unsigned core_played, driver_got;
+
+   CHECK(midi_driver_output_enabled(),
+         "%s: the core asked for MIDI and the output is shut", when);
+   pump(3);
+   core_played = core_export("harness_core_midi_notes") - core_before;
+   driver_got  = midi_note_ons - driver_before;
+   CHECK(core_played >= 1 && driver_got == core_played,
+         "%s: over 3 frames the core played %u note(s), the driver got %u",
+         when, core_played, driver_got);
+}
+
+/* Boot with -L: the core asks in its load, before the first
+ * drivers_init. HARNESS_CORE_MIDI was set for the boot by main(). */
+static void lane_midi_boot(void)
+{
+   unsigned had = failures;
+
+   putenv((char*)"HARNESS_CORE_MIDI=");
+   CHECK(midi_opens >= 1, "the MIDI device was never opened at boot");
+   /* The core plays only while it runs */
+   if (menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   midi_check_plays("boot");
+
+   if (failures == had)
+      fprintf(stderr, "[pass] midi boot lane: a core asking at boot plays"
+            " through the device\n");
+}
+
+/* What a core's MIDI request has to outlive, and where it ends:
+ *  - a staged load: the ask comes on the old session's drivers, which
+ *    the load then rebuilds - the device is open on the new ones;
+ *  - a driver reinit while it runs (DRIVER_LIFETIME_RESET, as
+ *    SET_SYSTEM_AV_INFO does);
+ *  - its unload: the note-off it sends from retro_deinit reaches the
+ *    device, then the device is shut - closing content and starting a
+ *    core that does not ask leaves it shut, nothing left open. */
+static void lane_midi_requested(void)
+{
+   struct load_frame log[LOAD_FRAMES];
+   struct menu_state *menu_st = menu_state_get_ptr();
+   unsigned had = failures;
+   unsigned offs_before;
+   unsigned n;
+
+   putenv((char*)"HARNESS_CORE_MIDI=1");
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   n = run_load(log, LOAD_FRAMES);
+   putenv((char*)"HARNESS_CORE_MIDI=");
+   CHECK(n < LOAD_FRAMES && core_is_up(),
+         "the load did not bring the core up within %u frames", LOAD_FRAMES);
+   midi_check_plays("staged load");
+
+   command_event(CMD_EVENT_REINIT, NULL);
+   pump(1);
+   midi_check_plays("driver reinit");
+
+   offs_before = midi_note_offs;
+   open_menu();
+   path_set(RARCH_PATH_CORE_LAST, core_path);
+   menu_st->flags |= MENU_ST_FLAG_PENDING_CLOSE_CONTENT;
+   pump(1);
+   n = run_load(log, LOAD_FRAMES);
+   CHECK(n < LOAD_FRAMES && !runloop_is_content_switching(),
+         "the close did not finish within %u frames", LOAD_FRAMES);
+   pump(2);
+   CHECK(midi_note_offs == offs_before + 1,
+         "the core's note-off at unload reached the device %u time(s)",
+         midi_note_offs - offs_before);
+   CHECK(!midi_driver_output_enabled() && midi_opens == midi_frees,
+         "after the close the MIDI output is %s, opened %u freed %u",
+         midi_driver_output_enabled() ? "open" : "shut",
+         midi_opens, midi_frees);
+
+   /* Start Core, as the menu would: a core that does not ask */
+   {
+      content_ctx_info_t content_info = {0};
+      CHECK(task_push_start_current_core(&content_info),
+            "Start Core was not started");
+      n = run_load(log, LOAD_FRAMES);
+      CHECK(n < LOAD_FRAMES && core_is_up()
+            && runloop_state_get_ptr()->current_core_type != CORE_TYPE_DUMMY,
+            "Start Core did not go through");
+      pump(2);
+   }
+   CHECK(!midi_driver_output_enabled() && midi_opens == midi_frees,
+         "for a core that never asked the MIDI output is %s, opened %u "
+         "freed %u", midi_driver_output_enabled() ? "open" : "shut",
+         midi_opens, midi_frees);
+
+   if (failures == had)
+      fprintf(stderr, "[pass] midi requested lane: the device plays across"
+            " a staged load and a reinit, takes the note-off at unload,"
+            " and is shut for a core that does not ask\n");
+}
+
+
+#if defined(HAVE_DYNAMIC)
+static void harness_sibling(char *s, size_t len, const char *name)
+{
+   const char *slash = strrchr(core_path, '/');
+   snprintf(s, len, "%.*s/%s",
+         slash ? (int)(slash - core_path) : 1, slash ? core_path : ".", name);
+}
+
+/* What LOAD_CORE asks of a core before loading it is kept, keyed by
+ * its file's size and modification time: a core already asked is not
+ * opened again, a changed file is, and the record outlives the
+ * session. The running core is never asked: what it declared comes
+ * from the running state, and nothing is kept for it. */
+static unsigned sibling_env_sets(dylib_t lib)
+{
+   unsigned (*fn)(void) = lib
+      ? (unsigned (*)(void))dylib_proc(lib, "harness_core_env_sets") : NULL;
+   return fn ? fn() : 0;
+}
+
+static bool cache_names(const char *cache_file, const char *needle)
+{
+   void   *buf = NULL;
+   int64_t len = 0;
+   bool    hit;
+   if (!filestream_read_file(cache_file, &buf, &len) || !buf)
+      return false;
+   hit = strstr((const char*)buf, needle) != NULL;
+   free(buf);
+   return hit;
+}
+
+static void lane_probe_cached(void)
+{
+   struct retro_system_info info;
+   char cache_file[600];
+   char sibling[600];
+   char stamp[600];
+   int64_t mtime = 0;
+   bool no_game  = false;
+   unsigned before;
+   unsigned had = failures;
+   dylib_t lib;
+
+   snprintf(cache_file, sizeof(cache_file), "%s/core_probe.cache", harness_dir);
+   harness_sibling(sibling, sizeof(sibling), "harness_core_nohw.so");
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the core did not come up");
+
+   /* The running core is not asked again, and not kept */
+   before = core_export("harness_core_env_sets");
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the reload was not started");
+   CHECK(core_export("harness_core_env_sets") == before,
+         "the push asked the running core (%u calls, not %u)",
+         core_export("harness_core_env_sets"), before);
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the reload did not go through");
+
+   runloop_core_probe_cache_free();
+   remove(cache_file);
+   before = core_export("harness_core_env_sets");
+   CHECK(libretro_get_system_info(core_path, &info, &no_game),
+         "the running core was not probed");
+   CHECK(core_export("harness_core_env_sets") == before,
+         "the probe asked the running core (%u calls, not %u)",
+         core_export("harness_core_env_sets"), before);
+   CHECK(!cache_names(cache_file, core_path),
+         "a record was kept for the running core");
+
+   /* A core that is not running, held open here so its count lasts
+    * across the probe's own open and close */
+   CHECK((lib = dylib_load(sibling)) != NULL, "could not open %s", sibling);
+   before = sibling_env_sets(lib);
+   CHECK(libretro_get_system_info(sibling, &info, &no_game),
+         "%s was not probed", sibling);
+   CHECK(sibling_env_sets(lib) > before,
+         "the probe did not ask %s", sibling);
+   CHECK(cache_names(cache_file, sibling), "no record of %s in %s",
+         sibling, cache_file);
+
+   before = sibling_env_sets(lib);
+   CHECK(libretro_get_system_info(sibling, &info, &no_game),
+         "%s was not probed again", sibling);
+   CHECK(sibling_env_sets(lib) == before,
+         "a core already asked was asked again (%u calls, not %u)",
+         sibling_env_sets(lib), before);
+
+   /* A changed file is asked again, and its record rewritten */
+   CHECK(path_get_mtime(sibling, &mtime), "no mtime for %s", sibling);
+   CHECK(path_set_mtime(sibling, mtime + 10), "could not touch %s", sibling);
+   snprintf(stamp, sizeof(stamp), "\t%" PRId64 "\t", mtime + 10);
+   before = sibling_env_sets(lib);
+   CHECK(libretro_get_system_info(sibling, &info, &no_game),
+         "the changed %s was not probed", sibling);
+   CHECK(sibling_env_sets(lib) > before,
+         "the changed core was not asked again");
+   CHECK(cache_names(cache_file, stamp),
+         "the record in %s does not hold the new mtime", cache_file);
+
+   /* The record comes back from disk */
+   runloop_core_probe_cache_free();
+   before = sibling_env_sets(lib);
+   CHECK(libretro_get_system_info(sibling, &info, &no_game),
+         "%s was not probed after the records were dropped", sibling);
+   CHECK(sibling_env_sets(lib) == before,
+         "the record was not read back from %s", cache_file);
+
+   path_set_mtime(sibling, mtime);
+   dylib_close(lib);
+
+   /* The probes named the sibling: the running core's names again */
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load after the probes was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the load after the probes did not go through");
+
+   if (failures == had)
+      fprintf(stderr, "[pass] probe-cached lane\n");
+}
+
+#if defined(HAVE_MENU)
+/* The menu's read-ahead of content follows the core being loaded: its
+ * need_fullpath and its own content info overrides, not those of the
+ * core still running when the load is pushed. */
+static void lane_prefetch_follows_new_core(void)
+{
+   content_ctx_info_t info;
+   char nohw[600];
+   char game[600];
+   FILE *f;
+   unsigned had = failures;
+
+   harness_sibling(nohw, sizeof(nohw), "harness_core_nohw.so");
+   snprintf(game, sizeof(game), "%s/game.fpath", harness_dir);
+   if ((f = fopen(game, "wb")))
+   {
+      fputs("harness content", f);
+      fclose(f);
+   }
+   memset(&info, 0, sizeof(info));
+   open_menu();
+
+   /* Running: the core with no overrides.  Loading: the one that takes
+    * .fpath as a path - nothing to read ahead. */
+   CHECK(task_push_load_contentless_core_from_menu(nohw),
+         "the software core's load was not started");
+   pump(LOAD_FRAMES);
+   CHECK(task_push_load_content_with_new_core_from_menu(core_path, game,
+            &info, CORE_TYPE_PLAIN, NULL, NULL),
+         "the load of .fpath content was not started");
+   CHECK(!(content_state_get_ptr()->flags & CONTENT_ST_FLAG_DEFERRED_LOAD_PENDING),
+         "content the new core takes as a path was read ahead");
+   pump(LOAD_FRAMES * 4);
+   CHECK(core_is_up(), "the load of .fpath content did not go through");
+
+   /* Running: the core that overrides .fpath.  Loading: one that reads
+    * it into memory - read ahead. */
+   memset(&info, 0, sizeof(info));
+   CHECK(task_push_load_content_with_new_core_from_menu(nohw, game,
+            &info, CORE_TYPE_PLAIN, NULL, NULL),
+         "the second load of .fpath content was not started");
+   CHECK(content_state_get_ptr()->flags & CONTENT_ST_FLAG_DEFERRED_LOAD_PENDING,
+         "content the new core reads into memory was not read ahead");
+   pump(LOAD_FRAMES * 4);
+   CHECK(core_is_up(), "the second load of .fpath content did not go through");
+
+   remove(game);
+   if (failures == had)
+      fprintf(stderr, "[pass] prefetch-follows-new-core lane\n");
+}
+#endif
+#endif
+
+#if defined(HAVE_DYNAMIC) && defined(HAVE_MENU)
+/* A load without content names its saves after the core, not after
+ * the content loaded before it. */
+static void lane_contentless_names(void)
+{
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   content_ctx_info_t info;
+   char nohw[600];
+   char game[600];
+   FILE *f;
+   unsigned had = failures;
+
+   harness_sibling(nohw, sizeof(nohw), "harness_core_nohw.so");
+   snprintf(game, sizeof(game), "%s/names.bin", harness_dir);
+   if ((f = fopen(game, "wb")))
+   {
+      fputs("harness content", f);
+      fclose(f);
+   }
+   memset(&info, 0, sizeof(info));
+   open_menu();
+
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the contentless load was not started");
+   pump(LOAD_FRAMES);
+   CHECK(task_push_load_content_with_new_core_from_menu(nohw, game,
+            &info, CORE_TYPE_PLAIN, NULL, NULL),
+         "the content load was not started");
+   pump(LOAD_FRAMES * 4);
+   CHECK(core_is_up() && strstr(path_get(RARCH_PATH_BASENAME), "names"),
+         "the content load did not name its saves after the content (\"%s\")",
+         path_get(RARCH_PATH_BASENAME));
+
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the second contentless load was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the second contentless load did not go through");
+   CHECK(path_is_empty(RARCH_PATH_BASENAME),
+         "the contentless load kept the content's name \"%s\"",
+         path_get(RARCH_PATH_BASENAME));
+   CHECK(    !strstr(runloop_st->name.savestate, "names")
+         &&  strstr(runloop_st->name.savestate, "content_load_harness"),
+         "the contentless load saves states to \"%s\"",
+         runloop_st->name.savestate);
+
+   remove(game);
+   if (failures == had)
+      fprintf(stderr, "[pass] contentless-names lane\n");
+}
+#endif
+
+#ifdef HAVE_REWIND
+/* The rewind buffer is one full serialize of the core: a load leaves
+ * it for the frame after, which takes it before the core runs. */
+static void lane_rewind_after_load(void)
+{
+   struct load_frame log[LOAD_FRAMES];
+   settings_t *settings        = config_get_ptr();
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   bool rewind_enable          = settings->bools.rewind_enable;
+   unsigned n, i;
+   unsigned had = failures;
+
+   configuration_set_bool(settings, settings->bools.rewind_enable, true);
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   for (n = 0; n < LOAD_FRAMES && runloop_is_content_switching(); n++)
+   {
+      runloop_iterate();
+      task_queue_check();
+      CHECK(!(runloop_st->rewind_st.flags
+               & STATE_MGR_REWIND_ST_FLAG_INIT_ATTEMPTED),
+            "frame %u of the load set up the rewind buffer", n);
+   }
+   CHECK(!runloop_is_content_switching() && core_is_up(),
+         "the load did not finish");
+   CHECK(runloop_st->rewind_st.flags & STATE_MGR_REWIND_ST_FLAG_INIT_PENDING,
+         "the load did not leave the rewind buffer for the frame after");
+   for (i = 0; i < 2 && !(runloop_st->rewind_st.flags
+            & STATE_MGR_REWIND_ST_FLAG_INIT_ATTEMPTED); i++)
+   {
+      runloop_iterate();
+      task_queue_check();
+   }
+   CHECK(i == 1,
+         "the rewind buffer was set up %u frames after the load, not on "
+         "the first", i);
+   CHECK(!(runloop_st->rewind_st.flags & STATE_MGR_REWIND_ST_FLAG_INIT_PENDING),
+         "the rewind buffer is still pending after it was set up");
+
+   command_event(CMD_EVENT_REWIND_DEINIT, NULL);
+   configuration_set_bool(settings, settings->bools.rewind_enable,
+         rewind_enable);
+   if (failures == had)
+      fprintf(stderr, "[pass] rewind-after-load lane\n");
+}
+#endif
+
+#if defined(HAVE_DYNAMIC) && defined(HAVE_THREADS)
+/* A staged load opens the core's library on the task worker, off the
+ * frame-loop thread, and the core stage takes that handle; a same-core
+ * reload still comes up on fresh statics, because the open waits for
+ * the old handle to be released. */
+static void lane_core_preloaded(void)
+{
+   settings_t *settings = config_get_ptr();
+   unsigned long load_tid, init_tid;
+   unsigned had = failures;
+
+   configuration_set_bool(settings, settings->bools.threaded_data_runloop_enable, true);
+   task_queue_set_threaded();
+   open_menu();
+
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the core did not come up");
+   CHECK(core_inits() == 1, "the core came up %u times", core_inits());
+
+   load_tid = core_export_ul("harness_core_load_tid");
+   init_tid = core_export_ul("harness_core_init_tid");
+   CHECK(load_tid != 0 && init_tid != 0, "the core did not record its threads");
+   CHECK(load_tid != init_tid,
+         "the library was opened on the frame-loop thread, not a worker");
+
+   /* Same core again: the old handle is released before the open, so
+    * the reloaded instance's statics are its own */
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the reload was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the reload did not go through");
+   CHECK(core_inits() == 1,
+         "the reload came up on the previous instance's statics (inits %u)",
+         core_inits());
+   CHECK(core_export_ul("harness_core_load_tid") != core_export_ul("harness_core_init_tid"),
+         "the reload's library open was not on a worker");
+
+   configuration_set_bool(settings, settings->bools.threaded_data_runloop_enable, false);
+   task_queue_unset_threaded();
+   pump(2);
+
+   if (failures == had)
+      fprintf(stderr, "[pass] core-preloaded lane\n");
+}
+#endif
 
 static void lane_one_at_a_time(void)
 {
@@ -667,6 +1607,91 @@ static void lane_close_waits_for_save(void)
 
    if (failures == had)
       fprintf(stderr, "[pass] close-waits-for-save lane (%u frames waited, "
+            "%u presented)\n", waited, presented_waiting);
+}
+
+/* ------------------------------------------------------------------ */
+/* Lane: a quit waits for a save in flight, presenting                */
+/* ------------------------------------------------------------------ */
+
+/* A quit while a save state is being written: the state file must be
+ * whole before the exit, and the wait is spent in the frame loop -
+ * frames presented, retro_run never entered - rather than inside the
+ * quit.  CMD_EVENT_QUIT returns with the quit pending; runloop_iterate()
+ * goes on returning 1 until the save is through, then finishes the
+ * quit (shutdown begins only then) and returns -1.  The session ends
+ * here, so this lane runs last. */
+static bool state_task_in_flight(void)
+{
+   return content_save_state_in_progress(NULL)
+       || content_load_state_in_progress(NULL);
+}
+
+static void lane_quit_waits_for_save(void)
+{
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   settings_t *settings        = config_get_ptr();
+   unsigned had = failures;
+   unsigned i, runs_at_quit, presented_waiting = 0, waited = 0;
+   bool shutdown_early = false;
+   int ret = 1;
+
+   if (menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   pump(2);
+   CHECK(core_is_up() && !menu_is_up(), "not running the core");
+
+   /* The contentless core saves into a folder of its own, which the
+    * lanes before have not made. */
+   {
+      char state_dir[PATH_MAX_LENGTH];
+      fill_pathname_basedir(state_dir, runloop_st->name.savestate,
+            sizeof(state_dir));
+      path_mkdir(state_dir);
+   }
+   /* The slot's file exists from the lanes before, so the save first
+    * loads it into the undo buffer and is only pushed once that load
+    * is through: the quit has to wait for the pair. */
+   configuration_set_int(settings, settings->ints.state_slot, 0);
+   CHECK(command_event(CMD_EVENT_SAVE_STATE, NULL), "save state not started");
+   CHECK(state_task_in_flight(), "no state task in flight");
+
+   hook_install();
+   runs_at_quit = core_export("harness_core_runs");
+   command_event(CMD_EVENT_QUIT, NULL);
+   CHECK(state_task_in_flight(),
+         "the quit returned with the save already written: it waited "
+         "inside the command");
+   CHECK(!(runloop_st->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED),
+         "shutdown began before the save was written");
+
+   /* As the main loop drives it, the queue checked after each frame;
+    * the bound only stops a quit that never ends. */
+   for (i = 0; i < 20000; i++)
+   {
+      unsigned before = presented;
+      ret = runloop_iterate();
+      task_queue_check();
+      if (ret == -1)
+         break;
+      waited++;
+      presented_waiting += presented - before;
+      if (runloop_st->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED)
+         shutdown_early = true;
+   }
+   CHECK(ret == -1, "the loop did not end after the save (%u frames)", waited);
+   CHECK(waited >= 1, "the quit never waited for the save (%u frames)", waited);
+   CHECK(presented_waiting >= 1,
+         "no frame presented while the quit waited (%u frames)", waited);
+   CHECK(!shutdown_early, "shutdown began while the save was still writing");
+   CHECK(!state_task_in_flight(), "the save did not finish");
+   CHECK(core_export("harness_core_runs") == runs_at_quit,
+         "retro_run entered while the quit waited");
+   CHECK(runloop_st->flags & RUNLOOP_FLAG_SHUTDOWN_INITIATED,
+         "the quit did not finish");
+
+   if (failures == had)
+      fprintf(stderr, "[pass] quit-waits-for-save lane (%u frames waited, "
             "%u presented)\n", waited, presented_waiting);
 }
 
@@ -1128,10 +2153,9 @@ static void lane_acceptance(const char *dir)
 }
 
 /* ------------------------------------------------------------------ */
-/* Lane: replay reply                                                  */
+/* Lanes: answered once the work is through                            */
 /* ------------------------------------------------------------------ */
 
-#ifdef HAVE_BSV_MOVIE
 /* A command interface of the test's own: which sender a reply is for
  * is 'source' at the time of the reply, as with the network
  * interface's last datagram source. */
@@ -1139,8 +2163,10 @@ static int      rr_source;
 static unsigned rr_replies;
 static int      rr_reply_to;          /* the sender the reply went to */
 static char     rr_reply[128];
-static bool     rr_in_command;        /* inside command_play_replay_slot */
+static bool     rr_in_command;        /* inside the command handler */
 static unsigned rr_in_command_replies;
+static unsigned rr_state_calls;       /* core state calls by the handler */
+static unsigned rr_polled_switching;  /* polls during a content load */
 
 static void rr_record(int to, const char *s, size_t len)
 {
@@ -1175,14 +2201,55 @@ static void rr_reply_to_cb(command_t *cmd, void *dest, const char *s, size_t len
    rr_record(*(int*)dest, s, len);
 }
 
-static bool rr_play(command_t *cmd, const char *slot)
+static void rr_poll(command_t *cmd)
 {
+   (void)cmd;
+   if (runloop_is_content_switching())
+      rr_polled_switching++;
+}
+
+static bool rr_run(command_t *cmd,
+      bool (*handler)(command_t *cmd, const char *arg), const char *arg)
+{
+   unsigned before = core_export("harness_core_state_calls");
    bool ok;
-   rr_in_command = true;
-   ok            = command_play_replay_slot(cmd, slot);
-   rr_in_command = false;
+   rr_in_command  = true;
+   ok             = handler(cmd, arg);
+   rr_in_command  = false;
+   rr_state_calls = core_export("harness_core_state_calls") - before;
    return ok;
 }
+
+/* Runs @handler as a command, then frames until it is answered. */
+static bool rr_ask(command_t *cmd,
+      bool (*handler)(command_t *cmd, const char *arg), const char *arg)
+{
+   unsigned n;
+   bool ok;
+   rr_replies  = rr_in_command_replies = 0;
+   rr_reply[0] = '\0';
+   ok          = rr_run(cmd, handler, arg);
+   for (n = 0; n < 5000 && !rr_replies; n++)
+      pump(1);
+   return ok;
+}
+
+/* The harness core running, the menu closed. */
+static void run_harness_core(void)
+{
+   if (     !core_is_up()
+         || runloop_state_get_ptr()->current_core_type == CORE_TYPE_DUMMY)
+   {
+      CHECK(task_push_load_contentless_core_from_menu(core_path),
+            "the load was not started");
+      pump(200);
+   }
+   if (menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   pump(2);
+}
+
+#ifdef HAVE_BSV_MOVIE
 
 /* PLAY_REPLAY_SLOT answers with the replay's handle, which the movie
  * task installs from its callback.  The command returns at once and
@@ -1215,7 +2282,10 @@ static void lane_replay_reply(const char *dir)
    configuration_set_bool(settings, settings->bools.replay_auto_index, false);
    configuration_set_int(settings, settings->ints.replay_slot, 3);
    CHECK(command_event(CMD_EVENT_RECORD_REPLAY, NULL), "recording did not start");
-   pump(30);
+   pump(10);
+   /* a checkpoint for SEEK_REPLAY below to land on */
+   command_event(CMD_EVENT_SAVE_REPLAY_CHECKPOINT, NULL);
+   pump(20);
    command_event(CMD_EVENT_HALT_REPLAY, NULL);
    pump(2);
    runloop_get_replay_path(path, sizeof(path), 3);
@@ -1229,7 +2299,7 @@ static void lane_replay_reply(const char *dir)
 
    rr_replies = rr_in_command_replies = 0;
    rr_source  = 1;
-   CHECK(rr_play(&cmd, slot), "PLAY_REPLAY_SLOT did not start playback");
+   CHECK(rr_run(&cmd, command_play_replay_slot, slot), "PLAY_REPLAY_SLOT did not start playback");
    CHECK(rr_in_command_replies == 0,
          "PLAY_REPLAY_SLOT answered before returning: it held the frame "
          "until the movie task was through");
@@ -1250,19 +2320,45 @@ static void lane_replay_reply(const char *dir)
          "reply \"%s\" does not carry the replay handle", rr_reply);
    pump(5);
    CHECK(rr_replies == 1, "the reply was sent again");
+
+   /* SEEK_REPLAY: a line-based interface is answered at once, as it
+    * always was; a structured one once the seek has run. */
+   {
+      char want[64];
+      rr_replies = rr_in_command_replies = 0;
+      rr_source  = 1;
+      CHECK(rr_run(&cmd, command_seek_replay, "25"), "SEEK_REPLAY was refused");
+      snprintf(want, sizeof(want), "OK %lld\n",
+            (long long)input_st->bsv_movie_state.seek_target_frame);
+      CHECK(rr_in_command_replies == 1 && string_is_equal(rr_reply, want),
+            "a line-based SEEK_REPLAY was answered \"%s\" (%u in the command)",
+            rr_reply, rr_in_command_replies);
+      pump(5);
+      cmd.structured = true;
+      CHECK(rr_ask(&cmd, command_seek_replay, "25"),
+            "a structured SEEK_REPLAY was refused");
+      want[strlen(want) - 1] = '\0';
+      CHECK(rr_in_command_replies == 0,
+            "a structured SEEK_REPLAY was answered before the seek ran");
+      CHECK(rr_replies == 1 && string_is_equal(rr_reply, want),
+            "a structured SEEK_REPLAY was answered \"%s\", not \"%s\"",
+            rr_reply, want);
+      cmd.structured = false;
+   }
+
    command_event(CMD_EVENT_HALT_REPLAY, NULL);
    pump(2);
 
    /* The interfaces torn down while the reply is owed. */
    rr_replies = rr_in_command_replies = 0;
    rr_source  = 1;
-   CHECK(rr_play(&cmd, slot), "the second PLAY_REPLAY_SLOT did not start");
+   CHECK(rr_run(&cmd, command_play_replay_slot, slot), "the second PLAY_REPLAY_SLOT did not start");
    input_driver_deinit_command(input_st);
    pump(20);
    CHECK(rr_replies == 0, "a reply went to a torn-down interface");
    command_event(CMD_EVENT_HALT_REPLAY, NULL);
    pump(2);
-   CHECK(rr_play(&cmd, slot), "a dropped reply left the next command refused");
+   CHECK(rr_run(&cmd, command_play_replay_slot, slot), "a dropped reply left the next command refused");
    pump(20);
    CHECK(rr_replies == 1, "the command after a dropped reply was not answered");
    command_event(CMD_EVENT_HALT_REPLAY, NULL);
@@ -1275,6 +2371,380 @@ static void lane_replay_reply(const char *dir)
 }
 #endif
 
+/* LOAD_STATE_SLOT and SAVE_STATE_SLOT answer once their task is
+ * through, never from within the command: a command can arrive from
+ * the core's own input poll, where serializing re-enters the core. */
+static void lane_state_slot_reply(void)
+{
+   command_t cmd;
+   char saved[PATH_MAX_LENGTH], corrupt[PATH_MAX_LENGTH];
+   unsigned had = failures;
+
+   run_harness_core();
+   memset(&cmd, 0, sizeof(cmd));
+   cmd.replier    = rr_replier;
+   cmd.reply_dest = rr_reply_dest;
+   cmd.reply_to   = rr_reply_to_cb;
+   runloop_get_savestate_path(saved,   sizeof(saved),   2);
+   runloop_get_savestate_path(corrupt, sizeof(corrupt), 3);
+   remove(saved);
+
+   CHECK(rr_ask(&cmd, command_save_state_slot, "2"),
+         "SAVE_STATE_SLOT was refused");
+   CHECK(rr_state_calls == 0 && rr_in_command_replies == 0,
+         "SAVE_STATE_SLOT saved from within the command");
+   CHECK(string_is_equal(rr_reply, "SAVE_STATE_SLOT 2") && path_is_valid(saved),
+         "SAVE_STATE_SLOT answered \"%s\"", rr_reply);
+
+   CHECK(rr_ask(&cmd, command_load_state_slot, "2"),
+         "LOAD_STATE_SLOT was refused");
+   CHECK(rr_state_calls == 0 && rr_in_command_replies == 0,
+         "LOAD_STATE_SLOT loaded from within the command");
+   CHECK(string_is_equal(rr_reply, "LOAD_STATE_SLOT 2"),
+         "LOAD_STATE_SLOT answered \"%s\"", rr_reply);
+
+   /* shorter than the core's state: retro_unserialize() refuses it */
+   filestream_write_file(corrupt, "short", 5);
+   rr_ask(&cmd, command_load_state_slot, "3");
+   CHECK(strncmp(rr_reply, "LOAD_STATE_SLOT ERROR", 21) == 0,
+         "a state the core refused was answered \"%s\"", rr_reply);
+
+   remove(saved);
+   remove(corrupt);
+   if (failures == had)
+      fprintf(stderr, "[pass] state-slot-reply lane\n");
+}
+
+#if defined(HAVE_DYNAMIC) && defined(HAVE_MENU)
+/* ------------------------------------------------------------------ */
+/* Lane: playlist Load State slot                                      */
+/* ------------------------------------------------------------------ */
+
+static void core_set_state_mark(unsigned mark)
+{
+   dylib_t lib = runloop_state_get_ptr()->lib_handle;
+   void (*fn)(unsigned) = lib
+      ? (void (*)(unsigned))dylib_proc(lib, "harness_core_set_state_mark")
+      : NULL;
+   if (fn)
+      fn(mark);
+}
+
+/* Runs frames until no content load - read ahead or staged - and no
+ * state task is in flight: a load waits out a save still inside the
+ * core, which under a sanitizer takes many frames. */
+static bool load_in_flight(void)
+{
+   return runloop_is_content_switching()
+      || (content_state_get_ptr()->flags & CONTENT_ST_FLAG_DEFERRED_LOAD_PENDING)
+      || state_task_in_flight();
+}
+
+static bool settle(void)
+{
+   unsigned i;
+   for (i = 0; i < 5000 && load_in_flight(); i++)
+      pump(1);
+   pump(2);
+   return !load_in_flight();
+}
+
+/* Saves the running core to @slot, its state marked @mark: retried
+ * across frames while another blocking task (the previous save's
+ * thumbnail) holds the queue. */
+static bool save_marked_slot(unsigned slot, unsigned mark, const char *path)
+{
+   settings_t *settings = config_get_ptr();
+   unsigned i;
+
+   remove(path);
+   core_set_state_mark(mark);
+   configuration_set_int(settings, settings->ints.state_slot, (int)slot);
+   for (i = 0; i < 200 && !path_is_valid(path); i++)
+   {
+      if (!state_task_in_flight() && !runloop_is_content_switching())
+         command_event(CMD_EVENT_SAVE_STATE, NULL);
+      pump(1);
+   }
+   for (i = 0; i < 1000 && state_task_in_flight(); i++)
+      pump(1);
+   return path_is_valid(path) && !state_task_in_flight();
+}
+
+/* Runs the playlist's first entry from its Load State list, OK on
+ * slot @slot as the menu does, and runs the frames of the load. */
+static void playlist_run_from_slot(const char *slot)
+{
+   struct menu_state *menu_st = menu_state_get_ptr();
+
+   menu_st->driver_data->rpl_entry_selection_ptr = 0;
+   CHECK(accept_open_screen(DISPLAYLIST_STATE_SLOT_RUN,
+            MENU_ENUM_LABEL_STATE_SLOT_RUN_STR,
+            MENU_ENUM_LABEL_STATE_SLOT_RUN, "Load State") > 1,
+         "the entry's Load State list is empty");
+   CHECK(accept_press_ok(slot), "no slot %s in the Load State list", slot);
+   CHECK(runloop_is_content_switching(),
+         "OK on a Load State slot did not start a staged load");
+   CHECK(settle() && core_is_up(),
+         "the load from the playlist did not go through");
+}
+
+/* A playlist entry run from its Load State list starts at the slot
+ * picked there - over an auto state, and with no auto state - though
+ * the menu has rebuilt its lists by the time the load reaches the
+ * content. */
+static void lane_playlist_state_slot(void)
+{
+   playlist_config_t cfg;
+   struct playlist_entry entry;
+   content_ctx_info_t info;
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   settings_t *settings        = config_get_ptr();
+   bool auto_load              = settings->bools.savestate_auto_load;
+   char game[600], lpl[600], slot_path[PATH_MAX_LENGTH];
+   char spare_path[PATH_MAX_LENGTH], auto_path[PATH_MAX_LENGTH + 8];
+   FILE *f;
+   unsigned had = failures;
+
+   snprintf(game, sizeof(game), "%s/slots.bin", harness_dir);
+   if ((f = fopen(game, "wb")))
+   {
+      fputs("harness content", f);
+      fclose(f);
+   }
+   memset(&info, 0, sizeof(info));
+   CHECK(settle(), "a load or state task from before is still in flight");
+   open_menu();
+
+   /* Slot 4 holds one state, the auto state another. */
+   CHECK(task_push_load_content_with_new_core_from_menu(core_path, game,
+            &info, CORE_TYPE_PLAIN, NULL, NULL),
+         "the content load was not started");
+   CHECK(settle() && core_is_up()
+         && strstr(path_get(RARCH_PATH_BASENAME), "slots"),
+         "the content load did not go through");
+
+   runloop_get_savestate_path(slot_path,  sizeof(slot_path),  4);
+   runloop_get_savestate_path(spare_path, sizeof(spare_path), 7);
+   snprintf(auto_path, sizeof(auto_path), "%s.auto",
+         runloop_st->name.savestate);
+
+   CHECK(save_marked_slot(4, 0x11, slot_path),
+         "slot 4 was not written to %s", slot_path);
+   CHECK(save_marked_slot(7, 0x22, spare_path),
+         "slot 7 was not written to %s", spare_path);
+   remove(auto_path);
+   CHECK(rename(spare_path, auto_path) == 0, "no auto state at %s", auto_path);
+   configuration_set_int(settings, settings->ints.state_slot, 0);
+   configuration_set_bool(settings, settings->bools.savestate_auto_load, true);
+
+   /* The playlist holds the content, with no slot of its own. */
+   memset(&cfg, 0, sizeof(cfg));
+   snprintf(lpl, sizeof(lpl), "%s/playlists/slots.lpl", harness_dir);
+   playlist_config_set_path(&cfg, lpl);
+   cfg.capacity = 16;
+   CHECK(playlist_init_cached(&cfg), "the playlist was not cached");
+   memset(&entry, 0, sizeof(entry));
+   entry.path      = game;
+   entry.label     = (char*)"slots";
+   entry.core_path = core_path;
+   entry.core_name = (char*)"content_load_harness";
+   CHECK(playlist_get_cached()
+         && playlist_push(playlist_get_cached(), &entry),
+         "the entry was not added to the playlist");
+
+   /* Leave the content, so the entry's run is a new load. */
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the contentless load was not started");
+   CHECK(settle() && core_is_up(), "the contentless load did not go through");
+
+   playlist_run_from_slot("4");
+   CHECK(core_export("harness_core_state_loaded") == 0x11,
+         "with an auto state, the load started from %s, not slot 4",
+         core_export("harness_core_state_loaded") == 0x22
+         ? "the auto state" : "no state");
+   CHECK(settings->ints.state_slot == 4,
+         "the active slot is %d after starting from slot 4",
+         settings->ints.state_slot);
+
+   /* Auto, picked by name, loads the auto state with Auto Load State
+    * off. */
+   configuration_set_bool(settings, settings->bools.savestate_auto_load, false);
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the contentless load before Auto was not started");
+   CHECK(settle() && core_is_up(),
+         "the contentless load before Auto did not go through");
+   playlist_run_from_slot("Auto");
+   CHECK(core_export("harness_core_state_loaded") == 0x22,
+         "Auto picked with Auto Load State off started from %s",
+         core_export("harness_core_state_loaded") == 0x11
+         ? "slot 4" : "no state");
+   configuration_set_bool(settings, settings->bools.savestate_auto_load, true);
+
+   /* Again with no auto state to fall back on. */
+   remove(auto_path);
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the second contentless load was not started");
+   CHECK(settle() && core_is_up(),
+         "the second contentless load did not go through");
+   playlist_run_from_slot("4");
+   CHECK(core_export("harness_core_state_loaded") == 0x11,
+         "without an auto state, the load started from %s, not slot 4",
+         core_export("harness_core_state_loaded") ? "a state" : "no state");
+   CHECK(!menu_state_get_ptr()->driver_data->state_slot_run_pending,
+         "the Load State pick outlived the load it was made for");
+
+   configuration_set_bool(settings, settings->bools.savestate_auto_load,
+         auto_load);
+   playlist_free_cached();
+   remove(lpl);
+   remove(slot_path);
+   remove(auto_path);
+   {
+      char png[PATH_MAX_LENGTH + 8];
+      snprintf(png, sizeof(png), "%s.png", slot_path);
+      remove(png);
+      snprintf(png, sizeof(png), "%s.png", spare_path);
+      remove(png);
+   }
+   remove(game);
+   if (failures == had)
+      fprintf(stderr, "[pass] playlist-state-slot lane\n");
+}
+#endif
+
+#if defined(HAVE_DYNAMIC) && defined(HAVE_MENU)
+/* ------------------------------------------------------------------ */
+/* Lane: core title held through a load                                */
+/* ------------------------------------------------------------------ */
+
+/* The menu's core title, read every frame of a playlist Run, shows
+ * the title from before the load or the one after it - nothing in
+ * between - and changes at most once. */
+static void lane_core_title_held(void)
+{
+   content_ctx_info_t info;
+   char game[600];
+   char first[256], last[256], cur[256];
+   char other[256] = "";
+   unsigned n, changes = 0;
+   FILE *f;
+   unsigned had = failures;
+
+   snprintf(game, sizeof(game), "%s/title.bin", harness_dir);
+   if ((f = fopen(game, "wb")))
+   {
+      fputs("harness content", f);
+      fclose(f);
+   }
+   memset(&info, 0, sizeof(info));
+   CHECK(settle(), "a load or state task from before is still in flight");
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the contentless load was not started");
+   CHECK(settle() && core_is_up(), "the contentless load did not go through");
+
+   menu_entries_get_core_title(first, sizeof(first));
+   strlcpy(last, first, sizeof(last));
+   CHECK(task_push_load_content_from_playlist_from_menu(core_path, game,
+            "title", &info, NULL, NULL),
+         "the playlist Run was not started");
+   for (n = 0; n < 5000; n++)
+   {
+      bool going = load_in_flight();
+      menu_entries_get_core_title(cur, sizeof(cur));
+      if (!string_is_equal(cur, last))
+      {
+         changes++;
+         strlcpy(last, cur, sizeof(last));
+         if (!string_is_equal(cur, first) && !*other)
+            strlcpy(other, cur, sizeof(other));
+      }
+      if (!going)
+         break;
+      pump(1);
+   }
+   CHECK(!load_in_flight() && core_is_up()
+         && strstr(path_get(RARCH_PATH_BASENAME), "title"),
+         "the playlist Run did not go through");
+   /* The one change allowed is to the title the load ends on */
+   CHECK(changes <= 1 && (!*other || string_is_equal(other, last)),
+         "the core title changed %u time(s) during the load"
+         " (\"%s\" -> \"%s\" -> \"%s\")",
+         changes, first, other, last);
+
+   remove(game);
+   if (failures == had)
+      fprintf(stderr, "[pass] core-title-held lane\n");
+}
+#endif
+
+/* LOAD_CONTENT and CLOSE_CONTENT, asked by a structured interface,
+ * answer once the load is through. The command interfaces outlive the
+ * load, and are not polled while it runs: what reaches them waits. */
+static void lane_content_reply(const char *dir)
+{
+   input_driver_state_t *input_st = input_state_get_ptr();
+   command_t cmd, **slot = &input_st->command[MAX_CMD_DRIVERS - 1];
+   char content[600], arg[1200];
+   unsigned gen, had = failures;
+
+   run_harness_core();
+   /* made as the settings ask: a lane before tore them down by hand */
+   input_driver_refresh_command(input_st, config_get_ptr());
+   CHECK(!*slot, "no free command interface slot");
+   if (*slot)
+      return;
+   memset(&cmd, 0, sizeof(cmd));
+   cmd.poll       = rr_poll;
+   cmd.replier    = rr_replier;
+   cmd.reply_dest = rr_reply_dest;
+   cmd.reply_to   = rr_reply_to_cb;
+   cmd.structured = true;
+   *slot          = &cmd;
+   gen            = input_driver_command_generation();
+   snprintf(content, sizeof(content), "%s/harness.bin", dir);
+   filestream_write_file(content, "harness", 7);
+   snprintf(arg, sizeof(arg), "%s|%s", core_path, content);
+
+   rr_polled_switching = 0;
+   CHECK(rr_ask(&cmd, command_load_content, arg), "LOAD_CONTENT was refused");
+   CHECK(rr_in_command_replies == 0,
+         "LOAD_CONTENT answered before the load was through");
+   CHECK(rr_polled_switching == 0,
+         "the command interfaces were polled %u times during the load",
+         rr_polled_switching);
+   CHECK(strncmp(rr_reply, "LOAD_CONTENT ", 13) == 0
+         && !strstr(rr_reply, " ERROR"),
+         "LOAD_CONTENT answered \"%s\"", rr_reply);
+   CHECK(input_driver_command_generation() == gen && *slot == &cmd,
+         "the command interfaces were remade by the load");
+
+   /* the dummy core in the failed core's place is no success */
+   snprintf(arg, sizeof(arg), "%.500s.missing|%s", core_path, content);
+   rr_ask(&cmd, command_load_content, arg);
+   CHECK(strncmp(rr_reply, "LOAD_CONTENT ERROR", 18) == 0,
+         "a core that failed to load was answered \"%s\"", rr_reply);
+
+   /* a line-based interface has never been told, and is not */
+   cmd.structured = false;
+   snprintf(arg, sizeof(arg), "%s|%s", core_path, content);
+   rr_ask(&cmd, command_load_content, arg);
+   CHECK(rr_replies == 0, "a line-based interface was answered \"%s\"",
+         rr_reply);
+   cmd.structured = true;
+
+   rr_ask(&cmd, command_close_content, "");
+   CHECK(string_is_equal(rr_reply, "CLOSE_CONTENT"),
+         "CLOSE_CONTENT answered \"%s\"", rr_reply);
+
+   *slot = NULL;
+   remove(content);
+   run_harness_core();
+   if (failures == had)
+      fprintf(stderr, "[pass] content-reply lane\n");
+}
+
 /* ------------------------------------------------------------------ */
 /* Lane: screenshot steps                                              */
 /* ------------------------------------------------------------------ */
@@ -1286,7 +2756,10 @@ static void lane_replay_reply(const char *dir)
  * by the clock; waiting out a whole period first makes this open the
  * one that starts it, so the screenshot opens well inside the same
  * window, not across a reset that would hand it a fresh one. */
+/* tasks/task_nbio_slice.c's window period */
+#define SS_SLICE_PERIOD_USEC 16666
 static bool ss_hog_stop;
+static retro_time_t ss_hog_open;
 static void ss_hog_handler(retro_task_t *task)
 {
    nbio_budget_t b;
@@ -1295,10 +2768,23 @@ static void ss_hog_handler(retro_task_t *task)
       task_set_flags(task, RETRO_TASK_FLG_FINISHED, true);
       return;
    }
-   retro_sleep(17);
+   /* by the clock: a signal can cut a sleep short */
+   while (cpu_features_get_time_usec() - ss_hog_open < 17000)
+      retro_sleep(1);
    task_nbio_slice_open(&b);
+   ss_hog_open = b.start;
    while (task_nbio_slice_within_budget(&b, 0, 0)) { }
    task_nbio_slice_close(&b);
+}
+
+/* A check the harness was descheduled through for a whole period may
+ * have handed the screenshot a fresh window; such a run proves nothing
+ * either way and is taken again. */
+static bool ss_check_late(void)
+{
+   task_queue_check();
+   return cpu_features_get_time_usec() - ss_hog_open
+      >= SS_SLICE_PERIOD_USEC;
 }
 
 static bool ss_is_screenshot(retro_task_t *task, void *user_data)
@@ -1343,7 +2829,7 @@ static void lane_screenshot_steps(const char *dir)
    settings_t *settings = config_get_ptr();
    retro_task_t *hog;
    char path[600], file[640];
-   unsigned had = failures, checks = 0, rows = 240;
+   unsigned had = failures, checks = 0, rows = 240, late = 0, attempt;
 
    if (!core_is_up())
    {
@@ -1366,28 +2852,35 @@ static void lane_screenshot_steps(const char *dir)
    /* With fullpath the name is the file, as given */
    snprintf(path, sizeof(path), "%s/harness_shot.png", dir);
    snprintf(file, sizeof(file), "%s", path);
-   remove(file);
-   CHECK(take_screenshot(dir, path, false, false, true, true),
-         "the screenshot was not started");
-   while (ss_in_flight() && checks < 4 * rows)
+   for (attempt = 0; attempt < 3; attempt++)
    {
-      task_queue_check();
-      checks++;
+      remove(file);
+      CHECK(take_screenshot(dir, path, false, false, true, true),
+            "the screenshot was not started");
+      for (checks = 0, late = 0; ss_in_flight() && checks < 4 * rows; checks++)
+         late += ss_check_late();
+      CHECK(!ss_in_flight(), "the screenshot did not finish in %u checks", checks);
+      CHECK(ss_png_complete(file), "the screenshot file is not a whole PNG");
+      if (!late)
+         break;
    }
-   CHECK(!ss_in_flight(), "the screenshot did not finish in %u checks", checks);
-   CHECK(checks >= rows,
+   CHECK(!late, "a period-long stall in each of %u attempts", attempt);
+   CHECK(late || checks >= rows,
          "the screenshot finished in %u checks for %u rows: encoded in one go",
          checks, rows);
-   CHECK(ss_png_complete(file), "the screenshot file is not a whole PNG");
    remove(file);
 
    /* Cancelled part way through */
-   CHECK(take_screenshot(dir, path, false, false, true, true),
-         "the second screenshot was not started");
+   for (attempt = 0; attempt < 3; attempt++)
    {
       unsigned n;
-      for (n = 0; n < 20; n++)
-         task_queue_check();
+      CHECK(take_screenshot(dir, path, false, false, true, true),
+            "the second screenshot was not started");
+      for (n = 0, late = 0; n < 20; n++)
+         late += ss_check_late();
+      if (ss_in_flight() || !late)
+         break;
+      remove(file);
    }
    CHECK(ss_in_flight(), "the second screenshot was already done");
    {
@@ -1437,6 +2930,157 @@ static void probe_main_handler(retro_task_t *task)
  * on, the stage runs from inside the check: a wait there would gather
  * the queue again from within it, running the main-thread tasks a
  * second time in the same check. */
+#if defined(HAVE_RUNAHEAD) && defined(HAVE_DYNAMIC) && defined(HAVE_THREADS)
+/* Until the copy task has an answer: it reads and writes the whole
+ * core file, which a loaded runner takes seconds over */
+static enum runahead_copy_status secondary_wait(runloop_state_t *runloop_st,
+      settings_t *settings)
+{
+   retro_time_t deadline = cpu_features_get_time_usec() + 10000000;
+   for (;;)
+   {
+      enum runahead_copy_status st =
+         secondary_core_ensure_exists(runloop_st, settings);
+      if (     st != RUNAHEAD_COPY_PENDING
+            || cpu_features_get_time_usec() > deadline)
+         return st;
+      task_queue_check();
+      retro_sleep(1);
+   }
+}
+
+/* Run-ahead's second instance on the threaded queue: the task copies
+ * the core and opens the copy on the worker, and the main thread
+ * takes the open handle.  The instance is the copy's own - its
+ * statics are not the running core's - and comes up once.  A software
+ * core, so the second instance is a whole one. */
+static void lane_secondary_threaded(void)
+{
+   settings_t *settings        = config_get_ptr();
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   enum runahead_copy_status st = RUNAHEAD_COPY_PENDING;
+   unsigned (*sec_inits)(void)  = NULL;
+   unsigned (*sec_keys)(void)   = NULL;
+   unsigned primary_keys_before, sec_keys_before;
+   const char *slash            = strrchr(core_path, '/');
+   char nohw[600];
+   unsigned primary_inits;
+   unsigned had = failures;
+
+   snprintf(nohw, sizeof(nohw), "%.*s/harness_core_nohw.so",
+         slash ? (int)(slash - core_path) : 1, slash ? core_path : ".");
+   CHECK(path_is_valid(nohw), "no %s: build.sh builds it", nohw);
+   configuration_set_bool(settings, settings->bools.threaded_data_runloop_enable, true);
+   task_queue_set_threaded();
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(nohw),
+         "the load was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the core did not come up");
+   primary_inits = core_inits();
+
+   st = secondary_wait(runloop_st, settings);
+   CHECK(st == RUNAHEAD_COPY_READY, "the second instance was not created (%d)",
+         (int)st);
+   CHECK(runloop_st->secondary_lib_handle != NULL,
+         "no handle for the second instance");
+   if (runloop_st->secondary_lib_handle)
+      sec_inits = (unsigned (*)(void))dylib_proc(
+            runloop_st->secondary_lib_handle, "harness_core_inits");
+   CHECK(sec_inits && sec_inits() == 1,
+         "the second instance came up %u times", sec_inits ? sec_inits() : 0);
+   CHECK(core_inits() == primary_inits,
+         "bringing up the second instance re-ran the running core's init");
+   CHECK(runloop_st->secondary_lib_handle != runloop_st->lib_handle,
+         "the second instance shares the running core's handle");
+
+   /* A key event bound for the core reaches both instances */
+   if (menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   if (runloop_st->secondary_lib_handle)
+      sec_keys = (unsigned (*)(void))dylib_proc(
+            runloop_st->secondary_lib_handle, "harness_core_key_events");
+   primary_keys_before = core_export("harness_core_key_events");
+   sec_keys_before     = sec_keys ? sec_keys() : 0;
+   input_keyboard_event(true, RETROK_KP7, 0, 0, RETRO_DEVICE_KEYBOARD);
+   CHECK(core_export("harness_core_key_events") == primary_keys_before + 1,
+         "the running core did not get the key event");
+   CHECK(sec_keys && sec_keys() == sec_keys_before + 1,
+         "the second instance did not get the key event");
+
+   runahead_secondary_core_destroy(runloop_st);
+   CHECK(!runloop_st->secondary_key_event,
+         "the closed second instance's keyboard callback is still held");
+   configuration_set_bool(settings, settings->bools.threaded_data_runloop_enable, false);
+   task_queue_unset_threaded();
+   pump(2);
+
+   if (failures == had)
+      fprintf(stderr, "[pass] secondary-threaded lane\n");
+}
+#endif
+
+#if defined(HAVE_RUNAHEAD) && defined(HAVE_DYNAMIC) && defined(HAVE_THREADS)
+/* A second instance of a hardware core: what the frontend holds a
+ * pointer to - the hardware context's callbacks, the controller
+ * description - stays the running core's, and closing the second
+ * instance leaves nothing the next close of the running core would
+ * call into. */
+static void lane_secondary_keeps_callbacks(void)
+{
+   typedef retro_hw_context_reset_t (*hw_fn_t)(void);
+   typedef const struct retro_controller_description *(*types_fn_t)(void);
+   settings_t *settings          = config_get_ptr();
+   runloop_state_t *runloop_st   = runloop_state_get_ptr();
+   enum runahead_copy_status st  = RUNAHEAD_COPY_PENDING;
+   struct retro_hw_render_callback *hwr;
+   hw_fn_t    primary_hw    = NULL;
+   types_fn_t primary_types = NULL;
+   unsigned had = failures;
+
+   configuration_set_bool(settings, settings->bools.threaded_data_runloop_enable, true);
+   task_queue_set_threaded();
+   open_menu();
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the core did not come up");
+   if (runloop_st->lib_handle)
+   {
+      primary_hw    = (hw_fn_t)dylib_proc(runloop_st->lib_handle,
+            "harness_core_hw_destroy_fn");
+      primary_types = (types_fn_t)dylib_proc(runloop_st->lib_handle,
+            "harness_core_port_types");
+   }
+   CHECK(primary_hw && primary_types, "the harness core exports are missing");
+
+   st = secondary_wait(runloop_st, settings);
+   CHECK(st == RUNAHEAD_COPY_READY, "the second instance was not created (%d)",
+         (int)st);
+
+   hwr = video_driver_get_hw_context();
+   CHECK(primary_hw && hwr && hwr->context_destroy == primary_hw(),
+         "the hardware context's callbacks are the second instance's");
+   CHECK(primary_types
+         && runloop_st->system.ports.size > 0
+         && runloop_st->system.ports.data[0].types == primary_types(),
+         "the controller description is the second instance's");
+
+   runahead_secondary_core_destroy(runloop_st);
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the reload after the second instance was not started");
+   pump(LOAD_FRAMES);
+   CHECK(core_is_up(), "the reload after the second instance did not go through");
+
+   configuration_set_bool(settings, settings->bools.threaded_data_runloop_enable, false);
+   task_queue_unset_threaded();
+   pump(2);
+
+   if (failures == had)
+      fprintf(stderr, "[pass] secondary-keeps-callbacks lane\n");
+}
+#endif
+
 static void lane_fallback_threaded(void)
 {
    settings_t *settings = config_get_ptr();
@@ -1627,6 +3271,138 @@ static void lane_close_content(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Lane: dummy session describes the selected core                    */
+/* ------------------------------------------------------------------ */
+
+/* How a static build boots: the dummy session carries the selected
+ * core's system info, or the menu offers no Start Core. */
+static void lane_dummy_selected_core(void)
+{
+   struct load_frame log[LOAD_FRAMES];
+   content_ctx_info_t content_info = {0};
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   unsigned n;
+   unsigned had = failures;
+
+   open_menu();
+   path_set(RARCH_PATH_CORE, core_path);
+
+   CHECK(task_push_start_dummy_core(&content_info),
+         "the dummy session was not started");
+   n = run_load(log, LOAD_FRAMES);
+   CHECK(n < LOAD_FRAMES && !runloop_is_content_switching(),
+         "the dummy session did not come up within %u frames",
+         LOAD_FRAMES);
+   CHECK(runloop_st->current_core_type == CORE_TYPE_DUMMY,
+         "the dummy core is not running");
+   CHECK(runloop_st->system.load_no_content,
+         "the selected core's no-game support is missing (no Start Core)");
+   CHECK(string_is_equal(runloop_st->system.info.library_name,
+            "content_load_harness"),
+         "the session names \"%s\", not the selected core",
+         runloop_st->system.info.library_name);
+
+   /* Start Core, to leave a core running */
+   CHECK(task_push_start_current_core(&content_info),
+         "Start Core was not started");
+   n = run_load(log, LOAD_FRAMES);
+   CHECK(n < LOAD_FRAMES && core_is_up()
+         && runloop_st->current_core_type != CORE_TYPE_DUMMY,
+         "Start Core did not go through");
+   runloop_iterate();
+
+   if (failures == had)
+      fprintf(stderr, "[pass] dummy selected-core lane\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* Lane: focus that comes with the frames                             */
+/* ------------------------------------------------------------------ */
+
+/* A window given focus only once it presents, as an OpenXR session
+ * is: a core started from the dummy session is presented and runs,
+ * with Pause When Not Focused on. */
+#define FOCUS_AFTER_FRAMES 3
+#define FOCUS_LANE_FRAMES  30
+
+static video_driver_t focus_null;
+static unsigned focus_presented;
+
+static void *focus_init(const video_info_t *video)
+{
+   focus_presented = 0;
+   return focus_null.init(video);
+}
+
+static bool focus_frame(void *data, const void *frame,
+      unsigned dims, uint64_t frame_count,
+      unsigned pitch, const char *msg, video_frame_info_t *video_info)
+{
+   focus_presented++;
+   return focus_null.frame(data, frame, dims, frame_count,
+         pitch, msg, video_info);
+}
+
+static bool focus_has(void *data)
+{
+   (void)data;
+   return focus_presented >= FOCUS_AFTER_FRAMES;
+}
+
+static void lane_focus_follows_frames(void)
+{
+   struct load_frame log[LOAD_FRAMES];
+   settings_t *settings        = config_get_ptr();
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   bool saved_pause            = settings->bools.pause_nonactive;
+   unsigned i, n, runs;
+   unsigned had = failures;
+
+   configuration_set_bool(settings, settings->bools.pause_nonactive, true);
+   focus_null       = video_null;
+   video_null.init  = focus_init;
+   video_null.frame = focus_frame;
+   video_null.focus = focus_has;
+
+   /* as after starting RetroArch with no core: none has run a frame */
+   command_event(CMD_EVENT_UNLOAD_CORE, NULL);
+   pump(LOAD_FRAMES);
+   open_menu();
+   CHECK(runloop_st->current_core_type == CORE_TYPE_DUMMY,
+         "the core was not unloaded");
+
+   CHECK(task_push_load_contentless_core_from_menu(core_path),
+         "the load was not started");
+   n = run_load(log, LOAD_FRAMES);
+   CHECK(n < LOAD_FRAMES && core_is_up()
+         && runloop_st->current_core_type != CORE_TYPE_DUMMY,
+         "the load did not go through");
+   CHECK(!video_driver_has_focus(),
+         "the rebuilt window has focus before it presented");
+
+   runs = core_export("harness_core_runs");
+   for (i = 0; i < FOCUS_LANE_FRAMES; i++)
+   {
+      runloop_iterate();
+      task_queue_check();
+   }
+   CHECK(focus_presented >= FOCUS_AFTER_FRAMES,
+         "%u frames presented to the unfocused window in %u iterations: "
+         "it never gets its focus", focus_presented, FOCUS_LANE_FRAMES);
+   CHECK(core_export("harness_core_runs") > runs + FOCUS_LANE_FRAMES / 2,
+         "the core ran %u frames in %u iterations",
+         core_export("harness_core_runs") - runs, FOCUS_LANE_FRAMES);
+   CHECK(!(runloop_st->flags & RUNLOOP_FLAG_PAUSED),
+         "the core is still paused with the window focused");
+
+   video_null = focus_null;
+   configuration_set_bool(settings, settings->bools.pause_nonactive,
+         saved_pause);
+   if (failures == had)
+      fprintf(stderr, "[pass] focus follows frames lane\n");
+}
+
+/* ------------------------------------------------------------------ */
 
 int main(int argc, char *argv[])
 {
@@ -1651,6 +3427,7 @@ int main(int argc, char *argv[])
    }
    if (!path_mkdir(dir))
       return 1;
+   strlcpy(harness_dir, dir, sizeof(harness_dir));
 
    snprintf(cfg_path, sizeof(cfg_path), "%s/harness.cfg", dir);
    if ((cfg = fopen(cfg_path, "wb")))
@@ -1667,11 +3444,36 @@ int main(int argc, char *argv[])
       fprintf(cfg, "savestate_auto_save = \"false\"\n");
       fprintf(cfg, "menu_show_load_content_animation = \"false\"\n");
       fprintf(cfg, "threaded_data_runloop_enable = \"false\"\n");
+      /* The null MIDI driver's one output: the MIDI lane's device */
+      fprintf(cfg, "midi_driver = \"null\"\n");
+      fprintf(cfg, "midi_output = \"Null\"\n");
+      /* The records of the cores asked live next to the info cache */
+      fprintf(cfg, "libretro_info_path = \"%s\"\n", dir);
+      /* Where a contentless core's states go, named after the core:
+       * the close-waits-for-save lane needs a save that can be
+       * written, on every load */
+      fprintf(cfg, "savestate_directory = \"%s\"\n", dir);
+      fprintf(cfg, "playlist_directory = \"%s/playlists\"\n", dir);
       fclose(cfg);
+   }
+   {
+      char playlist[600];
+      FILE *lpl;
+      snprintf(playlist, sizeof(playlist), "%s/playlists", dir);
+      path_mkdir(playlist);
+      snprintf(playlist, sizeof(playlist), "%s/playlists/harness.lpl", dir);
+      if ((lpl = fopen(playlist, "wb")))
+      {
+         fprintf(lpl, "{\"version\": \"1.5\", \"items\": []}\n");
+         fclose(lpl);
+      }
    }
 
    if (getenv("HARNESS_VERBOSE"))
       verbosity_enable();
+   midi_install_counting_driver();
+   /* The boot core asks for MIDI in its load: lane_midi_boot */
+   putenv((char*)"HARNESS_CORE_MIDI=1");
 
    config_file_set_io_default(config_file_io_filestream());
    rtime_init();
@@ -1700,14 +3502,11 @@ int main(int argc, char *argv[])
    }
    rarch_argv[rarch_argc++] = (char*)"-L";
    rarch_argv[rarch_argc++] = core_path;
-   /* A state path of its own: a contentless core derives none, and
-    * the close-waits-for-save lane needs a save that can be written. */
    snprintf(state_path, sizeof(state_path), "%s/harness.state", dir);
-   rarch_argv[rarch_argc++] = (char*)"-S";
-   rarch_argv[rarch_argc++] = state_path;
    if (getenv("HARNESS_VERBOSE"))
       rarch_argv[rarch_argc++] = (char*)"-v";
 
+   retroarch_user_dirs_hold();
    if (!retroarch_main_init(rarch_argc, rarch_argv))
    {
       fprintf(stderr, "FAIL: retroarch_main_init failed\n");
@@ -1721,15 +3520,38 @@ int main(int argc, char *argv[])
    CHECK(runloop_state_get_ptr()->current_core_type != CORE_TYPE_DUMMY,
          "harness core did not start (dummy core running)");
 
+   lane_user_dirs_held(dir);
+   lane_midi_boot();
    lane_staged();
+   lane_core_opened_once();
+   lane_audio_kept();
+#ifdef HAVE_AUDIOMIXER
+   lane_menu_sound_close();
+#endif
+   lane_midi_requested();
+#if defined(HAVE_DYNAMIC)
+   lane_probe_cached();
+#endif
    lane_one_at_a_time();
+#if defined(HAVE_DYNAMIC) && defined(HAVE_THREADS)
+   lane_core_preloaded();
+#endif
+#ifdef HAVE_REWIND
+   lane_rewind_after_load();
+#endif
    lane_reinit_deferred();
    lane_fallback();
    lane_fallback_threaded();
+#if defined(HAVE_RUNAHEAD) && defined(HAVE_DYNAMIC) && defined(HAVE_THREADS)
+   lane_secondary_threaded();
+   lane_secondary_keeps_callbacks();
+#endif
    lane_not_a_core();
    lane_hw_request();
    lane_queue_survives();
    lane_close_content();
+   lane_dummy_selected_core();
+   lane_focus_follows_frames();
    lane_close_waits_for_save();
 #ifdef HAVE_NETWORKING
    lane_host_setup_deferred();
@@ -1738,14 +3560,73 @@ int main(int argc, char *argv[])
 #ifdef HAVE_BSV_MOVIE
    lane_replay_reply(dir);
 #endif
+   lane_state_slot_reply();
+#if defined(HAVE_DYNAMIC) && defined(HAVE_MENU)
+   lane_playlist_state_slot();
+   lane_core_title_held();
+#endif
+   lane_content_reply(dir);
 #if defined(HAVE_SCREENSHOTS) && defined(HAVE_RPNG)
    lane_screenshot_steps(dir);
 #endif
+#if defined(HAVE_DYNAMIC) && defined(HAVE_MENU)
+   /* Last: a content load leaves its save state name behind for the
+    * contentless loads after it */
+   lane_prefetch_follows_new_core();
+   lane_contentless_names();
+#endif
+   /* Last of all: the session ends with it. */
+   lane_quit_waits_for_save();
 
    main_exit(NULL);
 
    remove(cfg_path);
    remove(state_path);
+   {
+      char leftover[600];
+      snprintf(leftover, sizeof(leftover), "%s/core_probe.cache", dir);
+      remove(leftover);
+      snprintf(leftover, sizeof(leftover), "%s/core_info.cache", dir);
+      remove(leftover);
+      snprintf(leftover, sizeof(leftover), "%s.png", state_path);
+      remove(leftover);
+      /* the contentless core's states, flat or in its own folder */
+      snprintf(leftover, sizeof(leftover),
+            "%s/content_load_harness.state", dir);
+      remove(leftover);
+      snprintf(leftover, sizeof(leftover),
+            "%s/content_load_harness.state.png", dir);
+      remove(leftover);
+      snprintf(leftover, sizeof(leftover),
+            "%s/content_load_harness/content_load_harness.state", dir);
+      remove(leftover);
+      snprintf(leftover, sizeof(leftover),
+            "%s/content_load_harness/content_load_harness.state.png", dir);
+      remove(leftover);
+      {
+         static const char *const lpls[] = {
+            "content_favorites.lpl", "content_history.lpl",
+            "content_music_history.lpl", "content_image_history.lpl",
+            "content_video_history.lpl"
+         };
+         unsigned i;
+         for (i = 0; i < sizeof(lpls) / sizeof(lpls[0]); i++)
+         {
+            snprintf(leftover, sizeof(leftover), "%s/playlists/builtin/%s",
+                  dir, lpls[i]);
+            remove(leftover);
+         }
+         snprintf(leftover, sizeof(leftover), "%s/playlists/builtin", dir);
+         rmdir(leftover);
+         snprintf(leftover, sizeof(leftover), "%s/playlists/harness.lpl", dir);
+         remove(leftover);
+         snprintf(leftover, sizeof(leftover), "%s/playlists", dir);
+         rmdir(leftover);
+      }
+      /* the per-core save folder a content load makes */
+      snprintf(leftover, sizeof(leftover), "%s/content_load_harness", dir);
+      rmdir(leftover);
+   }
    rmdir(dir);
 
    if (failures)

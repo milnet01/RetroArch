@@ -169,21 +169,17 @@ int rlzma_stream_init(rlzma_stream_t *s, const uint8_t *props,
  * rlzma_stream_reset:
  * @s          : initialized decoder state
  *
- * Resets the range coder, the probability model and the dictionary
- * position, keeping the buffers bound by rlzma_stream_init(). Call this
- * once, before the first chunk of a block. For an LZMA2 chunk's reset
- * use rlzma_stream_reset_parts(), which keeps the write position: this
- * one moves it back to the start, so the next chunk would overwrite
- * output not yet copied out.
+ * Resets the range coder, the probability model and the dictionary,
+ * output starting again at the dictionary's start, keeping the buffers
+ * bound by rlzma_stream_init(). Call this before the first block.
  */
 void rlzma_stream_reset(rlzma_stream_t *s);
 
 /**
  * rlzma_stream_reset_parts:
  * @s          : initialized decoder state
- * @init_dic   : non-zero to reset the dictionary: later matches may
- *               not reach back past this point. The write position
- *               (dic_pos) is kept.
+ * @init_dic   : non-zero to forget what is in the dictionary; output
+ *               goes on where it was
  * @init_state : non-zero to reset the range coder, probabilities and
  *               match history
  *

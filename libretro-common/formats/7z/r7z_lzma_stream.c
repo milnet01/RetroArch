@@ -343,8 +343,6 @@ static dummy_res_t try_dummy(const rlzma_stream_t *s,
    const uint16_t  *prob;
    dummy_res_t      res;
 
-   /* Positions count from the last dictionary reset, not from the
-    * start of the window: see decode_real. */
    pos_state = ((uint32_t)(s->total_pos) & (((uint32_t)1 << s->pb) - 1)) << 4;
 
    prob = probs + IS_MATCH + COMBINED_PS_STATE;
@@ -363,7 +361,7 @@ static dummy_res_t try_dummy(const rlzma_stream_t *s,
       if (s->total_pos != 0)
          lit_state = ((((uint32_t)s->total_pos << 8)
                   + (uint32_t)s->dic[(s->dic_pos ? s->dic_pos : s->dic_size)
-                  - 1]) & lit_mask) << s->lc;
+                     - 1]) & lit_mask) << s->lc;
 
       prob = probs + LITERAL + (uint32_t)3 * lit_state;
 
@@ -577,10 +575,6 @@ static int decode_real(rlzma_stream_t *s, size_t dic_limit,
    do
    {
       uint16_t *prob;
-      /* Position bits count from the last dictionary reset, as the
-       * reference's processedPos does. dic_pos carries on across an
-       * LZMA2 dictionary reset (rlzma_stream_reset_parts), total_pos
-       * starts again from zero. */
       uint32_t  pos_state = ((uint32_t)total_pos & pb_mask) << 4;
       uint32_t  len;
 
@@ -593,16 +587,21 @@ static int decode_real(rlzma_stream_t *s, size_t dic_limit,
 
          RC_UPDATE_0(prob)
 
-         /* The first byte after a dictionary reset has no predecessor;
-          * its context is zero, exactly as in the one-shot decoder.
-          * Otherwise the previous byte is the one before dic_pos, or,
-          * when the write position has just wrapped to 0, the last
-          * byte of the circular dictionary. */
+         /* The stream's first byte, or the first since the dictionary
+          * was reset, has no predecessor; its context is zero, exactly
+          * as in the one-shot decoder. Positions count from there,
+          * wherever in the window it is; the byte before the window's
+          * start is its end. */
          lit_state = 0;
          if (total_pos != 0)
-            lit_state = ((((uint32_t)total_pos << 8)
-                     + (uint32_t)dic[(dic_pos ? dic_pos : dic_size) - 1])
-                     & lit_mask) << lc;
+         {
+            if (dic_pos != 0)
+               lit_state = ((((uint32_t)total_pos << 8)
+                        + (uint32_t)dic[dic_pos - 1]) & lit_mask) << lc;
+            else
+               lit_state = ((((uint32_t)total_pos << 8)
+                        + (uint32_t)dic[dic_size - 1]) & lit_mask) << lc;
+         }
 
          /* The masked context is already scaled by 0x100, so the stride
           * is 3 (one literal slot), not the full 0x300 table. */
@@ -1015,13 +1014,10 @@ void rlzma_stream_reset_parts(rlzma_stream_t *s, int init_dic, int init_state)
    /* LZMA2 needs these two independently. A chunk may reset the decoder
     * state while continuing the previous chunk's dictionary, or reset
     * the dictionary while the range coder carries on. Collapsing them
-    * into one operation would make those chunk types undecodable.
-    *
-    * A dictionary reset forgets the history: no later match may reach
-    * back past it. It does not move the write position. 7-Zip resets
-    * the dictionary at every LZMA2 block boundary, and a caller
-    * decoding a whole folder into one buffer needs the next block
-    * written after the last, not over the start. */
+    * into one operation would make those chunk types undecodable. */
+   /* A dictionary reset forgets what came before, which positions
+    * then count from; where the window is written next stays, so what
+    * the caller has not read of it yet is still there. */
    if (init_dic)
    {
       s->total_pos  = 0;

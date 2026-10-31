@@ -35,6 +35,7 @@
 #include <net/net_socket_ssl.h>
 #endif
 #include <compat/strl.h>
+#include <encodings/base64.h>
 #include <features/features_cpu.h>
 #include <lists/string_list.h>
 #include <retro_common_api.h>
@@ -112,6 +113,19 @@
 /* Redirects followed per request.  A server bouncing between two
  * URLs used to be followed forever. */
 #define NET_HTTP_MAX_REDIRECTS      8
+
+/* A transfer that moves nothing - no DNS answer, no byte sent or
+ * received - for this long fails.  A peer that goes silent mid-request
+ * reports no error of its own, so this is the only end such a transfer
+ * has.  Only time the caller spends driving the transfer counts: a gap
+ * of NET_HTTP_STALL_POLL_GAP between two calls is a caller that was not
+ * driving it (a suspended app, a paused queue), not a silent peer. */
+#ifndef NET_HTTP_STALL_TIMEOUT
+#define NET_HTTP_STALL_TIMEOUT      ((retro_time_t)60 * 1000000)
+#endif
+#ifndef NET_HTTP_STALL_POLL_GAP
+#define NET_HTTP_STALL_POLL_GAP     ((retro_time_t)1000000)
+#endif
 
 enum response_part
 {
@@ -231,6 +245,7 @@ typedef struct request
    void *postdata;
    char *useragent;
    char *headers;
+   char *auth;
    size_t contentlength;
    /* Streamed body: pulled from source in runs as the socket takes
     * them, instead of being held whole in postdata. */
@@ -281,6 +296,14 @@ struct http_t
    bool retried;
    unsigned redirects;
 
+   /* For the stall bound: when the transfer last moved and how far it
+    * had got, and when it was last driven. */
+   retro_time_t moved_at;
+   retro_time_t polled_at;
+   size_t       moved_rx;
+   size_t       moved_tx;
+   unsigned     moved_stage;
+
    request_t request;
    response_t response;
 };
@@ -296,6 +319,7 @@ struct http_connection_t
    void *postdata;
    char *useragent;
    char *headers;
+   char *auth;
    size_t contentlength; /* ptr alignment */
    net_http_sink_t sink;
    void *sink_data;
@@ -314,7 +338,7 @@ static int net_http_socket_error(void)
 #if defined(_WIN32)
    return WSAGetLastError();
 #elif defined(__PS3__) || defined(VITA) || defined(WIIU) \
-      || defined(GEKKO) || defined(_3DS)
+      || (defined(GEKKO) && !defined(GEKKO_NATIVE)) || defined(_3DS)
    return 0;
 #else
    return errno;
@@ -703,60 +727,30 @@ overflow:
    return -1;
 }
 
-static int net_http_hexval(char c)
-{
-   if (c >= '0' && c <= '9')
-      return c - '0';
-   if (c >= 'a' && c <= 'f')
-      return c - 'a' + 10;
-   if (c >= 'A' && c <= 'F')
-      return c - 'A' + 10;
-   return -1;
-}
-
-/* Shared by both decoders.  The two digits are read into locals
- * before anything is written, so w == r (in place) is safe; the 2018
- * version rewrote the source nibbles themselves. */
-static int net_http_urldecode_core(char *w, size_t cap, const char *r)
-{
-   size_t len = 0;
-   while (*r)
-   {
-      char c = *r;
-      if (c == '%')
-      {
-         int hi = net_http_hexval(r[1]);
-         int lo = (hi >= 0) ? net_http_hexval(r[2]) : -1;
-         if (lo >= 0)
-         {
-            c  = (char)((hi << 4) | lo);
-            r += 2;
-         }
-      }
-      if (len + 1 >= cap)
-      {
-         w[len] = '\0';
-         return -1;
-      }
-      w[len++] = c;
-      r++;
-   }
-   w[len] = '\0';
-   return (int)len;
-}
-
 int net_http_urldecode(char *dst, size_t dst_size, const char *src)
 {
-   if (!dst || !dst_size || !src)
-      return -1;
-   return net_http_urldecode_core(dst, dst_size, src);
+   return string_percent_decode(dst, dst_size, src);
 }
 
 int net_http_urldecode_inplace(char *s)
 {
-   if (!s)
-      return -1;
-   return net_http_urldecode_core(s, (size_t)-1, s);
+   return string_percent_decode(s, (size_t)-1, s);
+}
+
+/* Base64 "user:pass" for Basic auth, from a URL's userinfo. */
+static char *net_http_basic_auth(const char *userinfo, size_t len)
+{
+   int   flen;
+   char *out;
+   char *raw = (char*)malloc(len + 1);
+
+   if (!raw)
+      return NULL;
+   memcpy(raw, userinfo, len);
+   raw[len] = '\0';
+   out = base64(raw, net_http_urldecode_inplace(raw), &flen);
+   free(raw);
+   return out;
 }
 
 struct http_connection_t *net_http_connection_new(const char *url,
@@ -794,11 +788,31 @@ struct http_connection_t *net_http_connection_new(const char *url,
    }
    else
       goto error;
+   {
+      /* RFC 3986 3.2.1 userinfo, sent as Basic credentials */
+      char *end = conn->scan + strcspn(conn->scan, "/?#");
+      char *at = NULL;
+      char *p;
+      for (p = conn->scan; p < end; p++)
+         if (*p == '@')
+            at = p;
+      if (at)
+      {
+         if (at + 1 == end || at[1] == ':')
+            goto error;
+         /* An empty userinfo names no one: nothing is sent. */
+         if (     at != conn->scan
+               && !(conn->auth = net_http_basic_auth(conn->scan, (size_t)(at - conn->scan))))
+            goto error;
+         conn->scan = at + 1;
+      }
+   }
    if (*conn->scan == '\0')
       goto error;
    conn->domain = conn->scan;
    return conn;
 error:
+   free(conn->auth);
    free(conn->url);
    free(conn->method);
    free(conn->postdata);
@@ -934,6 +948,9 @@ void net_http_connection_free(struct http_connection_t *conn)
 
    if (conn->headers)
       free(conn->headers);
+
+   if (conn->auth)
+      free(conn->auth);
 
    free(conn);
 }
@@ -1437,6 +1454,7 @@ struct http_t *net_http_new(struct http_connection_t *conn)
    state->request.source_data   = conn->source_data;
    state->request.useragent= conn->useragent ? strdup(conn->useragent) : NULL;
    state->request.headers  = conn->headers ? strdup(conn->headers) : NULL;
+   state->request.auth     = conn->auth    ? strdup(conn->auth)    : NULL;
    state->request.port     = conn->port;
 
    state->response.status  = -1;
@@ -1465,7 +1483,8 @@ struct http_t *net_http_new(struct http_connection_t *conn)
        || !state->request.method
        || (conn->contenttype && !state->request.contenttype)
        || (conn->useragent && !state->request.useragent)
-       || (conn->headers   && !state->request.headers))
+       || (conn->headers   && !state->request.headers)
+       || (conn->auth      && !state->request.auth))
    {
       /* Note: no postdata OOM check here.  Ownership of postdata is
        * moved from conn (above), not copied, so the transfer cannot
@@ -1479,6 +1498,9 @@ struct http_t *net_http_new(struct http_connection_t *conn)
       net_http_delete(state);
       return NULL;
    }
+
+   state->moved_at  = cpu_features_get_time_usec();
+   state->polled_at = state->moved_at;
 
    return state;
 }
@@ -1873,6 +1895,8 @@ static bool net_http_build_head(struct http_t *state)
    size_t cap              = 192
       + strlen(method) + strlen(request->path) + strlen(request->domain)
       + (request->headers     ? strlen(request->headers)     : 0)
+      + (request->auth        ? strlen(request->auth)
+            + STRLEN_CONST("Authorization: Basic \r\n")    : 0)
       + (request->contenttype ? strlen(request->contenttype) : 0)
       + (request->useragent   ? strlen(request->useragent)   : 0);
    char  *h;
@@ -1888,6 +1912,12 @@ static bool net_http_build_head(struct http_t *state)
    if (request->port && request->port != 80 && request->port != 443)
       n += (size_t)snprintf(h + n, cap - n, ":%i", request->port);
    n = net_http_put(h, n, "\r\n");
+   if (request->auth)
+   {
+      n = net_http_put(h, n, "Authorization: Basic ");
+      n = net_http_put(h, n, request->auth);
+      n = net_http_put(h, n, "\r\n");
+   }
    /* Pre-formatted headers */
    if (request->headers)
       n = net_http_put(h, n, request->headers);
@@ -2847,6 +2877,25 @@ check_grow:
    return true;
 }
 
+/* Remove the credential headers from a request's pre-formatted header
+ * lines, in place.  Each line is "Name: value" ended by "\n" or
+ * "\r\n"; the names compare without case. */
+static void net_http_headers_drop_credentials(char *headers)
+{
+   char *line = headers;
+   while (*line)
+   {
+      char  *nl  = strchr(line, '\n');
+      size_t len = nl ? (size_t)(nl + 1 - line) : strlen(line);
+      if (     !strncasecmp(line, "Authorization:",
+                  sizeof("Authorization:") - 1)
+            || !strncasecmp(line, "Cookie:", sizeof("Cookie:") - 1))
+         memmove(line, line + len, strlen(line + len) + 1);
+      else
+         line += len;
+   }
+}
+
 static bool net_http_redirect(struct http_t *state, const char *location)
 {
    /* This reinitializes state based on the new location.  Every
@@ -2964,6 +3013,25 @@ static bool net_http_redirect(struct http_t *state, const char *location)
    memcpy(new_domain, host, host_len);
    new_domain[host_len] = '\0';
    free(base);
+
+   /* Credentials go only where the caller sent them: another host or
+    * port gets the request without Authorization or Cookie.  Moving
+    * the same host from http onto https keeps them. */
+   if (state->request.headers || state->request.auth)
+   {
+      bool same_host = strlen(state->request.domain) == host_len
+            && !strncasecmp(new_domain, state->request.domain, host_len);
+      bool same_port = port == state->request.port
+            || (!state->ssl && ssl
+                  && state->request.port == 80 && port == 443);
+      if (!same_host || !same_port)
+      {
+         if (state->request.headers)
+            net_http_headers_drop_credentials(state->request.headers);
+         free(state->request.auth);
+         state->request.auth = NULL;
+      }
+   }
 
    free(state->request.domain);
    free(state->request.path);
@@ -3191,13 +3259,66 @@ bool net_http_wait(struct http_t *state, int timeout_ms)
    return rd || wr;
 }
 
+/* True when the transfer has moved nothing for NET_HTTP_STALL_TIMEOUT
+ * of the time it was driven.  Moving is any change in how far it got:
+ * a connection, a byte sent, a byte received, a stage passed. */
+static bool net_http_stalled(struct http_t *state)
+{
+   retro_time_t now   = cpu_features_get_time_usec();
+   size_t       rx    = state->response.flushed + state->response.pos;
+   size_t       tx    = state->body_queued + state->out_off;
+   unsigned     stage = (state->conn ? 1u : 0u)
+      | ((state->conn && state->conn->connected) ? 2u : 0u)
+      | (state->request_sent ? 4u : 0u)
+      | (state->retried      ? 8u : 0u)
+      | ((unsigned)state->send_phase    << 4)
+      | ((unsigned)state->response.part << 8)
+      | (state->redirects               << 12);
+
+   if (now - state->polled_at > NET_HTTP_STALL_POLL_GAP)
+      state->moved_at += now - state->polled_at;
+   state->polled_at = now;
+
+   if (     rx    != state->moved_rx
+         || tx    != state->moved_tx
+         || stage != state->moved_stage)
+   {
+      state->moved_rx    = rx;
+      state->moved_tx    = tx;
+      state->moved_stage = stage;
+      state->moved_at    = now;
+      return false;
+   }
+   return now - state->moved_at > NET_HTTP_STALL_TIMEOUT;
+}
+
 bool net_http_update(struct http_t *state, size_t* progress, size_t* total)
+{
+   return net_http_update_budget(state, progress, total, NULL, NULL);
+}
+
+bool net_http_update_budget(struct http_t *state,
+      size_t* progress, size_t* total,
+      bool (*within_budget)(void *budget, size_t avail, size_t len),
+      void *budget)
 {
    struct response *response;
    ssize_t _len = 0;
 
    if (!state || state->err)
       return true;
+
+   if (net_http_stalled(state))
+   {
+      net_http_log_transport_state(state, "stalled", -1);
+      if (state->conn)
+         net_http_conn_pool_remove(state->conn);
+      state->conn             = NULL;
+      state->err              = true;
+      state->response.part    = P_DONE;
+      state->response.status  = -1;
+      return true;
+   }
 
    /* Re-established below wherever the pass ends without progress. */
    state->blocked = false;
@@ -3265,7 +3386,14 @@ bool net_http_update(struct http_t *state, size_t* progress, size_t* total)
     *     dribbling one byte at a time cannot spin us.
     *
     * Exceeding either bound just returns false and we resume on the
-    * next tick, which is the pre-existing behaviour. */
+    * next tick, which is the pre-existing behaviour.
+    *
+    * With @within_budget, the caller's time window replaces the byte
+    * budget: each read, together with the TLS decryption behind it,
+    * is one work item, the window decides how many a call gets, and
+    * each read is still clamped to NET_HTTP_DRAIN_BUDGET so that no
+    * single item can outgrow a frame.  A clock bounds the stall on
+    * any link and any cipher speed; a byte count could only guess. */
    {
       size_t drained = 0;
       int    iters   = 0;
@@ -3273,6 +3401,9 @@ bool net_http_update(struct http_t *state, size_t* progress, size_t* total)
       for (;;)
       {
          size_t window;
+
+         if (within_budget && !within_budget(budget, 0, 0))
+            break;
 
          /* Keep a floor under the receive window.  For the
           * doubling-growth body types (T_CHUNK, T_FULL) the window is
@@ -3341,11 +3472,20 @@ bool net_http_update(struct http_t *state, size_t* progress, size_t* total)
           * budget is configured below the floor, which would
           * otherwise break before reading anything and stall the
           * transfer outright. */
-         if (     drained
-               && NET_HTTP_DRAIN_BUDGET - drained < NET_HTTP_MIN_RECV_WINDOW)
-            break;
-         if (window > NET_HTTP_DRAIN_BUDGET - drained)
-            window = NET_HTTP_DRAIN_BUDGET - drained;
+         if (within_budget)
+         {
+            /* One item: a read of at most the byte budget */
+            if (window > NET_HTTP_DRAIN_BUDGET)
+               window = NET_HTTP_DRAIN_BUDGET;
+         }
+         else
+         {
+            if (     drained
+                  && NET_HTTP_DRAIN_BUDGET - drained < NET_HTTP_MIN_RECV_WINDOW)
+               break;
+            if (window > NET_HTTP_DRAIN_BUDGET - drained)
+               window = NET_HTTP_DRAIN_BUDGET - drained;
+         }
 
 #ifdef HAVE_SSL
          if (state->ssl && state->conn->ssl_ctx)
@@ -3411,7 +3551,7 @@ bool net_http_update(struct http_t *state, size_t* progress, size_t* total)
          }
 
          drained += (size_t)_len;
-         if (     drained >= NET_HTTP_DRAIN_BUDGET
+         if (     (!within_budget && drained >= NET_HTTP_DRAIN_BUDGET)
                || ++iters >= NET_HTTP_DRAIN_MAX_ITERS)
             break;
       }
@@ -3719,6 +3859,8 @@ void net_http_delete(struct http_t *state)
       free(state->request.useragent);
    if (state->request.headers)
       free(state->request.headers);
+   if (state->request.auth)
+      free(state->request.auth);
    free(state);
 }
 

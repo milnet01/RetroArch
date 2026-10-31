@@ -98,10 +98,8 @@ static bool nfs_url_split(const char *url, char *server, size_t server_len,
    return true;
 }
 
-/* Resolves a URL to the export to mount and the path within it. With
- * an export in the settings, the URL path is relative to it (under the
- * subdir, when set); otherwise the URL's first component is the export
- * itself, as nfs://server/export/... */
+/* With a configured export, the URL path is relative to it.
+ * Otherwise mount prefixes of nfs://server/export/path. */
 static bool nfs_resolve(const char *url, char *server, size_t server_len,
       char *export_path, size_t export_len, char *path, size_t path_len)
 {
@@ -112,13 +110,7 @@ static bool nfs_resolve(const char *url, char *server, size_t server_len,
    if (cfg && cfg->export_path && *cfg->export_path)
    {
       strlcpy(export_path, cfg->export_path, export_len);
-      path[0] = '\0';
-      if (cfg->subdir && *cfg->subdir)
-      {
-         strlcpy(path, cfg->subdir, path_len);
-         strlcat(path, "/", path_len);
-      }
-      strlcat(path, rest, path_len);
+      strlcpy(path, rest, path_len);
    }
    else
    {
@@ -179,7 +171,13 @@ bool nfs_init_cfg(const struct nfs_settings *new_cfg)
 void nfs_shutdown(void)
 {
    struct nfs_pool *old = (struct nfs_pool*)retro_atomic_load_acquire_ptr(&nfs_pool_ptr);
-   if (old && retro_atomic_cas_ptr(&nfs_pool_ptr, old, NULL))
+   /* A slot still held is a call still in flight: a task the exit's
+    * drain left stuck on a dead server.  Unpublish the pool so nothing
+    * new takes from it, but do not free it under that call - the
+    * process is on its way out. */
+   if (     old
+         && retro_atomic_cas_ptr(&nfs_pool_ptr, old, NULL)
+         && !nfs_pool_busy(old))
       nfs_pool_free(old);
 }
 
@@ -560,6 +558,27 @@ bool retro_vfs_file_open_nfs(libretro_vfs_implementation_file *stream,
    return true;
 }
 
+/* Lends what the prefetcher holds at the position, without a copy;
+ * -1 when it holds nothing there, and the caller reads instead. */
+int64_t retro_vfs_file_view_nfs(libretro_vfs_implementation_file *stream,
+      uint64_t len, const uint8_t **ptr)
+{
+   struct nfs_stream   *ns = (struct nfs_stream*)stream->nfs_fh;
+   struct nfs_prefetch *np;
+   int64_t              got;
+
+   if (!ns || !stream->nfs_prefetch)
+      return -1;
+   np = (struct nfs_prefetch*)(void*)(uintptr_t)stream->nfs_prefetch;
+   if ((got = vfs_prefetch_view(np->p, (uint64_t)rnfs_tell(ns->f), ptr)) <= 0)
+      return got;
+   if ((uint64_t)got > len)
+      got = (int64_t)len;
+   rnfs_seek(NULL, ns->f, got, 1);
+   np->from_window += (uint64_t)got;
+   return got;
+}
+
 int64_t retro_vfs_file_read_nfs(libretro_vfs_implementation_file *stream,
       void *buf, uint64_t len)
 {
@@ -567,10 +586,12 @@ int64_t retro_vfs_file_read_nfs(libretro_vfs_implementation_file *stream,
    struct nfs_slot *slot;
    struct rnfs_ctx *c;
    int64_t r;
+   int64_t windowed = 0;
    if (!ns)
       return -1;
-   /* the prefetcher's windows first; on a miss the stream reads the
-    * network itself, and the thread starts over from here */
+   /* the prefetcher's windows first; what they do not cover, or all of
+    * it on a miss, the stream reads from the network itself, and the
+    * thread starts over from there */
    if (stream->nfs_prefetch)
    {
       struct nfs_prefetch *np = (struct nfs_prefetch*)(void*)(uintptr_t)stream->nfs_prefetch;
@@ -579,17 +600,22 @@ int64_t retro_vfs_file_read_nfs(libretro_vfs_implementation_file *stream,
       {
          rnfs_seek(NULL, ns->f, got, 1);
          np->from_window += (uint64_t)got;
-         return got;
+         /* all of it, or a window that ends the file */
+         if (got == 0 || (uint64_t)got == len)
+            return got;
+         windowed = got;
       }
    }
    if (!(c = nfs_stream_take(ns, &slot)))
-      return -1;
-   r = rnfs_read(c, ns->f, buf, (size_t)len);
+      return windowed ? windowed : -1;
+   r = rnfs_read(c, ns->f, (uint8_t*)buf + windowed, (size_t)(len - (uint64_t)windowed));
    nfs_give(c, slot);
-   /* a read the prefetcher had nothing ready for */
+   /* what the prefetcher had nothing ready for */
    if (r > 0 && stream->nfs_prefetch)
       ((struct nfs_prefetch*)(void*)(uintptr_t)stream->nfs_prefetch)->direct += (uint64_t)r;
-   return r;
+   if (r < 0)
+      return windowed ? windowed : r;
+   return windowed + r;
 }
 
 int64_t retro_vfs_file_write_nfs(libretro_vfs_implementation_file *stream,

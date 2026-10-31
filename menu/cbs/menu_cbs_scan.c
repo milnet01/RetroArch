@@ -30,6 +30,7 @@
 
 #include "../../config.def.h"
 #include "../../configuration.h"
+#include "../../driver.h"
 #include "../../tasks/tasks_internal.h"
 #ifdef __MACH__
 #include <TargetConditionals.h>
@@ -73,10 +74,6 @@ int action_scan_file(const char *path,
 #endif
    char fullpath[PATH_MAX_LENGTH];
    const char *menu_path          = NULL;
-   settings_t *settings           = config_get_ptr();
-   bool show_hidden_files         = settings->bools.show_hidden_files;
-   const char *directory_playlist = settings->paths.directory_playlist;
-   const char *path_content_db    = settings->paths.path_content_database;
 
    menu_entries_get_last_stack(&menu_path, NULL, NULL, NULL, NULL);
 
@@ -87,12 +84,7 @@ int action_scan_file(const char *path,
 
    fill_pathname_join_special(fullpath, menu_path, path, sizeof(fullpath));
 
-   task_push_dbscan(
-         directory_playlist,
-         path_content_db,
-         fullpath, false,
-         show_hidden_files,
-         handle_dbscan_finished);
+   task_push_dbscan(fullpath, handle_dbscan_finished);
 
    return 0;
 }
@@ -106,10 +98,6 @@ int action_scan_directory(const char *path,
 #endif
    char fullpath[PATH_MAX_LENGTH];
    const char *menu_path          = NULL;
-   settings_t *settings           = config_get_ptr();
-   bool show_hidden_files         = settings->bools.show_hidden_files;
-   const char *directory_playlist = settings->paths.directory_playlist;
-   const char *path_content_db    = settings->paths.path_content_database;
 
    menu_entries_get_last_stack(&menu_path, NULL, NULL, NULL, NULL);
 
@@ -123,12 +111,7 @@ int action_scan_directory(const char *path,
    else
       strlcpy(fullpath, menu_path, sizeof(fullpath));
 
-   task_push_dbscan(
-         directory_playlist,
-         path_content_db,
-         fullpath, true,
-         show_hidden_files,
-         handle_dbscan_finished);
+   task_push_dbscan(fullpath, handle_dbscan_finished);
 
    return 0;
 }
@@ -189,7 +172,7 @@ static int action_scan_input_desc(const char *path,
 
       if (     type >= MENU_SETTINGS_INPUT_DESC_BEGIN
             && type <= MENU_SETTINGS_INPUT_DESC_END)
-         settings->uints.input_remap_ids[user_idx][key] = RARCH_UNMAPPED;
+         input_config_set_remap_id(user_idx, key, RARCH_UNMAPPED);
       else if (type >= MENU_SETTINGS_INPUT_DESC_KBD_BEGIN
             && type <= MENU_SETTINGS_INPUT_DESC_KBD_END)
          settings->uints.input_keymapper_ids[user_idx][key] = RETROK_UNKNOWN;
@@ -234,7 +217,7 @@ static int action_scan_input_desc(const char *path,
    else
       key = input_config_translate_str_to_bind_id(label);
 
-   target = &input_config_binds[user_idx][key];
+   target = input_config_bind_edit(user_idx, key);
 
    if (target)
    {
@@ -244,7 +227,7 @@ static int action_scan_input_desc(const char *path,
       RETRO_KEYBIND_SET_KEY(target, RETROK_UNKNOWN);
       target->joykey  = NO_BTN;
       target->joyaxis = AXIS_NONE;
-      target->mbutton = NO_BTN;
+      RETRO_KEYBIND_SET_MBUTTON(target, NO_BTN);
    }
 
    return 0;
@@ -253,6 +236,7 @@ static int action_scan_input_desc(const char *path,
 static int action_scan_video_font_path(const char *path,
       const char *label, unsigned type, size_t idx)
 {
+   int reinit_flags = DRIVER_VIDEO_AND_INPUT_MASK;
    settings_t *settings       = config_get_ptr();
 
    strlcpy_lit(settings->paths.path_font, "null", sizeof(settings->paths.path_font));
@@ -261,7 +245,7 @@ static int action_scan_video_font_path(const char *path,
     * place, and reinitialise only where a driver keeps its own. */
    if (!font_driver_reinit_osd(settings->paths.path_font,
             settings->floats.video_font_size))
-      command_event(CMD_EVENT_REINIT, NULL);
+      command_event(CMD_EVENT_REINIT, &reinit_flags);
 
    return 0;
 }

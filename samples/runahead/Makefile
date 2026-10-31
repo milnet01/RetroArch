@@ -1,3 +1,5 @@
+include ../sample_objdir.mk
+
 compiler     := gcc
 TARGET       := runahead_copy_test
 
@@ -38,11 +40,11 @@ ifneq ($(SAN),)
    SANITIZER := $(SAN)
 endif
 ifneq ($(SANITIZER),)
-   CFLAGS  := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer -g $(CFLAGS)
+   CFLAGS  := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer -g1 $(CFLAGS)
    LDFLAGS := -fsanitize=$(SANITIZER) $(LDFLAGS)
 endif
 
-OBJS := $(SOURCES_C:.c=.o)
+OBJS := $(call sample_objs,$(SOURCES_C:.c=.o))
 
 all: $(TARGET) runahead_tmpdir_test
 
@@ -55,6 +57,9 @@ preempt_mask_fragment.c: $(CORE_DIR)/runahead.c
 dense_cache_fragment.c: $(CORE_DIR)/runahead.c
 	sed -n '/===== BEGIN runahead dense input cache =====/,/===== END runahead dense input cache =====/p' $< > $@
 
+input_list_fragment.c: $(CORE_DIR)/runahead.c
+	sed -n '/===== BEGIN runahead input list =====/,/===== END runahead input list =====/p' $< > $@
+
 # runahead_tmp_dir_private(), against real directories
 runahead_tmpdir_fragment.c: $(CORE_DIR)/runahead.c
 	sed -n '/===== BEGIN runahead tmp dir check =====/,/===== END runahead tmp dir check =====/p' $< > $@
@@ -64,9 +69,13 @@ runahead_tmpdir_test: runahead_tmpdir_test.c runahead_tmpdir_fragment.c
 preempt_slab_fragment.c: $(CORE_DIR)/runahead.c
 	sed -n '/===== BEGIN preempt slab =====/,/===== END preempt slab =====/p' $< > $@
 
-runahead_copy_test.o: runahead_copy_fragment.c preempt_mask_fragment.c dense_cache_fragment.c preempt_slab_fragment.c
+runahead_copy_test.o: runahead_copy_fragment.c preempt_mask_fragment.c dense_cache_fragment.c preempt_slab_fragment.c input_list_fragment.c
 
 %.o: %.c
+	$(CC) $(INCDIRS) $(CFLAGS) $(flags) -c -o$@ $<
+
+$(SAMPLE_OBJDIR)/%.o: $$(call sample_src,$$*).c
+	@mkdir -p $(@D)
 	$(CC) $(INCDIRS) $(CFLAGS) $(flags) -c -o$@ $<
 
 $(TARGET): $(OBJS)
@@ -77,7 +86,8 @@ check: $(TARGET) runahead_tmpdir_test
 	./runahead_tmpdir_test
 
 clean:
-	rm -f $(OBJS) runahead_copy_fragment.c preempt_mask_fragment.c dense_cache_fragment.c preempt_slab_fragment.c runahead_tmpdir_fragment.c
+	rm -rf $(SAMPLE_OBJDIR)
+	rm -f $(OBJS) runahead_copy_fragment.c preempt_mask_fragment.c dense_cache_fragment.c preempt_slab_fragment.c input_list_fragment.c runahead_tmpdir_fragment.c
 	rm -f $(TARGET) runahead_tmpdir_test
 
 .PHONY: clean all check

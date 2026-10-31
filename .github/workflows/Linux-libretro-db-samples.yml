@@ -23,49 +23,41 @@ jobs:
   samples:
     name: Build and run libretro-db/samples
     runs-on: ubuntu-latest
+    env:
+      APT_PKGS: build-essential zlib1g-dev ccache
     timeout-minutes: 15
 
     steps:
-      - name: Install dependencies
-        timeout-minutes: 20
-        run: |
-          pkgs="build-essential zlib1g-dev"
-          if dpkg -s $pkgs >/dev/null 2>&1; then
-            echo "All packages already present on runner image; skipping apt."
-            exit 0
-          fi
-          for i in 1 2 3; do
-            sudo timeout 90 apt-get update -y \
-              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && break
-            echo "apt-get update failed (attempt $i); retrying in 10s"
-            sleep 10
-          done
-          # Fetch first, under a bound: a download is safe to stop and
-          # resumes, an install is not. A mirror that stalls is left for
-          # the main archive on the next attempt.
-          for i in 1 2 3; do
-            sudo timeout 240 apt-get install -y --download-only \
-              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
-              $pkgs && break
-            [ $i = 3 ] && exit 1
-            echo "package download failed or stalled (attempt $i); retrying from archive.ubuntu.com"
-            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
-              [ -f "$f" ] || continue
-              sudo sed -i -e 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#g' \
-                -e 's#http://azure\.archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' "$f"
-            done
-            sudo timeout 90 apt-get update -y \
-              -o Acquire::Retries=3 -o Acquire::http::Timeout=30 || true
-          done
-          sudo apt-get install -y \
-            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
-            $pkgs
-
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Apt cache key
+        id: apt
+        run: sh .github/workflows/scripts/apt-cache-key.sh "$APT_PKGS"
+
+      - name: Restore apt cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.apt-cache
+          key: ${{ steps.apt.outputs.key }}
+          restore-keys: ${{ steps.apt.outputs.prefix }}
+
+      - name: Install dependencies
+        timeout-minutes: 20
+        run: sh .github/workflows/scripts/apt-install.sh $APT_PKGS
+
+      - name: Save apt cache
+        if: env.APT_CACHE_SAVE == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.apt-cache
+          key: ${{ steps.apt.outputs.key }}
+
+      - name: Link with lld
+        run: sh .github/workflows/scripts/use-lld.sh
+
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.ccache
           key: ccache-${{ github.workflow }}-${{ github.job }}-${{ github.sha }}
@@ -75,11 +67,10 @@ jobs:
       - name: Enable ccache
         run: |
           set -eu
-          command -v ccache >/dev/null 2>&1 || sudo apt-get install -y -qq ccache
           export CCACHE_DIR="$HOME/.ccache"
           echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
           echo "/usr/lib/ccache" >> "$GITHUB_PATH"
-          ccache -M 500M
+          ccache -M 250M
           ccache -z
 
       - name: Build and run samples
@@ -102,6 +93,7 @@ jobs:
           # failure.  These are built AND executed.
           declare -a RUN_TARGETS=(
             rmsgpack_overflow_test
+            rmsgpack_window_test
             libretrodb_leak_test
           )
 
@@ -210,3 +202,17 @@ jobs:
           if [[ $fails -gt 0 ]]; then
             exit 1
           fi
+
+      - name: ccache statistics
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: ccache -sv
+
+      - name: Save ccache
+        # Only master's pushes keep a cache: pull requests restore
+        # master's, so one push does not evict the next one's.
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ github.workflow }}-${{ github.job }}-${{ github.sha }}

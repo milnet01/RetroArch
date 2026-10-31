@@ -20,6 +20,7 @@
 
 #include <gfx/scaler/scaler.h>
 #include <gfx/video_frame.h>
+#include <retro_atomic.h>
 #include "../../verbosity.h"
 
 #ifdef HAVE_CONFIG_H
@@ -40,6 +41,8 @@
 #include <encodings/utf.h>
 
 #include "../font_driver.h"
+#include "../video_views.h"
+#include "../video_views_cpu.h"
 
 #include "../../configuration.h"
 #include "../../retroarch.h"
@@ -55,6 +58,21 @@ typedef struct sdl_video
 {
    struct scaler_ctx scaler;
    sdl_menu_frame_t menu;
+   struct
+   {
+      video_views_cpu_t cpu;
+      video_views_chains_t chains;
+      video_views_target_t canvas_target;
+      video_views_target_t ui_target;
+      /* Both eyes side by side, for anaglyph and interlaced */
+      SDL_Surface *canvas;
+      /* The menu at one eye's size, for side by side and top-bottom */
+      SDL_Surface *ui;
+      unsigned frame_dims;
+      /* For get_flags: the last frame with a map was drawn whole */
+      retro_atomic_int_t fallback;
+      bool direct_seen;
+   } views;
    SDL_Surface *screen;
 
    void *font;
@@ -73,6 +91,11 @@ static void sdl_gfx_free(void *data)
 
    if (vid->menu.frame)
       SDL_FreeSurface(vid->menu.frame);
+   video_views_cpu_free(&vid->views.cpu);
+   if (vid->views.canvas)
+      SDL_FreeSurface(vid->views.canvas);
+   if (vid->views.ui)
+      SDL_FreeSurface(vid->views.ui);
 
    if (vid->font)
       vid->font_driver->free(vid->font);
@@ -104,6 +127,13 @@ static void sdl_init_font(sdl_video_t *vid,
    {
       RARCH_LOG("[SDL] Could not initialize fonts.\n");
       return;
+   }
+   /* The atlas may grow when a message needs more glyphs than it holds;
+    * the glyphs are blitted from it in memory, so there is no texture
+    * to make again */
+   {
+      struct font_atlas *grow = vid->font_driver->get_atlas(vid->font);
+      grow->max_dims = VIDEO_SCALE_PACK(2048, 2048);
    }
 
    r = msg_color_r * 255;
@@ -179,12 +209,12 @@ static void sdl_render_msg(
          int base_x, base_y, max_width, max_height; \
          uint32_t             *out      = NULL; \
          const uint8_t             *src = NULL; \
-         glyph_width  = glyph->width; \
-         glyph_height = glyph->height; \
+         glyph_width  = VIDEO_SCALE_W(glyph->dims); \
+         glyph_height = VIDEO_SCALE_H(glyph->dims); \
          base_x       = (line_x + (pen_x)) + glyph->draw_offset_x; \
          base_y       = (line_y + (pen_y)) + glyph->draw_offset_y; \
-         src          = atlas->buffer + glyph->atlas_offset_x \
-            + glyph->atlas_offset_y * atlas->width; \
+         src          = atlas->buffer + VIDEO_SCALE_W(glyph->atlas_pos) \
+            + VIDEO_SCALE_H(glyph->atlas_pos) * atlas->width; \
          if (base_x < 0) \
          { \
             src         -= base_x; \
@@ -212,14 +242,17 @@ static void sdl_render_msg(
             for (x = 0; x < glyph_width; x++) \
             { \
                unsigned blend   = src[x]; \
-               unsigned out_pix = out[x]; \
-               unsigned       r = (out_pix >> rshift) & 0xff; \
-               unsigned       g = (out_pix >> gshift) & 0xff; \
-               unsigned       b = (out_pix >> bshift) & 0xff; \
-               unsigned   out_r = (r * (256 - blend) + vid->font_r * blend) >> 8; \
-               unsigned   out_g = (g * (256 - blend) + vid->font_g * blend) >> 8; \
-               unsigned   out_b = (b * (256 - blend) + vid->font_b * blend) >> 8; \
-               out[x]           = (out_r << rshift) | \
+               unsigned out_pix, r, g, b, out_r, out_g, out_b; \
+               if (!blend) \
+                  continue; \
+               out_pix = out[x]; \
+               r       = (out_pix >> rshift) & 0xff; \
+               g       = (out_pix >> gshift) & 0xff; \
+               b       = (out_pix >> bshift) & 0xff; \
+               out_r   = (r * (256 - blend) + vid->font_r * blend) >> 8; \
+               out_g   = (g * (256 - blend) + vid->font_g * blend) >> 8; \
+               out_b   = (b * (256 - blend) + vid->font_b * blend) >> 8; \
+               out[x]  = (out_r << rshift) | \
                                   (out_g << gshift) | \
                                   (out_b << bshift); \
             } \
@@ -251,8 +284,7 @@ static void sdl_gfx_set_handles(void)
 #endif
 }
 
-static void *sdl_gfx_init(const video_info_t *video,
-      input_driver_t **input, void **input_data)
+static void *sdl_gfx_init(const video_info_t *video)
 {
    unsigned full_x, full_y;
    const SDL_VideoInfo *video_info = NULL;
@@ -306,27 +338,18 @@ static void *sdl_gfx_init(const video_info_t *video,
       goto error;
    }
 
+   /* The size screenshots are cut to */
+   video_driver_set_output_dims(VIDEO_SCALE_PACK(vid->screen->w,
+         vid->screen->h));
+
    if (video->fullscreen)
       SDL_ShowCursor(SDL_DISABLE);
 
    sdl_gfx_set_handles();
 
-   if (input && input_data)
-   {
-      void *sdl_input = input_driver_init_wrap(&input_sdl1,
-            settings->arrays.input_joypad_driver);
-
-      if (sdl_input)
-      {
-         *input = &input_sdl1;
-         *input_data = sdl_input;
-      }
-      else
-      {
-         *input = NULL;
-         *input_data = NULL;
-      }
-   }
+   /* no input driver of this driver's own: the frontend starts the
+    * one that goes with an SDL 1.2 window */
+   input_driver_video_window(INPUT_WINDOW_SDL1, NULL);
 
    sdl_init_font(vid,
          video_font_enable,
@@ -358,6 +381,202 @@ error:
    return NULL;
 }
 
+/*
+ * VIEWS
+ *
+ * Each view is scaled straight from the frame into its placement in the
+ * window surface, or for anaglyph and interlaced into a canvas holding
+ * both eyes, whose halves the CPU then blends into the window surface.
+ */
+
+struct sdl_views_draw
+{
+   const video_views_map_t *map;
+   const uint8_t *frame;
+   uint8_t *pixels;
+   unsigned pitch;
+   unsigned stride;
+   enum scaler_pix_fmt fmt;
+};
+
+static void sdl_views_draw_direct(sdl_video_t *vid,
+      const struct sdl_views_draw *d, unsigned view,
+      const video_views_rect_t *dst, const video_views_rect_t *cut);
+static bool sdl_views_target_make(sdl_video_t *vid, SDL_Surface **t,
+      unsigned dims);
+static bool sdl_views_target_retire(sdl_video_t *vid, SDL_Surface **t);
+
+/* The views compositor, with these calls bound in. SDL takes no preset:
+ * every view is drawn straight from the frame, its chain the driver
+ * itself. */
+#define VV_FN(name)                     sdl_vv_##name
+#define VV_DRV                          sdl_video_t
+#define VV_CHAIN                        void
+#define VV_CREATE_STOCK(drv)            ((void*)(drv))
+#define VV_SYNC_PARAMS(drv, c)          ((void)0)
+#define VV_DRAW                         struct sdl_views_draw
+#define VV_DIRECT(p, d, v, r, c)        sdl_views_draw_direct(p, d, v, r, c)
+#define VV_PASS(p, d, f, r, c, a)       ((void)0)
+#define VV_TARGET                       SDL_Surface*
+#define VV_TARGET_MAKE(drv, t, dims)    sdl_views_target_make(drv, t, dims)
+#define VV_TARGET_RETIRE(drv, t)        sdl_views_target_retire(drv, t)
+#include "../video_views_draw.h"
+
+static bool sdl_views_target_retire(sdl_video_t *vid, SDL_Surface **t)
+{
+   if (*t)
+      SDL_FreeSurface(*t);
+   *t = NULL;
+   return true;
+}
+
+/* An XRGB8888 surface in system memory, as the window surface is */
+static bool sdl_views_target_make(sdl_video_t *vid, SDL_Surface **t,
+      unsigned dims)
+{
+   const SDL_PixelFormat *fmt = vid->screen->format;
+   *t = SDL_CreateRGBSurface(SDL_SWSURFACE,
+         (int)VIDEO_SCALE_W(dims), (int)VIDEO_SCALE_H(dims), 32,
+         fmt->Rmask, fmt->Gmask, fmt->Bmask, 0);
+   return *t != NULL;
+}
+
+static void sdl_views_draw_direct(sdl_video_t *vid,
+      const struct sdl_views_draw *d, unsigned view,
+      const video_views_rect_t *dst, const video_views_rect_t *cut)
+{
+   video_views_cpu_draw_view(&vid->views.cpu, d->fmt,
+         vid->scaler.scaler_type, &d->map->views[view], d->frame, d->pitch,
+         d->pixels, d->stride, dst, cut);
+}
+
+/* Whether this frame draws its views, with each drawn view's chain in
+ * @chains. Anaglyph and interlaced need the canvas. */
+static bool sdl_views_setup(sdl_video_t *vid,
+      const video_frame_info_t *video_info, void **chains)
+{
+   video_views_rect_t rects[RETRO_VIDEO_VIEWS_MAX];
+   const video_views_layout_t *layout = &video_info->views_layout;
+   bool offscreen = video_info->views.num_views && layout->offscreen;
+   bool views;
+   /* Every view's chain is the driver: there is nothing to make. */
+   vid->views.chains.count = video_info->views.num_views;
+   views          = video_info->views.num_views
+      && video_views_fit_frame(&video_info->views, vid->views.frame_dims)
+      && (!offscreen || sdl_vv_target_ensure(vid,
+            &vid->views.canvas_target, &vid->views.canvas,
+            layout->canvas_dims))
+      && sdl_vv_pick_chains(vid, &vid->views.chains, &video_info->views,
+            layout, true, true,
+            offscreen ? layout->canvas_dims : video_info->dims,
+            chains, rects);
+   /* A frame without the blend modes frees the canvas. */
+   if (!offscreen)
+      sdl_vv_target_drop(vid, &vid->views.canvas_target,
+            &vid->views.canvas);
+   retro_atomic_store_release_int(&vid->views.fallback,
+         (video_info->views.num_views && !views) ? 1 : 0);
+   if (views && !vid->views.direct_seen)
+   {
+      vid->views.direct_seen = true;
+      RARCH_LOG("[SDL] Views drawn straight from the frame.\n");
+   }
+   return views;
+}
+
+/* Draws the frame's views into the window surface, locked, or through
+ * the canvas */
+static void sdl_views_render(sdl_video_t *vid,
+      const video_frame_info_t *video_info, void *const *chains,
+      const void *frame, unsigned pitch)
+{
+   unsigned i;
+   struct sdl_views_draw d;
+   const video_views_layout_t *layout = &video_info->views_layout;
+   SDL_Surface *target = layout->offscreen
+      ? vid->views.canvas : vid->screen;
+
+   d.map    = &video_info->views;
+   d.frame  = (const uint8_t*)frame;
+   d.pitch  = pitch;
+   d.fmt    = vid->scaler.in_fmt;
+   d.pixels = (uint8_t*)target->pixels;
+   d.stride = target->pitch;
+   for (i = 0; i < (unsigned)target->h; i++)
+      memset(d.pixels + (size_t)i * d.stride, 0,
+            (size_t)target->w * sizeof(uint32_t));
+   sdl_vv_draw_placements(vid, &d, layout, chains, true,
+         VIDEO_SCALE_PACK(target->w, target->h), true);
+   if (layout->offscreen)
+      video_views_blend_xrgb8888((const uint32_t*)target->pixels,
+            target->pitch >> 2, (uint32_t*)vid->screen->pixels,
+            vid->screen->pitch >> 2,
+            VIDEO_SCALE_PACK(vid->screen->w, vid->screen->h),
+            layout->stereo_mode);
+}
+
+/* The menu, laid out at one eye's UI size, into each eye's area, with
+ * its alpha */
+static void sdl_views_menu(sdl_video_t *vid, const video_views_layout_t *layout)
+{
+   unsigned a;
+   struct scaler_ctx *ctx;
+   SDL_Surface *menu = vid->menu.frame;
+   unsigned dims     = layout->areas[0].dims;
+   if (!sdl_vv_target_ensure(vid, &vid->views.ui_target, &vid->views.ui,
+            dims))
+      return;
+   if (!(ctx = video_views_cpu_scaler(&vid->views.cpu, SCALER_FMT_ARGB8888,
+            vid->scaler.scaler_type, menu->w, menu->h, menu->pitch,
+            vid->views.ui->w, vid->views.ui->h, vid->views.ui->pitch)))
+      return;
+   if (SDL_MUSTLOCK(vid->views.ui))
+      SDL_LockSurface(vid->views.ui);
+   scaler_ctx_scale_direct(ctx, vid->views.ui->pixels, menu->pixels);
+   if (SDL_MUSTLOCK(vid->views.ui))
+      SDL_UnlockSurface(vid->views.ui);
+   SDL_SetAlpha(vid->views.ui, SDL_SRCALPHA, menu->format->alpha);
+   for (a = 0; a < layout->num_areas; a++)
+   {
+      SDL_Rect r;
+      r.x = (Sint16)VIDEO_POS_X(layout->areas[a].pos);
+      r.y = (Sint16)VIDEO_POS_Y(layout->areas[a].pos);
+      r.w = (Uint16)VIDEO_SCALE_W(layout->areas[a].dims);
+      r.h = (Uint16)VIDEO_SCALE_H(layout->areas[a].dims);
+      SDL_BlitSurface(vid->views.ui, NULL, vid->screen, &r);
+   }
+}
+
+/* @msg in each eye's area, through a surface over that part of the
+ * window surface */
+static void sdl_views_msg(sdl_video_t *vid, const video_views_layout_t *layout,
+      const char *msg, const video_frame_info_t *video_info)
+{
+   unsigned a;
+   const SDL_PixelFormat *fmt = vid->screen->format;
+   for (a = 0; a < layout->num_areas; a++)
+   {
+      SDL_Surface *eye;
+      const video_views_rect_t *r = &layout->areas[a];
+      if (     VIDEO_POS_X(r->pos) < 0 || VIDEO_POS_Y(r->pos) < 0
+            || VIDEO_POS_X(r->pos) + VIDEO_SCALE_W(r->dims)
+               > (unsigned)vid->screen->w
+            || VIDEO_POS_Y(r->pos) + VIDEO_SCALE_H(r->dims)
+               > (unsigned)vid->screen->h)
+         continue;
+      eye = SDL_CreateRGBSurfaceFrom((uint8_t*)vid->screen->pixels
+            + (size_t)VIDEO_POS_Y(r->pos) * vid->screen->pitch
+            + (size_t)VIDEO_POS_X(r->pos) * sizeof(uint32_t),
+            (int)VIDEO_SCALE_W(r->dims), (int)VIDEO_SCALE_H(r->dims), 32,
+            vid->screen->pitch, fmt->Rmask, fmt->Gmask, fmt->Bmask, 0);
+      if (!eye)
+         continue;
+      sdl_render_msg(vid, eye, msg, eye->w, eye->h, eye->format,
+            video_info->font_msg_pos_x, video_info->font_msg_pos_y);
+      SDL_FreeSurface(eye);
+   }
+}
+
 static void sdl_gfx_check_window(sdl_video_t *vid)
 {
    SDL_Event event;
@@ -380,6 +599,9 @@ static bool sdl_gfx_frame(void *data, const void *frame,
    unsigned width = VIDEO_SCALE_W(dims);
    unsigned height = VIDEO_SCALE_H(dims);
    char title[128];
+   void *chains[RETRO_VIDEO_VIEWS_MAX];
+   bool views         = false;
+   bool per_eye       = false;
    sdl_video_t   *vid = (sdl_video_t*)data;
 #ifdef HAVE_MENU
    bool menu_is_alive = (video_info->menu_st_flags & MENU_ST_FLAG_ALIVE) ? true : false;
@@ -388,6 +610,14 @@ static bool sdl_gfx_frame(void *data, const void *frame,
    if (!frame)
       return true;
 
+   vid->views.frame_dims = dims;
+   views                 = sdl_views_setup(vid, video_info, chains);
+   /* The UI is drawn into each eye's area */
+   per_eye               = views && video_views_ui_per_eye(
+         &video_info->views, &video_info->views_layout, true);
+   if (!per_eye)
+      sdl_vv_target_drop(vid, &vid->views.ui_target, &vid->views.ui);
+
    title[0] = '\0';
 
    video_driver_get_window_title(title, sizeof(title));
@@ -395,26 +625,36 @@ static bool sdl_gfx_frame(void *data, const void *frame,
    if (SDL_MUSTLOCK(vid->screen))
       SDL_LockSurface(vid->screen);
 
-   video_frame_scale(
-         &vid->scaler,
-         vid->screen->pixels,
-         frame,
-         vid->scaler.in_fmt,
-         vid->screen->w,
-         vid->screen->h,
-         vid->screen->pitch,
-         width,
-         height,
-         pitch);
+   if (views)
+      sdl_views_render(vid, video_info, chains, frame, pitch);
+   else
+      video_frame_scale(
+            &vid->scaler,
+            vid->screen->pixels,
+            frame,
+            vid->scaler.in_fmt,
+            vid->screen->w,
+            vid->screen->h,
+            vid->screen->pitch,
+            width,
+            height,
+            pitch);
 
 #ifdef HAVE_MENU
    menu_driver_frame(menu_is_alive, video_info);
 
    if (vid->menu.active)
-      SDL_BlitSurface(vid->menu.frame, NULL, vid->screen, NULL);
+   {
+      if (per_eye)
+         sdl_views_menu(vid, &video_info->views_layout);
+      else
+         SDL_BlitSurface(vid->menu.frame, NULL, vid->screen, NULL);
+   }
 #endif
 
-   if (msg)
+   if (msg && per_eye)
+      sdl_views_msg(vid, &video_info->views_layout, msg, video_info);
+   else if (msg)
       sdl_render_msg(vid, vid->screen,
             msg, vid->screen->w, vid->screen->h, vid->screen->format,
             video_info->font_msg_pos_x,
@@ -519,10 +759,43 @@ static void sdl_grab_mouse_toggle(void *data)
 static uint32_t sdl_get_flags(void *data)
 {
    uint32_t             flags   = 0;
+   sdl_video_t           *vid   = (sdl_video_t*)data;
 
    BIT32_SET(flags, GFX_CTX_FLAGS_SCREENSHOTS_SUPPORTED);
+   if (vid)
+   {
+      BIT32_SET(flags, GFX_CTX_FLAGS_VIDEO_VIEWS);
+      if (retro_atomic_load_acquire_int(&vid->views.fallback))
+         BIT32_SET(flags, GFX_CTX_FLAGS_VIDEO_VIEWS_FALLBACK);
+   }
 
    return flags;
+}
+
+/* The window surface the last frame was composed in, bottom row first
+ * as BGR24 */
+static bool sdl_gfx_read_viewport(void *data, uint8_t *buffer, bool is_idle)
+{
+   int x, y;
+   sdl_video_t *vid = (sdl_video_t*)data;
+   if (!vid || !vid->screen)
+      return false;
+   if (SDL_MUSTLOCK(vid->screen))
+      SDL_LockSurface(vid->screen);
+   for (y = vid->screen->h - 1; y >= 0; y--)
+   {
+      const uint32_t *row = (const uint32_t*)((const uint8_t*)
+            vid->screen->pixels + (size_t)y * vid->screen->pitch);
+      for (x = 0; x < vid->screen->w; x++)
+      {
+         *buffer++ = (uint8_t)(row[x]);
+         *buffer++ = (uint8_t)(row[x] >> 8);
+         *buffer++ = (uint8_t)(row[x] >> 16);
+      }
+   }
+   if (SDL_MUSTLOCK(vid->screen))
+      SDL_UnlockSurface(vid->screen);
+   return true;
 }
 
 static const video_poke_interface_t sdl_poke_interface = {
@@ -589,7 +862,7 @@ video_driver_t video_sdl = {
    NULL, /* set_viewport */
    NULL, /* set_rotation */
    sdl_gfx_viewport_info,
-   NULL, /* read_viewport  */
+   sdl_gfx_read_viewport,
 #ifdef HAVE_OVERLAY
    NULL, /* get_overlay_interface */
 #endif

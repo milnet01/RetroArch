@@ -29,6 +29,29 @@
 
 RETRO_BEGIN_DECLS
 
+/* How many rectangles @a's dirty region is sent as */
+static INLINE unsigned font_atlas_dirty_rects(const struct font_atlas *a)
+{
+   return a->dirty_rects ? a->dirty_rects : 1;
+}
+
+/* Rectangle @i of @a's dirty region, its corners packed as dirty_xy0
+ * and dirty_xy1 are */
+static INLINE void font_atlas_dirty_rect(const struct font_atlas *a,
+      unsigned i, unsigned *xy0, unsigned *xy1)
+{
+   if (a->dirty_rects)
+   {
+      *xy0 = a->dirty_rect[i][0];
+      *xy1 = a->dirty_rect[i][1];
+   }
+   else
+   {
+      *xy0 = a->dirty_xy0;
+      *xy1 = a->dirty_xy1;
+   }
+}
+
 typedef struct font_renderer
 {
    void *(*init)(void *data, const char *font_path,
@@ -69,13 +92,14 @@ typedef struct font_rasterizer
    unsigned (*glyph_index)(void *face, uint32_t code);
 
    /* Draws glyph @gi (for codepoint @code; 0 asks for the face's
-    * missing-glyph mark) into the @cell_w x @cell_h cell at @dst,
-    * whose rows are @pitch samples apart, covering the whole cell, and
-    * fills width, height, draw_offset_x/y and advance_x/y of @glyph,
-    * leaving its atlas offsets alone. Returns false when nothing can
-    * be drawn for @gi; the cell is then left as it was. */
+    * missing-glyph mark) into the cell at @dst, @cell_dims in
+    * VIDEO_SCALE_PACK's layout, whose rows are @pitch samples apart,
+    * covering the whole cell, and fills dims, draw_offset_x/y
+    * and advance_x/y of @glyph, leaving its atlas offset alone.
+    * Returns false when nothing can be drawn for @gi; nothing is then
+    * drawn from the cell until another glyph is put in it. */
    bool (*render_glyph)(void *face, uint32_t code, unsigned gi,
-         uint8_t *dst, unsigned pitch, unsigned cell_w, unsigned cell_h,
+         uint8_t *dst, unsigned pitch, unsigned cell_dims,
          enum font_atlas_format fmt, struct font_glyph *glyph);
 
    /* The cell every glyph of this face is drawn into, packed with
@@ -181,6 +205,10 @@ typedef struct font_data
    /* The threading_hint font_driver_init_first() was called with, so
     * a rebuild reaches the backend on the same thread as creation. */
    bool threading_hint;
+   /* The thread that made it, whose list it is on: FONT_OWNER_* */
+   uint8_t owner;
+   /* Retired by another thread: the link on its owner's stack */
+   void *retired_next;
    /* Line metrics, read from the renderer once when the font is
     * created. Renderers fill these at init and never change them, so
     * callers can use them directly instead of asking again - which
@@ -228,6 +256,35 @@ void font_driver_render_msg(void *data,
       const char *msg, size_t msg_len,
       const struct font_params *params, void *font_data);
 
+/* Marks the start of a video frame for the glyph caches: a cell looked
+ * up during a frame is not given to another codepoint before the next
+ * one begins. */
+void font_driver_frame_begin(void);
+
+/* What a video driver's font draws a message with: the caller's
+ * font_params, or for the on-screen message (NULL params) the message
+ * position and colour from the settings, left aligned and full screen,
+ * opaque, under the shadow every driver used to fill in by hand (2 px
+ * down and left, at 0.3 of the colour). */
+typedef struct font_params_resolved
+{
+   const float *color_hp;  /* The caller's float colour, or NULL */
+   float x;
+   float y;
+   float scale;
+   float drop_mod;
+   float drop_alpha;
+   float color[4];         /* RGBA, 0..1, from the packed colour */
+   unsigned rgba[4];       /* The same, as bytes */
+   int drop_x;
+   int drop_y;
+   enum text_alignment text_align;
+   bool full_screen;
+} font_params_resolved_t;
+
+void font_driver_resolve_params(const struct font_params *params,
+      font_params_resolved_t *out);
+
 /* The width a video driver's font gives msg at scale, through the glyph
  * cache @renderer_data that @renderer created: what a driver's
  * get_message_width returns, unless it uploads atlas cells as glyphs
@@ -245,8 +302,9 @@ int font_driver_get_message_width(void *font_data, const char *msg, size_t len, 
  * trigger one — padding, thumbnail scale, a nav bar toggle — mostly
  * do not move any font size.
  *
- * False for a NULL handle, and for one that is no longer live, so a
- * context reset that cleared or released its fonts always rebuilds.
+ * False for a NULL handle, and for one that is no longer live or is
+ * another thread's, so a context reset that cleared or released its
+ * fonts always rebuilds.
  * Conservative in both directions: it answers no whenever it cannot
  * be sure, and a wrong no only costs the work that would have been
  * done anyway. Callers must pass the same size they would pass to the
@@ -266,21 +324,30 @@ void font_driver_free(font_data_t *font);
  * survive. Build the replacement first, retire the old handle with
  * this, and keep drawing.
  *
+ * Any thread may retire a font; one made on another thread is handed
+ * to that thread, which frees it on its own frames.
+ *
  * The handle must not be used again after this call. */
 void font_driver_free_deferred(font_data_t *font);
 
-/* Age the deferred queue by one frame, releasing whatever has come
- * due. Called once per frame from video_driver_frame() after the
- * frame has been handed to the driver. With flush set, everything is
- * released immediately, for teardown paths where there is no later
- * frame to wait for. */
+/* Age the calling thread's deferred queue by one frame, releasing
+ * whatever has come due. Called once per frame after the frame has
+ * been handed to the driver: from video_driver_frame() on the main
+ * thread, and by the threaded wrapper on the video thread. With flush
+ * set, everything is released immediately, for teardown paths where
+ * there is no later frame to wait for. */
 void font_driver_free_pending(bool flush);
 
-/* Rebuild every live font from its current path, in place. Used when
- * the menu language changes and the fonts must follow, without tearing
- * down the video driver to do it. Fonts whose path is unchanged are
- * left alone. Returns the number rebuilt. */
+/* The menu language has changed: the fonts that follow it are rebuilt
+ * in place, the calling thread's now and the threaded video thread's
+ * at its next frame (font_driver_follow_language()), without tearing
+ * down the video driver. Fonts whose path is unchanged are left alone.
+ * Returns the number of the calling thread's fonts rebuilt. */
 unsigned font_driver_reload_fonts(void);
+
+/* The calling thread's fonts that follow the language, rebuilt if it
+ * has changed since they last were. Returns the number rebuilt. */
+unsigned font_driver_follow_language(void);
 
 /* Rebuild the shared OSD font in place against a path and a size. An
  * empty or NULL font_path means "let the renderer choose", as at

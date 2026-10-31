@@ -1,6 +1,6 @@
 ROOT   = ../../..
 COMMON = $(ROOT)/libretro-common
-CFLAGS ?= -O2 -g
+CFLAGS ?= -O2 -g1
 CPPFLAGS += -I$(COMMON)/include -DHAVE_CRYPTO -D_GNU_SOURCE
 SRC = smb_test.c $(COMMON)/net/net_smb2.c $(COMMON)/net/net_krb5.c $(COMMON)/net/net_socket.c $(COMMON)/net/net_compat.c \
       $(COMMON)/crypto/crypto.c $(COMMON)/crypto/kdf.c $(COMMON)/hash/lrc_hash.c $(COMMON)/utils/md5.c $(COMMON)/streams/file_stream.c \
@@ -9,7 +9,12 @@ SRC = smb_test.c $(COMMON)/net/net_smb2.c $(COMMON)/net/net_krb5.c $(COMMON)/net
       $(COMMON)/string/stdstring.c $(COMMON)/encodings/encoding_utf.c
 ifneq (,$(findstring mingw,$(CC))$(findstring MINGW,$(MSYSTEM))$(findstring Windows,$(OS)))
    LDLIBS += -lws2_32 -liphlpapi
+else
+   # file mapping as the shipping build has it (Win32 maps without it)
+   MMAP_FLAGS = -DHAVE_MMAP
 endif
+all: smb_test vfs_test smb_idle_test vfs_threads_test
+
 smb_test: $(SRC)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SRC) $(LDLIBS) -o $@
 
@@ -22,7 +27,7 @@ smb_idle_test: $(IDLE_SRC)
 	$(CC) $(CPPFLAGS) -DHAVE_RETROSMB -DHAVE_SMBCLIENT -DHAVE_NETWORKING -DRARCH_INTERNAL -I$(ROOT) $(CFLAGS) $(IDLE_SRC) $(LDLIBS) -o $@
 THR_SRC = vfs_threads_test.c $(filter-out vfs_test.c,$(VFS_SRC)) $(COMMON)/rthreads/rthreads.c $(COMMON)/rthreads/retro_eventcount.c $(COMMON)/file/retro_dirent.c
 vfs_threads_test: $(THR_SRC)
-	$(CC) $(CPPFLAGS) -DHAVE_RETROSMB -DHAVE_SMBCLIENT -DHAVE_NETWORKING -DHAVE_THREADS -DRARCH_INTERNAL -I$(ROOT) $(CFLAGS) $(THR_SRC) $(LDLIBS) -lpthread -o $@
+	$(CC) $(CPPFLAGS) -DHAVE_RETROSMB -DHAVE_SMBCLIENT -DHAVE_NETWORKING -DHAVE_THREADS $(MMAP_FLAGS) -DRARCH_INTERNAL -I$(ROOT) $(CFLAGS) $(THR_SRC) $(LDLIBS) -lpthread -o $@
 # The same VFS tests over a system libsmb2 in place of the built-in
 # client (the --enable-libsmb build): the backend with the library
 # behind the HAVE_SMBCLIENT surface, no crypto, no built-in client.
@@ -35,8 +40,10 @@ vfs_test_libsmb2: vfs_test.c $(L2_SRC)
 smb_idle_test_libsmb2: smb_idle_test.c $(L2_SRC)
 	$(CC) -I$(COMMON)/include -D_GNU_SOURCE -DHAVE_SMBCLIENT -DHAVE_STDINT_H -DHAVE_NETWORKING -DRARCH_INTERNAL -I$(ROOT) $(LIBSMB2_CFLAGS) $(CFLAGS) smb_idle_test.c $(L2_SRC) $(LIBSMB2_LIBS) $(LDLIBS) -o $@
 vfs_threads_test_libsmb2: vfs_threads_test.c $(L2_SRC)
-	$(CC) -I$(COMMON)/include -D_GNU_SOURCE -DHAVE_SMBCLIENT -DHAVE_STDINT_H -DHAVE_NETWORKING -DHAVE_THREADS -DRARCH_INTERNAL -I$(ROOT) $(LIBSMB2_CFLAGS) $(CFLAGS) vfs_threads_test.c $(L2_SRC) $(COMMON)/rthreads/rthreads.c $(COMMON)/rthreads/retro_eventcount.c $(COMMON)/file/retro_dirent.c $(LIBSMB2_LIBS) $(LDLIBS) -lpthread -o $@
+	$(CC) -I$(COMMON)/include -D_GNU_SOURCE -DHAVE_SMBCLIENT -DHAVE_STDINT_H -DHAVE_NETWORKING -DHAVE_THREADS $(MMAP_FLAGS) -DRARCH_INTERNAL -I$(ROOT) $(LIBSMB2_CFLAGS) $(CFLAGS) vfs_threads_test.c $(L2_SRC) $(COMMON)/rthreads/rthreads.c $(COMMON)/rthreads/retro_eventcount.c $(COMMON)/file/retro_dirent.c $(LIBSMB2_LIBS) $(LDLIBS) -lpthread -o $@
+cloud_sync_test_libsmb2: cloud_sync_test.c $(L2_SRC)
+	$(CC) -I$(COMMON)/include -D_GNU_SOURCE -DHAVE_SMBCLIENT -DHAVE_STDINT_H -DHAVE_NETWORKING -DHAVE_CLOUDSYNC -DHAVE_THREADS -DRARCH_INTERNAL -I$(ROOT) $(LIBSMB2_CFLAGS) $(CFLAGS) cloud_sync_test.c $(L2_SRC) $(COMMON)/rthreads/rthreads.c $(COMMON)/rthreads/retro_eventcount.c $(LIBSMB2_LIBS) $(LDLIBS) -lpthread -o $@
 
 clean:
-	rm -f smb_idle_test smb_idle_test.exe smb_idle_test_libsmb2 smb_test smb_test.exe vfs_test vfs_test.exe vfs_threads_test vfs_threads_test.exe vfs_test_libsmb2 vfs_threads_test_libsmb2
-.PHONY: clean
+	rm -f smb_idle_test smb_idle_test.exe smb_idle_test_libsmb2 smb_test smb_test.exe vfs_test vfs_test.exe vfs_threads_test vfs_threads_test.exe vfs_test_libsmb2 vfs_threads_test_libsmb2 cloud_sync_test_libsmb2
+.PHONY: all clean

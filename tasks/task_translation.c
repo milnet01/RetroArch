@@ -213,6 +213,9 @@ bool is_narrator_running(bool accessibility_enable)
 }
 #endif
 
+/* Between looks at whether the speech or the narration has ended. */
+#define AUTO_TRANSLATE_PARK_USEC 50000
+
 static void task_auto_translate_handler(retro_task_t *task)
 {
    int               *mode_ptr = (int*)task->user_data;
@@ -244,6 +247,9 @@ static void task_auto_translate_handler(retro_task_t *task)
          break;
    }
 
+   /* Nothing signals the end of the speech or the narration, so look
+    * again shortly. */
+   task_queue_park(task, AUTO_TRANSLATE_PARK_USEC);
    return;
 
 task_finished:
@@ -274,22 +280,22 @@ static void ai_service_call_auto_translate_task(access_state_t *access_st,
    }
    else /* Speech or Narrator Mode */
    {
-      int* mode          = NULL;
+      int* mode          = (int*)malloc(sizeof(int));
       retro_task_t  *t   = task_init();
-      if (!t)
-         return;
-
-      mode               = (int*)malloc(sizeof(int));
-
-      t->user_data       = NULL;
-      t->handler         = task_auto_translate_handler;
-      t->flags          |= RETRO_TASK_FLG_MUTE;
-
-      if (mode)
+      if (!t || !mode)
       {
-         *mode           = ai_service_mode;
-         t->user_data    = mode;
+         free(t);
+         free(mode);
+         return;
       }
+
+      *mode              = ai_service_mode;
+      t->user_data       = mode;
+      t->handler         = task_auto_translate_handler;
+      /* It waits on the mixer and the narrator, then sets the next
+       * request off: the frontend's state, read and written where the
+       * frontend runs. */
+      t->flags          |= RETRO_TASK_FLG_MUTE | RETRO_TASK_FLG_MAIN_THREAD;
 
       task_queue_push(t);
    }
@@ -306,7 +312,6 @@ static void handle_translation_response(
    settings_t* settings              = config_get_ptr();
    uint32_t runloop_flags            = runloop_get_flags();
 #ifdef HAVE_ACCESSIBILITY
-   input_driver_state_t *input_st    = input_state_get_ptr();
 #endif
    video_driver_state_t
       *video_st                      = video_state_get_ptr();
@@ -369,7 +374,8 @@ static void handle_translation_response(
       unsigned dims   = 0;
       bool     is_hw_fb;
       video_driver_cached_frame_info(&dims, NULL, NULL);
-      is_hw_fb = video_driver_cached_frame_is_hw_render();
+      is_hw_fb = video_driver_cached_frame_is_hw_render()
+         || video_driver_pix_fmt == RETRO_PIXEL_FORMAT_SCRGB_RGBA16F;
 
       /* try two different modes for text display *
        * In the first mode, we use display widget overlays, but they require
@@ -678,47 +684,47 @@ static void handle_translation_response(
                case 1:
 #ifdef HAVE_ACCESSIBILITY
                   if (key[0] == 'b')
-                     input_st->ai_gamepad_state[0]  = 2;
+                     input_driver_ai_gamepad_press(0);
                   else if (key[0] == 'y')
-                     input_st->ai_gamepad_state[1]  = 2;
+                     input_driver_ai_gamepad_press(1);
                   else if (key[0] == 'a')
-                     input_st->ai_gamepad_state[8]  = 2;
+                     input_driver_ai_gamepad_press(8);
                   else if (key[0] == 'x')
-                     input_st->ai_gamepad_state[9]  = 2;
+                     input_driver_ai_gamepad_press(9);
                   else if (key[0] == 'l')
-                     input_st->ai_gamepad_state[10] = 2;
+                     input_driver_ai_gamepad_press(10);
                   else if (key[0] == 'r')
-                     input_st->ai_gamepad_state[11] = 2;
+                     input_driver_ai_gamepad_press(11);
 #endif
                   break;
                case 2:
 #ifdef HAVE_ACCESSIBILITY
                   if (memcmp(key, "up", 2) == 0)
-                     input_st->ai_gamepad_state[4]  = 2;
+                     input_driver_ai_gamepad_press(4);
                   else if (memcmp(key, "l2", 2) == 0)
-                     input_st->ai_gamepad_state[12] = 2;
+                     input_driver_ai_gamepad_press(12);
                   else if (memcmp(key, "r2", 2) == 0)
-                     input_st->ai_gamepad_state[13] = 2;
+                     input_driver_ai_gamepad_press(13);
                   else if (memcmp(key, "l3", 2) == 0)
-                     input_st->ai_gamepad_state[14] = 2;
+                     input_driver_ai_gamepad_press(14);
                   else if (memcmp(key, "r3", 2) == 0)
-                     input_st->ai_gamepad_state[15] = 2;
+                     input_driver_ai_gamepad_press(15);
 #endif
                   break;
                case 4:
 #ifdef HAVE_ACCESSIBILITY
                   if (memcmp(key, "down", 4) == 0)
-                     input_st->ai_gamepad_state[5]  = 2;
+                     input_driver_ai_gamepad_press(5);
                   else if (memcmp(key, "left", 4) == 0)
-                     input_st->ai_gamepad_state[6]  = 2;
+                     input_driver_ai_gamepad_press(6);
 #endif
                   break;
                case 5:
 #ifdef HAVE_ACCESSIBILITY
                   if (memcmp(key, "start", 5) == 0)
-                     input_st->ai_gamepad_state[3]  = 2;
+                     input_driver_ai_gamepad_press(3);
                   else if (memcmp(key, "right", 5) == 0)
-                     input_st->ai_gamepad_state[7]  = 2;
+                     input_driver_ai_gamepad_press(7);
                   else
 #endif
                   if (memcmp(key, "pause", 5) == 0)
@@ -727,7 +733,7 @@ static void handle_translation_response(
                case 6:
 #ifdef HAVE_ACCESSIBILITY
                   if (memcmp(key, "select", 6) == 0)
-                     input_st->ai_gamepad_state[2]  = 2;
+                     input_driver_ai_gamepad_press(2);
 #endif
                   break;
                case 7:
@@ -916,6 +922,29 @@ static const char *ai_service_get_str(enum translation_lang id)
    return "";
 }
 
+/* A caller of run_translation_service_notify(), told after the usual
+ * handling. */
+typedef struct
+{
+   retro_task_callback_t cb;
+   void *user_data;
+} translation_notify_t;
+
+static void translation_notify(void *userdata, const char *text,
+      const char *error)
+{
+   translation_notify_t *n = (translation_notify_t*)userdata;
+   n->cb(NULL, (void*)text, n->user_data, error);
+   free(n);
+}
+
+static void handle_translation_response_notify(
+      translation_response_t *response, void *userdata)
+{
+   handle_translation_response(response, NULL);
+   translation_notify(userdata, response->text, response->error);
+}
+
 /* Read-side callback used by run_translation_service for the SW
  * core path: convert the cached frame's pixels to BGR24 in-place
  * into a pre-allocated heap buffer.  The callback runs inside
@@ -953,6 +982,13 @@ static void translation_sw_convert_cb(void *userdata,
 
 bool run_translation_service(settings_t *settings, bool paused)
 {
+   return run_translation_service_notify(settings, paused, NULL, NULL);
+}
+
+bool run_translation_service_notify(settings_t *settings, bool paused,
+      retro_task_callback_t cb, void *user_data)
+{
+   translation_notify_t *notify      = NULL;
    struct video_viewport vp;
    size_t pitch;
    unsigned dims                     = 0;
@@ -963,8 +999,8 @@ bool run_translation_service(settings_t *settings, bool paused)
    char *sys_lbl                     = NULL;
    core_info_t *core_info            = NULL;
    video_driver_state_t *video_st    = video_state_get_ptr();
-   access_state_t *access_st         = access_state_get_ptr();
 #ifdef HAVE_GFX_WIDGETS
+   access_state_t *access_st         = access_state_get_ptr();
    /* For the case when ai service pause is disabled. */
    if (     (gfx_widgets_ai_service_overlay_get_state() != 0)
          && (access_st->ai_service_auto == 1))
@@ -1019,7 +1055,8 @@ bool run_translation_service(settings_t *settings, bool paused)
                &has_cpu_pixels))
          goto finish;
 
-      if (!has_cpu_pixels)
+      if (!has_cpu_pixels
+            || video_st->pix_fmt == RETRO_PIXEL_FORMAT_SCRGB_RGBA16F)
       {
          /* HW render core, or no cached frame yet.  Fall back to
           * read_viewport for OCR -- not ideal (the viewport may
@@ -1128,12 +1165,21 @@ bool run_translation_service(settings_t *settings, bool paused)
             target_lang = ai_service_get_str(
                   (enum translation_lang)ai_service_target_lang);
 
-         success = driver->translate(
+         if (cb)
+         {
+            if (!(notify = (translation_notify_t*)malloc(sizeof(*notify))))
+               goto finish;
+            notify->cb        = cb;
+            notify->user_data = user_data;
+         }
+         if (!(success = driver->translate(
                bit24_image, dims,
                source_lang, target_lang,
                ai_service_mode,
                sys_lbl, paused,
-               handle_translation_response, NULL);
+               notify ? handle_translation_response_notify
+                      : handle_translation_response, notify)))
+            free(notify);
       }
    }
 
@@ -1189,11 +1235,15 @@ static void handle_translation_cb(
    {
       if (error)
          RARCH_ERR("[Translation] HTTP error: %s\n", error);
-      goto finish;
+      err_str = strdup(error ? error : "The AI service did not answer.");
+      goto failed;
    }
 
    if (!(json = rjson_open_buffer(data->data, data->len)))
-      goto finish;
+   {
+      err_str = strdup("Invalid JSON body.");
+      goto failed;
+   }
 
    /* Parse JSON body for the image and sound data */
    for (;;)
@@ -1277,12 +1327,21 @@ static void handle_translation_cb(
        && access_st->ai_service_auto != 2)
    {
       RARCH_ERR("[Translation] Invalid JSON body.\n");
-      goto finish;
+      if (!err_str)
+         err_str = strdup("Invalid JSON body.");
+      goto failed;
    }
 
    /* Hand off to caller's response handler */
    if (ctx && ctx->callback)
       ctx->callback(&response, ctx->userdata);
+   goto finish;
+
+failed:
+   /* Only a notified caller hears of a request that came to nothing;
+    * the usual handling never did. */
+   if (ctx && ctx->callback == handle_translation_response_notify)
+      translation_notify(ctx->userdata, NULL, err_str);
 
 finish:
    if (ctx)
@@ -1333,9 +1392,8 @@ static bool http_translate(
    int bmp64_len                     = 0;
    bool success                      = false;
    settings_t *settings              = config_get_ptr();
+#ifdef HAVE_GFX_WIDGETS
    video_driver_state_t *video_st    = video_state_get_ptr();
-#ifdef HAVE_ACCESSIBILITY
-   input_driver_state_t *input_st    = input_state_get_ptr();
 #endif
 #ifdef DEBUG
    access_state_t *access_st         = access_state_get_ptr();
@@ -1402,6 +1460,10 @@ static bool http_translate(
    {
       static const char* state_labels[] = { "b", "y", "select", "start", "up", "down", "left", "right", "a", "x", "l", "r", "l2", "r2", "l3", "r3" };
       int i;
+#ifdef HAVE_ACCESSIBILITY
+      /* in RetroPad order, as the labels are */
+      uint16_t held = input_driver_ai_gamepad_held();
+#endif
       for (i = 0; i < (int)ARRAY_SIZE(state_labels); i++)
       {
          rjsonwriter_raw(jsonwriter, ",", 1);
@@ -1411,7 +1473,7 @@ static bool http_translate(
          rjsonwriter_raw(jsonwriter, " ", 1);
 #ifdef HAVE_ACCESSIBILITY
          rjsonwriter_rawf(jsonwriter, "%u",
-               (input_st->ai_gamepad_state[i] ? 1 : 0));
+               (unsigned)((held >> i) & 1u));
 #else
          rjsonwriter_rawf(jsonwriter, "%u", 0);
 #endif
@@ -1591,8 +1653,14 @@ static void handle_apple_translation_cb(
          apple_translate_free_data(sound_data);
    }
    else
+   {
       RARCH_ERR("[Translation] Apple translation failed: %s\n",
             error ? error : "unknown error");
+      /* as for the HTTP backend: only a notified caller hears of it */
+      if (apple_translate_ctx.callback == handle_translation_response_notify)
+         translation_notify(apple_translate_ctx.userdata, NULL,
+               error ? error : "Apple translation failed.");
+   }
 }
 
 static bool apple_translate(

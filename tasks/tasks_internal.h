@@ -54,6 +54,11 @@
 
 RETRO_BEGIN_DECLS
 
+#ifdef HAVE_BLUETOOTH
+bool task_push_bluetooth_scan(retro_task_callback_t cb);
+#endif
+
+
 typedef struct nbio_buf
 {
    void *buf;
@@ -206,9 +211,6 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
       const char *config_dir);
 #endif
 
-bool task_push_bluetooth_scan(retro_task_callback_t cb);
-
-
 bool task_push_wifi_scan(retro_task_callback_t cb);
 bool task_push_wifi_enable(retro_task_callback_t cb);
 bool task_push_wifi_disable(retro_task_callback_t cb);
@@ -282,12 +284,29 @@ bool task_push_keychain_passphrase(const char *passphrase);
  * name will be determined automatically
  * > core_display_name *must* be set to a non-empty
  *   string if task_push_core_backup() is *not* called
- *   on the main thread */
+ *   on the main thread
+ * NOTE 3: @cb, if set, is called with @user_data when the
+ * task retires, on the thread that retires the queue, once
+ * for every task this returns */
 void *task_push_core_backup(
       const char *core_path, const char *core_display_name,
       uint32_t crc, enum core_backup_mode backup_mode,
       size_t auto_backup_history_size,
-      const char *dir_core_assets, bool mute);
+      const char *dir_core_assets, bool mute,
+      retro_task_callback_t cb, void *user_data);
+
+/* An automatic backup that also installs a new core: @staged_path,
+ * extracted on the same volume as @core_path, replaces @core_path,
+ * and the core it replaces is moved into the backups as it is rather
+ * than compressed into them; where it cannot be moved it is copied as
+ * task_push_core_backup() would.  @cb gets an error exactly when the
+ * new core could not be installed. */
+void *task_push_core_backup_install(
+      const char *core_path, const char *staged_path,
+      const char *core_display_name, uint32_t crc,
+      size_t auto_backup_history_size,
+      const char *dir_core_assets, bool mute,
+      retro_task_callback_t cb, void *user_data);
 
 /* NOTE: If 'core_loaded' is true, menu stack should be
  * flushed if task_push_core_restore() returns true */
@@ -308,6 +327,23 @@ bool task_push_pl_manager_clean_playlist(const playlist_config_t *playlist_confi
 bool task_push_image_load(const char *fullpath,
       bool supports_rgba, unsigned upscale_threshold,
       unsigned downscale_cap,
+      retro_task_callback_t cb, void *userdata);
+
+enum task_image_load_flags
+{
+   /* Decode in R,G,B,A memory order rather than ARGB words */
+   TASK_IMAGE_LOAD_RGBA = (1 << 0),
+   /* The caller uploads the image and takes RGBA half floats - linear
+    * scRGB, ->fp16 set - which an HDR video still is then decoded as
+    * wherever the driver offers IMAGE_PIXFMT_FP16. Such a still
+    * is never resampled: upscale_threshold and downscale_cap pass it
+    * by. Without the flag no load returns half floats. */
+   TASK_IMAGE_LOAD_HDR  = (1 << 1)
+};
+
+/* task_push_image_load with its options as TASK_IMAGE_LOAD_* bits. */
+bool task_push_image_load_ex(const char *fullpath, unsigned load_flags,
+      unsigned upscale_threshold, unsigned downscale_cap,
       retro_task_callback_t cb, void *userdata);
 
 /* For an image-load task whose file is a video (WEBM/MP4): take
@@ -335,21 +371,33 @@ bool task_image_detach_video_stream(retro_task_t *task,
  * already answer. */
 int task_image_png_probe(retro_task_t *task);
 
-/* Async icon/texture loading.  generation_ptr must point to a static
- * variable in the calling module (not a heap struct field). */
-bool task_push_icon_load(const char *fullpath,
-      bool supports_rgba,
-      uintptr_t *target_texture,
-      uint64_t generation,
-      uint64_t *generation_ptr);
+/* A set of stills decoded together, across the cores at once: @n
+ * whole files at @paths, decoded and resampled as
+ * task_push_image_load_ex does each. On the main thread @cb is then
+ * called once per file, in order, with the image (NULL when the file
+ * could not be decoded or the set was cancelled; the caller's to free
+ * otherwise), the PNG verdict task_image_png_probe would give, and
+ * that file's @item_uds entry. @tag is the caller's, for
+ * task_image_set_tag. Video files take task_push_image_load_ex: a set
+ * has no decoder stream to hand over. The set decodes in one go on the
+ * task worker, so it is for a threaded task queue only; without one it
+ * would hold the main thread for all of it. */
+typedef void (*task_image_set_cb_t)(struct texture_image *img,
+      int png_probe, void *item_ud);
+bool task_push_image_load_set(const char *const *paths,
+      void *const *item_uds, unsigned n, unsigned load_flags,
+      unsigned upscale_threshold, unsigned downscale_cap,
+      task_image_set_cb_t cb, uint64_t tag);
+
+/* The @tag an image set task was pushed with; false for any other
+ * task. Safe from a task_queue_find predicate. */
+bool task_image_set_tag(retro_task_t *task, uint64_t *tag);
 
 #ifdef HAVE_LIBRETRODB
-bool task_push_dbscan(
-      const char *playlist_directory,
-      const char *content_database,
-      const char *fullpath,
-      bool directory, bool show_hidden_files,
-      retro_task_callback_t cb);
+/* Scans @fullpath, a directory or a single file, against the content
+ * databases; the database and playlist directories come from the
+ * settings. */
+bool task_push_dbscan(const char *fullpath, retro_task_callback_t cb);
 #endif
 
 bool task_push_manual_content_scan(
@@ -413,6 +461,40 @@ bool take_screenshot(
       const char *path, bool silence,
       bool has_valid_framebuffer, bool fullpath, bool use_thread);
 
+/* What take_screenshot_notify()'s callback is told, as its task_data */
+struct screenshot_result
+{
+   const char *path;
+   /* The PNG, base64, read back on the task's thread once written; NULL
+    * past SCREENSHOT_IMAGE_MAX, for another format, or written without a
+    * task */
+   const char *png_base64;
+   size_t      png_base64_len;
+   /* the picture's size */
+   unsigned    width;
+   unsigned    height;
+};
+
+/* The largest PNG handed back to the callback */
+#define SCREENSHOT_IMAGE_MAX (4 * 1024 * 1024)
+
+/* @cb, when it returns true, is told once the screenshot is written:
+ * task_data is a struct screenshot_result, and error is set if it could
+ * not be. Without @use_thread that is before this returns, with no task
+ * and no image. */
+bool take_screenshot_notify(
+      const char *screenshot_dir,
+      const char *path, bool silence,
+      bool has_valid_framebuffer, bool fullpath, bool use_thread,
+      retro_task_callback_t cb, void *user_data);
+
+/* The frame on screen, scaled to fit @max_width by @max_height and never
+ * up, as a PNG for @cb alone: struct screenshot_result's png_base64,
+ * with an empty path. Nothing is written and nothing shown; always a
+ * task, so @cb runs on a later frame. */
+bool take_frame_notify(unsigned max_width, unsigned max_height,
+      retro_task_callback_t cb, void *user_data);
+
 bool event_load_save_files(bool is_sram_load_disabled);
 
 bool content_savefile_is_live(const char *path);
@@ -448,6 +530,9 @@ enum autoconfig_handle_flags
 
 void input_autoconfigure_blissbox_override_handler(
       int vid, int pid, char *device_name, size_t len);
+/* From a thread other than the main one, a connect or disconnect is
+ * handed to the main thread and returns true once it is queued; what
+ * it does is decided there. */
 bool input_autoconfigure_connect(
       const char *name,
       const char *display_name,
@@ -468,6 +553,9 @@ bool input_autoconfigure_connect_ex(
 bool input_autoconfigure_disconnect(
       unsigned port, const char *name);
 bool input_autoconfigure_reconnect(unsigned port);
+#if defined(HAVE_TEST_DRIVERS) || defined(HAVE_OPENXR)
+bool input_autoconfigure_pending(void);
+#endif
 
 void set_save_state_in_background(bool state);
 void set_save_state_disable_undo(bool disable);
@@ -495,7 +583,10 @@ extern const char* const input_builtin_autoconfs[];
 
 /* cloud sync tasks */
 void task_push_cloud_sync_update_driver(void);
-void task_push_cloud_sync(void);
+/* The cb parameter is the callback that's called when the sync is done.
+ * Its error argument is non-NULL when the sync failed or finished with
+ * failures or conflicts. Returns false if no sync was queued. */
+bool task_push_cloud_sync(retro_task_callback_t cb, void *user_data);
 void task_push_cloud_sync_resolve_keep_local(void);
 void task_push_cloud_sync_resolve_keep_server(void);
 

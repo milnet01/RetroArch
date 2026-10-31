@@ -3,6 +3,12 @@
 #
 # Only needed when check_enabled ($2), check_platform, check_lib, check_pkgconf,
 # check_header, check_macro and check_switch are not used.
+#
+# This file also runs once ahead of time in a subshell with QB_DRY set, to
+# find the compiles it will run (see qb_compile). Commands that act on
+# anything outside the shell, other than the check helpers, are skipped
+# when QB_DRY is set, and nothing here exports variables, since a compile
+# that ran ahead saw the environment configure started with.
 
 check_switch '' C99 -std=gnu99 ''
 
@@ -420,6 +426,9 @@ check_pkgconf RSOUND rsound 1.1
 check_pkgconf ROAR libroar 1.0.12
 check_val '' JACK -ljack '' jack 0.120.1 '' false
 check_val '' PULSE -lpulse '' libpulse '' '' false
+# The driver's writer hands audio to the server's thread through a
+# lock-free ring and parks on an eventcount, both threads-only.
+check_enabled THREADS PULSE PulseAudio 'Threads are' false
 check_val '' PIPEWIRE -lpipewire-0.3 'pipewire-0.3 spa-0.2' libpipewire-0.3 '' '' false
 # PIPEWIRE_STABLE only qualifies PIPEWIRE (it gates the camera driver), so
 # it must not be probed when PipeWire itself is off: with --disable-pipewire
@@ -433,21 +442,15 @@ fi
 # Without pkg-config the library check above cannot see the version, so
 # PIPEWIRE_STABLE takes it from the headers instead.
 if [ "$HAVE_PIPEWIRE_STABLE" = 'yes' ] && [ "$PKG_CONF_PATH" = 'none' ]; then
-   printf %s\\n '#include <pipewire/version.h>' \
-      '#if !PW_CHECK_VERSION(1, 0, 0)' \
-      '#error PipeWire older than 1.0.0' \
-      '#endif' \
-      'int main(void) { return 0; }' > "$TEMP_C"
    printf %s 'Checking PipeWire headers >= 1.0.0 ... '
-   if $(printf %s "$CC") -o "$TEMP_EXE" "$TEMP_C" \
-         $(printf %s "$BUILD_DIRS $CFLAGS $PIPEWIRE_STABLE_CFLAGS $LDFLAGS") \
-         >>config.log 2>&1; then
+   if qb_compile "$TEMP_C" "#include <pipewire/version.h>$NL#if !PW_CHECK_VERSION(1, 0, 0)$NL#error PipeWire older than 1.0.0$NL#endif${NL}int main(void) { return 0; }$NL" \
+         $CC -o "$TEMP_EXE" "$TEMP_C" \
+         $BUILD_DIRS $CFLAGS $PIPEWIRE_STABLE_CFLAGS $LDFLAGS; then
       printf %s\\n 'yes'
    else
       printf %s\\n 'no'
       HAVE_PIPEWIRE_STABLE=no
    fi
-   rm -f -- "$TEMP_C" "$TEMP_EXE"
 fi
 check_val '' SDL -lSDL SDL sdl 1.2.10 '' true
 check_val '' SDL2 -lSDL2 SDL2 sdl2 2.0.0 '' true
@@ -563,6 +566,7 @@ int main(int argc, char **argv) { QApplication a(argc, argv); return 0; }' \
    if [ "$HAVE_QT" != yes ]; then
       die : 'Notice: Qt support disabled, required libraries were not found.'
    fi
+   moc_start
 
    check_pkgconf OPENSSL openssl 1.0.0 '' '' nopkg
    check_nopkg '' OPENSSL '-lssl -lcrypto' '' \
@@ -629,6 +633,33 @@ if [ "$HAVE_SSL" = "yes" ] && [ "$SSL_BACKEND_CHOSEN" = "no" ]; then die 1 "erro
 check_enabled THREADS LIBUSB libusb 'Threads are' false
 check_enabled HID LIBUSB libusb 'HID is' false
 check_val '' LIBUSB -lusb-1.0 libusb-1.0 libusb-1.0 1.0.13 '' false
+
+# hidraw brings the HID joypad driver on Linux without libusb, which
+# stays as --enable-hid leaves it.
+check_platform Linux HIDRAW 'hidraw is' true
+check_header '' HIDRAW linux/hidraw.h
+if [ "$HAVE_HIDRAW" = 'yes' ]; then
+   add_opt HID yes
+fi
+
+# WinUSB, loaded when used, brings the HID joypad driver on Windows
+# for pads bound to it; libusb stays as --enable-hid leaves it.
+check_enabled THREADS WINUSB WinUSB 'Threads are' false
+check_platform Win32 WINUSB 'WinUSB is' true
+if [ "$HAVE_WINUSB" = 'yes' ]; then
+   add_opt HID yes
+   # Xbox pads' triggers and rumble, where the header is
+   check_header '' WGI windows.gaming.input.h
+else
+   HAVE_WGI=no
+fi
+
+# Windows' own Bluetooth stack, loaded when used: the menu's pairing,
+# Wii controllers' too, which Windows' settings often cannot pair
+if [ "$OS" = 'Win32' ] && [ "$HAVE_BLUETOOTH" = 'no' ] \
+      && [ "${USER_BLUETOOTH:-auto}" = 'auto' ] && [ "$HAVE_THREADS" != 'no' ]; then
+   HAVE_BLUETOOTH=yes
+fi
 
 check_lib '' DINPUT -ldinput8
 check_lib '' D3D9 -ld3d9
@@ -724,12 +755,14 @@ check_lib '' DRMINGW -lexchndl
 check_enabled THREADS FFMPEG FFmpeg 'Threads are' false
 
 if [ "$HAVE_FFMPEG" != 'no' ]; then
-   check_val '' AVCODEC -lavcodec '' libavcodec 57 '' false
-   check_val '' AVFORMAT -lavformat '' libavformat 57 '' false
-   check_val '' AVDEVICE -lavdevice '' libavdevice 57 '' false
-   check_val '' SWRESAMPLE -lswresample '' libswresample 2 '' false
-   check_val '' AVUTIL -lavutil '' libavutil 55 '' false
-   check_val '' SWSCALE -lswscale '' libswscale 4 '' false
+   # FFmpeg 3.1's libraries: the recorder and the media player use the
+   # send/receive codec API (avcodec_send_frame, libavcodec 57.37).
+   check_val '' AVCODEC -lavcodec '' libavcodec 57.48.101 '' false
+   check_val '' AVFORMAT -lavformat '' libavformat 57.41.100 '' false
+   check_val '' AVDEVICE -lavdevice '' libavdevice 57.0.101 '' false
+   check_val '' SWRESAMPLE -lswresample '' libswresample 2.1.100 '' false
+   check_val '' AVUTIL -lavutil '' libavutil 55.28.100 '' false
+   check_val '' SWSCALE -lswscale '' libswscale 4.1.100 '' false
 
    check_header '' AV_CHANNEL_LAYOUT libavutil/channel_layout.h
 
@@ -845,7 +878,7 @@ fi
 if [ "$HAVE_WAYLAND_SCANNER" = yes ] &&
    [ "$HAVE_WAYLAND_CURSOR" = yes ] &&
    [ "$HAVE_WAYLAND" = yes ]; then
-      ./gfx/common/wayland/generate_wayland_protos.sh \
+      [ "$QB_DRY" ] || ./gfx/common/wayland/generate_wayland_protos.sh \
          -c "$WAYLAND_SCANNER_VERSION" \
          -p "$HAVE_WAYLAND_PROTOS" \
          -s "$SHARE_DIR" ||
@@ -889,6 +922,10 @@ elif [ "$HAVE_VULKAN" != "no" ] && [ "$OS" = 'Darwin' ]; then
 else
    check_lib '' VULKAN -lvulkan vkCreateInstance
 fi
+
+check_platform Linux OPENXR 'OpenXR is' true
+check_enabled 'VULKAN OPENGL OPENGL_CORE' OPENXR OpenXR 'Vulkan and OpenGL are' false
+check_enabled THREADS OPENXR OpenXR 'Threads are' false
 
 if [ "$HAVE_MENU" != 'no' ]; then
    if [ "$HAVE_OPENGL" = 'no' ]      &&
@@ -944,29 +981,28 @@ if [ "$HAVE_MIST" = 'yes' ]; then
    add_define MAKEFILE MIST_PATH "$MIST_PATH"
 fi
 
-check_enabled CXX SLANG slang 'The C++ compiler is' false
+check_enabled 'CXX RSLC' SLANG slang 'The C++ compiler is' false
 check_enabled CXX GLSLANG glslang 'The C++ compiler is' false
 check_enabled CXX SPIRV_CROSS SPIRV-Cross 'The C++ compiler is' false
 
-check_enabled GLSLANG BUILTINGLSLANG 'builtin glslang' 'glslang is' true
-
-check_enabled SPIRV_CROSS BUILTINSPIRV_CROSS 'builtin spirv-cross' 'spirv-cross is' true
-
-if [ "$HAVE_SPIRV_CROSS" != no ] && [ "$HAVE_BUILTINSPIRV_CROSS" = no ]; then
+# glslang and SPIRV-Cross are the system's, and only when asked for
+# (--enable-glslang --enable-spirv_cross): what is found is built in
+# next to rslc, what is not is left out with a notice.
+if [ "$HAVE_SPIRV_CROSS" != no ]; then
    # The slang stack uses the SPIRV-Cross C API, so only the
-   # spirv-cross-c-shared package can satisfy an external build; the
-   # C++ libraries carry no spvc_* symbols.  When it is absent we fall
-   # through to the builtin sources below.
+   # spirv-cross-c-shared package can satisfy it; the C++ libraries
+   # carry no spvc_* symbols.
+   HAVE_SPIRV_CROSS=auto
+   USER_SPIRV_CROSS=
    check_pkgconf SPIRV_CROSS spirv-cross-c-shared
-
    if [ "$HAVE_SPIRV_CROSS" = no ]; then
-      die : 'Notice: System SPIRV-Cross not found, enabling builtin SPIRV-Cross.'
-      HAVE_BUILTINSPIRV_CROSS=yes
-      HAVE_SPIRV_CROSS=yes
+      die : 'Notice: System SPIRV-Cross (spirv-cross-c-shared) not found, disabling SPIRV-Cross support.'
    fi
 fi
 
 if [ "$HAVE_GLSLANG" != no ]; then
+   HAVE_GLSLANG=auto
+   USER_GLSLANG=
    check_header cxx GLSLANG \
       glslang/Public/ShaderLang.h \
       glslang/SPIRV/GlslangToSpv.h
@@ -981,20 +1017,27 @@ if [ "$HAVE_GLSLANG" != no ]; then
    check_lib cxx GLSLANG_SPIRV_TOOLS_OPT -lSPIRV-Tools-opt
    check_lib cxx GLSLANG_SPIRV_TOOLS -lSPIRV-Tools
 
+   # newer glslang carries HLSL, OSDependent, OGLCompiler and
+   # MachineIndependent in libglslang itself: those link when present
    if [ "$HAVE_GLSLANG" = no ] ||
-      [ "$HAVE_GLSLANG_HLSL" = no ] ||
       [ "$HAVE_GLSLANG_SPIRV" = no ] ||
       [ "$HAVE_GLSLANG_SPIRV_TOOLS_OPT" = no ] ||
       [ "$HAVE_GLSLANG_SPIRV_TOOLS" = no ]; then
-      if [ "$HAVE_BUILTINGLSLANG" != yes ]; then
-         die : 'Notice: System glslang libraries not found, disabling glslang support.'
-         HAVE_GLSLANG=no
-      else
-         HAVE_GLSLANG=yes
-      fi
+      die : 'Notice: System glslang libraries not found, disabling glslang support.'
+      HAVE_GLSLANG=no
    else
       HAVE_GLSLANG=yes
    fi
+fi
+
+# glslang compiles and SPIRV-Cross reflects and prints, so one is no
+# use without the other
+if [ "$HAVE_GLSLANG" != "$HAVE_SPIRV_CROSS" ]; then
+   die : 'Notice: glslang and SPIRV-Cross are built in together, leaving both out; rslc compiles slang.'
+   HAVE_GLSLANG=no
+   HAVE_SPIRV_CROSS=no
+   USER_GLSLANG=
+   USER_SPIRV_CROSS=
 fi
 
 # The modeline engine is C89 with no libraries of its own, so it is on
@@ -1011,17 +1054,17 @@ check_enabled SLANG OPENGL_CORE 'OpenGL core' 'slang is' false
 check_enabled SLANG VULKAN vulkan 'slang is' false
 check_enabled SLANG METAL metal 'slang is' false
 
-check_enabled GLSLANG SLANG slang 'glslang is' false
+check_enabled 'GLSLANG RSLC' SLANG slang 'glslang is' false
 check_enabled GLSLANG SPIRV_CROSS SPIRV-Cross 'glslang is' false
-check_enabled GLSLANG OPENGL_CORE 'OpenGL core' 'glslang is' false
-check_enabled GLSLANG VULKAN vulkan 'glslang is' false
-check_enabled GLSLANG METAL metal 'glslang is' false
+check_enabled 'GLSLANG RSLC' OPENGL_CORE 'OpenGL core' 'glslang is' false
+check_enabled 'GLSLANG RSLC' VULKAN vulkan 'glslang is' false
+check_enabled 'GLSLANG RSLC' METAL metal 'glslang is' false
 
-check_enabled SPIRV_CROSS SLANG slang 'SPIRV-Cross is' false
+check_enabled 'SPIRV_CROSS RSLC' SLANG slang 'SPIRV-Cross is' false
 check_enabled SPIRV_CROSS GLSLANG glslang 'SPIRV-Cross is' false
-check_enabled SPIRV_CROSS OPENGL_CORE 'OpenGL core' 'SPIRV-Cross is' false
-check_enabled SPIRV_CROSS VULKAN vulkan 'SPIRV-Cross is' false
-check_enabled SPIRV_CROSS METAL metal 'SPIRV-Cross is' false
+check_enabled 'SPIRV_CROSS RSLC' OPENGL_CORE 'OpenGL core' 'SPIRV-Cross is' false
+check_enabled 'SPIRV_CROSS RSLC' VULKAN vulkan 'SPIRV-Cross is' false
+check_enabled 'SPIRV_CROSS RSLC' METAL metal 'SPIRV-Cross is' false
 
 check_enabled 'OPENGL_CORE METAL VULKAN' SLANG slang '' user
 check_enabled 'OPENGL_CORE METAL VULKAN' GLSLANG glslang '' user
@@ -1066,6 +1109,10 @@ if [ "$HAVE_RETRONFS" = 'auto' ]; then HAVE_RETRONFS=yes; fi
 # so libsmb2 asked for and not found is an error.
 check_enabled NETWORKING RETROSMB 'built-in SMB client' 'Networking is' false
 check_enabled CRYPTO RETROSMB 'built-in SMB client' 'crypto is' false
+
+# RVZ hashing reads the groups with Zstandard
+check_enabled CHEEVOS CHEEVOS_RVZ 'RVZ hashing for RetroAchievements' 'cheevos is' false
+check_enabled RZSTD CHEEVOS_RVZ 'RVZ hashing for RetroAchievements' 'RZSTD is' false
 if [ "$HAVE_RETROSMB" = 'auto' ]; then
    if [ "$HAVE_SMBCLIENT" = 'yes' ] || [ "$HAVE_LIBSMB" = 'yes' ]; then
       HAVE_RETROSMB=no

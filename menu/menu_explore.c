@@ -121,7 +121,7 @@ struct explore_state
    explore_string_t **by[EXPLORE_CAT_COUNT];
    explore_entry_t *entries;
    playlist_t **playlists;
-   uintptr_t *icons;
+   gfx_surface_t **icons;
    const char *label_explore_item_str;
 
    char title[1024];
@@ -425,12 +425,11 @@ static void explore_unload_icons(explore_state_t *state)
    if (!state)
       return;
    for (i = 0; i != RBUF_LEN(state->icons); i++)
-      if (state->icons[i])
-         video_driver_texture_unload(&state->icons[i]);
+   {
+      gfx_surface_free(state->icons[i]);
+      state->icons[i] = NULL;
+   }
 }
-
-/* File-static generation counter for async icon loads */
-static uint64_t explore_icon_load_gen = 0;
 
 static void explore_load_icons(explore_state_t *state)
 {
@@ -445,9 +444,6 @@ static void explore_load_icons(explore_state_t *state)
 
    /* unload any icons that could exist from a previous call to this */
    explore_unload_icons(state);
-
-   /* Invalidate any in-flight async icon loads */
-   explore_icon_load_gen++;
 
    /* RBUF_RESIZE leaves memory uninitialised,
       have to zero it 'manually' */
@@ -471,9 +467,9 @@ static void explore_load_icons(explore_state_t *state)
       if (!path_is_valid(path))
          continue;
 
-      gfx_display_load_icon(path, supports_rgba,
-            &state->icons[i], explore_icon_load_gen,
-            &explore_icon_load_gen);
+      if (!state->icons[i])
+         state->icons[i] = gfx_surface_new_still(gfx_display_texture_filter());
+      gfx_surface_submit_path(state->icons[i], path, supports_rgba);
    }
 }
 
@@ -1319,7 +1315,7 @@ static void explore_action_find_complete(void *userdata, const char *line)
 static int explore_action_ok_find(const char *path, const char *label,
       unsigned type, size_t idx, size_t entry_idx)
 {
-   menu_input_ctx_line_t line;
+   menu_input_ctx_line_t line = {0};
    line.label                 = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SEARCH);
    line.label_setting         = NULL;
    line.type                  = 0;
@@ -1534,7 +1530,7 @@ static void explore_action_saveview_complete(void *userdata, const char *name)
 static int explore_action_ok_saveview(const char *path, const char *label,
       unsigned type, size_t idx, size_t entry_idx)
 {
-   menu_input_ctx_line_t line;
+   menu_input_ctx_line_t line = {0};
    line.label                 = msg_hash_to_str(MENU_ENUM_LABEL_EXPLORE_NEW_VIEW);
    line.label_setting         = NULL;
    line.type                  = 0;
@@ -2116,12 +2112,12 @@ uintptr_t menu_explore_get_entry_icon(unsigned type)
    {
       explore_entry_t* e = &explore_state->entries[i];
       if (e < RBUF_END(explore_state->entries))
-         return explore_state->icons[e->by[EXPLORE_BY_SYSTEM]->idx];
+         return GFX_SURFACE_HANDLE(explore_state->icons[e->by[EXPLORE_BY_SYSTEM]->idx]);
    }
    else if (explore_state->show_icons == EXPLORE_ICONS_SYSTEM_CATEGORY)
    {
       if (i < RBUF_LEN(explore_state->icons))
-         return explore_state->icons[i];
+         return GFX_SURFACE_HANDLE(explore_state->icons[i]);
    }
    return 0;
 }
@@ -2224,11 +2220,7 @@ void menu_explore_context_init(void)
 void menu_explore_context_deinit(void)
 {
    if (explore_state)
-   {
-      /* Invalidate in-flight async icon loads before unloading */
-      explore_icon_load_gen++;
       explore_unload_icons(explore_state);
-   }
 }
 
 void menu_explore_free_state(explore_state_t *state)
@@ -2245,8 +2237,6 @@ void menu_explore_free_state(explore_state_t *state)
       playlist_free(state->playlists[i]);
    RBUF_FREE(state->playlists);
 
-   /* Invalidate in-flight async icon loads before freeing */
-   explore_icon_load_gen++;
    explore_unload_icons(state);
    RBUF_FREE(state->icons);
 

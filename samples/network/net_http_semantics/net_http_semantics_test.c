@@ -36,6 +36,9 @@
 #define CONN_BUF    (256 * 1024)
 #define MAX_LOG     64
 #define CASE_MS     3000
+/* The build's NET_HTTP_STALL_TIMEOUT, see the Makefile. */
+#define STALL_MS    600
+#define DRIP_GAP_MS 150
 
 static int failures = 0;
 
@@ -95,7 +98,7 @@ char *__wrap_strdup(const char *p)
 
 /* ---- scripted server ---- */
 
-enum body_kind { B_NONE = 0, B_RAW, B_CHUNKED };
+enum body_kind { B_NONE = 0, B_RAW, B_CHUNKED, B_DRIP };
 
 struct step
 {
@@ -110,6 +113,7 @@ struct reqlog
    int conn_id;
    char line[256];
    char host[128];
+   char auth[128];
    size_t body_len;
    int body_ok;
 };
@@ -178,6 +182,18 @@ static void send_body(int fd, const struct step *st)
          if (send_all(fd, blk, n))
             return;
          off += n;
+      }
+   }
+   else if (st->body == B_DRIP)
+   {
+      /* A byte at a time, each well inside the stall bound, the whole
+       * well past it. */
+      for (; off < st->body_len; off++)
+      {
+         unsigned char b = pat(off);
+         usleep(DRIP_GAP_MS * 1000);
+         if (send_all(fd, &b, 1))
+            return;
       }
    }
    else if (st->body == B_CHUNKED)
@@ -254,6 +270,13 @@ static int srv_handle(struct srv_conn *c)
             if (hl >= sizeof(r->host))
                hl = sizeof(r->host) - 1;
             memcpy(r->host, p + 6, hl);
+         }
+         else if (!strncasecmp(p, "Authorization: ", 15))
+         {
+            size_t al = (size_t)(e - p - 15);
+            if (al >= sizeof(r->auth))
+               al = sizeof(r->auth) - 1;
+            memcpy(r->auth, p + 15, al);
          }
          p = e + 2;
       }
@@ -448,6 +471,7 @@ static struct reqlog log_get(int i)
 struct xfer
 {
    const char *method;
+   const char *req_headers;
    /* streamed request body */
    size_t source_len;
    int use_source;
@@ -528,6 +552,8 @@ static void xfer_run_url(struct xfer *x, const char *url)
       net_http_connection_free(conn);
       return;
    }
+   if (x->req_headers)
+      net_http_connection_set_headers(conn, x->req_headers);
    if (x->use_source)
    {
       source_pos     = 0;
@@ -1347,6 +1373,186 @@ static void run_section_body_edges(void)
    xfer_free(&a);
 }
 
+/* ---- a peer that goes silent ---- */
+
+/* Runs @x against @path and says how long it took. */
+static int64_t xfer_timed(struct xfer *x, const char *path)
+{
+   int64_t t0 = now_ms();
+   xfer_run(x, path);
+   return now_ms() - t0;
+}
+
+static int stalled_in_time(const struct xfer *x, int64_t ms)
+{
+   return x->done && x->err && ms >= STALL_MS && ms < CASE_MS;
+}
+
+static void run_section_stall(void)
+{
+   struct xfer a;
+   int64_t ms;
+   /* the request is read, then nothing */
+   static const struct step s_silent[] = { { NULL, 0, B_NONE, 0 } };
+   static const struct step s_head[]   = {
+      { "HTTP/1.1 200 OK\r\nContent-Length: 64\r\n\r\n", 0, B_NONE, 0 } };
+   static const struct step s_body[]   = {
+      { "HTTP/1.1 200 OK\r\nContent-Length: 64\r\n\r\npartial", 0, B_NONE, 0 } };
+   static const struct step s_drip[]   = {
+      { "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n", 8, B_DRIP, 0 } };
+   static const struct step s_ok[]     = { { OK_2, 0, B_NONE, 0 } };
+
+   memset(&a, 0, sizeof(a));
+
+   case_begin(s_silent, 1, 0);
+   ms = xfer_timed(&a, "/silent");
+   check(stalled_in_time(&a, ms), "no response after the request: fails once stalled");
+   xfer_free(&a);
+
+   case_begin(s_head, 1, 0);
+   ms = xfer_timed(&a, "/head");
+   check(stalled_in_time(&a, ms), "headers, then silence: fails once stalled");
+   xfer_free(&a);
+
+   case_begin(s_body, 1, 0);
+   ms = xfer_timed(&a, "/body");
+   check(stalled_in_time(&a, ms), "part of the body, then silence: fails once stalled");
+   xfer_free(&a);
+
+   case_begin(s_drip, 1, 0);
+   ms = xfer_timed(&a, "/drip");
+   check(a.done && !a.err && body_is_pattern(&a, 8) && ms > STALL_MS,
+         "a body slower than the stall bound but never silent that long: succeeds");
+   xfer_free(&a);
+
+   /* The caller stops driving the transfer for longer than the bound;
+    * the reply is waiting when it comes back. */
+   case_begin(s_ok, 1, 0);
+   {
+      char url[128];
+      struct http_connection_t *conn;
+      struct http_t *h = NULL;
+      int64_t deadline;
+      int done = 0;
+      snprintf(url, sizeof(url), "http://127.0.0.1:%d/idle", srv_port);
+      if ((conn = net_http_connection_new(url, "GET", NULL)))
+      {
+         while (!net_http_connection_iterate(conn)) { }
+         if (net_http_connection_done(conn))
+            h = net_http_new(conn);
+         net_http_connection_free(conn);
+      }
+      if (h)
+      {
+         net_http_update(h, NULL, NULL);
+         usleep((STALL_MS * 5 / 2) * 1000);
+         deadline = now_ms() + CASE_MS;
+         while (!(done = net_http_update(h, NULL, NULL)) && now_ms() < deadline)
+            net_http_wait(h, 20);
+         check(done && !net_http_error(h),
+               "a caller that stopped driving the transfer: its time away is not a stall");
+         net_http_delete(h);
+      }
+      else
+         check(0, "a caller that stopped driving the transfer: transfer created");
+   }
+}
+
+/* ---- URL userinfo sent as Basic credentials ---- */
+
+static void run_section_userinfo(void)
+{
+   char url[256];
+   char head[256];
+   char want_host[64];
+   struct step st[2];
+   struct xfer a;
+   struct reqlog r;
+   struct http_connection_t *conn;
+   static const struct step s_ok[] = {
+      { OK_2, 0, B_NONE, 0 },
+   };
+
+   memset(&a, 0, sizeof(a));
+   snprintf(want_host, sizeof(want_host), "127.0.0.1:%d", srv_port);
+
+   case_begin(s_ok, 1, 0);
+   snprintf(url, sizeof(url), "http://user:pa%%40ss@127.0.0.1:%d/x", srv_port);
+   xfer_run_url(&a, url);
+   r = log_get(0);
+   check(a.done && body_is(&a, "ok")
+         && !strcmp(r.line, "GET /x HTTP/1.1")
+         && !strcmp(r.host, want_host)
+         && !strcmp(r.auth, "Basic dXNlcjpwYUBzcw=="),
+         "userinfo: decoded, sent as Basic, kept out of Host and path");
+   xfer_free(&a);
+
+   case_begin(s_ok, 1, 0);
+   snprintf(url, sizeof(url), "http://u@127.0.0.1:%d?q=1", srv_port);
+   xfer_run_url(&a, url);
+   r = log_get(0);
+   check(a.done && !strcmp(r.line, "GET /?q=1 HTTP/1.1")
+         && !strcmp(r.host, want_host) && !strcmp(r.auth, "Basic dQ=="),
+         "userinfo with no path, only a query: user alone is sent");
+   xfer_free(&a);
+
+   case_begin(s_ok, 1, 0);
+   a.req_headers = "X-Extra: 1\r\n";
+   snprintf(url, sizeof(url), "http://ab:c@127.0.0.1:%d/h", srv_port);
+   xfer_run_url(&a, url);
+   r = log_get(0);
+   check(a.done && !strcmp(r.auth, "Basic YWI6Yw=="),
+         "userinfo: survives net_http_connection_set_headers()");
+   a.req_headers = NULL;
+   xfer_free(&a);
+
+   case_begin(s_ok, 1, 0);
+   xfer_run(&a, "/plain");
+   r = log_get(0);
+   check(a.done && !*r.auth, "no userinfo: no Authorization sent");
+   xfer_free(&a);
+
+   case_begin(s_ok, 1, 0);
+   snprintf(url, sizeof(url), "http://@127.0.0.1:%d/e", srv_port);
+   xfer_run_url(&a, url);
+   r = log_get(0);
+   check(a.done && !strcmp(r.host, want_host) && !*r.auth,
+         "empty userinfo: no Authorization sent");
+   xfer_free(&a);
+
+   snprintf(head, sizeof(head),
+         "HTTP/1.1 302 Found\r\nContent-Length: 0\r\n"
+         "Location: /same\r\n\r\n");
+   memset(st, 0, sizeof(st));
+   st[0].head = head;
+   st[1].head = OK_2;
+   case_begin(st, 2, 0);
+   snprintf(url, sizeof(url), "http://u:p@127.0.0.1:%d/a", srv_port);
+   xfer_run_url(&a, url);
+   r = log_get(1);
+   check(a.done && !strcmp(r.line, "GET /same HTTP/1.1")
+         && !strcmp(r.auth, "Basic dTpw"),
+         "userinfo: kept across a same-origin redirect");
+   xfer_free(&a);
+
+   snprintf(head, sizeof(head),
+         "HTTP/1.1 302 Found\r\nContent-Length: 0\r\n"
+         "Location: http://localhost:%d/other\r\n\r\n", srv_port);
+   case_begin(st, 2, 0);
+   xfer_run_url(&a, url);
+   r = log_get(1);
+   check(a.done && !strcmp(r.line, "GET /other HTTP/1.1") && !*r.auth,
+         "userinfo: dropped on a redirect to another host");
+   xfer_free(&a);
+
+   conn = net_http_connection_new("http://user@/x", "GET", NULL);
+   check(!conn, "userinfo with an empty host: rejected");
+   net_http_connection_free(conn);
+   conn = net_http_connection_new("http://user@:80/x", "GET", NULL);
+   check(!conn, "userinfo with only a port: rejected");
+   net_http_connection_free(conn);
+}
+
 int main(void)
 {
    if (!network_init() || srv_start())
@@ -1367,6 +1573,8 @@ int main(void)
    run_section_headers();
    run_section_interim_framing();
    run_section_body_edges();
+   run_section_stall();
+   run_section_userinfo();
 
    srv_shutdown();
    net_http_deinit();

@@ -28,6 +28,8 @@
 #include "../verbosity.h"
 #include "../frontend/thread_elevation.h"
 
+#define AUDIO_THREAD_ACK_EXITED 2
+
 /* How long a handshake between the main thread and the audio thread
  * may run before it is reported. Both are sub-millisecond on a device
  * that is answering, so anything near this is a device that has
@@ -138,19 +140,26 @@ static void audio_thread_park_stopped(audio_thread_t *thr)
 static void audio_thread_loop(void *data)
 {
    bool is_shutdown;
+   thread_elevation_token_t elevation;
    audio_thread_t *thr = (audio_thread_t*)data;
 
    if (!thr)
       return;
 
    sthread_setname("ra-audio");
+   memset(&elevation, 0, sizeof(elevation));
 
    /* Best effort and never fatal: a refusal leaves the default. */
+   thread_elevation_note(THREAD_ELEVATION_SLOT_AUDIO,
+         THREAD_ELEVATION_REFUSED, NULL, false);
    if (thr->raise_priority)
    {
       const char *via   = NULL;
       const char *added = NULL;
-      switch (thread_elevation_raise_current(&via, &added))
+      enum thread_elevation_result r = thread_elevation_raise_current(
+            THREAD_ELEVATION_TASK_AUDIO, &elevation, &via, &added);
+      thread_elevation_note(THREAD_ELEVATION_SLOT_AUDIO, r, &elevation, true);
+      switch (r)
       {
          case THREAD_ELEVATION_GRANTED:
             RARCH_LOG("[Audio] Audio thread priority raised.\n");
@@ -194,12 +203,20 @@ static void audio_thread_loop(void *data)
          thr->driver->free(thr->driver_data);
       retro_eventcount_free(&thr->ec);
       free(thr);
+      thread_elevation_lower_current(&elevation);
+      thread_elevation_note(THREAD_ELEVATION_SLOT_AUDIO,
+            THREAD_ELEVATION_REFUSED, NULL, false);
       return;
    }
    retro_eventcount_notify(&thr->ec);
 
    if (!thr->driver_data)
+   {
+      thread_elevation_lower_current(&elevation);
+      thread_elevation_note(THREAD_ELEVATION_SLOT_AUDIO,
+            THREAD_ELEVATION_REFUSED, NULL, false);
       return;
+   }
 
    /* Wait until we start to avoid calling
     * stop immediately after initialization. A stop can land here as
@@ -225,7 +242,7 @@ static void audio_thread_loop(void *data)
        * was taken before. */
       if (!retro_atomic_load_acquire_int(&thr->alive))
       {
-         retro_atomic_store_release_int(&thr->stopped_ack, 1);
+         retro_atomic_store_release_int(&thr->stopped_ack, AUDIO_THREAD_ACK_EXITED);
          retro_eventcount_notify(&thr->ec);
          break;
       }
@@ -254,6 +271,9 @@ static void audio_thread_loop(void *data)
 
    audio_driver_pipeline_consumer_exit();
    thr->driver->free(thr->driver_data);
+   thread_elevation_lower_current(&elevation);
+   thread_elevation_note(THREAD_ELEVATION_SLOT_AUDIO,
+         THREAD_ELEVATION_REFUSED, NULL, false);
 }
 
 /**
@@ -275,7 +295,8 @@ static void audio_thread_block(audio_thread_t *thr)
     * for. */
    if (!retro_atomic_load_acquire_int(&thr->alive))
       return;
-   retro_atomic_store_release_int(&thr->stopped_ack, 0);
+   /* A terminal acknowledgement cannot be cleared by a late stop. */
+   retro_atomic_cas_int(&thr->stopped_ack, 1, 0);
    retro_atomic_store_release_int(&thr->stopped, 1);
    retro_eventcount_notify(&thr->ec);
    /* The thread may be asleep in the pipeline waiting for data; wake it
@@ -378,18 +399,13 @@ static bool audio_thread_alive(void *data)
    return alive;
 }
 
-void audio_thread_apply_control(void *data,
-      void (*control)(void *userdata), void *userdata)
+bool audio_thread_parked(void *data)
 {
    audio_thread_t *thr = (audio_thread_t*)data;
-   bool running;
-   if (!thr || !control)
-      return;
-   running = !retro_atomic_load_acquire_int(&thr->stopped);
-   audio_thread_block(thr);
-   control(userdata);
-   if (running)
-      audio_thread_unblock(thr);
+   if (!thr || !retro_atomic_load_acquire_int(&thr->alive))
+      return true;
+   return retro_atomic_load_acquire_int(&thr->stopped)
+      && retro_atomic_load_acquire_int(&thr->stopped_ack) == 1;
 }
 
 static bool audio_thread_stop(void *data)
@@ -503,6 +519,14 @@ static size_t audio_thread_underruns(void *data)
    return thr->driver->underruns(thr->driver_data);
 }
 
+static enum audio_thread_grant audio_thread_thread_grant(void *data)
+{
+   audio_thread_t *thr = (audio_thread_t*)data;
+   if (!thr || !thr->driver->thread_grant || !thr->driver_data)
+      return AUDIO_THREAD_GRANT_NONE;
+   return thr->driver->thread_grant(thr->driver_data);
+}
+
 static size_t audio_thread_frames_consumed(void *data)
 {
    audio_thread_t *thr = (audio_thread_t*)data;
@@ -529,6 +553,24 @@ static size_t audio_thread_frames_consumed_fallback(void *data)
    if (!thr || !thr->driver->frames_consumed_fallback || !thr->driver_data)
       return 0;
    return thr->driver->frames_consumed_fallback(thr->driver_data);
+}
+
+/* The lend pair, which the threaded pipeline takes from the wrapper:
+ * a driver that lends is reached only through these. */
+static size_t audio_thread_write_begin(void *data, size_t len, void **region)
+{
+   audio_thread_t *thr = (audio_thread_t*)data;
+   *region             = NULL;
+   if (     !thr || !thr->driver_data
+         || !thr->driver->write_begin || !thr->driver->write_end)
+      return 0;
+   return thr->driver->write_begin(thr->driver_data, len, region);
+}
+
+static ssize_t audio_thread_write_end(void *data, size_t len)
+{
+   audio_thread_t *thr = (audio_thread_t*)data;
+   return thr->driver->write_end(thr->driver_data, len);
 }
 
 static ssize_t audio_thread_write(void *data, const void *s, size_t len)
@@ -610,7 +652,10 @@ static const audio_driver_t audio_thread = {
    audio_thread_underruns,
    audio_thread_layout,
    audio_thread_frames_consumed_fallback,
-   audio_thread_device_clock_ppm
+   audio_thread_device_clock_ppm,
+   audio_thread_thread_grant,
+   audio_thread_write_begin,
+   audio_thread_write_end
 };
 
 /**
