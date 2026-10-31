@@ -1647,6 +1647,25 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   No longer candidates, upstream fixed them: r7z reset comment
   (e51ea57c3f); cheat search message categories; GENERAL_SETTING's
   bound (9033b5ef9d); Scan inside a playlist, RETR-0049 (bfb1a09ac4).
+  2026-10-31: opened #19954 (pr/webdav-rejected-digest, cbbf8b3225, on
+  upstream 92b11d965b): the WebDAV rejected-digest crash. Not a straight
+  port of fork 59e5bdd42a: upstream's cnonce is an array written only on
+  acceptance, so clearing it in webdav_cleanup_digest and refusing an
+  empty one covers every case; the fork's parse_fail routing and fuller
+  guard were left out. Red on upstream, each of five challenges alone:
+  four SEGVs, and qop="auth-int" answered with the old cnonce. Green under
+  ASan+UBSan; three mutations red. Full build not run. Trap: the sample
+  #includes webdav.c and its Makefile does not depend on it, so a rebuild
+  after editing webdav.c alone reruns the old binary; touch the test.
+  review-readability ran first (one lane; return in
+  docs/private/reviews/2026-10-31-findings/): nothing on the PR's lines,
+  every finding is existing upstream code, so none changed here.
+  New leads from that review, read but not compiled or run; each needs
+  its upstream check and red run before it is a candidate:
+  webdav.c webdav_sync_begin passes size 7 for "http://" (8 bytes), so a
+  URL typed without a scheme looks broken; webdav_create_basic_auth can
+  overrun userpass[512] with long credentials, as strlcpy returns the full
+  length.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
