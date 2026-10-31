@@ -30,6 +30,10 @@ SOURCES := \
 	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma.c \
 	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma2.c \
 	$(LIBRETRO_COMM_DIR)/formats/7z/r7z_lzma_stream.c \
+	$(LIBRETRO_COMM_DIR)/formats/rar/rrar_ppmd7.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_deflate.c \
+	$(LIBRETRO_COMM_DIR)/encodings/encoding_base64.c \
+	$(CORE_DIR)/tasks/task_nbio_slice.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_crc32.c \
 	$(LIBRETRO_COMM_DIR)/hash/lrc_hash.c \
 	$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
