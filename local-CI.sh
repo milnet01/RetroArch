@@ -19,8 +19,9 @@
 #   copied, so a step added to the workflow runs here too. Left out: `uses:`
 #   steps (checkout, cache) and the steps that install packages with sudo —
 #   this host's packages stand in for the runner's. A job using a workflow
-#   feature the runner does not honour (`if:`, a template expression, a
-#   matrix, GITHUB_ENV) is refused rather than run differently.
+#   feature the runner does not honour (a template expression, GITHUB_ENV, an
+#   `if:` or matrix outside the forms workflow_tool names) is refused rather
+#   than run differently.
 #
 #   linux-i686 runs Linux.yml's steps in the same container image CI uses.
 #   The rest run natively with this host's toolchain, so `./configure` can
@@ -102,10 +103,16 @@ GITHUB_ONLY=(
     "CI Apple (Apple.yml)"                     "CI macOS PPC cross (MacOS-PPC-Cross.yml)"
     "CI Windows memmap area (Windows-memmap-area.yml)"
     "CI FreeBSD (FreeBSD.yml)"
+    "CI iOS legacy (iOS-Legacy.yml)"            "CI Linux aarch64, Arm runner (Linux-aarch64.yml)"
+    "CI macOS task queue (MacOS-task-queue-samples.yml)"
+    "CI macOS VideoToolbox (MacOS-videotoolbox-encode.yml)"
+    "CI macOS VideoToolbox HEVC (MacOS-videotoolbox-hevc.yml)"
+    "Actions cache upkeep (Prune-caches.yml)"
 )
 
 # Every runnable Linux job, in CI-cost order (native first, containers last).
-ALL_JOBS=(c89 samples-tasks samples-tasks-http common-samples config-fuzz
+ALL_JOBS=(c89 samples-tasks samples-tasks-http common-samples-codecs
+          common-samples-formats common-samples-core config-fuzz
           linux-i686 headless-i686)
 
 # The workflow job each of ALL_JOBS runs, as <workflow>:<job>.
@@ -113,10 +120,19 @@ declare -A JOB_SOURCE=(
     [c89]=retroarch.yml:linux-c89
     [samples-tasks]=Linux-samples-tasks.yml:samples-tasks
     [samples-tasks-http]=Linux-samples-tasks.yml:samples-tasks-http
-    [common-samples]=Linux-libretro-common-samples.yml:samples
+    [common-samples-codecs]=Linux-libretro-common-samples.yml:samples
+    [common-samples-formats]=Linux-libretro-common-samples.yml:samples
+    [common-samples-core]=Linux-libretro-common-samples.yml:samples
     [config-fuzz]=Linux-libretro-common-samples.yml:config-file-fuzz-smoke
     [linux-i686]=Linux.yml:build
     [headless-i686]=Linux-Headless.yml:linux-nomenu
+)
+
+# The matrix value a job of ALL_JOBS runs its workflow job with.
+declare -A JOB_MATRIX=(
+    [common-samples-codecs]=group=codecs
+    [common-samples-formats]=group=formats
+    [common-samples-core]=group=core
 )
 
 # Jobs in those same workflows that need a toolchain this host lacks.
@@ -124,6 +140,7 @@ GITHUB_ONLY_JOBS=(
     "Linux-libretro-common-samples.yml:emscripten-memmap (emsdk)"
     "Linux-libretro-common-samples.yml:retro-atomic-cross (cross compilers, qemu-user)"
     "Linux-libretro-common-samples.yml:crc32-cross (cross compilers, qemu-user)"
+    "Linux-libretro-common-samples.yml:task-queue-mingw (mingw, wine)"
 )
 
 # Linux workflows run through act, whole, in a container. Too slow and
@@ -146,6 +163,12 @@ ACT_WORKFLOWS=(
     Linux-state-runahead-tests.yml Linux-tsan-harness.yml Linux-tsan-threaded-video.yml
     Linux-vulkan-validation.yml Msg-Hash-Packed-Check.yml Overlap-Copy-Check.yml
     procbarrier-tiers.yml Removed-Member-Check.yml RGUI-Pixel-Format-Check.yml
+    Auto-state-load.yml CI-Local-Runner.yml Linux-cdfs-io.yml Linux-dvd-blocks.yml
+    Linux-egl-hw-core.yml Linux-griffin.yml Linux-mcp-stdio.yml Linux-menu-media.yml
+    Linux-msvc6-standin.yml Linux-netplay-e2e.yml Linux-openxr-input.yml
+    Linux-qnx-standin.yml Linux-tsan-samples.yml Linux-vulkan-resize.yml
+    Linux-wayland-input.yml Linux-webm-player.yml Samples-Objdir-Check.yml
+    Windows-wine-input.yml Windows-wine-menu.yml Windows-wine-views.yml
 )
 ACT_BIN="${ACT_BIN:-$HOME/.local/bin/act}"
 # ubuntu-latest is 24.04; this is the image act's own picker offers for it.
@@ -168,13 +191,15 @@ ACT_RUN_IMAGE=""
 #   Write the job's runnable steps to <outdir> as NN.sh, in order: each
 #   enters the step's working directory, exports its env and runs its `run:`
 #   block (NN.body) in the shell a runner would use. `uses:` steps are left
-#   out; so are steps that install packages with sudo, named on stdout. A job
+#   out; so are steps that install packages with sudo, and "Enable ccache",
+#   whose `ccache -M` would set this machine's real cache size; both named on
+#   stdout. WF_MATRIX=<key>=<value> picks one value of a job's matrix. A job
 #   or step using a feature this does not honour is refused with a reason,
 #   so the job fails instead of running something other than the workflow. A
 #   job with a container is refused unless its image is the one passed.
 workflow_tool() {
     python3 -I - "$@" <<'PY'
-import os, shlex, sys, yaml
+import os, re, shlex, sys, yaml
 
 cmd, wf = sys.argv[1], sys.argv[2]
 with open(wf) as f:
@@ -191,9 +216,25 @@ def refuse(why):
     sys.exit("%s:%s: %s, which the step runner does not honour"
              % (os.path.basename(wf), job, why))
 
-for k in ("defaults", "if", "strategy", "services", "continue-on-error"):
+for k in ("defaults", "if", "services", "continue-on-error"):
     if j.get(k) or (k == "defaults" and d.get(k)):
         refuse("it uses " + k)
+matrix = {}
+if j.get("strategy"):
+    m = os.environ.get("WF_MATRIX", "").partition("=")
+    if m[2] not in (j["strategy"].get("matrix") or {}).get(m[0], []):
+        refuse("it uses strategy with no matching WF_MATRIX")
+    matrix[m[0]] = m[2]
+def expand(v):                       # ${{ matrix.<key> }} in a job's env
+    return re.sub(r"\$\{\{ *matrix\.(\w+) *\}\}",
+                  lambda g: matrix.get(g.group(1), g.group(0)), str(v))
+def runs(cond):                      # a step's if:, in the forms workflows use
+    if re.fullmatch(r"\$\{\{ *!cancelled\(\) *\}\}", cond):
+        return True                  # nothing here cancels a job
+    g = re.fullmatch(r"matrix\.(\w+) == '([^']*)'", cond)
+    if not g or g.group(1) not in matrix:
+        refuse("a step uses if: " + cond)
+    return matrix[g.group(1)] == g.group(2)
 def hub(i):                          # Docker Hub's name with or without docker.io/
     return i[len("docker.io/"):] if i and i.startswith("docker.io/") else i
 c = j.get("container")
@@ -203,14 +244,23 @@ if hub(c) != hub(image):
            % (c or "none", image or "none"))
 
 env0 = dict(d.get("env") or {})
-env0.update(j.get("env") or {})
-known = {"name", "id", "run", "shell", "working-directory", "env", "timeout-minutes"}
+env0.update({k: expand(v) for k, v in (j.get("env") or {}).items()})
+known = {"name", "id", "if", "run", "shell", "working-directory", "env", "timeout-minutes"}
 os.makedirs(out)
 n = 0
 for s in j["steps"]:
     if "uses" in s:
         continue
+    if "if" in s and not runs(str(s["if"])):
+        continue
     name = s.get("name") or s["run"].splitlines()[0]
+    if name == "Enable ccache":
+        print("skipped, sets the machine's ccache size:", name)
+        continue
+    # CI's own upkeep: Ubuntu packages, its linker and cache statistics
+    if name in ("Apt cache key", "Install dependencies", "Link with lld",
+                "ccache statistics"):
+        continue
     if "sudo " in s["run"]:
         print("skipped, installs packages:", name)
         continue
@@ -375,12 +425,16 @@ ensure_image() {
 # first step that fails, as a runner does.
 run_workflow_job() {
     local wf="${JOB_SOURCE[$1]%%:*}" wj="${JOB_SOURCE[$1]#*:}" w st
+    local WF_MATRIX="${JOB_MATRIX[$1]:-}"
+    export WF_MATRIX
     w="$(mktemp -d "$LOGDIR/$1.XXXX")" && export_tree "$w" && mkdir "$w.tmp" \
       && workflow_tool steps "$w/.github/workflows/$wf" "$wj" "$w.steps" || return 1
     for st in "$w.steps"/*.sh; do
         echo "== step: $(sed -n '1s/^# //p' "$st")"
-        ( cd "$w" && PATH="$CPU_SHIM:$PATH" RUNNER_TEMP="$w.tmp" GITHUB_WORKSPACE="$w" \
-            bash "$st" ) || { echo "== step FAILED: $(sed -n '1s/^# //p' "$st")"; return 1; }
+        # A private Wine prefix, not the user's; no core dump pop-up when a
+        # test crashes.
+        ( ulimit -c 0; cd "$w" && PATH="$CPU_SHIM:$PATH" RUNNER_TEMP="$w.tmp" \
+            GITHUB_WORKSPACE="$w" WINEPREFIX="$w.tmp/wine" bash "$st" ) || { echo "== step FAILED: $(sed -n '1s/^# //p' "$st")"; return 1; }
     done
 }
 
@@ -542,7 +596,9 @@ declare -A DISPATCH=(
     [c89]=job_c89
     [samples-tasks]=run_workflow_job
     [samples-tasks-http]=run_workflow_job
-    [common-samples]=run_workflow_job
+    [common-samples-codecs]=run_workflow_job
+    [common-samples-formats]=run_workflow_job
+    [common-samples-core]=run_workflow_job
     [config-fuzz]=run_workflow_job
     [linux-i686]=job_linux_i686
     [headless-i686]=job_headless_i686
