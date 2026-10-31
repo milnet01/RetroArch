@@ -1666,6 +1666,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   URL typed without a scheme looks broken; webdav_create_basic_auth can
   overrun userpass[512] with long credentials, as strlcpy returns the full
   length.
+  2026-10-31: opened #19956 (pr/s3-query-order, on upstream 92b11d965b), two commits so either can land alone. First: the signer returns no signature when out of memory, for the canonical query (fork 27b5c8d2fd) and the canonical headers (new, found by the readability review, not yet in the fork). Second: s3_canonicalize_query_string sorts, which fixes nothing reachable today: every signed query is already in order; the PR says so. The fork's comparator is used; its canonicalizer was shortened, and the fork's copy still differs. Red on upstream for each; green under ASan+UBSan and TSan; mutations red (whole-string compare; leak on the out-of-memory exit). Full build and a real server not run. review-readability ran first (one lane; return in docs/private/reviews/2026-10-31-findings/): s3.c comment and name findings and the test's header comment fixed in the PR.
+  #19954 at the same check: open, 75 passed, 76 pending, one failure: libsmb2 in Linux-library-net-backends ("seek/read/tell" in samples/network/smb_retro). The PR touches only webdav.c and its sample; the same job failed on another contributor's PR, gl2-views-init, on 2026-10-30 at a different stage, so it looks intermittent upstream, not ours. Not rerun: we have no rights there.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
