@@ -7,10 +7,12 @@
 #   Most of the fork's workflow files target platforms (3DS, PS2, PSP, Android,
 #   MSVC, Wii, webOS, …) whose SDKs/cross-toolchains are not present on a
 #   desktop Linux host, so they cannot be reproduced here. This script runs the
-#   Linux jobs that gate this fork's Linux-desktop source work on every push;
-#   the other Linux workflows run on request through act (--all). --list names
-#   every workflow, and every job of a workflow run here, in one of those sets
-#   or the GitHub-only skip list; one in none fails the run.
+#   Linux jobs that gate this fork's Linux-desktop source work on every push,
+#   and through act the jobs tools/ci_local.py says cover the commits not yet
+#   pushed: those naming a changed file, and the tree-wide checks. The other
+#   Linux workflows run on request through act (--all). --list names every
+#   workflow, and every job of a workflow run here, in one of those sets or the
+#   GitHub-only skip list; one in none fails the run.
 #
 # FIDELITY (what "matches the GitHub CI run" means here)
 #   Most jobs run the workflow's own steps: the job's `run:` blocks are read
@@ -44,7 +46,9 @@
 #   run keeps its logs.
 #
 # USAGE
-#   ./local-CI.sh                 # run every runnable Linux job against HEAD
+#   ./local-CI.sh                 # run every runnable Linux job against HEAD,
+#                                 # and the act jobs covering unpushed commits
+#   ./local-CI.sh --list-changed  # print those act jobs, without running them
 #   ./local-CI.sh c89 linux-i686  # run only the named jobs
 #   ./local-CI.sh --worktree      # validate uncommitted (tracked) changes, not HEAD
 #   ./local-CI.sh --all           # also run every on-request Linux workflow via act
@@ -170,6 +174,10 @@ ACT_WORKFLOWS=(
     Linux-wayland-input.yml Linux-webm-player.yml Samples-Objdir-Check.yml
     Windows-wine-input.yml Windows-wine-menu.yml Windows-wine-views.yml
 )
+# Most act jobs a default run adds for unpushed commits. A common source can
+# select dozens, about 10 minutes each at worst; those over the limit show as
+# SKIP in the summary. 0 means no limit. The figure is a judgement.
+CHANGED_MAX="${LOCAL_CI_CHANGED_MAX:-20}"
 ACT_BIN="${ACT_BIN:-$HOME/.local/bin/act}"
 # ubuntu-latest is 24.04; this is the image act's own picker offers for it.
 ACT_IMAGE="catthehacker/ubuntu:act-24.04"
@@ -180,6 +188,8 @@ JOBS="${LOCAL_CI_JOBS:-4}"
 #   refuses to copy an action into /var/run/act through the link ("statat
 #   var/run/act: path escapes from parent"), so every `uses:` step failed.
 #   nproc and getconf are the CPU shims below, so steps build at -j$JOBS.
+#   git trusts the checkout, whose owner differs inside the container, as
+#   actions/checkout arranges on GitHub; a step's `git diff` needs it.
 #   The package lists are filled and ccache installed, as on GitHub's
 #   runner image: the workflows' "Enable ccache" step installs it with no
 #   `apt-get update` first.
@@ -330,11 +340,42 @@ unclassified_workflows() {
     done
 }
 
+# changed_jobs : print act:<workflow>:<job> for each job tools/ci_local.py
+# says covers the commits not yet pushed, naming a changed file first, then
+# the tree-wide checks; its full-tree builds are not taken, as the default jobs
+# stand in for them. Merge commits do not count: what a merge brings
+# from upstream has had upstream's CI. A job not runnable here goes to stderr.
+changed_jobs() {
+    local base files out wf job j
+    base="$(git -C "$ROOT" rev-parse -q --verify '@{upstream}')" || base="HEAD~1"
+    files="$( { git -C "$ROOT" log --no-merges --format= --name-only "$base..HEAD"
+                [ "$REF" = worktree ] && git -C "$ROOT" diff --name-only HEAD "$ARCHIVE_REF"
+              } | sort -u | sed '/^$/d')"
+    [ -n "$files" ] || return 0
+    # shellcheck disable=SC2086  # one path per word; none holds a space that
+    # matters here, since a path ci_local.py cannot match selects nothing
+    out="$(python3 "$ROOT/tools/ci_local.py" which $files)" || {
+        echo "tools/ci_local.py which failed" >&2; return 1; }
+    while read -r wf job; do
+        for j in "${JOB_SOURCE[@]}"; do
+            [ "$j" = "$wf:$job" ] && continue 2      # a default job already
+        done
+        for j in "${ACT_WORKFLOWS[@]}"; do
+            [ "$j" = "$wf" ] && { echo "act:$wf:$job"; continue 2; }
+        done
+        echo "not runnable here: $wf:$job" >&2
+    done < <(printf '%s\n' "$out" | awk '
+        /^Jobs that name|^Tree-wide/ { take = 1; next }
+        /^Full-tree|^Run one with/   { take = 0; next }
+        take && $2 == "--job" && $NF == "Linux" { print $1, $3 }' | awk '!seen[$0]++')
+}
+
 # ---- arg parsing ----------------------------------------------------------
 
 REF="HEAD"
 DO_PULL=0
 NO_CONTAINER=0
+LIST_CHANGED=0
 declare -a SELECTED=()
 
 while [ $# -gt 0 ]; do
@@ -356,6 +397,7 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             exit 0 ;;
+        --list-changed) LIST_CHANGED=1; shift ;;
         --all)        SELECTED+=("${ALL_JOBS[@]}"); for a in "${ACT_WORKFLOWS[@]}"; do SELECTED+=("act:$a"); done; shift ;;
         --worktree)   REF="worktree"; shift ;;
         --pull)       DO_PULL=1; shift ;;
@@ -367,7 +409,11 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-[ ${#SELECTED[@]} -eq 0 ] && SELECTED=("${ALL_JOBS[@]}")
+DEFAULT_RUN=0
+if [ ${#SELECTED[@]} -eq 0 ]; then
+    DEFAULT_RUN=1
+    SELECTED=("${ALL_JOBS[@]}")
+fi
 
 # Resolve the ref to archive. --worktree captures uncommitted *tracked* edits
 # (untracked files are excluded, exactly like CI's checkout of a pushed commit).
@@ -375,6 +421,30 @@ ARCHIVE_REF="$REF"
 if [ "$REF" = "worktree" ]; then
     ARCHIVE_REF="$(git -C "$ROOT" stash create)"
     [ -z "$ARCHIVE_REF" ] && ARCHIVE_REF="HEAD"   # tree clean -> HEAD is identical
+fi
+
+if [ "$LIST_CHANGED" -eq 1 ]; then
+    changed_jobs
+    exit $?
+fi
+
+# Default run: add the act jobs covering the unpushed commits, up to CHANGED_MAX.
+declare -a CHANGED_RESULTS=()
+if [ "$DEFAULT_RUN" -eq 1 ]; then
+    if changed="$(changed_jobs)"; then
+        n=0
+        while read -r j; do
+            [ -n "$j" ] || continue
+            n=$((n + 1))
+            if [ "$CHANGED_MAX" -gt 0 ] && [ "$n" -gt "$CHANGED_MAX" ]; then
+                CHANGED_RESULTS+=("SKIP  $j (over LOCAL_CI_CHANGED_MAX=$CHANGED_MAX)")
+            else
+                SELECTED+=("$j")
+            fi
+        done <<<"$changed"
+    else
+        CHANGED_RESULTS+=("FAIL  could not work out which jobs cover the unpushed commits")
+    fi
 fi
 
 CI_TMP="${LOCAL_CI_TMPDIR:-${XDG_CACHE_HOME:-$HOME/.cache}/local-ci}"
@@ -531,9 +601,11 @@ job_headless_i686() {
 
 # act:<workflow>  (ubuntu-latest, the real workflow file through act)
 #   act needs a Docker API socket and a git checkout. A podman service is
-#   started for the run and stopped on exit; the checkout is a --shared clone
-#   of ARCHIVE_REF under $LOGDIR, made once and reused by every act job. Jobs
-#   inside one workflow run one at a time, to bound RAM.
+#   started for the run and stopped on exit; the checkout is a depth-1 fetch
+#   of ARCHIVE_REF under $LOGDIR, as actions/checkout makes, made once and
+#   reused by every act job. It holds its own objects: a clone sharing this
+#   repository's has none inside the container. Jobs inside one workflow run
+#   one at a time, to bound RAM.
 ACT_SRC=""
 ACT_SOCK=""
 ACT_PID=""
@@ -547,8 +619,11 @@ act_setup() {
     trap '[ -n "$ACT_PID" ] && kill "$ACT_PID" 2>/dev/null; rm -rf "$LOGDIR/act-src" "$ACT_SOCK"' EXIT
     local _; for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$ACT_SOCK" ] && break; sleep 1; done
     [ -S "$ACT_SOCK" ] || { echo "podman service did not start"; return 1; }
-    git clone -q --shared --no-checkout "$ROOT" "$LOGDIR/act-src" \
-      && git -C "$LOGDIR/act-src" checkout -q --detach "$(git -C "$ROOT" rev-parse "$ARCHIVE_REF")" \
+    git init -q "$LOGDIR/act-src" \
+      && git -C "$LOGDIR/act-src" fetch -q --depth 1 \
+           --upload-pack 'git -c uploadpack.allowAnySHA1InWant=true upload-pack' \
+           "file://$ROOT" "$(git -C "$ROOT" rev-parse "$ARCHIVE_REF")" \
+      && git -C "$LOGDIR/act-src" checkout -q --detach FETCH_HEAD \
       || return 1
     act_image || return 1
     ACT_SRC="$LOGDIR/act-src"
@@ -560,6 +635,7 @@ act_image() {
     printf '%s\n' "FROM docker.io/$ACT_IMAGE" \
         'RUN rm /var/run && mkdir /var/run && ln -s /run/lock /var/run/lock' \
         'RUN apt-get update && apt-get install -y --no-install-recommends ccache' \
+        "RUN git config --system --add safe.directory '*'" \
         'COPY nproc getconf /usr/local/bin/' >"$CPU_SHIM/Containerfile"
     ACT_RUN_IMAGE="localhost/local-ci-act:$(cat "$CPU_SHIM"/Containerfile "$CPU_SHIM"/nproc \
         "$CPU_SHIM"/getconf | sha256sum | cut -c1-12)"
@@ -570,17 +646,21 @@ act_image() {
     podman build -q -t "$ACT_RUN_IMAGE" -f "$CPU_SHIM/Containerfile" "$CPU_SHIM"
 }
 
+# job_act <workflow>[:<job>] : the whole workflow, or one of its jobs.
 # act exits 0 when every job is skipped or if-gated off, so a zero exit alone
 # is not a pass: at least one "Job succeeded" line must show a job ran.
 # --rm: without it act leaves a failed job's container running.
 job_act() {
-    local wf="$1" out rc
+    local wf="${1%%:*}" out rc
+    local -a only=()
+    [ "$wf" != "$1" ] && only=(-j "${1#*:}")
     act_setup || return 1
     [ -f "$ACT_SRC/.github/workflows/$wf" ] || { echo "no such workflow at this ref: $wf"; return 1; }
-    out="$LOGDIR/$wf.act.out"
+    out="$LOGDIR/$1.act.out"
     ( cd "$ACT_SRC" && DOCKER_HOST="unix://$ACT_SOCK" "$ACT_BIN" \
         -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_RUN_IMAGE" \
-        --pull=false --rm --container-daemon-socket - --concurrent-jobs 1 ) 2>&1 | tee "$out"
+        --pull=false --rm --container-daemon-socket - --concurrent-jobs 1 \
+        "${only[@]}" ) 2>&1 | tee "$out"
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ] && ! grep -q 'Job succeeded' "$out"; then
         echo "act ran no job in $wf (every job skipped or if-gated off) — not a pass"
@@ -610,6 +690,10 @@ if [ -n "$UNCLASSIFIED" ]; then
     RESULTS+=("FAIL  unclassified, run nowhere: $(printf '%s\n' "$UNCLASSIFIED" | paste -sd' ')")
     overall=1
 fi
+for r in "${CHANGED_RESULTS[@]}"; do
+    RESULTS+=("$r")
+    [ "${r%% *}" = FAIL ] && overall=1
+done
 
 for job in "${SELECTED[@]}"; do
     fn="${DISPATCH[$job]:-}"; arg=""
@@ -621,11 +705,11 @@ for job in "${SELECTED[@]}"; do
         echo "-- $job: skipped (--no-container)"; RESULTS+=("SKIP  $job (--no-container)"); continue
     fi
     # An ACT_WORKFLOWS entry upstream has since deleted is stale, not failing.
-    if [ -n "$arg" ] && ! git -C "$ROOT" cat-file -e "$ARCHIVE_REF:.github/workflows/$arg" 2>/dev/null; then
+    if [ -n "$arg" ] && ! git -C "$ROOT" cat-file -e "$ARCHIVE_REF:.github/workflows/${arg%%:*}" 2>/dev/null; then
         for a in "${ACT_WORKFLOWS[@]}"; do
-            [ "$a" = "$arg" ] || continue
+            [ "$a" = "${arg%%:*}" ] || continue
             echo "-- $job: skipped (not at this ref — stale ACT_WORKFLOWS entry)"
-            RESULTS+=("SKIP  $job (stale ACT_WORKFLOWS entry: $arg not at this ref)")
+            RESULTS+=("SKIP  $job (stale ACT_WORKFLOWS entry: ${arg%%:*} not at this ref)")
             continue 2
         done
     fi
