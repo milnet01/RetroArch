@@ -40,10 +40,13 @@
 #   _NPROCESSORS_ONLN` report that number to every step, native, container
 #   or act, so a workflow's `make -j$(nproc)` keeps to it.
 #
-#   Build trees and logs go under $LOCAL_CI_TMPDIR (default
-#   ~/.cache/local-ci), on disk: /tmp is tmpfs here, so a build tree there
-#   is held in RAM. The build trees are removed when the run ends; a failed
-#   run keeps its logs.
+#   Build trees and logs go under $LOCAL_CI_TMPDIR, else the git config
+#   ants.localci.tmpdir, else ~/.cache/local-ci; on disk, since /tmp is tmpfs
+#   here and a build tree there is held in RAM. Prefer the git config: cc-job
+#   starts a job with a clean environment, so the variable set on its command
+#   line does not arrive. The build trees are removed when the run ends; a
+#   failed run keeps its logs. Container images and act's volumes stay in
+#   podman's own storage, wherever this points.
 #
 # USAGE
 #   ./local-CI.sh                 # run every runnable Linux job against HEAD,
@@ -447,7 +450,8 @@ if [ "$DEFAULT_RUN" -eq 1 ]; then
     fi
 fi
 
-CI_TMP="${LOCAL_CI_TMPDIR:-${XDG_CACHE_HOME:-$HOME/.cache}/local-ci}"
+CI_TMP="${LOCAL_CI_TMPDIR:-$(git -C "$ROOT" config --get ants.localci.tmpdir)}"
+CI_TMP="${CI_TMP:-${XDG_CACHE_HOME:-$HOME/.cache}/local-ci}"
 mkdir -p "$CI_TMP"
 LOGDIR="$(mktemp -d "$CI_TMP/local-ci.XXXXXX")" || {
     echo "local-CI.sh: cannot create a log directory under $CI_TMP" >&2; exit 2; }
@@ -650,17 +654,32 @@ act_image() {
 # act exits 0 when every job is skipped or if-gated off, so a zero exit alone
 # is not a pass: at least one "Job succeeded" line must show a job ran.
 # --rm: without it act leaves a failed job's container running.
+# seccomp=unconfined: a GitHub runner is a VM with no seccomp filter, and
+# podman's default one refuses the personality call in the workflows'
+# `setarch -R` ("failed to set personality"), so their TSan lanes fail here.
+# --pids-limit: act's --container-options parser otherwise leaves the container
+# a limit too low to fork a step's first child ("fork: retry: Resource
+# temporarily unavailable"). 4096 is twice podman's default.
+# --matrix <key>:ubuntu-latest, for a job whose runs-on is a matrix value: act
+# resolves the image of such legs racily, and the ubuntu leg beside a macOS or
+# Windows one sometimes starts with no image at all ("invalid reference
+# format"). Dropping the other legs, which act would skip anyway, removes it.
 job_act() {
-    local wf="${1%%:*}" out rc
-    local -a only=()
+    local wf="${1%%:*}" out rc key
+    local -a only=() runner=()
     [ "$wf" != "$1" ] && only=(-j "${1#*:}")
     act_setup || return 1
     [ -f "$ACT_SRC/.github/workflows/$wf" ] || { echo "no such workflow at this ref: $wf"; return 1; }
+    for key in $(sed -nE 's/^ *runs-on: *\$\{\{ *matrix\.([A-Za-z_]+) *\}\}.*/\1/p' \
+            "$ACT_SRC/.github/workflows/$wf" | sort -u); do
+        runner+=(--matrix "$key:ubuntu-latest")
+    done
     out="$LOGDIR/$1.act.out"
     ( cd "$ACT_SRC" && DOCKER_HOST="unix://$ACT_SOCK" "$ACT_BIN" \
         -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_RUN_IMAGE" \
         --pull=false --rm --container-daemon-socket - --concurrent-jobs 1 \
-        "${only[@]}" ) 2>&1 | tee "$out"
+        --container-options "--security-opt seccomp=unconfined --pids-limit 4096" \
+        "${runner[@]}" "${only[@]}" ) 2>&1 | tee "$out"
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ] && ! grep -q 'Job succeeded' "$out"; then
         echo "act ran no job in $wf (every job skipped or if-gated off) — not a pass"
