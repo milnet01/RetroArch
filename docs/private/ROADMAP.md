@@ -2505,7 +2505,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: user-request-2026-11-02.
   Lanes: gfx/drivers/drm_gfx.c, menu/cbs/menu_cbs_sublabel.c.
 
-- 📋 [RETR-0060] **HIGH: the push gate picks its act workflows from the last commit only.**
+- ✅ [RETR-0060] **HIGH: the push gate picks its act workflows from the last commit only.**
   The hook runs local-CI.sh in a fresh detached worktree (the log says "branch: HEAD"), where
   @{upstream} does not resolve, so changed_jobs falls back to HEAD~1. Seen at dbcfefdade: 15
   workflows, those for drm_gfx.c and the tree-wide checks. `--list-changed` in the worktree
@@ -2516,6 +2516,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Not rerun since their earlier failure or at all at this tree: the rest of that list.
 
   The hook's stdin names the remote ref's old value, a likely source for the base. Not yet tried.
+  Fixed in ccec8a6e2b on 2026-11-02. changed_jobs now reads the old remote value from the hook's ANTS_PUSH_REFS; a new branch or a detached run by hand counts everything on no remote. Commits upstream already has no longer count: merge 6a44252e53 named 10,993 files before and none after. ANTS_PUSH_CHANGED was not used, because it lists a merge's files.
+
+  Proof: at dbcfefdade, detached, with the push's refs given, 15 workflow jobs before and 34 after, none lost. The real hook ran it on the one-commit push of ccec8a6e2b and passed, with 12 changed-file act jobs. A one-commit push cannot tell the old base from the new one, so the first real multi-commit push is the hook's own proof of the wider selection.
   **Layman:** When several commits are pushed together, the extra tests are chosen from only the newest one, so the others can miss tests made for them.
   Kind: fix.
   Source: user-request-2026-11-02.
@@ -2544,6 +2547,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   GitHub Actions: the setting reads enabled since 2026-11-02, but a by-hand run is refused with
   "Actions has been disabled for this repository". Probably the fork's confirmation button on
   the Actions page; unconfirmed.
+  2026-11-02, GitHub. The user pressed the button on the fork's Actions page and by-hand runs now start, so that was the cause. At dbcfefdade: Linux-vulkan-validation (run 41453246447) passed all 16 jobs, Linux-samples-gfx (run 41453251927) passed all 12. That settles the Vulkan and vulkan-upscaler entries above: both failures were local to act.
+
+  Linux-network-clients, which holds the Samba and NFS lanes, cannot start by hand: 404, because the workflow is not on the fork's default branch, whose master dates from 2026-09-25. Those two lanes stay unrun on the fork.
+
+  The user's rule, 2026-11-02: only what is ours must be green; a failure from code that is not ours is libretro's to fix. So subtitle-sidecars is not ours to fix, and it stays only a possible upstream PR. Windows-wine-views' d3d9_hlsl failure is not yet attributed.
   **Layman:** A few local test runs still fail or are skipped; each is listed here with what is known.
   Kind: investigate.
   Source: user-request-2026-11-02.
