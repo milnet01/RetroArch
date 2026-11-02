@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=61 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=62 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2437,7 +2437,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: close-findings 2026-10-22 (replay/input group).
   Lanes: replay.
 
-- 📋 [RETR-0055] **MEDIUM — content_load_test's screenshot lane fails in Linux-menu-harness.yml under act.**
+- ✅ [RETR-0055] **MEDIUM — content_load_test's screenshot lane fails in Linux-menu-harness.yml under act.**
   `./local-CI.sh act:Linux-menu-harness.yml` (local/fixes-2026-09,
   40fa0294e0) passed every step before "Build and run
   content_load_test", whose screenshot lane failed with "the
@@ -2448,6 +2448,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   upstream's test or task_screenshot.c differ, or whether the act
   container's CPU count changes the path. Found while closing RETR-0050;
   not fixed then because it is outside that group's subject.
+  2026-11-02, fixed by upstream's 3193e338f3, which came in with merge
+  6a44252e53; no fork change. That commit makes the lane survive a
+  descheduled check: the screenshot then finished its remaining rows at
+  once, failing about one run in six, the symptom seen here. The match
+  is by symptom; the old failure was not replayed. At ccec8a6e2b the
+  workflow passed on GitHub (run 41475707851, screenshot lane 242 checks
+  for 240 rows) and under act (`./local-CI.sh
+  act:Linux-menu-harness.yml`), one run each.
   **Layman:** One of the menu tests fails when run locally: it expects a screenshot to be saved a piece at a time, and here it was saved all at once.
   Kind: fix.
   Source: close-findings 2026-10-22 (local-CI.sh group, next door: act:Linux-menu-harness.yml at 40fa0294e0).
@@ -2524,7 +2532,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: user-request-2026-11-02.
   Lanes: local-CI.sh.
 
-- 📋 [RETR-0061] **Local CI failures left unfixed on 2026-11-02.**
+- ✅ [RETR-0061] **Local CI failures left unfixed on 2026-11-02.**
   Windows-wine-views: d3d9_hlsl without Direct3D9Ex, 13 cases failed and then "Xvfb did not
   become ready on :90". The six main driver runs passed, 337 cases, 0 failed. It ran before
   --init, whose zombie fix fits that error; not rerun, as the user asked for no Wine load.
@@ -2564,10 +2572,26 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   window's. Limits: the original log is gone, so the 13 Wine cases are
   not named, and a failure only under Wine is not ruled out. Not rerun
   under Wine, at the user's request.
+  2026-11-02, closed: every entry is settled and none needs a fork fix.
+  Vulkan and vulkan-upscaler were local to act. subtitle-sidecars is
+  upstream's file and only a possible upstream PR, which needs the
+  user's say. d3d9_hlsl shows no sign of being ours. Known gap, not closed by this: the Samba and NFS lanes still run neither
+  under act nor on the fork, because Linux-network-clients is not on the
+  fork's default branch.
   **Layman:** A few local test runs still fail or are skipped; each is listed here with what is known.
   Kind: investigate.
   Source: user-request-2026-11-02.
   Lanes: local-CI.sh.
+
+- 📋 [RETR-0062] **LOW — task_screenshot.c carries two fork guards that upstream now has too.**
+  screenshot_dump, on local/fixes-2026-09: the `if (!task)` block and the
+  `new_screenshot_dir[0] = '\0'` line each appear twice, ours beside upstream's since merge 6a44252e53. The guard is ours from
+  a8dfea395a. Harmless: the second check never fires. Fix: drop ours. Fetch
+  upstream first, as this function has moved.
+  **Layman:** A screenshot safety check is written twice since a merge; it does no harm but should be tidied.
+  Kind: fix.
+  Source: local-CI session 2026-11-02 (diff of tasks/task_screenshot.c against merge base 92b11d965b).
+  Lanes: tasks/task_screenshot.c.
 
 ### 📝 Cold-eyes 2026-07-04
 
