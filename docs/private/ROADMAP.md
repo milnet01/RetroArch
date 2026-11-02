@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=57 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=61 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1667,7 +1667,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   overrun userpass[512] with long credentials, as strlcpy returns the full
   length.
   2026-10-31: opened #19956 (pr/s3-query-order, on upstream 92b11d965b), two commits so either can land alone. First: the signer returns no signature when out of memory, for the canonical query (fork 27b5c8d2fd) and the canonical headers (new, found by the readability review, not yet in the fork). Second: s3_canonicalize_query_string sorts, which fixes nothing reachable today: every signed query is already in order; the PR says so. The fork's comparator is used; its canonicalizer was shortened, and the fork's copy still differs. Red on upstream for each; green under ASan+UBSan and TSan; mutations red (whole-string compare; leak on the out-of-memory exit). Full build and a real server not run. review-readability ran first (one lane; return in docs/private/reviews/2026-10-31-findings/): s3.c comment and name findings and the test's header comment fixed in the PR.
-  #19954 at the same check: open, 75 passed, 76 pending, one failure: libsmb2 in Linux-library-net-backends ("seek/read/tell" in samples/network/smb_retro). The PR touches only webdav.c and its sample; the same job failed on another contributor's PR, gl2-views-init, on 2026-10-30 at a different stage, so it looks intermittent upstream, not ours. Not rerun: we have no rights there.
+  #19954 at the same check: open, 75 passed, 76 pending, one failure: libsmb2 in Linux-library-net-backends ("seek/read/tell" in samples/network/smb_retro). The PR touches only webdav.c and its sample; the same job failed on another contributor's PR, gl2-views-init, on 2026-10-30 at a different stage, so it is not ours; it is not intermittent either (corrected below, 2026-11-02). Not rerun: we have no rights there.
   2026-10-31 evening: #19954 and #19956 are both open, no comments, 150
   passed, one skipped, one failed: libsmb2, with the same message on
   both ("SMB 2.0.2, HMAC-SHA256 signing (rc=5)", "seek/read/tell"). This
@@ -1679,6 +1679,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2026-10-31 13:12 and not in the PRs' base 92b11d965b. Neither PR was
   rebased: CI on a rebase or re-run should clear the job, but that is
   not yet shown.
+  2026-11-02: the libsmb2 failure was never intermittent. libsmb2
+  565460de50 made smb2_context_active() return 0 for client contexts:
+  6/6 runs fail with it, 6/6 pass on its parent. Upstream RetroArch
+  fixed it in 2855f460d8, carried in the fork as 6b5142c763.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2466,6 +2470,84 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** Bring in the official project's month of changes without losing the fork's own features and fixes.
   Kind: chore.
   Source: user-request-2026-10-31.
+
+- ✅ [RETR-0058] **local-CI.sh: act jobs run closer to a GitHub runner.**
+  Shipped as ff45c49ca9, on local/fixes-2026-09, pushed through the gate at dbcfefdade on
+  2026-11-02: all 24 selected jobs passed.
+
+  Causes found, each with its fix in the commit body: process 1 does not reap, so a killed
+  Xvfb's zombie blocks the next (--init); act drops empty directories, so a detached clone
+  is "Not a git repository" (the clone is on a branch); act ignores --concurrent-jobs for
+  matrix legs, which race on its copy of an action (--action-offline-mode); and packages,
+  capabilities and history the runner has and act's container lacked.
+
+  A default run no longer selects Windows-wine-*, at the user's request (2026-11-02): they
+  slow the desktop. Windows checks go to the Windows machine.
+
+  Correction to the handoff: "act leaves .git out" was wrong, and so were the leads that
+  linux-modules-extra broke the vkms lane and that Xvfb lanes clash on the host network.
+  **Layman:** The local test system failed for reasons unrelated to the code; those causes are fixed, so a failure now usually means a real problem.
+  Kind: chore.
+  Source: user-request-2026-11-02.
+  Lanes: local-CI.sh.
+
+- ✅ [RETR-0059] **Two fork defects the gate found: a leftover DRM framebuffer call and misordered self-update sublabels.**
+  dbcfefdade: the merge at 6a44252e53 left DRM_IOCTL_MODE_ADDFB beside upstream's ADDFB2 in
+  modeset_create_dumbfb, on a drm_mode_fb_cmd2. Red: drm_surface_lifetime_test, and
+  drm_vkms_live_test's exit 77 under a real vkms kernel in qemu. Green: both, in the gate.
+  drm_gfx.c is identical to upstream again.
+
+  069e720b32: dab9d538f8 put three self-update rows out of enum order in the binary-searched
+  sublabel_map[]. Red and green: tools/sublabel_map_check.py. The menu was not run to see the
+  sublabels.
+  **Layman:** The plain DRM video driver could fail to create its screen buffers, and three self-update menu entries could lose their help text. Both are fixed.
+  Kind: fix.
+  Source: user-request-2026-11-02.
+  Lanes: gfx/drivers/drm_gfx.c, menu/cbs/menu_cbs_sublabel.c.
+
+- 📋 [RETR-0060] **HIGH: the push gate picks its act workflows from the last commit only.**
+  The hook runs local-CI.sh in a fresh detached worktree (the log says "branch: HEAD"), where
+  @{upstream} does not resolve, so changed_jobs falls back to HEAD~1. Seen at dbcfefdade: 15
+  workflows, those for drm_gfx.c and the tree-wide checks. `--list-changed` in the worktree
+  named 34 for the same eight commits. The nine default jobs cover the whole tree regardless.
+
+  For this push, these ran by hand on nearly the same tree and passed: Linux-network-clients,
+  Linux-overlay-on-screen, Linux-menu-media's rgui-media and window-toggle-media, Windows-wine-menu.
+  Not rerun since their earlier failure or at all at this tree: the rest of that list.
+
+  The hook's stdin names the remote ref's old value, a likely source for the base. Not yet tried.
+  **Layman:** When several commits are pushed together, the extra tests are chosen from only the newest one, so the others can miss tests made for them.
+  Kind: fix.
+  Source: user-request-2026-11-02.
+  Lanes: local-CI.sh.
+
+- 📋 [RETR-0061] **Local CI failures left unfixed on 2026-11-02.**
+  Windows-wine-views: d3d9_hlsl without Direct3D9Ex, 13 cases failed and then "Xvfb did not
+  become ready on :90". The six main driver runs passed, 337 cases, 0 failed. It ran before
+  --init, whose zombie fix fits that error; not rerun, as the user asked for no Wine load.
+
+  Linux-vulkan-validation: before --init and --action-offline-mode, the SDL views lanes failed
+  on Xvfb and the threaded-video matrix on act's action race. No full run since. The push gate
+  ran wait-checkers only.
+
+  Linux-samples-gfx vulkan-upscaler: a 128-byte leak inside libLLVM. Suppressed in act's image,
+  not yet seen passing.
+
+  Linux-menu-media subtitle-sidecars: subtitle_load_test.c asserts a request is unfinished right
+  after queueing it, which a threaded queue can break. Failed once, passed once. Upstream's file,
+  unchanged here; a candidate for an upstream fix.
+
+  Skipped under act, GitHub only: Samba AD DC Kerberos lane (IDs from 3000000, /etc/subuid maps
+  65536) and NFSv4 against nfs-ganesha (no file handles on overlayfs, creates refused on tmpfs).
+  A larger /etc/subuid range may open the first; not tried, as it changes the whole machine.
+
+  GitHub Actions: the setting reads enabled since 2026-11-02, but a by-hand run is refused with
+  "Actions has been disabled for this repository". Probably the fork's confirmation button on
+  the Actions page; unconfirmed.
+  **Layman:** A few local test runs still fail or are skipped; each is listed here with what is known.
+  Kind: investigate.
+  Source: user-request-2026-11-02.
+  Lanes: local-CI.sh.
 
 ### 📝 Cold-eyes 2026-07-04
 
