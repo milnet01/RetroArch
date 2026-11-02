@@ -2552,6 +2552,18 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Linux-network-clients, which holds the Samba and NFS lanes, cannot start by hand: 404, because the workflow is not on the fork's default branch, whose master dates from 2026-09-25. Those two lanes stay unrun on the fork.
 
   The user's rule, 2026-11-02: only what is ours must be green; a failure from code that is not ours is libretro's to fix. So subtitle-sidecars is not ours to fix, and it stays only a possible upstream PR. Windows-wine-views' d3d9_hlsl failure is not yet attributed.
+  2026-11-02, Windows-wine-views d3d9_hlsl without Direct3D9Ex, tested
+  on wintest (GTX 1050), not under Wine: no sign it is ours; no fix
+  made. run.py's own cases, in a window, one at a time, pointer and
+  memory cases left out. Fork ccec8a6e2b and upstream merge base
+  92b11d965b gave the same results: 57 pass, 5 fail. The fork with
+  Direct3D9Ex gave the same again. The fork changes no D3D9 driver file
+  since that base. The five are exact-3ds-rgb565 through a preset, "no
+  marker found"; upstream's as well, cause not looked into, and
+  upstream's Wine runs pass them, so they may be this GPU's or the
+  window's. Limits: the original log is gone, so the 13 Wine cases are
+  not named, and a failure only under Wine is not ruled out. Not rerun
+  under Wine, at the user's request.
   **Layman:** A few local test runs still fail or are skipped; each is listed here with what is known.
   Kind: investigate.
   Source: user-request-2026-11-02.
