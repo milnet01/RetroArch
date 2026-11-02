@@ -358,15 +358,30 @@ unclassified_workflows() {
     done
 }
 
+# push_base : print the git log exclusion marking what is already pushed.
+# The pre-push hook gates in a detached worktree, where @{upstream} does not
+# resolve, so its ANTS_PUSH_REFS line for this commit comes first. A new branch
+# has an all-zero old value there, and that or a by-hand detached run falls
+# through to --remotes: everything on no remote is unpushed.
+push_base() {
+    local head sha old
+    head="$(git -C "$ROOT" rev-parse HEAD)"
+    while read -r _ sha _ old; do
+        [ "$(git -C "$ROOT" rev-parse -q --verify "$sha^{commit}")" = "$head" ] || continue
+        git -C "$ROOT" cat-file -e "$old^{commit}" 2>/dev/null && { echo "$old"; return; }
+    done <<<"${ANTS_PUSH_REFS:-}"
+    git -C "$ROOT" rev-parse -q --verify '@{upstream}' || echo "--remotes"
+}
+
 # changed_jobs : print act:<workflow>:<job> for each job tools/ci_local.py
 # says covers the commits not yet pushed, naming a changed file first, then
 # the tree-wide checks; its full-tree builds are not taken, as the default jobs
-# stand in for them. Merge commits do not count: what a merge brings
-# from upstream has had upstream's CI. A job not runnable here goes to stderr.
+# stand in for them. Commits upstream already has do not count: what a merge
+# brings has had upstream's CI, and ANTS_PUSH_CHANGED is not used because it
+# lists those files. A job not runnable here goes to stderr.
 changed_jobs() {
-    local base files out wf job j
-    base="$(git -C "$ROOT" rev-parse -q --verify '@{upstream}')" || base="HEAD~1"
-    files="$( { git -C "$ROOT" log --no-merges --format= --name-only "$base..HEAD"
+    local files out wf job j
+    files="$( { git -C "$ROOT" log --no-merges --format= --name-only HEAD --not "$(push_base)" --remotes=upstream
                 [ "$REF" = worktree ] && git -C "$ROOT" diff --name-only HEAD "$ARCHIVE_REF"
               } | sort -u | sed '/^$/d')"
     [ -n "$files" ] || return 0
