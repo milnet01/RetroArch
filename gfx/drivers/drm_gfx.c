@@ -1376,12 +1376,6 @@ static int modeset_create_dumbfb(int fd, struct modeset_buf *buf,
       goto error_destroy;
    }
 
-   if (drmIoctl(drm.fd, DRM_IOCTL_MODE_ADDFB, &cmd_dumb))
-   {
-      RARCH_ERR("[DRM] Cannot add framebuffer.\n");
-      goto error_destroy;
-   }
-
    /* Map the buffer */
    map_dumb.handle = create_dumb.handle;
    if (drmIoctl(drm.fd, DRM_IOCTL_MODE_MAP_DUMB, &map_dumb))
