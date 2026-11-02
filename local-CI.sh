@@ -177,7 +177,8 @@ ACT_WORKFLOWS=(
     Linux-wayland-input.yml Linux-webm-player.yml Samples-Objdir-Check.yml
     Windows-wine-input.yml Windows-wine-menu.yml Windows-wine-views.yml
 )
-# Most act jobs a default run adds for unpushed commits. A common source can
+# Most act jobs a default run adds for unpushed commits, Windows-wine-* never
+# among them (see the selection loop). A common source can
 # select dozens, about 10 minutes each at worst; those over the limit show as
 # SKIP in the summary. 0 means no limit. The figure is a judgement.
 CHANGED_MAX="${LOCAL_CI_CHANGED_MAX:-20}"
@@ -195,7 +196,21 @@ JOBS="${LOCAL_CI_JOBS:-4}"
 #   actions/checkout arranges on GitHub; a step's `git diff` needs it.
 #   The package lists are filled and ccache installed, as on GitHub's
 #   runner image: the workflows' "Enable ccache" step installs it with no
-#   `apt-get update` first.
+#   `apt-get update` first. libjson-perl too: vkd3d's configure needs it in
+#   the Windows-wine workflows, which do not install it and rely on the runner.
+#   dpkg never unpacks samba-tool, so local_ad_dc_test.sh takes its own "skip: no
+#   samba AD DC". Samba gives domain files IDs from 3000000 and a rootless
+#   container maps 65536 (/etc/subuid), so the chown fails and provisioning
+#   panics. That Kerberos lane is covered on GitHub only. dpkg never unpacks
+#   ganesha.nfsd either, so local_ganesha_test.sh takes its "skip: nfs-ganesha
+#   not installed": overlayfs gives it no file handles ("Could not get handle
+#   ... Operation not supported"), and on a tmpfs, even with SYS_ADMIN and
+#   DAC_READ_SEARCH, a client's create is refused. NFSv4 is GitHub only too.
+#   clang and its sanitizer libraries, which GitHub's runner image has and
+#   some steps call by name.
+#   dpkg skips its syncs: on this overlay a workflow's 10-minute install step
+#   otherwise runs out of time. libLLVM's own leak, reached through the Vulkan
+#   validation layer, is suppressed (see LSAN_OPTIONS in job_act).
 ACT_RUN_IMAGE=""
 
 # workflow_tool jobs <workflow>
@@ -438,6 +453,12 @@ if [ "$DEFAULT_RUN" -eq 1 ]; then
         n=0
         while read -r j; do
             [ -n "$j" ] || continue
+            # Half an hour each under Wine, and this desktop slows meanwhile;
+            # the user tests Windows on a real Windows machine instead.
+            case "$j" in act:Windows-wine-*)
+                CHANGED_RESULTS+=("SKIP  $j (Windows machine instead; by name to run it)")
+                continue ;;
+            esac
             n=$((n + 1))
             if [ "$CHANGED_MAX" -gt 0 ] && [ "$n" -gt "$CHANGED_MAX" ]; then
                 CHANGED_RESULTS+=("SKIP  $j (over LOCAL_CI_CHANGED_MAX=$CHANGED_MAX)")
@@ -605,11 +626,14 @@ job_headless_i686() {
 
 # act:<workflow>  (ubuntu-latest, the real workflow file through act)
 #   act needs a Docker API socket and a git checkout. A podman service is
-#   started for the run and stopped on exit; the checkout is a depth-1 fetch
-#   of ARCHIVE_REF under $LOGDIR, as actions/checkout makes, made once and
-#   reused by every act job. It holds its own objects: a clone sharing this
-#   repository's has none inside the container. Jobs inside one workflow run
-#   one at a time, to bound RAM.
+#   started for the run and stopped on exit; the checkout is a depth-2 fetch
+#   of ARCHIVE_REF under $LOGDIR, made once and reused by every act job, deep
+#   enough for Removed-Member-Check's HEAD^. It holds its own objects: a clone sharing this
+#   repository's has none inside the container. It is on a branch, not detached:
+#   act copies files and no empty directories, so with no ref in .git/refs the
+#   job's copy lacks that directory and git says "Not a git repository" there.
+#   Jobs inside one workflow run one at a time, to bound RAM; the legs of one
+#   job's matrix do not, as act ignores --concurrent-jobs for them.
 ACT_SRC=""
 ACT_SOCK=""
 ACT_PID=""
@@ -624,10 +648,11 @@ act_setup() {
     local _; for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$ACT_SOCK" ] && break; sleep 1; done
     [ -S "$ACT_SOCK" ] || { echo "podman service did not start"; return 1; }
     git init -q "$LOGDIR/act-src" \
-      && git -C "$LOGDIR/act-src" fetch -q --depth 1 \
+      && git -C "$LOGDIR/act-src" fetch -q \
            --upload-pack 'git -c uploadpack.allowAnySHA1InWant=true upload-pack' \
+           --depth 2 \
            "file://$ROOT" "$(git -C "$ROOT" rev-parse "$ARCHIVE_REF")" \
-      && git -C "$LOGDIR/act-src" checkout -q --detach FETCH_HEAD \
+      && git -C "$LOGDIR/act-src" checkout -q -b local-ci FETCH_HEAD \
       || return 1
     act_image || return 1
     ACT_SRC="$LOGDIR/act-src"
@@ -638,7 +663,10 @@ act_setup() {
 act_image() {
     printf '%s\n' "FROM docker.io/$ACT_IMAGE" \
         'RUN rm /var/run && mkdir /var/run && ln -s /run/lock /var/run/lock' \
-        'RUN apt-get update && apt-get install -y --no-install-recommends ccache' \
+        'RUN apt-get update && apt-get install -y --no-install-recommends ccache libjson-perl clang libclang-rt-18-dev' \
+        'RUN printf "path-exclude=/usr/bin/%s\n" samba-tool ganesha.nfsd >/etc/dpkg/dpkg.cfg.d/local-ci-exclude' \
+        'RUN echo force-unsafe-io >/etc/dpkg/dpkg.cfg.d/local-ci-unsafe-io' \
+        'RUN echo leak:libLLVM >/etc/local-ci-lsan.supp' \
         "RUN git config --system --add safe.directory '*'" \
         'COPY nproc getconf /usr/local/bin/' >"$CPU_SHIM/Containerfile"
     ACT_RUN_IMAGE="localhost/local-ci-act:$(cat "$CPU_SHIM"/Containerfile "$CPU_SHIM"/nproc \
@@ -664,6 +692,22 @@ act_image() {
 # resolves the image of such legs racily, and the ubuntu leg beside a macOS or
 # Windows one sometimes starts with no image at all ("invalid reference
 # format"). Dropping the other legs, which act would skip anyway, removes it.
+# -P ubuntu-24.04: the image is 24.04, and act skips a job on a runner it has no
+# image for.
+# --network podman: act's default shares this machine's network, so a test's
+# client reached the real Samba server on port 445. A GitHub runner has its own.
+# --init: act's process 1 is `tail -f /dev/null`, which reaps nothing. A test
+# that kills its Xvfb without waiting leaves a zombie whose pid keeps the lock
+# file "live", so the next Xvfb on that display exits ("Server is already active
+# for display 91"), as "xwd: unable to open display" or "Xvfb did not become
+# ready". On a runner systemd reaps it.
+# NET_RAW, NET_ADMIN: tshark captures on the container's own lo, as root on a
+# runner can; without them it exits and local_read_plus_test.sh's kill fails.
+# --action-offline-mode: matrix legs run at once and each otherwise updates
+# act's shared copy of an action, so one fails ("remove .../.gitignore: no such
+# file or directory") and takes the job's other legs with it.
+# LSAN_OPTIONS: only stacks through libLLVM are suppressed; a step setting its
+# own LSAN_OPTIONS replaces this.
 job_act() {
     local wf="${1%%:*}" out rc key
     local -a only=() runner=()
@@ -677,8 +721,10 @@ job_act() {
     out="$LOGDIR/$1.act.out"
     ( cd "$ACT_SRC" && DOCKER_HOST="unix://$ACT_SOCK" "$ACT_BIN" \
         -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_RUN_IMAGE" \
+        -P "ubuntu-24.04=$ACT_RUN_IMAGE" --network podman --action-offline-mode \
+        --env LSAN_OPTIONS=suppressions=/etc/local-ci-lsan.supp \
         --pull=false --rm --container-daemon-socket - --concurrent-jobs 1 \
-        --container-options "--security-opt seccomp=unconfined --pids-limit 4096" \
+        --container-options "--security-opt seccomp=unconfined --pids-limit 4096 --init --cap-add NET_RAW --cap-add NET_ADMIN" \
         "${runner[@]}" "${only[@]}" ) 2>&1 | tee "$out"
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ] && ! grep -q 'Job succeeded' "$out"; then
