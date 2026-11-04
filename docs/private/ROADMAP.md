@@ -2583,11 +2583,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: user-request-2026-11-02.
   Lanes: local-CI.sh.
 
-- 📋 [RETR-0062] **LOW — task_screenshot.c carries two fork guards that upstream now has too.**
+- ✅ [RETR-0062] **LOW — task_screenshot.c carries two fork guards that upstream now has too.**
   screenshot_dump, on local/fixes-2026-09: the `if (!task)` block and the
   `new_screenshot_dir[0] = '\0'` line each appear twice, ours beside upstream's since merge 6a44252e53. The guard is ours from
   a8dfea395a. Harmless: the second check never fires. Fix: drop ours. Fetch
   upstream first, as this function has moved.
+  Fixed 2026-11-04 in 964cb8d1ac on local/fixes-2026-09: our copy of
+  each guard dropped; screenshot_dump matches upstream/master at both
+  sites. The file compiles clean; no test covers it.
   **Layman:** A screenshot safety check is written twice since a merge; it does no harm but should be tidied.
   Kind: fix.
   Source: local-CI session 2026-11-02 (diff of tasks/task_screenshot.c against merge base 92b11d965b).
