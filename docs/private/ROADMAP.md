@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=65 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=66 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2631,6 +2631,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2026-11-04: on the 625d5e3417 build the user queued four downloads at
   once with no crash. More were hard to queue because the cursor kept
   jumping to the top while a download ran (RETR-0065).
+  2026-11-04: the user queued many downloads with no crash and saw at
+  most four running at once. No fixed limit of four was found in
+  tasks/task_http.c or libretro-common/net/net_http.c, so this cap is
+  not explained yet.
   **Layman:** Queuing lots of downloads used to crash RetroArch; check whether our version still does.
   Kind: investigate.
   Source: user-report-2026-11-04.
@@ -2671,9 +2675,37 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   ours or upstream's. Separately, the Core System Files list never
   marks a downloaded file: cb_generic_download's "[#]" covers only
   MENU_ENUM_LABEL_CB_CORE_CONTENT_DOWNLOAD.
+  2026-11-04: upstream's bug: the user saw it on the official AppImage
+  too. Where the cursor goes to 0: menu_displaylist_process applies
+  MD_FLAG_NEED_CLEAR, which the DISPLAYLIST_CORE_SYSTEM_FILES case sets,
+  on every rebuild. The trigger is unknown. A gdb run (break
+  menu_displaylist_ctl, log $edi and bt) while the user downloaded
+  content and system files did not jump: every list build came from the
+  user opening a list. The morning jump came during "Updating core", so
+  the next try needs a core update in progress. Candidates:
+  cb_task_core_backup's ENTRIES_NEED_REFRESH, or the
+  CMD_EVENT_CORE_INFO_INIT reload. Waiting for a real core update (user,
+  2026-11-04). The gdb script is kept at
+  ~/.local/share/claude-scratch/ra-cursor/ (cmds.gdb, run.sh). The
+  release build has no line info, so it breaks on function names only.
+  Separate: going back to Main Menu also lands on the first entry; not
+  yet looked at.
   **Layman:** While something downloads, you can't scroll down the download lists: the cursor keeps going back to the top.
   Kind: fix.
   Source: user-report-2026-11-04.
+
+- 📋 [RETR-0066] **FEATURE — Mark downloaded files with [#] in Core System Files Downloader and Thumbnails Updater too.**
+  User request 2026-11-04: the download mark everywhere zip files are
+  downloaded. Core Downloader already marks installed cores ([#], [#!]
+  for locked ones), and Content Downloader got the mark in RETR-0041.
+  Core System Files Downloader and Thumbnails Updater show none: the
+  "[#]" in cb_generic_download covers only
+  MENU_ENUM_LABEL_CB_CORE_CONTENT_DOWNLOAD. Reuse RETR-0041's record
+  (menu/menu_content_downloads.c), since a system-files zip is
+  extracted and deleted the same way.
+  **Layman:** Every download list shows which files you already have, not just the Content Downloader.
+  Kind: feature.
+  Source: user-request-2026-11-04.
 
 ### 📝 Cold-eyes 2026-07-04
 
