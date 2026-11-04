@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=62 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=63 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2595,6 +2595,20 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: fix.
   Source: local-CI session 2026-11-02 (diff of tasks/task_screenshot.c against merge base 92b11d965b).
   Lanes: tasks/task_screenshot.c.
+
+- 📋 [RETR-0063] **INVESTIGATE — Starting many downloads at once crashed RetroArch; check the fork.**
+  User report 2026-11-04: in the past, starting too many downloads at
+  once made RetroArch crash and close. Seen on the official build; which
+  version and which downloader are unrecorded. Since 1.22.2 the fork and
+  upstream carry several fixes to download and task lifetimes: task_http
+  state kept alive until retired (7890b0aa87), task_core_updater
+  use-after-free fixes (4e29789925, 74f6867163), task_decompress
+  (44a041cf96), task_queue retirement (36e214f562). Any of these may be
+  the cause. Unverified: no repro yet. Next: the user queues many
+  downloads in the fork build; on a crash, read the coredump backtrace.
+  **Layman:** Queuing lots of downloads used to crash RetroArch; check whether our version still does.
+  Kind: investigate.
+  Source: user-report-2026-11-04.
 
 ### 📝 Cold-eyes 2026-07-04
 
