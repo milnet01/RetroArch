@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=64 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=65 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2127,6 +2127,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2026-11-04: pushed (625d5e3417), local CI 24/24 PASS. Still open: full
   retroarch build for the user's install (RETR-0064) and the user's look
   at the real menu.
+  2026-11-04: the user saw System Name lines in the Core Downloader on
+  the installed 625d5e3417 build. One entry showed none; which core is
+  not yet known (the second screenshot did not come through).
   **Layman:** The list of cores to download should say which console or computer each one emulates, not just its name and licence.
   Kind: feature.
   Source: user-request-2026-10-20.
@@ -2171,7 +2174,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: feature.
   Source: user-request-2026-10-20.
 
-- 🚧 [RETR-0041] **FIX — Content Downloader never marks a downloaded archive, because auto-extract deletes it.**
+- ✅ [RETR-0041] **FIX — Content Downloader never marks a downloaded archive, because auto-extract deletes it.**
   User report 2026-10-20 with a screenshot: in DOOM, prboom.wad shows
   [#] and "Doom (Shareware).zip" does not, though both were downloaded.
   Root cause, checked on the user's install: the [#] marker
@@ -2196,6 +2199,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Downloads made before the fix stay unmarked until downloaded again.
   Next: the user re-downloads Doom (Shareware).zip in the fork's menu to
   confirm [#]; then an upstream PR (user approval per PR).
+  2026-11-04: the user re-downloaded "Doom (Shareware).zip" on the
+  installed 625d5e3417 build and it now shows as downloaded.
   **Layman:** The Content Downloader says a zip you already downloaded is missing, because RetroArch unpacks the zip and throws it away, and then looks for the zip.
   Kind: fix.
   Source: user-report-2026-10-20.
@@ -2623,6 +2628,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (44a041cf96), task_queue retirement (36e214f562). Any of these may be
   the cause. Unverified: no repro yet. Next: the user queues many
   downloads in the fork build; on a crash, read the coredump backtrace.
+  2026-11-04: on the 625d5e3417 build the user queued four downloads at
+  once with no crash. More were hard to queue because the cursor kept
+  jumping to the top while a download ran (RETR-0065).
   **Layman:** Queuing lots of downloads used to crash RetroArch; check whether our version still does.
   Kind: investigate.
   Source: user-report-2026-11-04.
@@ -2652,6 +2660,20 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
+
+- 📋 [RETR-0065] **FIX — While a download runs, the downloader list's cursor keeps jumping back to the first entry.**
+  Reported 2026-11-04 on the installed 625d5e3417 build, with a
+  screenshot of Core System Files Downloader showing "Updating core:
+  Commodore - Amiga (PUAE 2021)" at 22%. Scrolling works again once the
+  download ends. Not yet located. Ruled out: df271733a8 (RETR-0041; it
+  adds no refresh) and 33eef2765b (the Ozone change runs on tab switch
+  only). Next: does the official AppImage do the same? That decides
+  ours or upstream's. Separately, the Core System Files list never
+  marks a downloaded file: cb_generic_download's "[#]" covers only
+  MENU_ENUM_LABEL_CB_CORE_CONTENT_DOWNLOAD.
+  **Layman:** While something downloads, you can't scroll down the download lists: the cursor keeps going back to the top.
+  Kind: fix.
+  Source: user-report-2026-11-04.
 
 ### 📝 Cold-eyes 2026-07-04
 
