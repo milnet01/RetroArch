@@ -2124,6 +2124,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   at the real menu. vita3k and xenia_edge still need .info files
   upstream. Next: full build, push, install for the user (RETR-0064),
   user checks the menu; then one upstream PR with approval.
+  2026-11-04: pushed (625d5e3417), local CI 24/24 PASS. Still open: full
+  retroarch build for the user's install (RETR-0064) and the user's look
+  at the real menu.
   **Layman:** The list of cores to download should say which console or computer each one emulates, not just its name and licence.
   Kind: feature.
   Source: user-request-2026-10-20.
@@ -2536,6 +2539,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Fixed in ccec8a6e2b on 2026-11-02. changed_jobs now reads the old remote value from the hook's ANTS_PUSH_REFS; a new branch or a detached run by hand counts everything on no remote. Commits upstream already has no longer count: merge 6a44252e53 named 10,993 files before and none after. ANTS_PUSH_CHANGED was not used, because it lists a merge's files.
 
   Proof: at dbcfefdade, detached, with the push's refs given, 15 workflow jobs before and 34 after, none lost. The real hook ran it on the one-commit push of ccec8a6e2b and passed, with 12 changed-file act jobs. A one-commit push cannot tell the old base from the new one, so the first real multi-commit push is the hook's own proof of the wider selection.
+  2026-11-04, first real multi-commit push (964cb8d1ac, 625d5e3417): the
+  gate chose act jobs from both commits, adding compile-matrix,
+  menu-harness and samples-unclaimed for the second; 24/24 PASS. GitHub
+  then refused with a 500 during its incident, so the push went with
+  SKIP_LOCAL_CI=1 on the user's OK, the same SHA already gated.
   **Layman:** When several commits are pushed together, the extra tests are chosen from only the newest one, so the others can miss tests made for them.
   Kind: fix.
   Source: user-request-2026-11-02.
