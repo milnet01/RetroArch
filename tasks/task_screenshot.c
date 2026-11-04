@@ -705,10 +705,7 @@ static bool screenshot_dump(
       }
       else
       {
-         /* Starts empty: when screenshot_dir is empty nothing writes
-          * it before the `!*new_screenshot_dir` check below reads it. */
          char new_screenshot_dir[DIR_MAX_LENGTH];
-         new_screenshot_dir[0] = '\0';
 
          /* Read below whether or not screenshot_dir was set. */
          new_screenshot_dir[0] = '\0';
@@ -810,14 +807,6 @@ static bool screenshot_dump(
    if (use_thread)
    {
       retro_task_t *task = task_init();
-      /* task_init() may return NULL on OOM. */
-      if (!task)
-      {
-         if (state->out_buffer)
-            free(state->out_buffer);
-         free(state);
-         return false;
-      }
 
       if (!task)
       {
