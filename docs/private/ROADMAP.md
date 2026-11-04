@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=63 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=64 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2093,7 +2093,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: feature.
   Source: user-request-2026-10-03.
 
-- 📋 [RETR-0038] **FEATURE — Core Downloader: show which system each core is for.**
+- 🚧 [RETR-0038] **FEATURE — Core Downloader: show which system each core is for.**
   User request 2026-10-20, with a screenshot of the Core Downloader
   (Ozone). Each entry shows the core's name and a "License:" line only.
   Some names carry the system ("Watara - Supervision (Potator)"); others
@@ -2115,6 +2115,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   the licence (menu_cbs_sublabel.c). vita3k and xenia_edge have no .info
   file at all in the user's info directory, so they show the file name;
   that part needs the info files added upstream (libretro-core-info).
+  2026-11-04: built on the fork, 625d5e3417 (local/fixes-2026-09,
+  committed, not yet pushed). Sublabel shows "System Name:
+  <manufacturer> <systemname>" above the licence; manufacturer left out
+  for N/A, Various, several makers, or a system name already starting
+  with it. Test core_updater_info_test: 6/9 red before, 9/9 green after,
+  ASan+UBSan. Not yet run: the full retroarch build and the user's look
+  at the real menu. vita3k and xenia_edge still need .info files
+  upstream. Next: full build, push, install for the user (RETR-0064),
+  user checks the menu; then one upstream PR with approval.
   **Layman:** The list of cores to download should say which console or computer each one emulates, not just its name and licence.
   Kind: feature.
   Source: user-request-2026-10-20.
@@ -2609,6 +2618,24 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** Queuing lots of downloads used to crash RetroArch; check whether our version still does.
   Kind: investigate.
   Source: user-report-2026-11-04.
+
+- 📋 [RETR-0064] **CHORE — Make the fork the user's everyday RetroArch: install a fresh build, switch the app menu, sync weekly.**
+  User decision 2026-11-04. (1) Build local/fixes-2026-09 after its
+  pushes land, and install it as /mnt/Games/Scripts/Linux/RetroArch/
+  retroarch, the binary retroarch-fork.sh runs; keep the old one as
+  retroarch.OLD. The current one, built 2026-10-22, cannot be shown to
+  carry df271733a8 (RETR-0041): its version stamp names a docs commit.
+  (2) ~/.local/share/applications/retroarch.desktop: "RetroArch" runs
+  /mnt/Emulators/Multi-System/RetroArch/retroarch-fork.sh; add
+  "RetroArch (official)" running retroarch-portable.sh. Both share the
+  AppImage's .home, so settings and saves carry over. (3) Weekly: merge
+  upstream/master into the fixes branch, pass local CI, rebuild, install.
+  Last merge 2026-10-31 (6a44252e53); 130 upstream commits behind on
+  2026-11-04. Then the user tests RETR-0041 (Doom [#]), RETR-0038
+  (System Name line) and RETR-0063 (many downloads at once).
+  **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
+  Kind: chore.
+  Source: user-decision-2026-11-04.
 
 ### 📝 Cold-eyes 2026-07-04
 
