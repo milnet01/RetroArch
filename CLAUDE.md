@@ -94,5 +94,7 @@ Bundle commits cross-reference each other by SHA in `docs/private/ROADMAP.md`. W
 
 Before fixing a finding, fetch `upstream` and check `upstream/master` for a fix of the same defect. The fork lags upstream, and some upstream fixes are our own merged PRs. Where upstream has one, carry it with `git cherry-pick -x` rather than writing a second. Nothing checks this; the commit body names the upstream commit carried.
 
+**Never commit to a branch while its push is gating.** The pre-push hook gates the commit it saw at the start. If the branch has moved by the end, it aborts the push, because git would send a commit nothing checked. A mid-gate commit throws away the whole local-CI run. Commit before `git push`, or after it returns.
+
 `docs/private/audit/aggregate.py` is the fork's local audit-aggregator that drives `last_audit_summary` / `audit_run` MCP integrations; `.cppcheck-suppress.txt` at repo root holds the cppcheck inline-suppression set the aggregator respects. See `docs/private/AUDIT-POLICY.md` for the false-positive-pattern +
 suppression contract.
