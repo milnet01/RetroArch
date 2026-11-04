@@ -63,7 +63,9 @@ typedef struct
    char *local_info_path;
    char *display_name;
    char *description;
-   /* NULL when the core's info file names no system */
+   /* "<manufacturer> <systemname>", or the system name alone, as
+    * core_updater_info_t's; not core_info_t's systemname, which never
+    * has the manufacturer.  NULL when the info file names no system */
    char *system_name;
    struct string_list *licenses_list;
    /* Installed core's size and modification time, as the libretro
