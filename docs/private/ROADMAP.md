@@ -2694,7 +2694,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: fix.
   Source: user-report-2026-11-04.
 
-- 🚧 [RETR-0066] **FEATURE — Mark downloaded files with [#] in Core System Files Downloader and Thumbnails Updater too.**
+- ✅ [RETR-0066] **FEATURE — Mark downloaded files with [#] in Core System Files Downloader too.**
   User request 2026-11-04: the download mark everywhere zip files are
   downloaded. Core Downloader already marks installed cores ([#], [#!]
   for locked ones), and Content Downloader got the mark in RETR-0041.
@@ -2714,6 +2714,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (sha256 f7de75c7...). Push gating. Open: the user's check in the
   menu. Files downloaded before this change stay unmarked until
   downloaded again.
+  2026-11-04: the user downloaded a system file on the installed build
+  and confirmed the [#] mark.
   **Layman:** Every download list shows which files you already have, not just the Content Downloader.
   Kind: feature.
   Source: user-request-2026-11-04.
