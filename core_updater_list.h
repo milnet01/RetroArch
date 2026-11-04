@@ -63,6 +63,8 @@ typedef struct
    char *local_info_path;
    char *display_name;
    char *description;
+   /* NULL when the core's info file names no system */
+   char *system_name;
    struct string_list *licenses_list;
    /* Installed core's size and modification time, as the libretro
     * directory walk of an installed-only parse saw them; valid only
