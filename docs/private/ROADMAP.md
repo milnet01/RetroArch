@@ -1683,6 +1683,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   565460de50 made smb2_context_active() return 0 for client contexts:
   6/6 runs fail with it, 6/6 pass on its parent. Upstream RetroArch
   fixed it in 2855f460d8, carried in the fork as 6b5142c763.
+  2026-11-04: opened #19992 (download [#] marker, RETR-0041/0066) and
+  #19993 (Core Downloader System Name, RETR-0038), both user-approved,
+  readability review run first.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2130,6 +2133,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2026-11-04: the user saw System Name lines in the Core Downloader on
   the installed 625d5e3417 build. One entry showed none; which core is
   not yet known (the second screenshot did not come through).
+  2026-11-04: upstream PR #19993 (pr/core-system-name), user-approved;
+  readability review comment fix carried to the fork as 3c853184e1. The
+  'maker starts the system name' rule has no word break on purpose:
+  gearcoleco's Coleco / ColecoVision shows as ColecoVision.
   **Layman:** The list of cores to download should say which console or computer each one emulates, not just its name and licence.
   Kind: feature.
   Source: user-request-2026-10-20.
@@ -2201,6 +2208,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   confirm [#]; then an upstream PR (user approval per PR).
   2026-11-04: the user re-downloaded "Doom (Shareware).zip" on the
   installed 625d5e3417 build and it now shows as downloaded.
+  2026-11-04: upstream PR #19992 (pr/download-marker), user-approved,
+  with RETR-0066. The pre-PR readability review found an uninitialised
+  output_path read in cb_generic_download (two early exits with no err);
+  fixed in the PR (39d0130c9c) and the fork (80fc994926).
   **Layman:** The Content Downloader says a zip you already downloaded is missing, because RetroArch unpacks the zip and throws it away, and then looks for the zip.
   Kind: fix.
   Source: user-report-2026-10-20.
@@ -2717,6 +2728,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2026-11-04: the user downloaded a system file on the installed build
   and confirmed the [#] mark.
   2026-11-04: ab629a497e pushed; local CI 29/29 PASS.
+  2026-11-04: upstream PR #19992 with RETR-0041 (see there); fork fix
+  80fc994926.
   **Layman:** Every download list shows which files you already have, not just the Content Downloader.
   Kind: feature.
   Source: user-request-2026-11-04.
