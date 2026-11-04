@@ -2716,6 +2716,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   downloaded again.
   2026-11-04: the user downloaded a system file on the installed build
   and confirmed the [#] mark.
+  2026-11-04: ab629a497e pushed; local CI 29/29 PASS.
   **Layman:** Every download list shows which files you already have, not just the Content Downloader.
   Kind: feature.
   Source: user-request-2026-11-04.
