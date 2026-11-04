@@ -2627,7 +2627,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: investigate.
   Source: user-report-2026-11-04.
 
-- 📋 [RETR-0064] **CHORE — Make the fork the user's everyday RetroArch: install a fresh build, switch the app menu, sync weekly.**
+- 🚧 [RETR-0064] **CHORE — Make the fork the user's everyday RetroArch: install a fresh build, switch the app menu, sync weekly.**
   User decision 2026-11-04. (1) Build local/fixes-2026-09 after its
   pushes land, and install it as /mnt/Games/Scripts/Linux/RetroArch/
   retroarch, the binary retroarch-fork.sh runs; keep the old one as
@@ -2641,6 +2641,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Last merge 2026-10-31 (6a44252e53); 130 upstream commits behind on
   2026-11-04. Then the user tests RETR-0041 (Doom [#]), RETR-0038
   (System Name line) and RETR-0063 (many downloads at once).
+  2026-11-04: steps (1) and (2) done. Built 625d5e3417 with make -j4
+  ("Version: 1.22.2 Nov  4 2026"); df271733a8 and 964cb8d1ac are its
+  ancestors. Installed as retroarch (sha256 6d0bd4fa...), the
+  2026-10-22 binary kept as retroarch.OLD. retroarch.desktop now runs
+  retroarch-fork.sh; new retroarch-official.desktop runs
+  retroarch-portable.sh; both pass desktop-file-validate. Open: the
+  user's menu tests (RETR-0041, RETR-0038, RETR-0063) and the weekly
+  merge, due about 2026-11-07.
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
