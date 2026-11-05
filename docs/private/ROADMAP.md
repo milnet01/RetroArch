@@ -2276,13 +2276,20 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: review-code 2026-10-21 lane 1 (su_undo).
   Lanes: self_update.
 
-- 📋 [RETR-0043] **LOW — Self-updater: expand a REG_EXPAND_SZ UninstallString before matching it.**
+- ✅ [RETR-0043] **LOW — Self-updater: expand a REG_EXPAND_SZ UninstallString before matching it.**
   The registry read accepts REG_EXPAND_SZ but matches the value
   unexpanded, so a value holding %ProgramFiles% would class an installed
   copy as portable. Fix: ExpandEnvironmentStringsW in
   task_self_update.c before the match. Queued because it needs a Windows
   build and run (ssh wintest) to test. The quoted-arguments half was
   fixed in 4a8a64a797.
+  2026-11-05: fixed in a60d6e7daa (local/fixes-2026-09; fork-only code,
+  nothing upstream). ExpandEnvironmentStringsW on a REG_EXPAND_SZ value
+  before the match. Red then green on the Windows 10 test machine with a
+  mingw build of the real task_self_update.c and a temporary key:
+  REG_EXPAND_SZ "%TEMP%\retr0043\uninstall.exe" gave WIN_PORTABLE before,
+  WIN_INSTALLER_VISIBLE after; plain REG_SZ unchanged. Key and folder
+  removed. Pushes with the pending local-CI run.
   **Layman:** An installed RetroArch whose uninstall entry uses a Windows path variable could be treated as a portable copy.
   Kind: fix.
   Source: review-code 2026-10-21 lane 1 lead A2.
