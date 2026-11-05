@@ -2777,6 +2777,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   lands, make -j4 in ra-fixes, save the installed binary (built
   2026-11-04 16:33) as retroarch.2026-11-04, never touching
   retroarch.OLD, install, and tell retrodb-0d.
+  2026-11-05: the push of b1aefee5f6 landed (ab629a497e..eebfac1c1a, all
+  gate jobs green), after the 09:00 attempt failed on
+  samples-gfx-display's 20 min install limit under load. Next per this
+  item: make -j4 in ra-fixes, save the installed binary, install.
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
@@ -2846,7 +2850,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: feature.
   Source: user-request-2026-11-04.
 
-- 📋 [RETR-0067] **CHORE — Local CI: move timing floors out of the push gate; check why the vp9 build was terminated under load.**
+- ✅ [RETR-0067] **CHORE — Local CI: move timing floors out of the push gate; check why the vp9 build was terminated under load.**
   2026-11-05: with load near 24 on 12 cores, local-CI.sh failed with no
   code cause: samples-tasks (scan throughput factor 0.98 vs limit 0.80),
   samples-tasks-http (246724 bytes per net_http_update vs floor 262144),
@@ -2871,6 +2875,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   load below 6), 92b387b147 (act jobs reach act's cache server; every
   restore had failed under pasta). The 300 s vp9 build limit stays
   upstream's.
+  2026-11-05: eebfac1c1a adds ccache to the native workflow steps (own
+  cache, /mnt/Emulators): warm runs 13 to 22% faster on three jobs, 1323
+  of 1324 compiles hit. All four landed with b1aefee5f6's merge in the
+  push ab629a497e..eebfac1c1a: 29 of 29 gate jobs passed in about 1 h 50
+  min. On that push both timing steps ran (the push touched their
+  sources); the scan step waited at load 7, then passed. Closing: the
+  push gate no longer fails on load from these two floors; RETR-0069
+  holds the remaining install-time flake.
   **Layman:** The checks that run before every push fail when the computer is busy, even when nothing is wrong; the speed tests should run on a schedule instead.
   Kind: chore.
   Source: claude-config-advice-2026-11-05.
