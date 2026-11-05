@@ -29,7 +29,6 @@
 #include <compat/strl.h>
 #include <retro_atomic.h>
 #include <rthreads/rthreads.h>
-#include <rthreads/retro_eventcount.h>
 
 #include "video_mode_select.h"
 
@@ -89,6 +88,7 @@ typedef struct
 
 typedef struct
 {
+   mpsc_stack_node_t node;   /* replaced, waiting for its callers */
    unsigned       serial;
    unsigned       layout_mode;
    mdc_monitor_t *mon;
@@ -974,14 +974,13 @@ typedef struct mdc_request
 
 /* What the worker and its callers share, without a lock: the worker
  * publishes a snapshot by swapping the pointer, a caller reading one
- * counts itself in and out, and the worker frees the snapshot it
- * replaced once nobody is counted in. Requests are pushed on a list
- * the worker takes whole. */
+ * enters and leaves, and the snapshot it replaced is freed once no
+ * caller is in, by whichever is last out (retro_retire.h). Requests
+ * are pushed on a list the worker takes whole. */
 typedef struct mdc_ctl
 {
    retro_atomic_ptr_t state;   /* mdc_state_t, NULL until Mutter answers */
-   retro_atomic_int_t users;   /* callers looking at a snapshot */
-   retro_eventcount_t idle;    /* notified as the last one leaves */
+   retro_retire_t     retire;
    retro_atomic_ptr_t reqs;    /* mdc_request_t, newest first */
    int           wake[2];
 } mdc_ctl_t;
@@ -1034,20 +1033,22 @@ static enum mutter_dc_result mdc_check(const mdc_state_t *st,
    return MUTTER_DC_OK;
 }
 
+static void mdc_state_free_node(mpsc_stack_node_t *node)
+{
+   mdc_state_free((mdc_state_t*)node);
+}
+
 /* The snapshot, for the caller to read until mdc_state_put(); NULL
- * until Mutter has answered. Counted in before the pointer is read, so
- * the worker either sees the count or has already swapped. */
+ * until Mutter has answered. */
 static const mdc_state_t *mdc_state_get(mdc_ctl_t *ctl)
 {
-   (void)retro_atomic_fetch_add_seq_cst_int(&ctl->users, 1);
-   retro_atomic_thread_fence_seq_cst();
+   retro_retire_enter(&ctl->retire);
    return (const mdc_state_t*)retro_atomic_load_acquire_ptr(&ctl->state);
 }
 
 static void mdc_state_put(mdc_ctl_t *ctl)
 {
-   if (retro_atomic_fetch_sub_int(&ctl->users, 1) == 1)
-      retro_eventcount_notify(&ctl->idle);
+   retro_retire_leave(&ctl->retire, mdc_state_free_node);
 }
 
 static bool mdc_present(mdc_ctl_t *ctl)
@@ -1062,23 +1063,7 @@ static void mdc_publish(mdc_ctl_t *ctl, mdc_state_t *st, int status)
    mdc_state_t *old = (mdc_state_t*)
       retro_atomic_exchange_ptr(&ctl->state, st);
    (void)status;
-   if (!old)
-      return;
-   retro_atomic_thread_fence_seq_cst();
-   for (;;)
-   {
-      int key;
-      if (!retro_atomic_load_seq_cst_int(&ctl->users))
-         break;
-      key = retro_eventcount_prepare_wait(&ctl->idle);
-      if (!retro_atomic_load_seq_cst_int(&ctl->users))
-      {
-         retro_eventcount_cancel_wait(&ctl->idle);
-         break;
-      }
-      retro_eventcount_commit_wait(&ctl->idle, key);
-   }
-   mdc_state_free(old);
+   retro_retire(&ctl->retire, old ? &old->node : NULL, mdc_state_free_node);
 }
 
 static bool mdc_request_push(mdc_ctl_t *ctl, const mdc_request_t *r)
@@ -1219,8 +1204,7 @@ static mdc_ctl_t *mdc_start(void)
    if (!(ctl = (mdc_ctl_t*)calloc(1, sizeof(*ctl))))
       return NULL;
    ctl->wake[0] = ctl->wake[1] = -1;
-   if (     !retro_eventcount_init(&ctl->idle)
-         || pipe(ctl->wake) != 0
+   if (     pipe(ctl->wake) != 0
          || fcntl(ctl->wake[0], F_SETFL, O_NONBLOCK) != 0
          || fcntl(ctl->wake[1], F_SETFL, O_NONBLOCK) != 0
          || !(thread = sthread_create(mdc_worker, ctl)))
@@ -1229,7 +1213,6 @@ static mdc_ctl_t *mdc_start(void)
          close(ctl->wake[0]);
       if (ctl->wake[1] >= 0)
          close(ctl->wake[1]);
-      retro_eventcount_free(&ctl->idle);
       free(ctl);
       return NULL;
    }

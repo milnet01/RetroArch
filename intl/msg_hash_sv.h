@@ -2591,7 +2591,7 @@ static const struct
    char s_9e5c39c0[19];
    char s_6fbfde48[35];
    char s_482ee1f1[11];
-   char s_3794746e[48];
+   char s_3794746e[42];
    char s_214b7699[10];
    char s_3e628390[9];
    char s_6b25e2a0[15];
@@ -3802,6 +3802,7 @@ static const struct
    char s_a55bf936[34];
    char s_c519f84d[36];
    char s_48aefa30[37];
+   char s_5d383a58[141];
    char s_dcf8bd8b[39];
    char s_bce9b94f[44];
    char s_d32f5a63[38];
@@ -4310,6 +4311,7 @@ static const struct
    char s_f0b48289[52];
    char s_19b9a241[42];
    char s_92998c8d[45];
+   char s_7541bcd3[76];
    char s_ca731381[23];
    char s_6b6a247d[51];
    char s_6704b41f[42];
@@ -7663,7 +7665,7 @@ static const struct
    "F\303\266rinst\303\244llning O",
    "Kvalitet f\303\266r temporal uppskalning",
    "Balanserad",
-   "Ursprunglig uppl\303\266sning (endast kantutj\303\244mning)",
+   "Ursprunglig (DLAA, endast kantutj\303\244mning)",
    "Prestanda",
    "Kvalitet",
    "Ultraprestanda",
@@ -9731,6 +9733,9 @@ static const struct
    "Visar inst\303\244llningar f\303\266r latens.",
    "Visar inst\303\244llningar f\303\266r loggning.",
    "Visa inst\303\244llningar f\303\266r 'N\303\244tverk'.",
+   "Visa inst\303\244llningar f\303\266r \342\200\235Sk\303\244rmvisning\342\200\235. P\303\245verka"
+   "r b\303\245de \342\200\235Sk\303\244rmmeddelanden och sk\303\244rm\303\266verl\303\244gg\342\200"
+   "\235 under \342\200\235Anv\303\244ndargr\303\244nssnitt\342\200\235.",
    "Visa inst\303\244llningar f\303\266r 'Spellistor'.",
    "Visa inst\303\244llningar f\303\266r 'Energihantering'.",
    "Visar inst\303\244llningar f\303\266r inspelning.",
@@ -10628,6 +10633,8 @@ static const struct
    "S\303\244kerhetskopia av installerad k\303\244rna finns redan: ",
    "S\303\244kerhetskopiering av k\303\244rna slutf\303\266rd: ",
    "S\303\244kerhetskopiering av k\303\244rna misslyckades: ",
+   "En s\303\244kerhetskopiering eller \303\245terst\303\244llning av denna k\303\244rna p\303\245g"
+   "\303\245r redan:",
    "S\303\266ker igenom k\303\244rna: ",
    "K\303\244rnborttagning inaktiverad - k\303\244rnan \303\244r l\303\245st: ",
    "K\303\244rnan har inte st\303\266d f\303\266r Disc Control.",
@@ -11201,7 +11208,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_sv_blob_check[
-      (sizeof(msg_hash_sv_blob) == (231161u
+      (sizeof(msg_hash_sv_blob) == (231372u
 #ifdef ANDROID
        + 361u
 #endif
@@ -15559,6 +15566,7 @@ static const msg_hash_id_t msg_hash_sv_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_LATENCY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_LOGGING,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_NETWORK,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_ONSCREEN_DISPLAY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_PLAYLISTS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_POWER_MANAGEMENT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_RECORDING,
@@ -16061,6 +16069,7 @@ static const msg_hash_id_t msg_hash_sv_ids[] =
    (msg_hash_id_t)MSG_CORE_BACKUP_ALREADY_EXISTS,
    (msg_hash_id_t)MSG_CORE_BACKUP_COMPLETE,
    (msg_hash_id_t)MSG_CORE_BACKUP_FAILED,
+   (msg_hash_id_t)MSG_CORE_BACKUP_IN_PROGRESS,
    (msg_hash_id_t)MSG_CORE_BACKUP_SCANNING_CORE,
    (msg_hash_id_t)MSG_CORE_DELETE_DISABLED,
    (msg_hash_id_t)MSG_CORE_DOES_NOT_SUPPORT_DISK_OPTIONS,

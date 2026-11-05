@@ -99,6 +99,15 @@ ifneq ($(SWITCH),)
    TARGET := retro_eventcount_test_switch
 endif
 
+# GEKKO=1 builds the GameCube and Wii backend, os/gekko's futex, on
+# this host, against hostgekko/gekko - the slice of os/gekko it uses -
+# with the futex stood in for over Linux's in gekko_futex_shim.c.
+ifneq ($(GEKKO),)
+   CFLAGS += -DRETRO_EVENTCOUNT_FORCE_GEKKO -Ihostgekko
+   SOURCES += gekko_futex_shim.c
+   TARGET := retro_eventcount_test_gekko
+endif
+
 OBJS := $(call sample_objs,$(SOURCES:.c=.o))
 
 ifneq ($(SAN),)
@@ -124,8 +133,12 @@ $(TARGET): $(OBJS)
 deadline_test: deadline_test.c $(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c
 	$(CC) $(CFLAGS) -o $@ deadline_test.c $(filter-out retro_eventcount_test.c $(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c,$(SOURCES)) $(LDFLAGS)
 
-check: all deadline_test
+win32_spin_test: win32_spin_test.c $(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c
+	$(CC) $(CFLAGS) -o $@ win32_spin_test.c $(filter-out retro_eventcount_test.c $(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c,$(SOURCES)) $(LDFLAGS)
+
+check: all deadline_test win32_spin_test
 	./deadline_test
+	./win32_spin_test
 	./$(TARGET)
 	@$(MAKE) -s clean
 	@$(MAKE) -s SCOND=1 $(if $(SANITIZER),SANITIZER=$(SANITIZER))
@@ -143,14 +156,24 @@ check: all deadline_test
 	@$(MAKE) -s clean
 	@$(MAKE) -s CTR=1 $(if $(SANITIZER),SANITIZER=$(SANITIZER))
 	./retro_eventcount_test_ctr
+	@$(MAKE) -s clean
+	@$(MAKE) -s GEKKO=1 $(if $(SANITIZER),SANITIZER=$(SANITIZER))
+	./retro_eventcount_test_gekko
+	@if HOSTGEKKO_LOSE_WAKES=1 timeout 20 ./retro_eventcount_test_gekko >/dev/null 2>&1; then \
+	   echo "FAIL: the gekko backend passed with its wakes lost"; exit 1; \
+	 else \
+	   echo "retro_eventcount_test_gekko: lost wakes caught, as they must be"; \
+	 fi
 
 clean:
 	rm -rf $(SAMPLE_OBJDIR)
 	rm -f $(OBJS) switch_arbiter_shim.o ctr_arbiter_shim.o sem_hidden_shim.o \
+	      gekko_futex_shim.o retro_eventcount_test_gekko \
 	      retro_eventcount_test \
 	      retro_eventcount_test_scond retro_eventcount_test_sem \
 	      retro_eventcount_test_sempool retro_eventcount_test_switch \
 	      retro_eventcount_test_ctr
 	rm -f deadline_test deadline_test.exe
+	rm -f win32_spin_test win32_spin_test.exe
 
 .PHONY: all check clean

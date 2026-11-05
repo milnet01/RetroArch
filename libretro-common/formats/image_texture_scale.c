@@ -20,6 +20,7 @@
  */
 
 #include <stdint.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -44,16 +45,40 @@ static bool upscale_image(
    if (!image_src->pixels || (image_src->width < 1) || (image_src->height < 1))
       return false;
 
+   if (image_src->width > UINT_MAX / scale_factor
+         || image_src->height > UINT_MAX / scale_factor)
+      return false;
+
    /* Get output dimensions */
    image_dst->width  = image_src->width  * scale_factor;
    image_dst->height = image_src->height * scale_factor;
 
-   total_pixels = (size_t)image_dst->width * (size_t)image_dst->height;
-   if (total_pixels == 0 || total_pixels > UPSCALE_MAX_PIXELS)
+   if (image_dst->width > UPSCALE_MAX_PIXELS / image_dst->height)
       return false;
+   total_pixels = (size_t)image_dst->width * (size_t)image_dst->height;
 
    if (!(image_dst->pixels = (uint32_t*)malloc(total_pixels * sizeof(uint32_t))))
       return false;
+
+   /* These factors are exact in the point scaler's 16.16 mapping. */
+   if ((scale_factor & (scale_factor - 1)) == 0)
+   {
+      unsigned x, y, i;
+      size_t row_bytes = (size_t)image_dst->width * sizeof(uint32_t);
+      for (y = 0; y < image_src->height; y++)
+      {
+         const uint32_t *src = image_src->pixels + (size_t)y * image_src->width;
+         uint32_t *row = image_dst->pixels
+            + (size_t)y * scale_factor * image_dst->width;
+         uint32_t *dst = row;
+         for (x = 0; x < image_src->width; x++)
+            for (i = 0; i < scale_factor; i++)
+               *dst++ = src[x];
+         for (i = 1; i < scale_factor; i++)
+            memmove(row + (size_t)i * image_dst->width, row, row_bytes);
+      }
+      return true;
+   }
 
    /* Duplicate rather than interpolate.
     *
@@ -107,6 +132,44 @@ static bool upscale_image(
    return true;
 }
 
+static uint32_t box_average_wide(const uint32_t *src,
+      unsigned stride, unsigned f, bool pix10)
+{
+   unsigned x, y;
+   uint64_t a = 0, r = 0, g = 0, b = 0;
+   uint64_t n = (uint64_t)f * f;
+   for (y = 0; y < f; y++)
+   {
+      const uint32_t *row = src + (size_t)y * stride;
+      if (pix10)
+      {
+         for (x = 0; x < f; x++)
+         {
+            uint32_t p = row[x];
+            r += (p >> 20) & 0x3ff;
+            g += (p >> 10) & 0x3ff;
+            b += p & 0x3ff;
+         }
+      }
+      else
+      {
+         for (x = 0; x < f; x++)
+         {
+            uint32_t p = row[x];
+            a += (p >> 24) & 0xff;
+            r += (p >> 16) & 0xff;
+            g += (p >> 8) & 0xff;
+            b += p & 0xff;
+         }
+      }
+   }
+   if (pix10)
+      return 0xc0000000u | ((uint32_t)(r / n) << 20)
+         | ((uint32_t)(g / n) << 10) | (uint32_t)(b / n);
+   return ((uint32_t)(a / n) << 24) | ((uint32_t)(r / n) << 16)
+      | ((uint32_t)(g / n) << 8) | (uint32_t)(b / n);
+}
+
 static uint32_t *downscale_box(const uint32_t *src,
       unsigned sw, unsigned sh, unsigned f, bool pix10,
       unsigned *out_w, unsigned *out_h)
@@ -122,6 +185,18 @@ static uint32_t *downscale_box(const uint32_t *src,
 
    if (!(d = (uint32_t*)malloc((size_t)dw * dh * sizeof(uint32_t))))
       return NULL;
+
+   /* Keep 32-bit sums for safe power-of-two box sizes. */
+   if (f > (pix10 ? 2048u : 4096u))
+   {
+      for (y = 0; y < dh; y++)
+         for (x = 0; x < dw; x++)
+            d[(size_t)y * dw + x] = box_average_wide(
+                  src + (size_t)y * f * sw + x * f, sw, f, pix10);
+      *out_w = dw;
+      *out_h = dh;
+      return d;
+   }
 
    for (y = 0; y < dh; y++)
    {
@@ -231,6 +306,15 @@ static bool downscale_image(unsigned cap, struct texture_image *img)
          sw  = bw;
          sh  = bh;
       }
+   }
+
+   if (mid && sw == dw && sh == dh)
+   {
+      free(img->pixels);
+      img->pixels = mid;
+      img->width  = dw;
+      img->height = dh;
+      return true;
    }
 
    /* Stage 2: sinc to the exact target. */

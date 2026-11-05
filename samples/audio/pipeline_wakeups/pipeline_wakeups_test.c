@@ -786,6 +786,8 @@ static void consumer_exit_run(void);
 static bool consumer_exit_mode;
 static void kept_device_run(void);
 static bool kept_device_mode;
+static void kept_drop_run(void);
+static bool kept_drop_mode;
 /* The pause boundary and consumer exit lanes run their one scenario in
  * place of the load sweep's phases. */
 static bool single_lane;
@@ -1360,6 +1362,11 @@ static void run_one(unsigned publishes, double seconds, bool backpressure)
       kept_device_run();
       frames = 0;
    }
+   if (kept_drop_mode)
+   {
+      kept_drop_run();
+      frames = 0;
+   }
    clock_gettime(CLOCK_MONOTONIC, &next);
    for (i = 0; i < frames; i++)
    {
@@ -1691,6 +1698,92 @@ static void kept_device_case(void)
       fixture_failures++;
 }
 
+/* The kept device not taken back: set aside through the shipping path,
+ * the pipeline rebuilt for the next device, then dropped. Its thread
+ * leaves from the park, so it must not consume the new pipeline nor
+ * report a departed consumer to it, and the next wrapper must find the
+ * producer waiting on it as on any other. */
+static void kept_drop_case(void)
+{
+   audio_driver_state_t *st = &audio_driver_st;
+   size_t per_frame         = (size_t)(CORE_RATE / FPS);
+   size_t ring_bytes        = st->pipe_ring.capacity;
+   size_t writes, wakes;
+   unsigned frame;
+
+   for (frame = 0; frame < 8; frame++)
+      submit_frame(per_frame, 1);
+   writes = 0;
+   if (!wait_progress(wrote_since, &writes))
+      fixture_failures++;
+
+   audio_driver_keep_device(true);
+   if (!audio_driver_set_aside(st, st->current_audio))
+   {
+      fprintf(stderr, "the wrapper was not set aside\n");
+      fixture_failures++;
+      return;
+   }
+   AUDIO_FLAGS_CLEAR(st, AUDIO_FLAG_STARTED);
+   st->context_audio_data = NULL;
+
+   retro_spsc_free(&st->pipe_ring);
+   retro_eventcount_free(&st->pipe_space);
+   retro_eventcount_free(&st->pipe_data);
+   if (     !retro_spsc_init(&st->pipe_ring, ring_bytes)
+         || !retro_eventcount_init(&st->pipe_space)
+         || !retro_eventcount_init(&st->pipe_data))
+   {
+      fixture_failures++;
+      return;
+   }
+   retro_atomic_int_init(&st->pipe_consumer_gone, 0);
+   retro_atomic_int_init(&st->pipe_wake, 0);
+   st->pipe_priming = true;
+
+   wakes = retro_atomic_load_acquire_size(&cnt_wakes);
+   audio_driver_drop_kept();
+   if (retro_atomic_load_acquire_size(&cnt_wakes) != wakes)
+   {
+      fprintf(stderr, "the dropped wrapper consumed the rebuilt pipeline\n");
+      fixture_failures++;
+   }
+   if (retro_atomic_load_acquire_int(&st->pipe_consumer_gone))
+   {
+      fprintf(stderr, "the dropped wrapper reported a departed consumer\n");
+      fixture_failures++;
+   }
+   if (retro_atomic_load_acquire_int(&st->pipe_wake))
+   {
+      fprintf(stderr, "the dropped wrapper woke the rebuilt pipeline\n");
+      fixture_failures++;
+   }
+
+   if (!audio_init_thread(&st->current_audio, &st->context_audio_data,
+            NULL, OUT_RATE, NULL, 64, false, false, &clocked_driver))
+   {
+      fixture_failures++;
+      return;
+   }
+   audio_driver_publish_runloop();
+   AUDIO_FLAGS_SET(st, AUDIO_FLAG_STARTED);
+   if (!st->current_audio->start(st->context_audio_data, false))
+      fixture_failures++;
+   writes = retro_atomic_load_acquire_size(&cnt_writes);
+   for (frame = 0; frame < 8; frame++)
+      submit_frame(per_frame, 1);
+   if (!wait_progress(wrote_since, &writes))
+      fixture_failures++;
+}
+
+static void kept_drop_run(void)
+{
+   unsigned f0 = fixture_failures;
+   kept_drop_case();
+   printf("kept drop: a wrapper dropped from the park leaves the next pipeline alone, %u failures\n",
+         fixture_failures - f0);
+}
+
 static bool rate_installed(void *arg)
 {
    (void)arg;
@@ -1758,6 +1851,57 @@ static void pause_boundary_run(void)
          fixture_failures - f0);
 }
 
+/* The fields the pipe's producer and consumer write every frame or
+ * pass sit on lines of their own (AUDIO_PIPE_LINE padding in
+ * audio_driver_state_t). Nothing else notices a field added above a
+ * pad moving one back onto the other side's line - the run still
+ * passes, and the lines bounce between cores - so it is asserted by
+ * offset, on the struct this build has. */
+#define PIPE_LINE_OF(f) (offsetof(audio_driver_state_t, f) / AUDIO_PIPE_LINE)
+static unsigned pipe_line_separation(void)
+{
+   static const size_t cons[] = {
+      offsetof(audio_driver_state_t, pipe_gen),
+      offsetof(audio_driver_state_t, pipe_space),
+      offsetof(audio_driver_state_t, pipe_stalled),
+      offsetof(audio_driver_state_t, pipe_underruns_seen),
+      offsetof(audio_driver_state_t, pipe_priming),
+      offsetof(audio_driver_state_t, pipe_menu_active),
+      offsetof(audio_driver_state_t, pipe_source_waits),
+      offsetof(audio_driver_state_t, pipe_held_min1) };
+   static const size_t prod[] = {
+      offsetof(audio_driver_state_t, pipe_data_gen),
+      offsetof(audio_driver_state_t, pipe_data),
+      offsetof(audio_driver_state_t, runloop_snapshot),
+      offsetof(audio_driver_state_t, runloop_ffratio_bits),
+      offsetof(audio_driver_state_t, pipe_ctrl_avail),
+      offsetof(audio_driver_state_t, writer_held),
+      offsetof(audio_driver_state_t, pipe_ff_mult_q16) };
+   unsigned bad = 0;
+   size_t i, j;
+   for (i = 0; i < sizeof(cons) / sizeof(cons[0]); i++)
+      for (j = 0; j < sizeof(prod) / sizeof(prod[0]); j++)
+         if (cons[i] / AUDIO_PIPE_LINE == prod[j] / AUDIO_PIPE_LINE)
+         {
+            fprintf(stderr, "FAIL: consumer field at %u and producer "
+                  "field at %u share line %u\n", (unsigned)cons[i],
+                  (unsigned)prod[j], (unsigned)(cons[i] / AUDIO_PIPE_LINE));
+            bad++;
+         }
+   /* and neither group shares a line with what lies outside it */
+   if (     PIPE_LINE_OF(pipe_space) == PIPE_LINE_OF(state_lock)
+         || PIPE_LINE_OF(pipe_ff_mult_q16) == PIPE_LINE_OF(pipe_wake))
+   {
+      fputs("FAIL: a pipe group shares a line with its neighbours\n",
+            stderr);
+      bad++;
+   }
+   if (!bad)
+      fprintf(stderr, "[pass] producer and consumer fields on lines of "
+            "their own\n");
+   return bad;
+}
+
 int main(int argc, char **argv)
 {
    /* 1 is a core that hands over a frame at a time. 262 is a scanline
@@ -1770,6 +1914,8 @@ int main(int argc, char **argv)
    const char *tempo = getenv("TEMPO");
    const char *layout = getenv("LAYOUT");
    size_t i;
+   if (pipe_line_separation())
+      return 1;
    main_thread_id = sthread_get_current_thread_id();
    if (!retro_eventcount_init(&progress_ev))
       return 2;
@@ -1791,9 +1937,11 @@ int main(int argc, char **argv)
    pause_boundary_mode = getenv("PAUSE_BOUNDARY") != NULL;
    consumer_exit_mode  = getenv("CONSUMER_EXIT") != NULL;
    kept_device_mode    = getenv("KEPT_DEVICE") != NULL;
+   kept_drop_mode      = getenv("KEPT_DROP") != NULL;
    menu_source_mode    = getenv("MENU_SOURCE") != NULL;
    single_lane         = pause_boundary_mode || consumer_exit_mode
-                      || kept_device_mode || menu_source_mode;
+                      || kept_device_mode || kept_drop_mode
+                      || menu_source_mode;
    if (menu_source_mode && !use_wrapper)
    {
       fputs("MENU_SOURCE requires WRAPPER\n", stderr);

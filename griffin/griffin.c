@@ -360,6 +360,11 @@ VIDEO CONTEXT
 #endif
 #if defined(HAVE_VULKAN)
 #include "../gfx/drivers_context/android_vk_ctx.c"
+#if defined(HAVE_VULKAN_CUSTOM_DRIVER)
+#include "../gfx/common/vulkan_custom_driver.c"
+#include "../gfx/common/vulkan_custom_driver_android.c"
+#include "../gfx/common/vulkan_custom_driver_linker.c"
+#endif
 #if defined(HAVE_OPENXR)
 #include "../gfx/drivers_context/android_vk_openxr_ctx.c"
 #endif
@@ -1141,7 +1146,8 @@ FIFO BUFFER
 #include "../libretro-common/queues/retro_spsc.c"
 /* Native Windows audio workers also need rthreads and eventcounts. */
 #if defined(HAVE_THREADS) || (defined(_WIN32) && !defined(_XBOX) \
-      && (defined(HAVE_DSOUND) || defined(HAVE_XAUDIO) || defined(HAVE_WAVEOUT)))
+      && (defined(HAVE_DSOUND) || defined(HAVE_XAUDIO) || defined(HAVE_WAVEOUT) \
+      || defined(HAVE_ASIO)))
 #include "../libretro-common/rthreads/retro_eventcount.c"
 #endif
 #if defined(HAVE_THREADS)
@@ -1762,7 +1768,8 @@ THREAD
 #include "../frontend/thread_elevation/eevdf.c"
 #endif
 #elif defined(_WIN32) && !defined(_XBOX) \
-      && (defined(HAVE_DSOUND) || defined(HAVE_XAUDIO) || defined(HAVE_WAVEOUT))
+      && (defined(HAVE_DSOUND) || defined(HAVE_XAUDIO) || defined(HAVE_WAVEOUT) \
+      || defined(HAVE_ASIO))
 #include "../libretro-common/rthreads/rthreads.c"
 #endif
 
@@ -2138,6 +2145,10 @@ CLOUD SYNC
 #include "../network/cloud_sync/nfs.c"
 #endif
 #ifdef HAVE_S3
+/* SigV4 signs with crypto/kdf.c's SHA-256 and HMAC */
+#ifndef HAVE_CRYPTO
+#error "HAVE_S3 needs HAVE_CRYPTO"
+#endif
 #include "../network/cloud_sync/s3.c"
 #endif
 #endif

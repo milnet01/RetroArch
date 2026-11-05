@@ -922,6 +922,7 @@ static const struct
    char s_b3a9ff57[24];
    char s_f4eaed02[34];
    char s_a9f5617a[32];
+   char s_9dffef92[31];
    char s_7b2598f2[40];
    char s_01686cd6[29];
    char s_182194b5[26];
@@ -2455,17 +2456,26 @@ static const struct
    char s_0cfd4fd0[11];
    char s_d64659c4[9];
    char s_0861dea4[18];
+   char s_ca605800[17];
+   char s_717c4d1c[35];
+   char s_430aec76[20];
+   char s_dd66e556[39];
    char s_29f97e35[5];
    char s_569b0627[8];
    char s_99b1b2f6[7];
    char s_569b11b0[4];
+   char s_ec2c67d0[27];
+   char s_a2f70d09[22];
    char s_328ddae3[4];
    char s_d7deafe0[25];
    char s_83217fd0[13];
    char s_60258de0[6];
+   char s_caf658e4[12];
    char s_5410e874[6];
+   char s_7563a069[25];
    char s_9eb59c3e[4];
    char s_34b2592a[4];
+   char s_ec4aeae0[23];
    char s_2a1860ac[34];
    char s_be406532[19];
    char s_13ce50e1[16];
@@ -2521,9 +2531,20 @@ static const struct
    char s_52e3d6ea[29];
    char s_f387bafb[21];
    char s_9c535394[9];
+   char s_7f065006[11];
    char s_5c12d979[14];
    char s_32cb293c[22];
+   char s_284873ec[23];
+   char s_3220e9be[12];
+   char s_3242e549[25];
+   char s_b88b9861[31];
+   char s_284fc3ff[11];
    char s_3253994e[11];
+   char s_0bd0e014[9];
+   char s_1e1af8de[21];
+   char s_1e1af8df[19];
+   char s_10bcb557[11];
+   char s_1e1af8e0[14];
    char s_c992346c[32];
    char s_a9c8430e[13];
 #if defined(HAVE_RSLC) && defined(HAVE_GLSLANG)
@@ -2595,7 +2616,6 @@ static const struct
    char s_9e5c39c0[17];
    char s_6fbfde48[35];
    char s_482ee1f1[11];
-   char s_3794746e[28];
    char s_214b7699[9];
    char s_3e628390[10];
    char s_574badd6[34];
@@ -3116,6 +3136,7 @@ static const struct
    char s_a11a7d85[190];
    char s_e25b6b30[173];
    char s_4b347c28[56];
+   char s_1aa0e700[109];
    char s_44480960[75];
    char s_0cf12e84[263];
    char s_94c28c23[90];
@@ -3805,6 +3826,7 @@ static const struct
    char s_a55bf936[37];
    char s_c519f84d[46];
    char s_48aefa30[39];
+   char s_5d383a58[142];
    char s_dcf8bd8b[47];
    char s_bce9b94f[48];
    char s_d32f5a63[39];
@@ -4051,8 +4073,16 @@ static const struct
    char s_4a09218b[37];
    char s_dea334de[251];
    char s_cacc1492[107];
+   char s_9382c86e[306];
+   char s_774bb68a[275];
+   char s_a68955c4[333];
+   char s_fbdd5b7e[350];
+   char s_3e7750f7_0[500];
+   char s_3e7750f7_1[29];
    char s_c0c6924e[267];
    char s_c83fcc7e[304];
+   char s_d0c5c252[230];
+   char s_ac07820e[302];
    char s_2fe7ca1a[298];
    char s_cdf158e0[391];
    char s_7efaf561[276];
@@ -4081,8 +4111,20 @@ static const struct
    char s_87ba81db[156];
    char s_58c80718[336];
    char s_dc6f9d69[89];
+   char s_417085f4[53];
    char s_1bcf70a7[189];
    char s_fbed99aa[208];
+   char s_2e2ca41a[396];
+   char s_f48b1fac[54];
+   char s_f4ad1b37[104];
+   char s_6fdb154f[198];
+   char s_2e33f42d[54];
+   char s_f4bdcf3c[55];
+   char s_11a04982[109];
+   char s_012b67cc[63];
+   char s_012b67cd[61];
+   char s_f9a497c5[56];
+   char s_012b67ce[91];
    char s_894ecb9a[441];
    char s_67d549fd[36];
    char s_afac733c[34];
@@ -4624,8 +4666,13 @@ static const struct
    char s_8ab54d62[90];
    char s_aa554847[22];
    char s_ac2c797c[21];
+   char s_ade25a42[93];
+   char s_3c8a9fe6[45];
+   char s_3fe52ba8[286];
    char s_c52621db[13];
    char s_b512be06[14];
+   char s_ac0d4daf[118];
+   char s_a09b2ea1[86];
    char s_c5fee1cb[84];
    char s_7ce002de[20];
    char s_3fe94404[6];
@@ -5953,6 +6000,7 @@ static const struct
    "Spielfokus (Umschalten)",
    "Mauszeiger einfangen (Umschalten)",
    "Aufzeichnung/Wiedergabe stoppen",
+   "Headset-Bildschirme bearbeiten",
    "Bildschirme des Headsets neu zentrieren",
    "Headset-Ansicht (Umschalten)",
    "Laserpointer (Umschalten)",
@@ -7497,17 +7545,26 @@ static const struct
    "Kombiniert",
    "Getrennt",
    "Bildschirmabstand",
+   "Scharnierabstand",
+   "W\303\244hrend der Bildschirmbearbeitung",
+   "Weiterlaufen lassen",
+   "Bewegungsgl\303\244ttung bei der Bearbeitung",
    "Hoch",
    "Niedrig",
    "Mittel",
    "Aus",
+   "An Bildschirmen ausrichten",
+   "An Winkeln ausrichten",
    "Aus",
    "Headset-Ausgabe (OpenXR)",
    "Laserpointer",
    "Immer",
+   "Laserstrahl",
    "Immer",
+   "Nur im Bearbeitungsmodus",
    "Aus",
    "Aus",
+   "Men\303\274 vor Bildschirm 1",
    "Leistungssteigerung f\303\274r Headsets",
    "Bildschirmposition",
    "Im Raum fixiert",
@@ -7563,9 +7620,20 @@ static const struct
    "Rollende Scanline-Simulation",
    "Bildschirmaufteilung",
    "Vertikal",
+   "Bildschirm",
    "Bildschirm %u",
    "Bildschirm %u Display",
+   "Bildschirme bearbeiten",
+   "Neigewinkel",
+   "Bildschirm zur\303\274cksetzen",
+   "Alle Bildschirme zur\303\274cksetzen",
+   "Rollwinkel",
    "Skalierung",
+   "Sichtbar",
+   "Horizontaler Versatz",
+   "Vertikaler Versatz",
+   "Gierwinkel",
+   "Tiefenversatz",
    "Umschalten des SDL-Anzeigemodus",
    "Video-Shader",
 #if defined(HAVE_RSLC) && defined(HAVE_GLSLANG)
@@ -7637,7 +7705,6 @@ static const struct
    "Voreinstellung O",
    "Qualit\303\244t des temporalen Upscalers",
    "Ausgewogen",
-   "Nativ (nur Kantengl\303\244ttung)",
    "Leistung",
    "Qualit\303\244t",
    "Sch\303\244rfe des temporalen Upscalers",
@@ -8453,6 +8520,8 @@ static const struct
    "F\303\244ngt die Maus ein oder l\303\244sst sie los. Wenn eingefangen, wird der Mauszeiger ausge"
    "blendet und auf das RetroArch-Fenster beschr\303\244nkt, was relative Mauseingaben verbessert.",
    "Stoppt das Aufzeichnen/Abspielen des aktuellen Replays.",
+   "Verschiebt die Bildschirme und das Men\303\274 des Headsets mithilfe der Controller oder beendet"
+   " die Verschiebung.",
    "Positioniert die Bildschirme des Headsets vor der aktuellen Blickrichtung.",
    "Schaltet zyklisch durch die Modi, die dem Core f\303\274r die aktuelle Headset-Anzeige gemeldet "
    "werden: \342\200\236Immersiv\342\200\234 (Kopfverfolgung), \342\200\236Stereoskopisch\342\200"
@@ -9615,6 +9684,9 @@ static const struct
    "Die \"Latenz\"-Einstellungen anzeigen.",
    "Die \"Protokollierung\"-Einstellungen anzeigen.",
    "Die \"Netzwerk\"-Einstellungen anzeigen.",
+   "\342\200\236On-Screen-Display\342\200\234-Einstellungen anzeigen. Wirkt sich auch auf \342\200"
+   "\236Bildschirmanzeigen und Overlay\342\200\234 unter \342\200\236Benutzeroberfl\303\244che\342"
+   "\200\234 aus.",
    "Die \"Wiedergabelisten\"-Einstellungen anzeigen.",
    "Die \"Energieverwaltung\"-Einstellungen anzeigen.",
    "Die \"Aufnahme\"-Einstellungen anzeigen.",
@@ -10028,6 +10100,30 @@ static const struct
    "esen.",
    "Legt fest, in welcher Entfernung vor dem aktuellen Blickpunkt die Bildschirme im Headset angezei"
    "gt werden.",
+   "Legt den Abstand zwischen Bildschirmen fest, die Kante an Kante, nebeneinander, an einer Ecke od"
+   "er schr\303\244g angeklappt zusammentreffen. Innerhalb von 1 cm rastet ein Bildschirm auf diesen"
+   " Abstand ein. Bis zu einem Abstand von 10 cm bleibt der eingestellte Abstand erhalten. Bei 0 ber"
+   "\303\274hren sich die Kanten.",
+   "Legt fest, was w\303\244hrend der Bildschirmbearbeitung mit dem laufenden Inhalt geschieht, w"
+   "\303\244hrend die Bildschirme des Headsets verschoben werden: Er l\303\244uft weiter oder wird b"
+   "is zum Ende der Bearbeitung pausiert. Der Bearbeitungsmodus setzt nur fort, was er selbst pausie"
+   "rt hat.",
+   "Stabilisiert die Ausrichtung der Controller beim Verschieben der Bildschirme mit \342\200\236Bil"
+   "dschirme bearbeiten\342\200\234, damit ein weit entfernter gehaltener Bildschirm nicht mit der H"
+   "and zittert. Langsame Handbewegungen werden stark, schnelle nur geringf\303\274gig gegl\303\244t"
+   "tet. Bei \342\200\236Aus\342\200\234 wird die erfasste Ausrichtung unver\303\244ndert \303\274be"
+   "rnommen.",
+   "Richtet einen gehaltenen Bildschirm an benachbarten Bildschirmen aus: parallel oder rechtwinklig"
+   " zu einem Bildschirm, anschlie\303\237end in dessen Ebene und auf gleicher H\303\266he oder b"
+   "\303\274ndig an dessen Kante. Alternativ l\303\244sst er sich entlang einer gemeinsamen Kante in"
+   " beliebigem Winkel anklappen. Beim Einrasten vibriert der Controller der haltenden Hand.",
+   "Begrenzt das Drehen oder Neigen eines Bildschirms mit dem Stick der anderen Hand auf feste Winke"
+   "lschritte. Bei jedem Einrasten vibriert der Controller: Drehungen werden ausgehend von der Ausri"
+   "chtung zum Betrachter gez\303\244hlt, Neigungen ausgehend von der senkrechten Position und bei a"
+   "ngeklappten Bildschirmen ausgehend von der flachen Ausrichtung zum benachbarten Bildschirm. In d"
+   "er N\303\244he eines anderen Bildschirms hat \342\200\236An Bildschirmen ausrichten\342\200\234 "
+   "Vorrang. Bei \342\200\236Aus\342\200\234 l\303\244sst sich der Bildschirm ",
+   "stufenlos drehen und neigen.",
    "Inhalte zus\303\244tzlich in einem OpenXR-Headset anzeigen: Jeder Bildschirm wird als eigener sc"
    "hwebender Bildschirm dargestellt, mit stereoskopischem 3D f\303\274r beide Augen und dem Men\303"
    "\274 davor. Vulkan oder unter Linux OpenGL. Das Fenster zeigt weiterhin die normale Ausgabe.",
@@ -10035,6 +10131,13 @@ static const struct
    "ungiert, statt L2 oder R2 zu bet\303\244tigen. Automatisch: im ge\303\266ffneten Men\303\274 und"
    " auf Zweitbildschirmen wie einem Touchscreen. Immer: auf allen Bildschirmen, etwa f\303\274r Lic"
    "htpistolen. Aus: auf keinem Bildschirm.",
+   "Eine d\303\274nne Linie von jedem Controller bis zum Zielpunkt seines Lasers. Nur im Bearbeitung"
+   "smodus: W\303\244hrend des Verschiebens der Bildschirme mit \342\200\236Bildschirme bearbeiten"
+   "\342\200\234. Immer: Auch f\303\274r das Men\303\274 und die Lightguns. Aus: nie.",
+   "\303\226ffnet das Men\303\274 direkt vor Bildschirm 1 und in dessen Ausrichtung, sodass das Men"
+   "\303\274 beim Verschieben von Bildschirm 1 mitbewegt wird. Bei \342\200\236Aus\342\200\234 wird "
+   "das Men\303\274 gerade vor dem Ankerpunkt der Bildschirme ge\303\266ffnet. Ein \303\274ber \342"
+   "\200\236Bildschirme bearbeiten\342\200\234 platziertes Men\303\274 bleibt an seiner Position.",
    "Den h\303\266chsten CPU-Takt des Headsets anfordern, auch wenn dieser \303\274ber dem dauerhaft "
    "haltbaren Takt liegt, damit anspruchsvolle Inhalte mit dem Headset Schritt halten. Erh\303\266ht"
    " den Akkuverbrauch und die W\303\244rmeentwicklung; ein \303\274berhitztes Headset kann trotzdem"
@@ -10104,12 +10207,33 @@ static const struct
    "mehrere Unterbilder, indem der Bildschirm vertikal aufgeteilt wird und jeder Teil des Bildschirm"
    "s entsprechend der Anzahl der Unterbilder dargestellt wird.",
    "Legt fest, wie die Bildschirme von Systemen mit mehreren Bildschirmen angeordnet werden.",
+   "Den anzupassenden schwebenden Bildschirm ausw\303\244hlen.",
    "\342\200\236Verbunden\342\200\234 zeigt diesen Bildschirm zusammen mit den anderen an. \342\200"
    "\236Getrennt\342\200\234 zeigt ihn in einem eigenen Fenster oder auf einem eigenen Display an. "
    "\342\200\236Ausgeblendet\342\200\234 l\303\244sst ihn weg.",
    "Legt fest, wo dieser Bildschirm angezeigt wird, wenn er getrennt ist. \342\200\236Automatisch"
    "\342\200\234 w\303\244hlt ein zweites Display. Auf dem Display, auf dem RetroArch ausgef\303\274"
    "hrt wird, bleibt der Bildschirm \342\200\236verbunden\342\200\234.",
+   "Schlie\303\237t das Men\303\274 und verschiebt die Bildschirme und das Men\303\274 des Headsets "
+   "mithilfe der Controller: Mit der Grifftaste werden Objekte gegriffen, mit dem Trigger geneigt un"
+   "d mit dem Stick Abstand und Gr\303\266\303\237e ver\303\244ndert. Der Stick der freien Hand dreh"
+   "t und neigt sie. Die Haupttaste setzt sie zur\303\274ck. Mit \342\200\236N\303\244chstes ausw"
+   "\303\244hlen\342\200\234 und \342\200\236Vorheriges ausw\303\244hlen\342\200\234 wird ein Elemen"
+   "t ausgew\303\244hlt.",
+   "Neigt diesen Bildschirm in Grad nach oben oder unten.",
+   "Setzt Position, Drehung, Skalierung und Sichtbarkeit des ausgew\303\244hlten schwebenden Bildsch"
+   "irms zur\303\274ck.",
+   "Setzt Position, Drehung, Skalierung und Sichtbarkeit aller Bildschirme zur\303\274ck, auch au"
+   "\303\237erhalb der aktuellen Karte, und setzt das Men\303\274 auf seine urspr\303\274ngliche, ni"
+   "cht platzierte Position zur\303\274ck.",
+   "Dreht diesen Bildschirm in Grad um seine L\303\244ngsachse.",
+   "Ver\303\244ndert die Gr\303\266\303\237e dieses schwebenden Bildschirms.",
+   "Zeigt diesen schwebenden Bildschirm an. Das Men\303\274 bleibt verf\303\274gbar, wenn die Bildsc"
+   "hirme ausgeblendet sind.",
+   "Verschiebt diesen Bildschirm in Metern nach links oder rechts.",
+   "Verschiebt diesen Bildschirm in Metern nach oben oder unten.",
+   "Dreht diesen Bildschirm in Grad nach links oder rechts.",
+   "Verschiebt diesen Bildschirm in Metern n\303\244her zu oder weiter weg von der eigenen Position.",
    "Damit das SDL-Fenster zwischen den aufgef\303\274hrten Anzeigemodi wechselt. Bei der Einstellung"
    " \342\200\236Automatisch\342\200\234 wird diese Option nur verwendet, wenn der native Anzeigeser"
    "ver nicht zwischen den Modi wechseln kann. Die Einstellung \342\200\236Immer\342\200\234 \303"
@@ -10803,8 +10927,18 @@ static const struct
    "ucht.",
    "Cores \303\274bersprungen: ",
    "Cores aktualisiert: ",
+   "\342\200\236Bildschirme bearbeiten\342\200\234 erfordert einen laufenden Inhalt: Zun\303\244chst"
+   " einen Inhalt laden.",
+   "Bearbeitung der Headset-Bildschirme beendet.",
+   "Beim Bearbeiten der Headset-Bildschirme: Mit der Grifftaste werden sie gegriffen, mit dem Stick "
+   "verschoben und in der Gr\303\266\303\237e ver\303\244ndert. Mit dem Trigger werden sie entsprech"
+   "end der Handbewegung geneigt. Der Stick der anderen Hand dreht und neigt sie, die Haupttaste set"
+   "zt sie zur\303\274ck.",
    "Men\303\274treiber",
    "Bildschirm %u",
+   "\342\200\236Bildschirme bearbeiten\342\200\234 ist nicht verf\303\274gbar: Die Controller des He"
+   "adsets k\303\266nnen daf\303\274r nicht verwendet werden.",
+   "Bearbeitung der Headset-Bildschirme beendet. \303\204nderungen sind noch nicht gespeichert.",
    "Die Headsetausgabe konnte nicht gestartet werden. Das Fenster zeigt die Ausgabe an.",
    "Headset-Ansicht: %s",
    "Flach",
@@ -11013,7 +11147,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_de_blob_check[
-      (sizeof(msg_hash_de_blob) == (249371u
+      (sizeof(msg_hash_de_blob) == (254279u
 #ifdef ANDROID
        + 358u
 #endif
@@ -12506,6 +12640,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_GAME_FOCUS_TOGGLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_GRAB_MOUSE_TOGGLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_HALT_REPLAY_KEY,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_HEADSET_EDIT_SCREENS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_HEADSET_RECENTER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_HEADSET_VIEW_TOGGLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_LASER_POINTER_TOGGLE,
@@ -14038,17 +14173,26 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS_COMBINED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS_SEPARATE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_DISTANCE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_HINGE_GAP,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_PAUSE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_PAUSE_OFF,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SMOOTHING,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SMOOTHING_HIGH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SMOOTHING_LOW,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SMOOTHING_MEDIUM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SMOOTHING_OFF,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SNAP,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SNAP_ANGLES,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SNAP_ANGLES_OFF,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_ENABLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_ALWAYS,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM_ALWAYS,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM_EDIT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM_OFF,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_OFF,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_MENU_FOLLOW,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_PERF_BOOST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_PLACEMENT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_PLACEMENT_FIXED,
@@ -14104,9 +14248,20 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCAN_SUBFRAMES,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_LAYOUT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_LAYOUT_VERTICAL,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_SELECTED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_MODE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_MONITOR,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_EDIT,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_PITCH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_RESET,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_RESET_ALL,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_ROLL,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_SCALE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_VISIBLE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_X,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_Y,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_YAW,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_Z,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SDL_DISPLAY_SERVER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SHADERS_ENABLE,
 #if defined(HAVE_RSLC) && defined(HAVE_GLSLANG)
@@ -14178,7 +14333,6 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_PRESET_O,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY_BALANCED,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY_NATIVE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY_PERFORMANCE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY_QUALITY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_SHARPNESS,
@@ -14689,6 +14843,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_GAME_FOCUS_TOGGLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_GRAB_MOUSE_TOGGLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_HALT_REPLAY_KEY,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_HEADSET_EDIT_SCREENS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_HEADSET_RECENTER,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_HEADSET_VIEW_TOGGLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_LASER_POINTER_TOGGLE,
@@ -15377,6 +15532,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_LATENCY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_LOGGING,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_NETWORK,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_ONSCREEN_DISPLAY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_PLAYLISTS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_POWER_MANAGEMENT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_RECORDING,
@@ -15617,8 +15773,15 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_MONITOR_INDEX,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_CONTROLLERS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_DISTANCE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_HINGE_GAP,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_PAUSE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_SMOOTHING,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_SNAP,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_SNAP_ANGLES,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_ENABLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_LASER,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_LASER_BEAM,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_MENU_FOLLOW,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_PERF_BOOST,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_PLACEMENT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_REFRESH_RATE,
@@ -15647,8 +15810,20 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCANLINE_SYNC_OFFSET,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCAN_SUBFRAMES,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_LAYOUT,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_SELECTED,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MODE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MONITOR,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_EDIT,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_PITCH,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_RESET,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_RESET_ALL,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_ROLL,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_SCALE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_VISIBLE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_X,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_Y,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_YAW,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_Z,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SDL_DISPLAY_SERVER,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SHADERS_ENABLE,
@@ -16185,8 +16360,13 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MSG_NO_THUMBNAIL_DOWNLOAD_POSSIBLE,
    (msg_hash_id_t)MSG_NUM_CORES_LOCKED,
    (msg_hash_id_t)MSG_NUM_CORES_UPDATED,
+   (msg_hash_id_t)MSG_OPENXR_EDIT_NO_CONTENT,
+   (msg_hash_id_t)MSG_OPENXR_EDIT_OFF,
+   (msg_hash_id_t)MSG_OPENXR_EDIT_ON,
    (msg_hash_id_t)MSG_OPENXR_EDIT_TAG_MENU,
    (msg_hash_id_t)MSG_OPENXR_EDIT_TAG_SCREEN,
+   (msg_hash_id_t)MSG_OPENXR_EDIT_UNAVAILABLE,
+   (msg_hash_id_t)MSG_OPENXR_EDIT_UNSAVED,
    (msg_hash_id_t)MSG_OPENXR_FAILED,
    (msg_hash_id_t)MSG_OPENXR_HEADSET_VIEW,
    (msg_hash_id_t)MSG_OPENXR_HEADSET_VIEW_FLAT,

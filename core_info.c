@@ -34,6 +34,7 @@
 
 #include <retro_atomic.h>
 #include <queues/mpsc_stack.h>
+#include <queues/retro_retire.h>
 
 #ifdef HAVE_THREADS
 #include <rthreads/rthreads.h>
@@ -117,54 +118,22 @@ typedef struct
    mpsc_stack_node_t retired;
 } core_info_list_box_t;
 
-#if defined(HAVE_THREADS) && defined(RETRO_ATOMIC_HAS_PTR)
+#if defined(HAVE_THREADS) && defined(RETRO_RETIRE_LOCK_FREE)
 #define CORE_INFO_LOCK_FREE
 /* curr_list is the main thread's. Task threads - the content scanner's
  * core_info_database_claim() - read the list published in
- * core_info_shared, counted in core_info_readers while they do. A list
- * taken down goes on core_info_retired, freed by whoever finds the
- * count at zero once it holds them: the main thread, or the last
- * reader out. */
+ * core_info_shared between entering and leaving; a list taken down is
+ * freed once none is in, by the main thread or the last reader out
+ * (retro_retire.h). */
 static retro_atomic_ptr_t core_info_shared;
-static retro_atomic_int_t core_info_readers;
-static mpsc_stack_t       core_info_retired;
+static retro_retire_t     core_info_retire;
 
 static void core_info_list_free(core_info_list_t *core_info_list);
 
-static void core_info_retired_free(void)
+static void core_info_retired_free(mpsc_stack_node_t *node)
 {
-   for (;;)
-   {
-      mpsc_stack_node_t *node;
-
-      /* Fenced against the reader's own: a reader counted after this
-       * load reads core_info_shared after every list here left it. */
-      retro_atomic_thread_fence_seq_cst();
-      if (retro_atomic_load_acquire_int(&core_info_readers))
-         return;
-      if (!(node = mpsc_stack_drain(&core_info_retired)))
-         return;
-      retro_atomic_thread_fence_seq_cst();
-      if (retro_atomic_load_acquire_int(&core_info_readers))
-      {
-         /* A reader came in: hand them back and look again, as it may
-          * have left before they were back. */
-         while (node)
-         {
-            mpsc_stack_node_t *next = node->next;
-            mpsc_stack_push(&core_info_retired, node);
-            node = next;
-         }
-         continue;
-      }
-      while (node)
-      {
-         mpsc_stack_node_t *next = node->next;
-         core_info_list_free(&((core_info_list_box_t*)((char*)node
-               - offsetof(core_info_list_box_t, retired)))->list);
-         node = next;
-      }
-   }
+   core_info_list_free(&((core_info_list_box_t*)((char*)node
+         - offsetof(core_info_list_box_t, retired)))->list);
 }
 #elif defined(HAVE_THREADS)
 /* Guards publication and teardown of curr_list against
@@ -1679,7 +1648,7 @@ static bool core_info_path_is_standalone_exempt(
    return false;
 }
 
-static size_t core_info_get_file_id(const char *core_filename,
+size_t core_info_get_file_id(const char *core_filename,
       char *s, size_t len)
 {
    size_t _len;
@@ -2570,9 +2539,8 @@ void core_info_deinit_list(void)
       return;
    p_coreinfo->curr_list = NULL;
    retro_atomic_store_release_ptr(&core_info_shared, NULL);
-   mpsc_stack_push(&core_info_retired,
-         &((core_info_list_box_t*)list)->retired);
-   core_info_retired_free();
+   retro_retire(&core_info_retire, &((core_info_list_box_t*)list)->retired,
+         core_info_retired_free);
 #else
    /* Detached under the lock, freed outside it: no reader reaches
     * the list once the NULL is published. */
@@ -2866,8 +2834,7 @@ struct string_list *core_info_database_claim(
 
    /* On a task thread, while the main thread may take the list down. */
 #ifdef CORE_INFO_LOCK_FREE
-   retro_atomic_fetch_add_int(&core_info_readers, 1);
-   retro_atomic_thread_fence_seq_cst();
+   retro_retire_enter(&core_info_retire);
    list = (const core_info_list_t*)
          retro_atomic_load_acquire_ptr(&core_info_shared);
 #else
@@ -2903,8 +2870,7 @@ struct string_list *core_info_database_claim(
       }
    }
 #ifdef CORE_INFO_LOCK_FREE
-   if (retro_atomic_fetch_add_int(&core_info_readers, -1) == 1)
-      core_info_retired_free();
+   retro_retire_leave(&core_info_retire, core_info_retired_free);
 #else
    CORE_INFO_LIST_UNLOCK();
 #endif

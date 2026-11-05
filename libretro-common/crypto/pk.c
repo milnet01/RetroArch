@@ -1311,39 +1311,24 @@ static struct ec_curve ec_p384 = { {0}, {0}, {0}, {0}, {0}, {0}, {0}, {0},
 
 /* The curve constants are computed on first use. Two threads making
  * their first connections at once both get here; the one that moves
- * ready from 0 to EC_BUSY computes, the other yields until it reads
- * EC_READY, stored with release once every field is in place. */
+ * ready from 0 to EC_BUSY computes them into the curve and stores
+ * EC_READY with release once every field is in place. The other does
+ * not wait for it: it computes a copy of its own for this call. */
 #define EC_BUSY  1
 #define EC_READY 2
-#ifdef HAVE_THREADS
+#if defined(HAVE_THREADS) && defined(EC_TEST_WAIT)
 #include <rthreads/rthreads.h>
 #endif
 
-/* Nonzero when the caller is the one to compute the constants. */
-static int ec_claim(struct ec_curve *cv)
-{
-#ifdef HAVE_THREADS
-   for (;;)
-   {
-      if (retro_atomic_load_acquire_int(&cv->ready) == EC_READY)
-         return 0;
-      if (retro_atomic_cas_int(&cv->ready, 0, EC_BUSY))
-         return 1;
-      sthread_yield();
-   }
-#else
-   return retro_atomic_load_acquire_int(&cv->ready) != EC_READY;
-#endif
-}
-
-static void ec_init(struct ec_curve *cv)
+static void ec_compute(struct ec_curve *cv)
 {
    bn_word tmp[BN_MONT_TMP_WORDS(EC_MAX_K)];
    bn_word two[EC_MAX_K];
    const unsigned k = cv->k;
 
-   if (!ec_claim(cv))
-      return;
+#ifdef EC_TEST_HOLD
+   EC_TEST_HOLD();
+#endif
 
    bn_from_be(cv->p, k, cv->p_be, cv->bytes);
    bn_from_be(cv->n, k, cv->n_be, cv->bytes);
@@ -1368,8 +1353,47 @@ static void ec_init(struct ec_curve *cv)
    bn_mont_mul(cv->g.x, cv->g.x, cv->r2p, cv->p, cv->n0p, k, tmp);
    bn_mont_mul(cv->g.y, cv->g.y, cv->r2p, cv->p, cv->n0p, k, tmp);
    bn_copy(cv->g.z, cv->one, k);
+}
 
-   retro_atomic_store_release_int(&cv->ready, EC_READY);
+/* The curve's constants, computed into @cv on first use, or into @own
+ * while another thread is computing @cv's. */
+static const struct ec_curve *ec_get(struct ec_curve *cv,
+      struct ec_curve *own)
+{
+#ifdef HAVE_THREADS
+   int ready = retro_atomic_load_acquire_int(&cv->ready);
+   if (ready == EC_READY)
+      return cv;
+   if (!ready && retro_atomic_cas_int(&cv->ready, 0, EC_BUSY))
+   {
+      ec_compute(cv);
+      retro_atomic_store_release_int(&cv->ready, EC_READY);
+      return cv;
+   }
+#ifdef EC_TEST_WAIT
+   while (retro_atomic_load_acquire_int(&cv->ready) != EC_READY)
+      sthread_yield();
+   return cv;
+#endif
+   own->p_be  = cv->p_be;
+   own->n_be  = cv->n_be;
+   own->b_be  = cv->b_be;
+   own->gx_be = cv->gx_be;
+   own->gy_be = cv->gy_be;
+   own->k     = cv->k;
+   own->bits  = cv->bits;
+   own->bytes = cv->bytes;
+   ec_compute(own);
+   return own;
+#else
+   (void)own;
+   if (retro_atomic_load_acquire_int(&cv->ready) != EC_READY)
+   {
+      ec_compute(cv);
+      retro_atomic_store_release_int(&cv->ready, EC_READY);
+   }
+   return cv;
+#endif
 }
 
 /* Field helpers, all in the Montgomery domain. */
@@ -1828,40 +1852,40 @@ static int ec_ecdsa_verify(const struct ec_curve *cv, const uint8_t *pub,
 
 int p256_keygen(const uint8_t *priv, uint8_t *pub)
 {
-   ec_init(&ec_p256);
-   return ec_keygen(&ec_p256, priv, pub);
+   struct ec_curve own;
+   return ec_keygen(ec_get(&ec_p256, &own), priv, pub);
 }
 
 int p256_ecdh(const uint8_t *priv, const uint8_t *peer, uint8_t *shared)
 {
-   ec_init(&ec_p256);
-   return ec_ecdh(&ec_p256, priv, peer, shared);
+   struct ec_curve own;
+   return ec_ecdh(ec_get(&ec_p256, &own), priv, peer, shared);
 }
 
 int p256_ecdsa_verify(const uint8_t *pub,
       const uint8_t *digest, size_t digest_len,
       const uint8_t *r, const uint8_t *s)
 {
-   ec_init(&ec_p256);
-   return ec_ecdsa_verify(&ec_p256, pub, digest, digest_len, r, s);
+   struct ec_curve own;
+   return ec_ecdsa_verify(ec_get(&ec_p256, &own), pub, digest, digest_len, r, s);
 }
 
 int p384_keygen(const uint8_t *priv, uint8_t *pub)
 {
-   ec_init(&ec_p384);
-   return ec_keygen(&ec_p384, priv, pub);
+   struct ec_curve own;
+   return ec_keygen(ec_get(&ec_p384, &own), priv, pub);
 }
 
 int p384_ecdh(const uint8_t *priv, const uint8_t *peer, uint8_t *shared)
 {
-   ec_init(&ec_p384);
-   return ec_ecdh(&ec_p384, priv, peer, shared);
+   struct ec_curve own;
+   return ec_ecdh(ec_get(&ec_p384, &own), priv, peer, shared);
 }
 
 int p384_ecdsa_verify(const uint8_t *pub,
       const uint8_t *digest, size_t digest_len,
       const uint8_t *r, const uint8_t *s)
 {
-   ec_init(&ec_p384);
-   return ec_ecdsa_verify(&ec_p384, pub, digest, digest_len, r, s);
+   struct ec_curve own;
+   return ec_ecdsa_verify(ec_get(&ec_p384, &own), pub, digest, digest_len, r, s);
 }

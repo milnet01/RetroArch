@@ -484,10 +484,10 @@ static char *webdav_create_digest_auth_header(const char *method, const char *ur
    int             count     = 0;
    size_t          total     = 0;
 
-   /* A challenge the parser rejected leaves no digest to answer with,
-    * and basic auth stays off once one challenge has been accepted. */
-   if (   !webdav_st->ha1hash || !webdav_st->realm
-       || !webdav_st->nonce   || !webdav_st->cnonce[0])
+   /* The cnonce is written only once a challenge has been accepted.  A
+    * rejected one leaves it empty, with realm and nonce possibly NULL,
+    * and basic auth stays off once any challenge has been accepted. */
+   if (!webdav_st->cnonce[0])
       return NULL;
 
    /* Skip scheme and host to get at the path.  strchr() returns NULL

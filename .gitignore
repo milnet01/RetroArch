@@ -284,6 +284,7 @@ gfx/common/wayland/wlr-output-management-unstable-v1.h
 # samples/: built harness executables and objects. Each directory's
 # test is <dir>_test; nothing built there is source.
 samples/**/*_test
+libretro-common/test/formats/rxml_oom_test
 samples/**/*_test_*
 samples/audio/stretch/stretch_bench
 samples/gfx/rslc_corpus/rslc_corpus_dump
@@ -321,6 +322,7 @@ samples/gfx/font_lifecycle/chain
 samples/gfx/font_lifecycle/frame
 samples/gfx/font_lifecycle/vg
 samples/gfx/font_lifecycle/sdl2
+samples/gfx/font_lifecycle/omap
 samples/gfx/slang_cache/mapped
 samples/gfx/slang_cache/read
 samples/tasks/database/database_task
@@ -379,9 +381,11 @@ samples/audio/embedded_alsa/ealsa_abi.h
 __pycache__/
 *.pyc
 samples/audio/asio_clock/asio_clock_driver.h
+samples/audio/asio_teardown/asio_teardown_driver.h
 samples/gfx/integer_scale_axis/integer_scale_driver.h
 samples/gfx/coord_array/coord_array_driver.h
 samples/gfx/integer_scale_axis/integer_scale_axis_test
+samples/gfx/set_rotation_deferred/set_rotation_driver.h
 
 # os/wiiu/slang host tool
 /os/wiiu/slang/slang-cafe

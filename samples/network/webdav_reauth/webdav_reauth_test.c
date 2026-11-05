@@ -351,19 +351,21 @@ static void test_malformed_challenges(void)
          "bare trailing token and no nonce: accepted");
 }
 
-/* A challenge the parser rejects, after one it accepted, must not
- * leave a digest half built.  The next request builds its header from
- * that state, and a NULL cnonce, nonce or realm there was a crash any
- * server could trigger - with qop="auth-int", say. */
+/* A challenge the parser rejects, after one it accepted, leaves nothing
+ * to answer with, and basic auth stays off once one has been accepted.
+ * The next request must go out with no Authorization header, rather
+ * than crash on a missing realm or nonce, or answer the rejected
+ * challenge with the previous challenge's cnonce. */
 static void test_rejected_challenge_after_digest(void)
 {
-   webdav_state_t *webdav_st = webdav_state_get_ptr();
    static const char *rejected[] = {
       "WWW-Authenticate: Digest realm=\"dav\", nonce=\"6f2a\", qop=\"auth-int\"",
       "WWW-Authenticate: Digest realm=\"dav\", nonce=\"6f2a",
+      "WWW-Authenticate: Digest realm=\"dav",
       "WWW-Authenticate: Digest realm=\"dav\", x=\"y",
       "WWW-Authenticate: Digest realm=\"dav\""
    };
+   static const char url[] = "http://127.0.0.1/dav/saves/a.srm";
    size_t i;
 
    for (i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++)
@@ -371,21 +373,23 @@ static void test_rejected_challenge_after_digest(void)
       http_transfer_data_t resp;
       char  blk[256];
       char *h;
+      /* one-line header block: the line, its NUL, the closing NUL */
       size_t n = strlcpy(blk, digest_header, sizeof(blk) - 1);
 
       blk[n + 1] = '\0';
       make_response(&resp, 401, blk, NULL, 0);
-      webdav_st->basic = true;
       CHECK(webdav_needs_reauth(&resp), "rejected[%u]: setup challenge "
             "not accepted", (unsigned)i);
+      h = webdav_get_auth_header("GET", url);
+      CHECK(h, "rejected[%u]: no header for an accepted challenge",
+            (unsigned)i);
+      free(h);
 
       n = strlcpy(blk, rejected[i], sizeof(blk) - 1);
       blk[n + 1] = '\0';
       CHECK(!webdav_needs_reauth(&resp), "rejected[%u]: accepted",
             (unsigned)i);
-
-      h = webdav_get_auth_header("GET",
-            "http://127.0.0.1/dav/saves/a.srm");
+      h = webdav_get_auth_header("GET", url);
       CHECK(!h, "rejected[%u]: a digest header was built from a "
             "rejected challenge", (unsigned)i);
       free(h);

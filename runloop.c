@@ -5589,8 +5589,9 @@ static void runloop_apply_fastmotion_override(runloop_state_t *runloop_st,
             input_st->flags &= ~INP_FLAG_NONBLOCKING;
       }
 
+      /* Before audio blocks again, so the tail fits the room */
       if (!(runloop_st->flags & RUNLOOP_FLAG_FASTMOTION))
-         runloop_st->fastforward_after_frames = 1;
+         audio_driver_fastforward_end();
 
       driver_set_nonblock_state();
 
@@ -5640,13 +5641,15 @@ static void runloop_apply_fastmotion(bool enabled)
    {
       input_st->flags   &= ~INP_FLAG_NONBLOCKING;
       runloop_st->flags &= ~RUNLOOP_FLAG_FASTMOTION;
-      runloop_st->fastforward_after_frames = 1;
    }
 
    if (settings->bools.audio_fastforward_mute && enabled)
       AUDIO_FLAGS_SET(audio_st, AUDIO_FLAG_MUTED);
    else
       AUDIO_FLAGS_CLEAR(audio_st, AUDIO_FLAG_MUTED);
+
+   if (!enabled)
+      audio_driver_fastforward_end();
 
    driver_set_nonblock_state();
 
@@ -6181,9 +6184,11 @@ static runloop_pace_facts_t runloop_driver_pacing_gather(settings_t *settings,
 {
    unsigned want                  = settings->uints.video_driver_pacing;
    unsigned reason                = VIDEO_DRIVER_PACING_REASON_NONE;
+   bool asked;
    const video_poke_interface_t *poke = video_st->poke;
    if (want >= VIDEO_DRIVER_PACING_LAST)
       want = VIDEO_DRIVER_PACING_OFF;
+   asked = want != VIDEO_DRIVER_PACING_OFF;
    if (!want)
       reason = VIDEO_DRIVER_PACING_REASON_OFF;
    else if (!poke || !poke->driver_pacing_set || !video_st->data)
@@ -6214,6 +6219,13 @@ static runloop_pace_facts_t runloop_driver_pacing_gather(settings_t *settings,
       f |= PACE_FACT_DRIVER_PACING;
    else
    {
+      /* nothing could take it: runloop_pace_driver_fallback() */
+      if (asked && (   reason == VIDEO_DRIVER_PACING_REASON_DRIVER
+                    || reason == VIDEO_DRIVER_PACING_REASON_DEVICE
+                    || reason == VIDEO_DRIVER_PACING_REASON_SWAPCHAIN
+                    || reason == VIDEO_DRIVER_PACING_REASON_FAILED
+                    || reason == VIDEO_DRIVER_PACING_REASON_CORE))
+         f |= PACE_FACT_DRIVER_PACING_MISSING;
       runloop_st->driver_pacing_frame_id     = 0;
       video_st->driver_pacing_id             = 0;
       video_st->driver_pacing_interval_us    = 0;
@@ -9768,7 +9780,6 @@ int runloop_iterate(void)
    bool core_paused                       = !!(runloop_st->flags & RUNLOOP_FLAG_PAUSED);
 #endif
    float slowmotion_ratio                 = settings->floats.slowmotion_ratio;
-   bool audio_sync                        = settings->bools.audio_sync;
    bool frame_advanced                    = false;
    bool savestate_automatic_enable        = settings->uints.savestate_automatic_interval > 0;
 
@@ -10046,7 +10057,7 @@ int runloop_iterate(void)
              * 'Display Rate': there the core runs on its own clock, its
              * audio does not block, and the menu takes the display's pace
              * below. */
-            else if (   audio_sync
+            else if (   settings->bools.audio_sync
                      && !(menu_rate & PACE_FACT_MENU_DISPLAY_RATE)
                      && runloop_is_libretro_running(runloop_st, menu_pause_libretro))
             {
@@ -10235,30 +10246,6 @@ int runloop_iterate(void)
 end:
    if (vrr_runloop_enable)
    {
-      /* Sync on video only, block audio later. */
-      if (runloop_st->fastforward_after_frames && audio_sync)
-      {
-         if (runloop_st->fastforward_after_frames == 1)
-         {
-            /* Nonblocking audio */
-            if (    (AUDIO_FLAGS_GET(audio_st) & AUDIO_FLAG_ACTIVE)
-                 && (audio_st->context_audio_data))
-               audio_driver_set_nonblock_state(true);
-         }
-
-         runloop_st->fastforward_after_frames++;
-
-         if (runloop_st->fastforward_after_frames == 6)
-         {
-            /* Blocking audio */
-            if (     (AUDIO_FLAGS_GET(audio_st) & AUDIO_FLAG_ACTIVE)
-                  && (audio_st->context_audio_data))
-               audio_driver_set_nonblock_state(audio_sync ? false : true);
-
-            runloop_st->fastforward_after_frames = 0;
-         }
-      }
-
       if (runloop_st->flags & RUNLOOP_FLAG_FASTMOTION)
          runloop_set_frame_limit(&video_st->av_info,
                runloop_get_fastforward_ratio(settings,
@@ -10367,6 +10354,14 @@ end:
             (video_st->video_refresh_rate_original)
                ? video_st->video_refresh_rate_original
                : settings->floats.video_refresh_rate);
+   }
+   else if (runloop_pace_driver_fallback(pace_facts, runloop_st->pace))
+   {
+      runloop_st->pace         |= RUNLOOP_PACE_TIMER;
+      pace_limit_min            = runloop_content_frame_time_us(
+            video_st->core_hz);
+      pace_limit_ns             = runloop_content_frame_time_ns(
+            video_st->core_hz);
    }
 
    /* The low-latency backend releases the next frame: the hold is the

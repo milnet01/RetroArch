@@ -2728,7 +2728,7 @@ static const struct
    char s_6fbfde48[43];
    char s_a72a3c80[14];
    char s_482ee1f1[8];
-   char s_3794746e[36];
+   char s_3794746e[42];
    char s_214b7699[13];
    char s_3e628390[12];
    char s_6b25e2a0[23];
@@ -3951,6 +3951,7 @@ static const struct
    char s_a55bf936[36];
    char s_c519f84d[32];
    char s_48aefa30[32];
+   char s_5d383a58[148];
    char s_dcf8bd8b[38];
    char s_bce9b94f[48];
    char s_d32f5a63[35];
@@ -8079,7 +8080,7 @@ static const struct
    "C\303\241il\303\255ocht an Uasghr\303\241daithe Thimpiri\303\272il",
    "Uathoibr\303\255och",
    "Cothrom",
-   "D\303\272chasach (frith-ailias\303\272 amh\303\241in)",
+   "D\303\272chasach (DLAA, frith-ailias\303\272 amh\303\241in)",
    "Feidhm\303\255ocht",
    "C\303\241il\303\255ocht",
    "Feidhm\303\255ocht den Scoth",
@@ -10515,6 +10516,9 @@ static const struct
    "Taispe\303\241in socruithe 'Aga folaigh'.",
    "Taispe\303\241in socruithe 'Log\303\241il'.",
    "Taispe\303\241in socruithe 'L\303\255onra'.",
+   "Taispe\303\241in socruithe 'Taispe\303\241int ar an Sc\303\241ile\303\241n'. B\303\255onn tionch"
+   "ar aige ar 'F\303\263gra\303\255 ar an Sc\303\241ile\303\241n & Forleagan' faoi 'Comh\303\251ada"
+   "n \303\232s\303\241ideora'.",
    "Taispe\303\241in socruithe 'Seinmliosta\303\255'.",
    "Taispe\303\241in socruithe 'Bainist\303\255ocht Cumhachta'.",
    "Taispe\303\241in socruithe 'Taifeadadh'.",
@@ -12221,7 +12225,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_ga_blob_check[
-      (sizeof(msg_hash_ga_blob) == (268406u
+      (sizeof(msg_hash_ga_blob) == (268560u
 #ifdef ANDROID
        + 390u
 #endif
@@ -16713,6 +16717,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_LATENCY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_LOGGING,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_NETWORK,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_ONSCREEN_DISPLAY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_PLAYLISTS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_POWER_MANAGEMENT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_SETTINGS_SHOW_RECORDING,
