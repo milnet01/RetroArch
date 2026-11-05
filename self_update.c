@@ -437,7 +437,9 @@ bool self_update_memory_ok(uint64_t avail, uint64_t archive_size,
       uint64_t largest_member, uint64_t *need)
 {
    /* A multi-coder block holds one stage's output while the next is
-    * written, or BCJ2's four inputs beside its output. */
+    * written: for BCJ2, its main input beside its output.  BCJ2's three
+    * side streams are not counted; r7z keeps no per-coder sizes, and
+    * the margin covers them. */
    uint64_t terms[6];
    uint64_t sum = 0;
    size_t   i;
