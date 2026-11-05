@@ -2311,11 +2311,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: review-code 2026-10-21 lane 3.
   Lanes: r7z.
 
-- 📋 [RETR-0045] **LOW — Self-updater: rename preferred to say it means the smaller download.**
+- ✅ [RETR-0045] **LOW — Self-updater: rename preferred to say it means the smaller download.**
   preferred (self_update_file_url's parameter, the check state, the
   offer) reads as a user preference; it means "the smaller download".
   Queued: the rename crosses self_update.h's API, both test files and the
   spec's wording, and a partial rename is worse than none.
+  2026-11-05: renamed to small_file in 07b5bce8ab (API, check state,
+  offer, harness entry, both test files) and in the spec's §4.5 table
+  header. No preferred left in the self-updater; builds and both
+  self_update checks pass. Pushes with the pending local-CI run.
   **Layman:** A name in the updater's code is misleading; renaming it makes the code easier to change safely.
   Kind: refactor.
   Source: review-readability 2026-10-21 self-updater re-run, L2 finding 7.

@@ -106,7 +106,7 @@ Four parts because upstream has shipped `v1.16.0.1`, `.2` and `.3` (`gh api 'rep
 
 Base `https://buildbot.libretro.com/stable/<version>/`, `<version>` without the `v`:
 
-| Kind | Preferred, used if HEAD → 200 (D8) | If the preferred HEAD → 404 | What is taken from it |
+| Kind | Small file (`small_file`), used if HEAD → 200 (D8) | If the small file's HEAD → 404 | What is taken from it |
 |------|------|------|------|
 | `WIN_PORTABLE` | `windows/<arch>/RetroArch_update.7z` | `windows/<arch>/RetroArch.7z` | The program set, §4.6 |
 | `WIN_INSTALLER*` | — | `windows/x86_64/RetroArch-Win64-setup.exe` or `windows/x86/RetroArch-Win32-setup.exe` | The whole file |
