@@ -2195,6 +2195,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Content's core list), and what to show when no core declares the
   system (probably fall back to today's list with a note). Pairs with
   RETR-0038. Build on the fork, then one upstream PR.
+  Waiting-on: user (which screen shows the too-long core list: Set Core
+  Association, or Load Content's "load with core" list? And with no core
+  declaring the game's system, show today's full list with a note?
+  Recommendation: build it for both screens, from the playlist's
+  db_name against each core's .info databases, falling back to today's
+  extension-filtered list with a one-line note. 2026-11-05)
   **Layman:** When you pick a core to run a game, RetroArch should only offer cores that emulate that game's console, not every core you have installed.
   Kind: feature.
   Source: user-request-2026-10-20.
@@ -2509,7 +2515,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: close-findings 2026-10-22 (replay/input group).
   Lanes: save.
 
-- 📋 [RETR-0054] **INVESTIGATE — Recording after a replay state load may read a superblock the load removed.**
+- ✅ [RETR-0054] **INVESTIGATE — Recording after a replay state load may read a superblock the load removed.**
   Open question 3 of review-code lane 7, review 2026-10-21
   (review-code-leads/lane-07-replay-runahead.result). In
   bsv_movie_write_deduped_state, a block that matches last_save takes
@@ -2522,6 +2528,17 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   naming only superblocks it re-created is not settled. Upstream has
   the same line. Check: record with statestream, load a state on the
   same timeline, keep recording, under ASan.
+  2026-11-05: not a defect, by code reading on local/fixes-2026-09
+  (84987f7a92); not run under ASan. The lookup in
+  bsv_movie_write_deduped_state is reached only when can_compare_saves,
+  which needs cur_save_valid. bsv_movie_scan_from_start, called by both
+  state-load branches after uint32s_index_remove_after(..., 0), sets
+  cur_save_valid = false. The only site setting it true is the end of
+  the checkpoint writer, after a write that rebuilt superblock_seq. So
+  the first checkpoint after a load writes without the last_save
+  comparison, and later ones look up the sequence that write made. The
+  premise "the state-load path does not clear cur_save_valid" no longer
+  holds. Reopen if an ASan record-load-record run says otherwise.
   **Layman:** Loading a save state while recording a replay might, in one path, make the recorder read memory that was already freed. Unconfirmed.
   Kind: investigate.
   Source: close-findings 2026-10-22 (replay/input group).
