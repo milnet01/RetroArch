@@ -501,6 +501,9 @@ static enum self_update_kind self_update_kind_detect(void)
             0, KEY_QUERY_VALUE | KEY_WOW64_32KEY, &key) == ERROR_SUCCESS)
    {
       wchar_t value[PATH_MAX_LENGTH];
+      /* Static for the reason exe_dir is */
+      static wchar_t expanded[PATH_MAX_LENGTH];
+      const wchar_t *path = value;
       DWORD type;
       DWORD size = sizeof(value) - sizeof(wchar_t);
 
@@ -510,7 +513,17 @@ static enum self_update_kind self_update_kind_detect(void)
       {
          /* A registry string need not carry its terminator. */
          value[size / sizeof(wchar_t)] = L'\0';
-         uninstall_string     = utf16_to_utf8_string_alloc(value);
+         /* A REG_EXPAND_SZ value may name %ProgramFiles% and the like,
+          * which never matches exe_dir unexpanded.  An expansion that
+          * fails or does not fit leaves the value as read. */
+         if (type == REG_EXPAND_SZ)
+         {
+            DWORD len = ExpandEnvironmentStringsW(value, expanded,
+                  ARRAY_SIZE(expanded));
+            if (len > 0 && len <= ARRAY_SIZE(expanded))
+               path = expanded;
+         }
+         uninstall_string     = utf16_to_utf8_string_alloc(path);
          env.uninstall_string = uninstall_string;
       }
       RegCloseKey(key);
