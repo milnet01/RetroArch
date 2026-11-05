@@ -20,10 +20,12 @@
 #   own shell, stopping at the first that fails (run_workflow_job). Nothing is
 #   copied, so a step added to the workflow runs here too. Left out: `uses:`
 #   steps (checkout, cache) and the steps that install packages with sudo —
-#   this host's packages stand in for the runner's. A job using a workflow
-#   feature the runner does not honour (a template expression, GITHUB_ENV, an
-#   `if:` or matrix outside the forms workflow_tool names) is refused rather
-#   than run differently.
+#   this host's packages stand in for the runner's. A default run also leaves
+#   out the wall-clock steps in TIMING_STEPS unless the push changes a file
+#   their test builds, and runs them after waiting for a quiet machine. A
+#   job using a workflow feature the runner does not honour (a template
+#   expression, GITHUB_ENV, an `if:` or matrix outside the forms
+#   workflow_tool names) is refused rather than run differently.
 #
 #   linux-i686 runs Linux.yml's steps in the same container image CI uses.
 #   The rest run natively with this host's toolchain, so `./configure` can
@@ -222,7 +224,9 @@ ACT_RUN_IMAGE=""
 #   block (NN.body) in the shell a runner would use. `uses:` steps are left
 #   out; so are steps that install packages with sudo, and "Enable ccache",
 #   whose `ccache -M` would set this machine's real cache size; both named on
-#   stdout. WF_MATRIX=<key>=<value> picks one value of a job's matrix. A job
+#   stdout. WF_MATRIX=<key>=<value> picks one value of a job's matrix.
+#   WF_SKIP_STEPS lists step names to leave out, one per line, each named on
+#   stdout; the push gate fills it (timing_skips). A job
 #   or step using a feature this does not honour is refused with a reason,
 #   so the job fails instead of running something other than the workflow. A
 #   job with a container is refused unless its image is the one passed.
@@ -292,6 +296,9 @@ for s in j["steps"]:
         continue
     if "sudo " in s["run"]:
         print("skipped, installs packages:", name)
+        continue
+    if name in os.environ.get("WF_SKIP_STEPS", "").split("\n"):
+        print("SKIPPED, wall-clock check, the push changes nothing it builds:", name)
         continue
     env = dict(env0)
     env.update(s.get("env") or {})
@@ -374,17 +381,23 @@ push_base() {
     git -C "$ROOT" rev-parse -q --verify '@{upstream}' || echo "--remotes"
 }
 
+# unpushed_files : print each file the commits not yet pushed change, and
+# under --worktree the uncommitted edits too, one per line. Commits upstream
+# already has do not count: what a merge brings has had upstream's CI, and
+# ANTS_PUSH_CHANGED is not used because it lists those files.
+unpushed_files() {
+    { git -C "$ROOT" log --no-merges --format= --name-only HEAD --not "$(push_base)" --remotes=upstream
+      [ "$REF" = worktree ] && git -C "$ROOT" diff --name-only HEAD "$ARCHIVE_REF"
+    } | sort -u | sed '/^$/d'
+}
+
 # changed_jobs : print act:<workflow>:<job> for each job tools/ci_local.py
 # says covers the commits not yet pushed, naming a changed file first, then
 # the tree-wide checks; its full-tree builds are not taken, as the default jobs
-# stand in for them. Commits upstream already has do not count: what a merge
-# brings has had upstream's CI, and ANTS_PUSH_CHANGED is not used because it
-# lists those files. A job not runnable here goes to stderr.
+# stand in for them. A job not runnable here goes to stderr.
 changed_jobs() {
     local files out wf job j
-    files="$( { git -C "$ROOT" log --no-merges --format= --name-only HEAD --not "$(push_base)" --remotes=upstream
-                [ "$REF" = worktree ] && git -C "$ROOT" diff --name-only HEAD "$ARCHIVE_REF"
-              } | sort -u | sed '/^$/d')"
+    files="$(unpushed_files)"
     [ -n "$files" ] || return 0
     # shellcheck disable=SC2086  # one path per word; none holds a space that
     # matters here, since a path ci_local.py cannot match selects nothing
@@ -531,21 +544,85 @@ ensure_image() {
     fi
 }
 
+# Wall-clock checks: upstream steps asserting a time or throughput floor. On
+# this shared desktop they fail when other work loads the machine, with
+# nothing wrong (RETR-0067: at load 24 the scan throughput factor read 0.98
+# against 0.80, and the HTTP yield 246724 bytes per update against 262144). A
+# gate that fails at random teaches pushing past it, so the push gate runs one
+# only when the push changes a file it builds, and then on a quiet machine.
+# Each name maps to the <directory>:<makefile> that builds its test.
+declare -A TIMING_STEPS=(
+    ["Build and run scan_begin_budget_test (plain, ASan + UBSan, TSan)"]="samples/tasks/database:Makefile"
+    ["Build and run http_transfer_stress_test (ASan + UBSan, TSan)"]="samples/tasks/http:Makefile.stress"
+)
+QUIET_LOAD="${LOCAL_CI_QUIET_LOAD:-6}"     # one-minute load average
+QUIET_WAIT="${LOCAL_CI_QUIET_WAIT:-3600}"  # seconds, then run regardless
+
+# timing_skips <tree> : print the TIMING_STEPS a default run leaves out, one
+# per line: those whose test sources (make -n in <tree>) and directory the
+# unpushed commits do not touch. A header counts when it sits beside one of
+# the sources or under libretro-common/include. A run naming its jobs skips
+# nothing, and a step whose sources cannot be listed is never skipped.
+timing_skips() {
+    local name dir mf srcs srcdirs files f hit
+    [ "$DEFAULT_RUN" -eq 1 ] || return 0
+    files="$(unpushed_files)" || return 0
+    for name in "${!TIMING_STEPS[@]}"; do
+        dir="${TIMING_STEPS[$name]%%:*}"; mf="${TIMING_STEPS[$name]#*:}"
+        srcs="$(cd "$1/$dir" && make -n -B -f "$mf" all 2>/dev/null \
+            | grep -oE '[^ ]+\.c\b' | sort -u \
+            | while read -r f; do realpath -m --relative-to="$1" "$f"; done)" || continue
+        [ -n "$srcs" ] || continue
+        srcdirs="$(printf '%s\n' "$srcs" | sed 's#/[^/]*$##' | sort -u)"
+        hit=0
+        while read -r f; do
+            case "$f" in
+                "") ;;
+                "$dir"/*|libretro-common/include/*) hit=1 ;;
+                *.h) grep -qxF "${f%/*}" <<<"$srcdirs" && hit=1 ;;
+                *)   grep -qxF "$f" <<<"$srcs" && hit=1 ;;
+            esac
+        done <<<"$files"
+        [ "$hit" -eq 0 ] && printf '%s\n' "$name"
+    done
+}
+
+# wait_quiet : before a wall-clock step, wait until the one-minute load
+# average is below QUIET_LOAD, checking every 30 s for up to QUIET_WAIT
+# seconds, then run regardless and say so.
+wait_quiet() {
+    local waited=0 load
+    while :; do
+        read -r load _ </proc/loadavg
+        awk -v l="$load" -v q="$QUIET_LOAD" 'BEGIN { exit !(l < q) }' && return 0
+        if [ "$waited" -ge "$QUIET_WAIT" ]; then
+            echo "== load still $load after ${QUIET_WAIT}s; running the wall-clock step anyway"
+            return 0
+        fi
+        [ "$waited" -eq 0 ] && echo "== load $load; waiting for it to fall below $QUIET_LOAD before a wall-clock step"
+        sleep 30
+        waited=$((waited + 30))
+    done
+}
+
 # run_workflow_job <job> : run the steps of the workflow job JOB_SOURCE
 # names for <job>, natively, from a fresh export of the ref, stopping at the
 # first step that fails, as a runner does.
 run_workflow_job() {
-    local wf="${JOB_SOURCE[$1]%%:*}" wj="${JOB_SOURCE[$1]#*:}" w st
-    local WF_MATRIX="${JOB_MATRIX[$1]:-}"
-    export WF_MATRIX
-    w="$(mktemp -d "$LOGDIR/$1.XXXX")" && export_tree "$w" && mkdir "$w.tmp" \
-      && workflow_tool steps "$w/.github/workflows/$wf" "$wj" "$w.steps" || return 1
+    local wf="${JOB_SOURCE[$1]%%:*}" wj="${JOB_SOURCE[$1]#*:}" w st name
+    local WF_MATRIX="${JOB_MATRIX[$1]:-}" WF_SKIP_STEPS
+    export WF_MATRIX WF_SKIP_STEPS
+    w="$(mktemp -d "$LOGDIR/$1.XXXX")" && export_tree "$w" && mkdir "$w.tmp" || return 1
+    WF_SKIP_STEPS="$(timing_skips "$w")"
+    workflow_tool steps "$w/.github/workflows/$wf" "$wj" "$w.steps" || return 1
     for st in "$w.steps"/*.sh; do
-        echo "== step: $(sed -n '1s/^# //p' "$st")"
+        name="$(sed -n '1s/^# //p' "$st")"
+        echo "== step: $name"
+        [ -n "${TIMING_STEPS[$name]:-}" ] && wait_quiet
         # A private Wine prefix, not the user's; no core dump pop-up when a
         # test crashes.
         ( ulimit -c 0; cd "$w" && PATH="$CPU_SHIM:$PATH" RUNNER_TEMP="$w.tmp" \
-            GITHUB_WORKSPACE="$w" WINEPREFIX="$w.tmp/wine" bash "$st" ) || { echo "== step FAILED: $(sed -n '1s/^# //p' "$st")"; return 1; }
+            GITHUB_WORKSPACE="$w" WINEPREFIX="$w.tmp/wine" bash "$st" ) || { echo "== step FAILED: $name"; return 1; }
     done
 }
 
