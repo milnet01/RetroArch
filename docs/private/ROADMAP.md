@@ -2334,7 +2334,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: review-readability 2026-10-21 self-updater re-run, L2 finding 7.
   Lanes: self_update.
 
-- 📋 [RETR-0046] **INVESTIGATE — Self-updater correctness leads from the readability re-run.**
+- ✅ [RETR-0046] **INVESTIGATE — Self-updater correctness leads from the readability re-run.**
   Ungraded leads for review-code, none yet verified as defects:
   (1) self_update.c memory sum may not count BCJ2's extra inputs;
   (2) the marker's kind line is written but never read;
@@ -2343,6 +2343,22 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (5) the download accepts any 2xx, the checksum only 200;
   (6) su_fs_read truncates silently. Records:
   docs/private/reviews/2026-10-21-findings/review-readability-self-updater/.
+  2026-11-05, each lead checked against local/fixes-2026-09:
+  (1) true in part: the memory sum counts BCJ2's main input (unpack_size)
+  but not its three side streams; r7z_archive_folder_info gives only the
+  final size, and the 64 MiB margin covers them. Comment corrected
+  (52ee65d7b5); no code change.
+  (2) not a defect: the spec (§4.7) defines the marker as version + kind;
+  start-up needs only the version.
+  (3) true, harmless: every goto fail is inside the loop, so i < count
+  always holds there.
+  (4) defect, fixed in 2c2b15ba7d: an empty config_dir wrote the marker
+  into the current folder, which nothing reads. Regression check in
+  self_update_net_test lane checksum, red then green.
+  (5) not a defect: a non-200 2xx checksum reply stops the update, and a
+  wrong download body fails the archive or checksum check.
+  (6) not a defect: the only caller reads the marker into 128 bytes; the
+  writer's limit is 64.
   **Layman:** Six possible small bugs in the updater that a reviewer noticed in passing and nobody has checked yet.
   Kind: investigate.
   Source: review-readability 2026-10-21 self-updater re-run, message2.md part 3.
