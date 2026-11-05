@@ -22,7 +22,9 @@
 #   steps (checkout, cache) and the steps that install packages with sudo —
 #   this host's packages stand in for the runner's. A default run also leaves
 #   out the wall-clock steps in TIMING_STEPS unless the push changes a file
-#   their test builds, and runs them after waiting for a quiet machine. A
+#   their test builds, and runs them after waiting for a quiet machine. The
+#   steps get ccache, as the workflows' "Enable ccache" step gives them on
+#   GitHub, from a cache of their own under the trees' directory (below). A
 #   job using a workflow feature the runner does not honour (a template
 #   expression, GITHUB_ENV, an `if:` or matrix outside the forms
 #   workflow_tool names) is refused rather than run differently.
@@ -503,6 +505,12 @@ fi
 CI_TMP="${LOCAL_CI_TMPDIR:-$(git -C "$ROOT" config --get ants.localci.tmpdir)}"
 CI_TMP="${CI_TMP:-${XDG_CACHE_HOME:-$HOME/.cache}/local-ci}"
 mkdir -p "$CI_TMP"
+# ccache for the native workflow steps, kept between runs beside the trees:
+# the machine-wide cache is full, and its default home, ~/.cache, is on a
+# nearly full system disk here. Its config file replaces the user's.
+CI_CCACHE="$CI_TMP/ccache"
+mkdir -p "$CI_CCACHE"
+[ -f "$CI_CCACHE/ccache.conf" ] || echo "max_size = 8G" >"$CI_CCACHE/ccache.conf"
 LOGDIR="$(mktemp -d "$CI_TMP/local-ci.XXXXXX")" || {
     echo "local-CI.sh: cannot create a log directory under $CI_TMP" >&2; exit 2; }
 JPAR="-j$JOBS"
@@ -605,6 +613,14 @@ wait_quiet() {
     done
 }
 
+# The workflows' "Enable ccache" step is skipped here (workflow_tool), so the
+# steps find ccache's compiler links first on PATH instead. Every run builds
+# in a new directory, which BASEDIR and NOHASHDIR keep out of the hash.
+CCACHE_WRAP=""
+for d in /usr/lib64/ccache /usr/lib/ccache; do
+    [ -x "$d/cc" ] && { CCACHE_WRAP="$d"; break; }
+done
+
 # run_workflow_job <job> : run the steps of the workflow job JOB_SOURCE
 # names for <job>, natively, from a fresh export of the ref, stopping at the
 # first step that fails, as a runner does.
@@ -621,7 +637,9 @@ run_workflow_job() {
         [ -n "${TIMING_STEPS[$name]:-}" ] && wait_quiet
         # A private Wine prefix, not the user's; no core dump pop-up when a
         # test crashes.
-        ( ulimit -c 0; cd "$w" && PATH="$CPU_SHIM:$PATH" RUNNER_TEMP="$w.tmp" \
+        ( ulimit -c 0; cd "$w" && PATH="$CPU_SHIM${CCACHE_WRAP:+:$CCACHE_WRAP}:$PATH" \
+            CCACHE_DIR="$CI_CCACHE" CCACHE_CONFIGPATH="$CI_CCACHE/ccache.conf" \
+            CCACHE_BASEDIR="$w" CCACHE_NOHASHDIR=1 RUNNER_TEMP="$w.tmp" \
             GITHUB_WORKSPACE="$w" WINEPREFIX="$w.tmp/wine" bash "$st" ) || { echo "== step FAILED: $name"; return 1; }
     done
 }
