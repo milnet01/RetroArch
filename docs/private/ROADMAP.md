@@ -1686,6 +1686,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   2026-11-04: opened #19992 (download [#] marker, RETR-0041/0066) and
   #19993 (Core Downloader System Name, RETR-0038), both user-approved,
   readability review run first.
+  2026-11-05: #19992 and #19993 CI red, not ours: runner DNS failures and a
+  runner image without qemu-user-static; upstream master's runs are
+  queued/cancelled and another contributor's PR fails the same i686 job.
+  We cannot re-run libretro jobs (read-only). Waiting for upstream CI.
+  2026-11-05 (user-approved): deleted the 70 pr/* branches of merged and
+  closed PRs from origin and locally; kept pr/download-marker and
+  pr/core-system-name. Every deleted tip was checked first: each is held
+  by libretro's refs/pull/N/head or by a fork branch (f5d9c36634, an
+  unheld copy of #19627, has the same tree as 96251986fd).
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2629,7 +2638,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: local-CI session 2026-11-02 (diff of tasks/task_screenshot.c against merge base 92b11d965b).
   Lanes: tasks/task_screenshot.c.
 
-- 📋 [RETR-0063] **INVESTIGATE — Starting many downloads at once crashed RetroArch; check the fork.**
+- ✅ [RETR-0063] **INVESTIGATE — Starting many downloads at once crashed RetroArch; check the fork.**
   User report 2026-11-04: in the past, starting too many downloads at
   once made RetroArch crash and close. Seen on the official build; which
   version and which downloader are unrecorded. Since 1.22.2 the fork and
@@ -2646,6 +2655,12 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   most four running at once. No fixed limit of four was found in
   tasks/task_http.c or libretro-common/net/net_http.c, so this cap is
   not explained yet.
+  2026-11-05: the "at most four" is the on-screen notification cap,
+  MSG_QUEUE_ONSCREEN_MAX (4) in gfx/gfx_widgets.h; further task messages
+  wait in task_pending until a slot frees. It limits what is shown, not
+  how many downloads run. With the user's 2026-11-04 many-download run on
+  the fork showing no crash, the fork does not reproduce the old crash;
+  closed. Reopen on any new crash, with the coredump backtrace.
   **Layman:** Queuing lots of downloads used to crash RetroArch; check whether our version still does.
   Kind: investigate.
   Source: user-report-2026-11-04.
