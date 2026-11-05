@@ -1021,6 +1021,10 @@ static void self_update_write_marker(const self_update_apply_t *state)
    char marker[PATH_MAX_LENGTH];
    char text[64];
 
+   /* task_self_update_startup() reads no marker without a config
+    * folder, and an empty one would put it in the current folder. */
+   if (!*state->config_dir)
+      return;
    fill_pathname_join_special(marker, state->config_dir,
          SELF_UPDATE_MARKER, sizeof(marker));
    if (     !self_update_marker_format(text, sizeof(text),

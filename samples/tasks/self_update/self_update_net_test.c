@@ -627,6 +627,25 @@ static void lane_checksum(void)
    CHECK(up_app_is(NEW_BUILD, strlen(NEW_BUILD)), "no checksum (404): new bytes in place");
    up_teardown();
 
+   /* No config folder: the start-up check reads no marker without one,
+    * so the update writes none - least of all into the current folder,
+    * which an empty folder name joins to. */
+   up_setup();
+   reset(NEWER_RELEASE, 200, 200, 200);
+   cfg.file_body = NEW_BUILD;
+   cfg.file_len  = strlen(NEW_BUILD);
+   remove("self_update.pending");
+   CHECK(task_push_self_update_apply_at(&test_ep, SELF_UPDATE_KIND_APPIMAGE,
+            "99.0.0", true, ""), "no config folder: update started");
+   pump();
+   CHECK(last_notice_is("installed 99.0.0"), "no config folder: installed");
+   CHECK(up_app_is(NEW_BUILD, strlen(NEW_BUILD)),
+         "no config folder: new bytes in place");
+   CHECK(!up_exists("self_update.pending"),
+         "no config folder: no marker in the current folder");
+   remove("self_update.pending");
+   up_teardown();
+
    /* 500: only a 404 means absent; stopped before the download. */
    up_setup();
    reset(NEWER_RELEASE, 200, 200, 200);
