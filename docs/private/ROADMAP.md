@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=67 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=69 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2864,14 +2864,41 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   under `timeout 300 make -j2 all`, which local-CI.sh mirrors; the ASan
   vp9 build passed 300 s at load 24. So § 9's memory-sized parallelism
   lever does not apply. That workflow line is upstream's.
-  Waiting-on: user (take the timing checks - the scan throughput and
-  http per-update floors - out of the per-push gate into a scheduled
-  run, as local-gate.md § 9 advises? Recommendation: yes, and keep them
-  in GitHub CI; for the 300 s build limit, keep the hold-until-load-
-  falls stopgap rather than changing upstream's workflow. 2026-11-05)
+  2026-11-05, user: CI must pass consistently on our code, speed-ups
+  on both sides, none flaky; GitHub builds only our code. Done on
+  local/fixes-2026-09: 912eba9b56 (the gate runs the two timing steps
+  only when the push changes a file their test builds, after waiting for
+  load below 6), 92b387b147 (act jobs reach act's cache server; every
+  restore had failed under pasta). The 300 s vp9 build limit stays
+  upstream's.
   **Layman:** The checks that run before every push fail when the computer is busy, even when nothing is wrong; the speed tests should run on a schedule instead.
   Kind: chore.
   Source: claude-config-advice-2026-11-05.
+
+- ✅ [RETR-0068] **CHORE — Stop the docs branch building a stale source copy on GitHub (failure-email flood).**
+  local/audit-2026-04 carried April 2026 workflow files that build on a
+  push to any branch, over an April source copy. Since 2026-11-02:
+  397 runs, 142 failures (Windows MSVC/MXE/MSYS2/ARM64, DOS, PS4,
+  Emscripten, iOS, macOS), none from our code: upstream's current code
+  passes the same builds. Removed in 399040bf14; that push started no
+  run. The docs branch is never merged into the fixes branch.
+  User 2026-11-05: GitHub runs CI for our code only; libretro's CI
+  checks our code when a PR merges.
+  **Layman:** Every documentation update started about 24 GitHub builds of an old copy of the code, and 8 failed every time, each emailing the user; those builds no longer run.
+  Kind: chore.
+  Source: user-request-2026-11-05.
+
+- 📋 [RETR-0069] **PERF — Local CI: pre-install the act jobs' apt packages in the act image.**
+  After 92b387b147 the apt cache restores (1 to 10 s), but "Install
+  dependencies" still takes 2 to 6.5 min per act job: unpacking Wine
+  and the rest, not downloading. Under load samples-gfx-display hit its
+  20 min limit and failed the push of b1aefee5f6. local-gate.md section
+  9's warm-container lever: build the image from the workflows' own
+  APT_PKGS lists, its tag keyed on them, so apt-install.sh finds them
+  installed. Measure before and after; one lever per change.
+  **Layman:** Each local container test spends 2 to 6 minutes installing the same packages; building them into the container once would save that on every run.
+  Kind: perf.
+  Source: user-request-2026-11-05.
 
 ### 📝 Cold-eyes 2026-07-04
 
