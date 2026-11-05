@@ -2399,7 +2399,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: close-findings 2026-10-22 (menu group, running act:Linux-menu-harness.yml).
   Lanes: local-CI.sh.
 
-- 📋 [RETR-0051] **MEDIUM — Upstream replay fixes the fork still lacks.**
+- ✅ [RETR-0051] **MEDIUM — Upstream replay fixes the fork still lacks.**
   Found while closing the replay/input group: upstream/master has
   replay commits since the fork's last merge (6bf58823c6) that the
   fork does not carry. The close-findings run carried only the parts
@@ -2418,6 +2418,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   conflicts, and upstream's text should win where it covers the same
   case. The fork's branch is far behind upstream/master overall, so
   a full upstream merge (RETR-S0115) would bring these too.
+  2026-11-05: all three are in local/fixes-2026-09 (ancestors of
+  84987f7a92, through the upstream merges), and every added code line of
+  each is present in the fork's files. samples/tasks/bsv_statestream:
+  the no_layout lane ("layout") passes and all lanes pass. Closed.
   **Layman:** The official project has fixed more replay bugs since our last merge; we should bring those fixes over.
   Kind: fix.
   Source: close-findings 2026-10-22 (replay/input group).
@@ -2687,6 +2691,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   retroarch-portable.sh; both pass desktop-file-validate. Open: the
   user's menu tests (RETR-0041, RETR-0038, RETR-0063) and the weekly
   merge, due about 2026-11-07.
+  2026-11-05: weekly merge done early as 84987f7a92 (upstream 24457eef48,
+  176 commits), so one local-CI run gates it with 80fc994926 and
+  3c853184e1. Those two had not pushed: the 2026-11-04 push stopped when
+  a CI job lost DNS, and a 2026-11-05 retry failed under load average 24
+  from other sessions (vp9 build killed, two speed floors missed), none
+  in code the commits touch. The push now waits for load below 6. Five
+  conflicts, all upstream's own forms of our fixes (#19954, #19956);
+  resolved in the merge body. Sample checks pass; make -j4 builds.
+  Next: once the push gates green, install the build (keep
+  retroarch.OLD).
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
@@ -2716,6 +2730,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   release build has no line info, so it breaks on function names only.
   Separate: going back to Main Menu also lands on the first entry; not
   yet looked at.
+  2026-11-05: the 2026-11-04..05 upstream commits carry no fix for this.
+  Code reading: cb_task_core_backup sets ENTRIES_NEED_REFRESH once per
+  backup, and task_core_updater.c only clears refresh flags; neither
+  repeats during one download, so the repeating trigger is still unknown.
+  Waiting-on: user (say when a core update is next run, so the gdb
+  script in ra-cursor/ can watch it; recommendation: run "Update
+  Installed Cores" once with me attached, 2026-11-05)
   **Layman:** While something downloads, you can't scroll down the download lists: the cursor keeps going back to the top.
   Kind: fix.
   Source: user-report-2026-11-04.
