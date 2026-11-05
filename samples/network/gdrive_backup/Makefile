@@ -51,6 +51,9 @@ endif
 
 OBJS := $(call sample_objs,$(SOURCES_C:.c=.o))
 
+# The test #includes network/cloud_sync/google_drive.c; rebuild it when that changes.
+gdrive_backup_test.o: $(CORE_DIR)/network/cloud_sync/google_drive.c
+
 # The driver is built with HAVE_SSL, as it is in the frontend (and
 # settings_t only has its fields with it); net_http.c is built without,
 # so it needs no TLS backend - no request ever reaches it here.

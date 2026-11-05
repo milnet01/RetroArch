@@ -42,6 +42,9 @@ endif
 
 OBJS := $(call sample_objs,$(SOURCES_C:.c=.o))
 
+# The test #includes network/cloud_sync/smb.c; rebuild it when that changes.
+smb_backup_test.o: $(CORE_DIR)/network/cloud_sync/smb.c
+
 # Only the driver's translation unit: libretro-common's VFS would pull
 # in its own SMB backend with the define, and settings_t only has the
 # SMB fields with it.

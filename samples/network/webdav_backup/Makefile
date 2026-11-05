@@ -51,6 +51,9 @@ endif
 
 OBJS := $(call sample_objs,$(SOURCES_C:.c=.o))
 
+# The test #includes network/cloud_sync/webdav.c; rebuild it when that changes.
+webdav_backup_test.o: $(CORE_DIR)/network/cloud_sync/webdav.c
+
 all: $(TARGET)
 
 %.o: %.c
