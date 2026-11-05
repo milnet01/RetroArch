@@ -64,6 +64,7 @@ on:
       - 'samples/tasks/playlist_manager/**'
       - 'samples/tasks/progress_push/**'
       - 'samples/tasks/save_state/**'
+      - 'samples/tasks/self_update/**'
       - 'samples/tasks/steam_dlc/**'
       - 'samples/tasks/subtitle_load/**'
       - 'samples/tasks/translation_reply/**'
@@ -74,6 +75,7 @@ on:
       - 'samples/tasks/wifi_tasks/**'
       - 'samples/runloop/**'
       - 'samples/tasks/**'
+      - 'samples/ui_companion_log_stub.c/**'
       - '.github/workflows/Linux-frontend-overhead.yml'
     # ci_paths: end
   pull_request:
@@ -124,6 +126,7 @@ on:
       - 'samples/tasks/playlist_manager/**'
       - 'samples/tasks/progress_push/**'
       - 'samples/tasks/save_state/**'
+      - 'samples/tasks/self_update/**'
       - 'samples/tasks/steam_dlc/**'
       - 'samples/tasks/subtitle_load/**'
       - 'samples/tasks/translation_reply/**'
@@ -134,6 +137,7 @@ on:
       - 'samples/tasks/wifi_tasks/**'
       - 'samples/runloop/**'
       - 'samples/tasks/**'
+      - 'samples/ui_companion_log_stub.c/**'
       - '.github/workflows/Linux-frontend-overhead.yml'
     # ci_paths: end
   workflow_dispatch:

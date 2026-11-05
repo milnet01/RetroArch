@@ -100,6 +100,7 @@ GITHUB_ONLY=(
     "CI macOS (MacOS.yml)"                     "CI Miyoo (Miyoo.yml)"
     "CI Windows (MSVC) (MSVC.yml)"             "CI MSYS2 (MSYS2.yml)"
     "CI PS2 (PS2.yml)"                         "CI PS3/PSL1GHT (PS3-PSL1GHT.yml)"
+    "CI PS2 runtime, Play! AutoTest (PS2-runtime.yml)"
     "CI PS4/ORBIS (PS4-ORBIS.yml)"             "CI PSP (PSP.yml)"
     "CI PSVita (PSVita.yml)"                   "CI RetroFW MIPS32 (RetroFW.yml)"
     "CI RS90 (RS90.yml)"                       "CI Switch/libnx (Switch-libnx.yml)"
