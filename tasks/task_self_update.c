@@ -72,7 +72,7 @@ typedef struct self_update_check
    char version[32]; /* the release on offer, without the 'v' */
    enum self_update_kind kind;
    bool quiet;       /* the start-up check: report only a newer release */
-   bool preferred;   /* url is the small update file, not the full archive */
+   bool small_file;  /* url is the small update file, not the full archive */
 } self_update_check_t;
 
 /* "HTTP <status>" after @what, or @fallback when the reply carried no
@@ -95,7 +95,7 @@ static bool self_update_apply_running = false;
 /* The release the last menu check found and sized: what Update Now
  * installs. */
 static char self_update_offer_version[32];
-static bool self_update_offer_preferred = false;
+static bool self_update_offer_small_file = false;
 
 static void self_update_notify(const char *msg)
 {
@@ -193,7 +193,7 @@ static void cb_self_update_head(retro_task_t *task, void *task_data,
    {
       strlcpy(self_update_offer_version, state->version,
             sizeof(self_update_offer_version));
-      self_update_offer_preferred = state->preferred;
+      self_update_offer_small_file = state->small_file;
       self_update_report_available(state, data);
       self_update_check_done(state);
       return;
@@ -203,9 +203,9 @@ static void cb_self_update_head(retro_task_t *task, void *task_data,
    {
       /* The small file is not published for every release; the full
        * archive is the fallback. */
-      if (state->preferred)
+      if (state->small_file)
       {
-         state->preferred = false;
+         state->small_file = false;
          if (    self_update_file_url(state->url, sizeof(state->url),
                      state->ep, state->kind,
                      state->version, SELF_UPDATE_X86_64, false)
@@ -293,10 +293,10 @@ static void cb_self_update_release(retro_task_t *task, void *task_data,
 
    /* Size the download before anything is offered: the smaller file
     * first where there is one. */
-   state->preferred = self_update_has_small_file(state->kind);
+   state->small_file = self_update_has_small_file(state->kind);
    if (     !self_update_file_url(state->url, sizeof(state->url),
                state->ep, state->kind, state->version,
-               SELF_UPDATE_X86_64, state->preferred)
+               SELF_UPDATE_X86_64, state->small_file)
          || !task_push_http_transfer_with_user_agent(state->url, true,
                "HEAD", SELF_UPDATE_USER_AGENT, cb_self_update_head, state))
       self_update_check_failed(state, NULL, "request not started");
@@ -1455,7 +1455,7 @@ static void cb_self_update_sha256(retro_task_t *task, void *task_data,
 }
 
 bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
-      enum self_update_kind kind, const char *version, bool preferred,
+      enum self_update_kind kind, const char *version, bool small_file,
       const char *config_dir)
 {
    char msg[PATH_MAX_LENGTH + 128];
@@ -1485,14 +1485,14 @@ bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
       return false;
    }
    state->kind         = kind;
-   state->from_archive = self_update_file_is_archive(kind, preferred);
+   state->from_archive = self_update_file_is_archive(kind, small_file);
    strlcpy(state->version, version, sizeof(state->version));
    strlcpy(state->config_dir, config_dir, sizeof(state->config_dir));
 
    self_update_staging_dir(state->staging, sizeof(state->staging), kind);
    if (     !*state->staging
          || !self_update_file_url(state->url, sizeof(state->url), ep, kind,
-               version, SELF_UPDATE_X86_64, preferred))
+               version, SELF_UPDATE_X86_64, small_file))
    {
       self_update_apply_failed(state, "no download address");
       return false;
@@ -1535,5 +1535,5 @@ bool task_push_self_update_apply(const char *config_dir)
       return false;
    return task_push_self_update_apply_at(&self_update_endpoints_default,
          task_self_update_kind(), self_update_offer_version,
-         self_update_offer_preferred, config_dir);
+         self_update_offer_small_file, config_dir);
 }

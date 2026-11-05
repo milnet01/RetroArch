@@ -214,10 +214,10 @@ void task_self_update_startup(const char *config_dir);
 bool task_push_self_update_apply(const char *config_dir);
 
 /* The same against @ep, for release @version of an install of @kind;
- * @preferred picks the small file (spec §4.5).  Only the test harness
- * calls this. */
+ * @small_file asks for the small update file (spec §4.5).  Only the
+ * test harness calls this. */
 bool task_push_self_update_apply_at(const struct self_update_endpoints *ep,
-      enum self_update_kind kind, const char *version, bool preferred,
+      enum self_update_kind kind, const char *version, bool small_file,
       const char *config_dir);
 #endif
 

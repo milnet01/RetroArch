@@ -569,10 +569,10 @@ static bool up_exists(const char *path)
    return lstat(path, &st) == 0;
 }
 
-static void up_run(bool preferred)
+static void up_run(bool small_file)
 {
    CHECK(task_push_self_update_apply_at(&test_ep, SELF_UPDATE_KIND_APPIMAGE,
-            "99.0.0", preferred, up_root), "update started");
+            "99.0.0", small_file, up_root), "update started");
    pump();
 }
 

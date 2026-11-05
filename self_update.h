@@ -111,24 +111,24 @@ size_t self_update_api_url(char *s, size_t len,
       const struct self_update_endpoints *ep);
 
 /* The download URL for @kind and @version ("1.22.2", no 'v').
- * @preferred picks the smaller download where one exists
+ * @small_file picks the smaller download where one exists
  * (RetroArch_update.7z, the bare AppImage); for an installer it is
  * ignored.  The AppImage is built for x86_64 only, so @x86_64 does not
  * change its URL.  Returns 0 for SELF_UPDATE_KIND_NONE. */
 size_t self_update_file_url(char *s, size_t len,
       const struct self_update_endpoints *ep, enum self_update_kind kind,
-      const char *version, bool x86_64, bool preferred);
+      const char *version, bool x86_64, bool small_file);
 
 /* Whether @kind has the smaller download self_update_file_url() picks
- * with @preferred: the portable install and the AppImage do; an
+ * with @small_file: the portable install and the AppImage do; an
  * installer does not. */
 bool self_update_has_small_file(enum self_update_kind kind);
 
-/* Whether self_update_file_url()'s download for @kind and @preferred
+/* Whether self_update_file_url()'s download for @kind and @small_file
  * is a .7z to unpack, rather than a file used as it is: the bare
  * AppImage and the installers are used whole. */
 bool self_update_file_is_archive(enum self_update_kind kind,
-      bool preferred);
+      bool small_file);
 
 /* Windows portable program set: for an archive member under @top,
  * returns the path below @top when it is a .exe or .dll directly in

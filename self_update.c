@@ -314,7 +314,7 @@ size_t self_update_api_url(char *s, size_t len,
 
 size_t self_update_file_url(char *s, size_t len,
       const struct self_update_endpoints *ep, enum self_update_kind kind,
-      const char *version, bool x86_64, bool preferred)
+      const char *version, bool x86_64, bool small_file)
 {
    char tail[128];
    unsigned v[4];
@@ -334,11 +334,11 @@ size_t self_update_file_url(char *s, size_t len,
    {
       case SELF_UPDATE_KIND_APPIMAGE:
          arch = "x86_64";
-         file = preferred ? "linux/%s/RetroArch-Linux-x86_64.AppImage"
+         file = small_file ? "linux/%s/RetroArch-Linux-x86_64.AppImage"
                           : "linux/%s/RetroArch.7z";
          break;
       case SELF_UPDATE_KIND_WIN_PORTABLE:
-         file = preferred ? "windows/%s/RetroArch_update.7z"
+         file = small_file ? "windows/%s/RetroArch_update.7z"
                           : "windows/%s/RetroArch.7z";
          break;
       case SELF_UPDATE_KIND_WIN_INSTALLER:
@@ -364,10 +364,10 @@ bool self_update_has_small_file(enum self_update_kind kind)
 }
 
 bool self_update_file_is_archive(enum self_update_kind kind,
-      bool preferred)
+      bool small_file)
 {
    return    kind == SELF_UPDATE_KIND_WIN_PORTABLE
-          || (kind == SELF_UPDATE_KIND_APPIMAGE && !preferred);
+          || (kind == SELF_UPDATE_KIND_APPIMAGE && !small_file);
 }
 
 /* ---- Windows program set ----------------------------------------- */

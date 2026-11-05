@@ -286,7 +286,7 @@ static void lane_tls(void)
 
    self_update_file_url(url, sizeof(url), ep, SELF_UPDATE_KIND_WIN_PORTABLE, "1.23.0", true, true);
    check(!strcmp(url, "https://buildbot.libretro.com/stable/1.23.0/windows/x86_64/RetroArch_update.7z"),
-         "tls: portable preferred file");
+         "tls: portable small file");
    self_update_file_url(url, sizeof(url), ep, SELF_UPDATE_KIND_WIN_PORTABLE, "1.23.0", false, false);
    check(!strcmp(url, "https://buildbot.libretro.com/stable/1.23.0/windows/x86/RetroArch.7z"),
          "tls: portable fallback file, x86");
@@ -298,7 +298,7 @@ static void lane_tls(void)
          "tls: Win32 installer");
    self_update_file_url(url, sizeof(url), ep, SELF_UPDATE_KIND_APPIMAGE, "1.23.0", true, true);
    check(!strcmp(url, "https://buildbot.libretro.com/stable/1.23.0/linux/x86_64/RetroArch-Linux-x86_64.AppImage"),
-         "tls: AppImage preferred file");
+         "tls: AppImage small file");
    self_update_file_url(url, sizeof(url), ep, SELF_UPDATE_KIND_APPIMAGE, "1.23.0", true, false);
    check(!strcmp(url, "https://buildbot.libretro.com/stable/1.23.0/linux/x86_64/RetroArch.7z"),
          "tls: AppImage fallback file");
