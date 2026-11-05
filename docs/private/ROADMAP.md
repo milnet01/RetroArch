@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=66 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=67 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2835,6 +2835,33 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** Every download list shows which files you already have, not just the Content Downloader.
   Kind: feature.
   Source: user-request-2026-11-04.
+
+- 📋 [RETR-0067] **CHORE — Local CI: move timing floors out of the push gate; check why the vp9 build was terminated under load.**
+  2026-11-05: with load near 24 on 12 cores, local-CI.sh failed with no
+  code cause: samples-tasks (scan throughput factor 0.98 vs limit 0.80),
+  samples-tasks-http (246724 bytes per net_http_update vs floor 262144),
+  common-samples-codecs (formats/vp9 build ended "make: *** Terminated").
+  ~/.claude/standards/local-gate.md § 9's lever "Timing, performance and
+  end-to-end tests outside the push gate" fits the two floors: run them
+  on a schedule, not per push. The vp9 build: SIGTERM, not the OOM
+  killer's SIGKILL, with 15 GiB available, so first find who terminated
+  it (a local-CI job timeout?) before applying § 9's "Build parallelism"
+  lever (size jobs by memory). Stopgap meanwhile: hold the push until
+  load falls (know_how timed-gates-under-machine-load). Reported to
+  claude-config; annotated on CFG-0724.
+  2026-11-05: the vp9 "Terminated" is a wall-clock limit, not memory:
+  .github/workflows/Linux-libretro-common-samples.yml builds each sample
+  under `timeout 300 make -j2 all`, which local-CI.sh mirrors; the ASan
+  vp9 build passed 300 s at load 24. So § 9's memory-sized parallelism
+  lever does not apply. That workflow line is upstream's.
+  Waiting-on: user (take the timing checks - the scan throughput and
+  http per-update floors - out of the per-push gate into a scheduled
+  run, as local-gate.md § 9 advises? Recommendation: yes, and keep them
+  in GitHub CI; for the 300 s build limit, keep the hold-until-load-
+  falls stopgap rather than changing upstream's workflow. 2026-11-05)
+  **Layman:** The checks that run before every push fail when the computer is busy, even when nothing is wrong; the speed tests should run on a schedule instead.
+  Kind: chore.
+  Source: claude-config-advice-2026-11-05.
 
 ### 📝 Cold-eyes 2026-07-04
 
