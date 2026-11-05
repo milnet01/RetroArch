@@ -1695,6 +1695,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   pr/core-system-name. Every deleted tip was checked first: each is held
   by libretro's refs/pull/N/head or by a fork branch (f5d9c36634, an
   unheld copy of #19627, has the same tree as 96251986fd).
+  Waiting-on: user (send f6179447ff, RETR-0048, upstream as a PR? Five
+  of upstream's samples/network Makefiles miss the driver dependency
+  that s3_backup's has. Recommendation: yes - three lines per file, no
+  runtime effect, and it removes a fork-vs-upstream difference.
+  2026-11-05)
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2150,7 +2155,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: feature.
   Source: user-request-2026-10-20.
 
-- 📋 [RETR-0039] **FEATURE — Core System Files and Content Downloaders: mark what is already downloaded.**
+- ✅ [RETR-0039] **FEATURE — Core System Files and Content Downloaders: mark what is already downloaded.**
   User request 2026-10-20, with a screenshot of Online Updater > Core
   System Files Downloader (Ozone): entries such as Dolphin.zip and
   PPSSPP.zip show no marker, while the Core Downloader marks installed
@@ -2166,6 +2171,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   downloaded and the rest do not; which ones, and why, is unchecked.
   Find what each page already knows about a finished download, and
   whether the partial marking is a bug in the existing code.
+  2026-11-05: delivered by RETR-0041 (Content Downloader, [#] survives
+  auto-extract) and RETR-0066 ([#] in Core System Files and every other
+  downloader), both user-confirmed 2026-11-04 and in upstream PR #19992.
+  Closed.
   **Layman:** The list of core support files should show which ones you already have, the way the core list does.
   Kind: feature.
   Source: user-request-2026-10-20.
@@ -2351,7 +2360,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Source: review-readability 2026-10-21 fork, L3 Q1.
   Lanes: cloud_sync.
 
-- 📋 [RETR-0048] **LOW — Network samples do not rebuild when the driver they include changes.**
+- ✅ [RETR-0048] **LOW — Network samples do not rebuild when the driver they include changes.**
   Six samples under samples/network (webdav_reauth, webdav_options,
   webdav_backup, gdrive_backup, s3_backup, smb_backup) #include a
   network/cloud_sync/*.c file, and their Makefiles do not list it as a
@@ -2359,6 +2368,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   binary: measured on webdav_reauth, which passed against unfixed code
   until make clean. CI builds clean, so only local reruns are hit. Fix:
   add the included .c to each test object's prerequisites.
+  2026-11-05: fixed in f6179447ff for webdav_reauth, webdav_options,
+  webdav_backup, gdrive_backup and smb_backup. s3_backup already had the
+  rule upstream, so five, not six. Red then green: after touching each
+  driver, make -n recompiled none of the five tests before, all after.
+  All five checks pass. Upstream PR question filed on RETR-S0115.
   **Layman:** Some cloud-sync tests can pass against old code when re-run locally, because they are not rebuilt after a change.
   Kind: test.
   Source: close-findings 2026-10-21 (found while fixing cloud sync).
@@ -2451,6 +2465,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   playback when the caller did not ask, then one rule and one comment.
   Upstream has the same split (bsv_movie_set_end), so decide with
   RETR-0051.
+  2026-11-05: RETR-0051 is closed (upstream's replay fixes are in), so
+  this no longer waits on it.
+  Waiting-on: user (should a damaged checkpoint end replay playback by
+  itself, or only when the caller asks? Recommendation: only when the
+  caller asks - drop the function's own BSV_FLAG_MOVIE_END sets, since
+  every caller that wants an end already asks, and state that rule in
+  one comment; then offer it upstream, which has the same split.
+  2026-11-05)
   **Layman:** When a replay file is damaged, some kinds of damage stop playback at once and others leave it to the caller, and nothing says why.
   Kind: review-fix.
   Source: close-findings 2026-10-22 (replay/input group).
