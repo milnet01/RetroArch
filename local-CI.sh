@@ -801,11 +801,20 @@ act_image() {
 # file or directory") and takes the job's other legs with it.
 # LSAN_OPTIONS: only stacks through libLLVM are suppressed; a step setting its
 # own LSAN_OPTIONS replaces this.
+# --cache-server-external-url: act tells a job to reach its cache server at
+# this machine's LAN address, which under rootless podman's pasta network is
+# the container's own copy of that address, so every actions/cache restore and
+# save failed ("connect ECONNREFUSED") and each run downloaded every package
+# again. host.containers.internal reaches the host. The URL needs the port, so
+# a free one is picked per run; the server still binds the LAN address, as
+# before.
 job_act() {
-    local wf="${1%%:*}" out rc key
+    local wf="${1%%:*}" out rc key port
     local -a only=() runner=()
     [ "$wf" != "$1" ] && only=(-j "${1#*:}")
     act_setup || return 1
+    port="$(python3 -Ic 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')" \
+        || { echo "no free port for act's cache server"; return 1; }
     [ -f "$ACT_SRC/.github/workflows/$wf" ] || { echo "no such workflow at this ref: $wf"; return 1; }
     for key in $(sed -nE 's/^ *runs-on: *\$\{\{ *matrix\.([A-Za-z_]+) *\}\}.*/\1/p' \
             "$ACT_SRC/.github/workflows/$wf" | sort -u); do
@@ -815,6 +824,8 @@ job_act() {
     ( cd "$ACT_SRC" && DOCKER_HOST="unix://$ACT_SOCK" "$ACT_BIN" \
         -W ".github/workflows/$wf" -P "ubuntu-latest=$ACT_RUN_IMAGE" \
         -P "ubuntu-24.04=$ACT_RUN_IMAGE" --network podman --action-offline-mode \
+        --cache-server-port "$port" \
+        --cache-server-external-url "http://host.containers.internal:$port" \
         --env LSAN_OPTIONS=suppressions=/etc/local-ci-lsan.supp \
         --pull=false --rm --container-daemon-socket - --concurrent-jobs 1 \
         --container-options "--security-opt seccomp=unconfined --pids-limit 4096 --init --cap-add NET_RAW --cap-add NET_ADMIN" \
