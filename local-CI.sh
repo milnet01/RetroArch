@@ -748,8 +748,17 @@ job_headless_i686() {
 ACT_SRC=""
 ACT_SOCK=""
 ACT_PID=""
+#   A failed setup is not retried: a second try would meet the first's
+#   half-made checkout and start a second podman service, so every later
+#   act job fails at once, pointing at the first job's log.
+ACT_SETUP_FAILED=0
 act_setup() {
     [ -n "$ACT_SRC" ] && return 0
+    [ "$ACT_SETUP_FAILED" -eq 0 ] \
+        || { echo "act setup failed for an earlier job; its log says why"; return 1; }
+    act_setup_once || { ACT_SETUP_FAILED=1; return 1; }
+}
+act_setup_once() {
     [ -x "$ACT_BIN" ] || { echo "act not found at $ACT_BIN (set ACT_BIN)"; return 1; }
     ACT_SOCK="$LOGDIR/podman.sock"
     podman system service --time=0 "unix://$ACT_SOCK" >"$LOGDIR/podman-service.log" 2>&1 &
