@@ -191,7 +191,7 @@ ACT_BIN="${ACT_BIN:-$HOME/.local/bin/act}"
 # ubuntu-latest is 24.04; this is the image act's own picker offers for it.
 ACT_IMAGE="catthehacker/ubuntu:act-24.04"
 JOBS="${LOCAL_CI_JOBS:-4}"
-# act runs ACT_IMAGE with three changes, built once as a local image whose
+# act runs ACT_IMAGE with these changes, built once as a local image whose
 # tag is a hash of its recipe (act_image), so a changed recipe rebuilds it:
 #   /var/run is a real directory. In ACT_IMAGE it links to /run, and podman
 #   refuses to copy an action into /var/run/act through the link ("statat
@@ -216,6 +216,18 @@ JOBS="${LOCAL_CI_JOBS:-4}"
 #   dpkg skips its syncs: on this overlay a workflow's 10-minute install step
 #   otherwise runs out of time. libLLVM's own leak, reached through the Vulkan
 #   validation layer, is suppressed (see LSAN_OPTIONS in job_act).
+#   Every package the act-run jobs name in APT_PKGS is installed, after the
+#   dpkg rules above, so apt-install.sh finds them present and each job skips
+#   minutes of unpacking (`tools/ci_local.py apt-pkgs`, read from the commit
+#   under test). The list is in the recipe, so a changed list rebuilds it.
+#   That step refreshes the package lists itself: the earlier step's layer is
+#   cached, and its lists name versions the archive may since have dropped.
+#   ACT_IMAGE_LEAVE_OUT is not pre-installed: a job that does not ask for a
+#   package must not find it. The 32-bit MinGW compiler is the case met: with
+#   it present, samples/frontend/win32_nvda runs its x86 leg instead of
+#   skipping it, and this Wine runs no 32-bit program. The jobs asking for
+#   these install them as before; the build fails if the compiler gets in.
+ACT_IMAGE_LEAVE_OUT="gcc-mingw-w64-i686 g++-mingw-w64-i686 mingw-w64"
 ACT_RUN_IMAGE=""
 
 # workflow_tool jobs <workflow>
@@ -781,11 +793,19 @@ act_setup_once() {
 # act_image : set ACT_RUN_IMAGE, building it from ACT_IMAGE (see
 # ACT_RUN_IMAGE for why) when it is missing or --pull asked for a fresh base.
 act_image() {
+    local pkgs p keep=""
+    pkgs="$(python3 -I "$LOGDIR/act-src/tools/ci_local.py" apt-pkgs)" \
+        || { echo "tools/ci_local.py apt-pkgs failed at this ref"; return 1; }
+    for p in $pkgs; do
+        case " $ACT_IMAGE_LEAVE_OUT " in *" $p "*) ;; *) keep="$keep $p" ;; esac
+    done
     printf '%s\n' "FROM docker.io/$ACT_IMAGE" \
         'RUN rm /var/run && mkdir /var/run && ln -s /run/lock /var/run/lock' \
         'RUN apt-get update && apt-get install -y --no-install-recommends ccache libjson-perl clang libclang-rt-18-dev' \
         'RUN printf "path-exclude=/usr/bin/%s\n" samba-tool ganesha.nfsd >/etc/dpkg/dpkg.cfg.d/local-ci-exclude' \
         'RUN echo force-unsafe-io >/etc/dpkg/dpkg.cfg.d/local-ci-unsafe-io' \
+        "RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y$keep && apt-get clean" \
+        'RUN ! command -v i686-w64-mingw32-gcc' \
         'RUN echo leak:libLLVM >/etc/local-ci-lsan.supp' \
         "RUN git config --system --add safe.directory '*'" \
         'COPY nproc getconf /usr/local/bin/' >"$CPU_SHIM/Containerfile"

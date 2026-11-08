@@ -31,6 +31,10 @@ needed; the YAML the workflows use is read by the small parser below.
                       an action this script cannot stand in for
         --times       print every step's time, not only the three slowest
 
+  tools/ci_local.py apt-pkgs
+      Every package the ubuntu-latest and ubuntu-24.04 jobs ask for in
+      APT_PKGS, on one line; local-CI.sh pre-installs them in its act image.
+
   tools/ci_local.py selftest
       Checks the parser against PyYAML (when installed) and resolves every
       job of every workflow in a dry run.
@@ -1621,6 +1625,43 @@ def cmd_list():
          print('  %-40s %-28s matrix %s%s' % (jid, ro, n, extra))
 
 
+# The runners local-CI.sh hands to act; every other runner is not its image's.
+ACT_RUNNERS = ('ubuntu-latest', 'ubuntu-24.04')
+
+
+def cmd_apt_pkgs():
+   """Every package an act-run job asks apt-install.sh for, sorted, on one
+   line: APT_PKGS from the workflow, job and step env of each matrix leg
+   whose runner is one of ACT_RUNNERS and has no container. Its options
+   (--no-install-recommends) are dropped. local-CI.sh builds them into
+   its act image."""
+   pkgs, bad = set(), 0
+   for wf in load_workflows():
+      for jid, job in wf.jobs.items():
+         if not isinstance(job, dict) or job.get('container'):
+            continue
+         ctx = base_context(wf, jid, ROOT, tempfile.gettempdir())
+         envs = [wf.data.get('env'), job.get('env')]
+         envs += [s.get('env') for s in job.get('steps') or [] if isinstance(s, dict)]
+         values = [e['APT_PKGS'] for e in envs if isinstance(e, dict) and 'APT_PKGS' in e]
+         if not values:
+            continue
+         try:
+            for combo in matrix_combos(job, ctx):
+               ctx['matrix'] = combo
+               if to_str(evaluate(job.get('runs-on'), ctx)) not in ACT_RUNNERS:
+                  continue
+               for v in values:
+                  pkgs.update(p for p in interpolate(to_str(v), ctx).split()
+                              if not p.startswith('-'))
+         except (ExprError, Unresolved) as e:
+            print('ci_local: %s %s: APT_PKGS not resolved: %s' % (wf.file, jid, e),
+                  file=sys.stderr)
+            bad += 1
+   print(' '.join(sorted(pkgs)))
+   return 1 if bad else 0
+
+
 # --------------------------------------------------------------------------
 # selftest
 # --------------------------------------------------------------------------
@@ -1927,8 +1968,10 @@ def main(argv):
       return 0
    if cmd == 'selftest':
       return cmd_selftest()
+   if cmd == 'apt-pkgs':
+      return cmd_apt_pkgs()
    if cmd != 'run':
-      sys.exit('ci_local: unknown command "%s" (list, which, run, selftest)' % cmd)
+      sys.exit('ci_local: unknown command "%s" (list, which, run, selftest, apt-pkgs)' % cmd)
 
    class Opts:
       job = None
