@@ -2907,7 +2907,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: chore.
   Source: user-request-2026-11-05.
 
-- 📋 [RETR-0069] **PERF — Local CI: pre-install the act jobs' apt packages in the act image.**
+- ✅ [RETR-0069] **PERF — Local CI: pre-install the act jobs' apt packages in the act image.**
   After 92b387b147 the apt cache restores (1 to 10 s), but "Install
   dependencies" still takes 2 to 6.5 min per act job: unpacking Wine
   and the rest, not downloading. Under load samples-gfx-display hit its
@@ -2915,6 +2915,20 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   9's warm-container lever: build the image from the workflows' own
   APT_PKGS lists, its tag keyed on them, so apt-install.sh finds them
   installed. Measure before and after; one lever per change.
+  Shipped 2026-11-08 in 5eb10b1ffe on local/fixes-2026-09 (push
+  landed, local gate 21/21 green in 31 min). tools/ci_local.py
+  apt-pkgs lists every APT_PKGS package of the ubuntu-latest and
+  ubuntu-24.04 jobs; local-CI.sh's act image installs them, so the
+  image tag follows the list. Left out: the 32-bit MinGW compiler,
+  which made win32_nvda run an x86 leg this Wine cannot run; the
+  image build fails if it gets in.
+  "Install dependencies", before (2026-11-05) -> after (2026-11-08):
+  samples-unclaimed 6m05s -> 1.0s; linux-tsan-samples 4m17s -> 4.9s;
+  samples-gfx-display 20m limit hit -> 1.8s. Image 2 GB -> 6.2 GB.
+  Also e7e63746ee: a failed act setup no longer retries into a second
+  podman service and a misleading "branch already exists".
+  Open: each change to the list re-downloads about 1.5 GB to rebuild
+  the image; old local-ci-act tags are never pruned.
   **Layman:** Each local container test spends 2 to 6 minutes installing the same packages; building them into the container once would save that on every run.
   Kind: perf.
   Source: user-request-2026-11-05.
