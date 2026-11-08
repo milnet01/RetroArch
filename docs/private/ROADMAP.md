@@ -2781,6 +2781,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   gate jobs green), after the 09:00 attempt failed on
   samples-gfx-display's 20 min install limit under load. Next per this
   item: make -j4 in ra-fixes, save the installed binary, install.
+  2026-11-08: built eebfac1c1a with make -j4 in ra-fixes and installed
+  it as retroarch (sha256 9c64ebbb...; --version stamp "Nov  5 2026",
+  from an object make did not rebuild). The 2026-11-04 binary is kept
+  as retroarch.2026-11-04 (sha256 f7de75c7..., not the 6d0bd4fa...
+  recorded above: unexplained); retroarch.OLD untouched. Open: the
+  user's menu tests (RETR-0041, RETR-0038, RETR-0063) and the next
+  weekly merge, due about 2026-11-12.
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
