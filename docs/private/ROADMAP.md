@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=69 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=70 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -2932,6 +2932,18 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** Each local container test spends 2 to 6 minutes installing the same packages; building them into the container once would save that on every run.
   Kind: perf.
   Source: user-request-2026-11-05.
+
+- 💭 [RETR-0070] **local-CI.sh act image: prune superseded image tags and cache apt downloads for rebuilds.**
+  Each change to the act image inputs builds a new localhost/local-ci-act
+  tag and leaves the old ones. On 2026-11-11 eight old tags were removed by
+  hand (user approved), plus a leftover image-build container and two
+  stopped act containers that held one of them. Ideas, not yet measured: (1) after a successful build, remove
+  local-ci-act tags other than the current one; (2) keep an apt download
+  cache on /mnt for image rebuilds. Measure rebuild time before and after,
+  one lever per change, as RETR-0069 did.
+  **Layman:** Stop old copies of the local test image piling up on disk, and make rebuilding it faster.
+  Kind: chore.
+  Source: RETR-0069 follow-up, 2026-11-11.
 
 ### 📝 Cold-eyes 2026-07-04
 
