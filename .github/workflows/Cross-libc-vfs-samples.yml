@@ -102,6 +102,7 @@ jobs:
             ./vfs_v5_metadata_test
             ./vfs_readahead_test
             ./vfs_close_result_test
+            ./vfs_descriptor_rw_test
           }
           # Mapping on (what the platform actually ships), mapping off
           # with the descriptor path forced (what the consoles have),
@@ -146,7 +147,26 @@ jobs:
       # The system upgrade runs in the action: an msys2-runtime update
       # kills every MSYS2 process, which a run step's own shell would
       # not survive.
-      - uses: msys2/setup-msys2@v2
+      - name: Set up MSYS2
+        id: msys2
+        continue-on-error: true
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.sys }}
+          update: true
+
+      # setup-msys2 has no retry of its own, and its system upgrade fails
+      # the job when mirror.msys2.org stalls ("Operation too slow") on the
+      # package databases. A failed attempt is run once more after a
+      # minute; the second reinstalls over the first.
+      - name: Wait before retrying MSYS2
+        if: steps.msys2.outcome == 'failure'
+        shell: bash
+        run: sleep 60
+
+      - name: Set up MSYS2 (retry)
+        if: steps.msys2.outcome == 'failure'
+        uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.sys }}
           update: true
@@ -206,6 +226,9 @@ jobs:
           ./vfs_prefetch_offthread_test.exe
           # The descriptor path's close() result, with PS2's semantics.
           ./vfs_close_result_test.exe
+          # Read-write descriptor streams on the Windows C runtimes,
+          # and that a file they create is writable afterwards.
+          ./vfs_descriptor_rw_test.exe
 
       # The Win64 fastjmp_set stores xmm6-xmm15 with movaps and faults
       # on a misaligned buffer. Linux has no such stores, so the Linux

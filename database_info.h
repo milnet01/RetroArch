@@ -147,6 +147,7 @@ typedef struct
 #define DB_EXTRACT_MD5      (1 << 4)
 #define DB_EXTRACT_SHA1     (1 << 5)
 #define DB_EXTRACT_ROM_NAME (1 << 6)
+#define DB_EXTRACT_REGION   (1 << 7)
 
 /* Preset used by the ROM scanner */
 #define DB_EXTRACT_SCAN_FIELDS \
@@ -225,7 +226,10 @@ enum database_info_index_want
    DATABASE_INFO_INDEX_HAS_SERIAL = (1 << 2),
    /* With CRC: the sizes of the records named for an archive, for
     * database_info_crc_index_may_hold_archive(). */
-   DATABASE_INFO_INDEX_ARCHIVE_SIZES = (1 << 3)
+   DATABASE_INFO_INDEX_ARCHIVE_SIZES = (1 << 3),
+   /* With CRC: the crc index keyed on the set fingerprints
+    * (set_fp1, set_fpm1) instead of crc, with no sizes. */
+   DATABASE_INFO_INDEX_SETFP      = (1 << 4)
 };
 
 /* Builds the crc index of a database and its serial index in one

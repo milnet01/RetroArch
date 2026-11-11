@@ -112,8 +112,10 @@ static int der_read_uint(struct der *d, const uint8_t **val, size_t *val_len)
       return -1;
    if (**val & 0x80)
       return -1;   /* negative */
-   while (*val_len > 1 && **val == 0)
+   if (*val_len > 1 && **val == 0)
    {
+      if (!((*val)[1] & 0x80))
+         return -1;   /* not minimal: not DER */
       (*val)++;
       (*val_len)--;
    }
@@ -456,6 +458,65 @@ static int x509_parse_extensions(struct x509_cert *c, struct der *d)
    return 0;
 }
 
+/* RSAPrivateKey (RFC 8017 A.1.2), two-prime, version 0. */
+static int x509_rsa_key_seq(struct rsa_private_key *key, struct der *d)
+{
+   struct der k;
+   const uint8_t *v;
+   size_t vl;
+
+   if (der_enter(d, DER_SEQUENCE, &k) != 0)
+      return -1;
+   if (der_read_uint(&k, &v, &vl) != 0 || vl != 1 || v[0] != 0)
+      return -1;
+   if (     der_read_uint(&k, &key->n,  &key->n_len)  != 0
+         || der_read_uint(&k, &key->e,  &key->e_len)  != 0
+         || der_read_uint(&k, &key->d,  &key->d_len)  != 0
+         || der_read_uint(&k, &key->p,  &key->p_len)  != 0
+         || der_read_uint(&k, &key->q,  &key->q_len)  != 0
+         || der_read_uint(&k, &key->dp, &key->dp_len) != 0
+         || der_read_uint(&k, &key->dq, &key->dq_len) != 0
+         || der_read_uint(&k, &key->qi, &key->qi_len) != 0)
+      return -1;
+   return k.p == k.end ? 0 : -1;
+}
+
+int x509_rsa_private_key_parse(struct rsa_private_key *key,
+      const uint8_t *der, size_t len)
+{
+   struct der d, info, params;
+   const uint8_t *v, *oid;
+   size_t vl, oid_len;
+
+   memset(key, 0, sizeof(*key));
+   d.p   = der;
+   d.end = der + len;
+   if (x509_rsa_key_seq(key, &d) == 0)
+      return d.p == d.end ? 0 : -1;
+
+   /* PrivateKeyInfo (RFC 5208): version 0, rsaEncryption, the
+    * RSAPrivateKey in an OCTET STRING, optional attributes. */
+   memset(key, 0, sizeof(*key));
+   d.p = der;
+   if (der_enter(&d, DER_SEQUENCE, &info) != 0 || d.p != d.end)
+      return -1;
+   if (der_read_uint(&info, &v, &vl) != 0 || vl != 1 || v[0] != 0)
+      return -1;
+   if (der_read_alg(&info, &oid, &oid_len, &params) != 0
+         || !OID_EQ(oid, oid_len, oid_rsa_enc))
+      return -1;
+   if (der_read(&info, DER_OCTET, &v, &vl) != 0)
+      return -1;
+   d.p   = v;
+   d.end = v + vl;
+   if (x509_rsa_key_seq(key, &d) != 0 || d.p != d.end)
+   {
+      memset(key, 0, sizeof(*key));
+      return -1;
+   }
+   return 0;
+}
+
 int x509_parse(struct x509_cert *c, const uint8_t *der, size_t len)
 {
    struct der d, cert, tbs, params;
@@ -603,17 +664,28 @@ int x509_verify_ecdsa_digest(const struct x509_cert *key,
    d.p   = sig;
    d.end = sig + sig_len;
    if (der_enter(&d, DER_SEQUENCE, &sv) != 0
+         || d.p != d.end
          || der_read_uint(&sv, &r, &rl) != 0
          || der_read_uint(&sv, &s, &sl) != 0
          || rl > n || sl > n || sv.p != sv.end)
       return -1;
-   memset(rb, 0, n);
-   memset(sb, 0, n);
-   memcpy(rb + n - rl, r, rl);
-   memcpy(sb + n - sl, s, sl);
+   /* A full-width r or s is lent straight from the signature; only a
+    * shorter one needs a left-padded copy. */
+   if (rl < n)
+   {
+      memset(rb, 0, n - rl);
+      memcpy(rb + n - rl, r, rl);
+      r = rb;
+   }
+   if (sl < n)
+   {
+      memset(sb, 0, n - sl);
+      memcpy(sb + n - sl, s, sl);
+      s = sb;
+   }
    if (n == 32)
-      return p256_ecdsa_verify(key->ec_point, digest, digest_len, rb, sb);
-   return p384_ecdsa_verify(key->ec_point, digest, digest_len, rb, sb);
+      return p256_ecdsa_verify(key->ec_point, digest, digest_len, r, s);
+   return p384_ecdsa_verify(key->ec_point, digest, digest_len, r, s);
 }
 
 int x509_verify_signature(const struct x509_cert *c,
@@ -1223,16 +1295,31 @@ static int x509_name_eq(const struct x509_cert *a, const struct x509_cert *b)
 int x509_verify_chain(const uint8_t **ders, const size_t *lens, unsigned n,
       const char *host, time_t now, char *info, size_t info_len)
 {
+   return x509_verify_chain_ex(ders, lens, n, host, now, NULL, NULL, 0, 0,
+         info, info_len);
+}
+
+int x509_verify_chain_ex(const uint8_t **ders, const size_t *lens, unsigned n,
+      const char *host, time_t now,
+      const uint8_t *const *trust, const size_t *trust_lens, unsigned trust_count,
+      unsigned flags, char *info, size_t info_len)
+{
    /* Parsed chain on the heap: one x509_cert is ~200 bytes and a
     * server may send a dozen. */
    struct x509_cert *certs;
    const struct x509_cert *cur;
    struct x509_store *st = NULL;
+   /* the caller's anchors in place of the store's */
+   struct x509_anchor *own = NULL;
+   const struct x509_anchor *anchors = NULL;
+   unsigned anchor_count = 0;
 #ifdef X509_STORE_LOCK_FREE
    int entered = 0;
 #endif
    unsigned i, depth;
    unsigned used = 0;   /* bitmask of chain certs already on the path */
+   unsigned ku_need = (flags & X509_VERIFY_KEY_ENCIPHERMENT)
+      ? X509_KU_KEY_ENCIPHERMENT : X509_KU_DIGITAL_SIGNATURE;
    int ret = -1;
 
    if (!n || n > 16)
@@ -1265,9 +1352,10 @@ int x509_verify_chain(const uint8_t **ders, const size_t *lens, unsigned n,
       x509_info(info, info_len, "certificate not for server authentication");
       goto done;
    }
-   if (certs[0].key_usage >= 0 && !(certs[0].key_usage & X509_KU_DIGITAL_SIGNATURE))
+   if (certs[0].key_usage >= 0 && !(certs[0].key_usage & ku_need))
    {
-      x509_info(info, info_len, "certificate key cannot sign");
+      x509_info(info, info_len, (flags & X509_VERIFY_KEY_ENCIPHERMENT)
+            ? "certificate key cannot encipher" : "certificate key cannot sign");
       goto done;
    }
    if (certs[0].is_ca == 1 && n > 1)
@@ -1276,20 +1364,42 @@ int x509_verify_chain(const uint8_t **ders, const size_t *lens, unsigned n,
       goto done;
    }
 
-   /* The walk reads the store through its own reference: a reload
-    * meanwhile swaps in a new one and leaves this one to the walk. */
+   if (trust)
+   {
+      if (trust_count && !(own = (struct x509_anchor*)malloc(
+                  trust_count * sizeof(*own))))
+         goto done;
+      for (i = 0; i < trust_count; i++)
+      {
+         own[anchor_count].der     = trust[i];
+         own[anchor_count].der_len = trust_lens[i];
+         if (x509_parse(&own[anchor_count].cert, trust[i], trust_lens[i]) == 0)
+            anchor_count++;
+      }
+      anchors = own;
+   }
+   else
+   {
+      /* The walk reads the store through its own reference: a reload
+       * meanwhile swaps in a new one and leaves this one to the walk. */
 #ifdef X509_STORE_LOCK_FREE
-   st      = x509_store_enter();
-   entered = 1;
+      st      = x509_store_enter();
+      entered = 1;
 #else
-   X509_LOCK();
+      X509_LOCK();
 #ifdef X509_STORE_TEST_HOLD
-   X509_STORE_TEST_HOLD();
+      X509_STORE_TEST_HOLD();
 #endif
-   if ((st = x509_store_cur))
-      st->refs++;
-   X509_UNLOCK();
+      if ((st = x509_store_cur))
+         st->refs++;
+      X509_UNLOCK();
 #endif
+      if (st)
+      {
+         anchors      = st->anchors;
+         anchor_count = st->count;
+      }
+   }
 
    cur  = &certs[0];
    used = 1;
@@ -1323,9 +1433,9 @@ int x509_verify_chain(const uint8_t **ders, const size_t *lens, unsigned n,
       }
 
       /* A trust anchor issuing this one ends the walk. */
-      for (j = 0; st && j < st->count; j++)
+      for (j = 0; j < anchor_count; j++)
       {
-         const struct x509_cert *a = &st->anchors[j].cert;
+         const struct x509_cert *a = &anchors[j].cert;
          if (x509_name_eq(a, cur) && x509_verify_signature(cur, a) == 0)
          {
             ret = 0;
@@ -1348,7 +1458,7 @@ int x509_verify_chain(const uint8_t **ders, const size_t *lens, unsigned n,
       }
       if (!issuer)
       {
-         x509_info(info, info_len, (st && st->count)
+         x509_info(info, info_len, anchor_count
                ? "issuer not found or signature invalid"
                : "no trust anchors loaded");
          goto done;
@@ -1372,6 +1482,7 @@ done:
          x509_store_free(st);
    }
 #endif
+   free(own);
    free(certs);
    return ret;
 }

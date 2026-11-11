@@ -62,6 +62,36 @@ typedef struct {
  * so the caller may change or free @new_cfg once this returns. */
 bool smb_init_cfg(const struct smb_settings *new_cfg);
 
+/* What the last connect for a share came to. */
+enum smb_failure
+{
+   SMB_FAILURE_UNKNOWN = 0,  /* no record */
+   SMB_FAILURE_CONNECTED,
+   SMB_FAILURE_RESOLVE,      /* the server name did not resolve */
+   SMB_FAILURE_CONNECT,      /* refused, timed out, dropped */
+   SMB_FAILURE_LOGIN,
+   SMB_FAILURE_SHARE         /* no such share, or access to it denied */
+};
+
+/* The code of the share @url reaches under the current settings, as a
+ * stat would; no I/O. Two threads failing on one share at once may
+ * leave either's code. */
+enum smb_failure smb_url_failure(const char *url);
+
+/* Whether a URL can be read under the settings. */
+enum smb_url_result
+{
+   SMB_URL_OK = 0,
+   SMB_URL_NO_SERVER,
+   SMB_URL_SHARE_DIFFERS     /* a share is configured and the URL's differs */
+};
+
+/* Checks @url's share against the settings, ignoring case; on a
+ * difference @detail gets the configured share, else "". The URL's
+ * host is not compared: the configured server is always read. No
+ * I/O. */
+enum smb_url_result smb_url_check(const char *url, char *detail, size_t len);
+
 /* File operations */
 bool    retro_vfs_file_open_smb(libretro_vfs_implementation_file *stream,
         const char *path, unsigned mode, unsigned hints);

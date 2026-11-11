@@ -64,6 +64,15 @@ jobs:
         run: python3 samples/menu/rgui_media/run.py --c89 --cadence-hz 30 --driver materialui samples/menu/rgui_media/fixture.mp4
       - name: Real XMB file-browser playback controls
         run: python3 samples/menu/rgui_media/run.py --c89 --cadence-hz 30 --driver xmb samples/menu/rgui_media/fixture.mp4
+      - name: QuickTime MOV browsing and external launch across all menus
+        run: |
+          ffmpeg -v error -y -i samples/menu/rgui_media/fixture.mp4 -map 0 -c copy -f mov samples/menu/rgui_media/fixture.mov
+          python3 -c "import json,subprocess; p='samples/menu/rgui_media/fixture.mov'; d=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_format','-of','json',p])); assert d['format']['tags']['major_brand']=='qt  '"
+          cp samples/menu/rgui_media/fixture.mov samples/menu/rgui_media/fixture-upper.MOV
+          for driver in rgui materialui xmb ozone; do
+            python3 samples/menu/rgui_media/run.py --c89 --driver "$driver" samples/menu/rgui_media/fixture.mov
+            python3 samples/menu/rgui_media/run.py --c89 --external --driver "$driver" samples/menu/rgui_media/fixture-upper.MOV
+          done
       - name: Real Ozone file-browser playback controls
         run: python3 samples/menu/rgui_media/run.py --c89 --cadence-hz 30 --driver ozone samples/menu/rgui_media/fixture.mp4
       - name: UTF-8 subtitle sidecars across all four menus
@@ -188,6 +197,13 @@ jobs:
               xvfb-run -a python3 samples/menu/rgui_media/run.py --c89 --continuous-error --video-driver gl --driver "$driver" $threaded samples/menu/rgui_media/window-toggle.webm
             done
           done
+      - name: External movie settings retain the playing preview
+        run: |
+          for driver in materialui xmb ozone; do
+            for threaded in '' --threaded; do
+              MEDIA_TEST_SETTINGS_ORANGE=1 xvfb-run -a python3 samples/menu/rgui_media/run.py --c89 --external --external-settings --video-driver gl --driver "$driver" $threaded samples/menu/rgui_media/settings-preview.webm
+            done
+          done
       - name: Generate delayed first-picture fixture
         run: ffmpeg -v error -y -f lavfi -i "testsrc2=size=320x240:rate=30,hue=h=90*t" -vf "setpts=PTS+0.2/TB" -t 3 -c:v libvpx -deadline realtime -cpu-used 8 -g 90 -auto-alt-ref 0 samples/menu/rgui_media/delayed.webm
       - name: Compare actual visible pictures after delayed-start seeks
@@ -232,7 +248,7 @@ jobs:
           for compiler in gcc clang; do
             for sample in libretro-common/samples/formats/subtitle_srt samples/tasks/subtitle_load samples/gfx/media_subtitle samples/gfx/media_controls; do
               extra_flags=''
-              if [ "$compiler" = clang ]; then extra_flags=-Wno-c99-extensions; fi
+              if [ "$compiler" = clang ]; then extra_flags="-Wno-c99-extensions -Wno-c11-extensions"; fi
               make -C "$sample" clean
               ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 CFLAGS="$extra_flags" \
                 make -C "$sample" check CC="$compiler" SANITIZER=address,undefined
@@ -244,7 +260,7 @@ jobs:
           set -eu
           for sample in samples/tasks/subtitle_load samples/gfx/media_subtitle samples/gfx/media_controls; do
             make -C "$sample" clean
-            TSAN_OPTIONS=halt_on_error=1 CFLAGS=-Wno-c99-extensions \
+            TSAN_OPTIONS=halt_on_error=1 CFLAGS="-Wno-c99-extensions -Wno-c11-extensions" \
               make -C "$sample" check CC=clang SANITIZER=thread
           done
       - name: Threadless subtitle loading and drawing

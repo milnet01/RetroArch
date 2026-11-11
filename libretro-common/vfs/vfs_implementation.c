@@ -824,8 +824,10 @@ libretro_vfs_implementation_file *retro_vfs_file_open_impl(
     * write arrives in one call, so a stdio buffer only adds a copy
     * and a flush. */
    if (     (stream->hints & RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK)
-         && (     mode == RETRO_VFS_FILE_ACCESS_WRITE
-               || mode == RETRO_VFS_FILE_ACCESS_READ_WRITE)
+         && (     (mode & ~RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING)
+                  == RETRO_VFS_FILE_ACCESS_WRITE
+               || (mode & ~RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING)
+                  == RETRO_VFS_FILE_ACCESS_READ_WRITE)
          && stream->scheme == VFS_SCHEME_NONE)
       stream->hints |= RFILE_HINT_UNBUFFERED;
 #endif
@@ -1066,25 +1068,32 @@ libretro_vfs_implementation_file *retro_vfs_file_open_impl(
                if (win32_needs_local_encoding())
                {
                   char *path_local    = utf8_to_local_string_alloc(path);
-                  stream->fd          = open(path_local, flags, 0);
+                  stream->fd          = open(path_local, flags,
+                        _S_IREAD | _S_IWRITE);
                   if (path_local)
                      free(path_local);
                }
                else
                {
                   wchar_t * path_wide = utf8_to_utf16_string_alloc(path);
-                  stream->fd          = _wopen(path_wide, flags, 0);
+                  stream->fd          = _wopen(path_wide, flags,
+                        _S_IREAD | _S_IWRITE);
                   if (path_wide)
                      free(path_wide);
                }
 #elif defined(LEGACY_WIN32)
                char *path_local    = utf8_to_local_string_alloc(path);
-               stream->fd          = open(path_local, flags, 0);
+               stream->fd          = open(path_local, flags,
+                     _S_IREAD | _S_IWRITE);
                if (path_local)
                   free(path_local);
 #else
                wchar_t * path_wide = utf8_to_utf16_string_alloc(path);
-               stream->fd          = _wopen(path_wide, flags, 0);
+               /* A file this creates is writable afterwards, as one
+                * fopen() makes is: without _S_IWRITE it would be made
+                * read-only */
+               stream->fd          = _wopen(path_wide, flags,
+                     _S_IREAD | _S_IWRITE);
                if (path_wide)
                   free(path_wide);
 #endif
@@ -1118,7 +1127,10 @@ libretro_vfs_implementation_file *retro_vfs_file_open_impl(
                   stream->fd = (uid < 0) ? -1 : (int)uid;
                }
 #else
-               stream->fd          = open(path, flags, S_IRUSR | S_IWUSR);
+               /* What fopen() creates a file with, less the umask */
+               stream->fd          = open(path, flags,
+                     S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP
+                     | S_IROTH | S_IWOTH);
 #endif
             }
             break;
@@ -1632,6 +1644,28 @@ int retro_vfs_file_punch_hole_impl(libretro_vfs_implementation_file *stream,
 
 int64_t retro_vfs_file_truncate_impl(libretro_vfs_implementation_file *stream, int64_t len)
 {
+   /* The descriptor itself on the descriptor path, the stream's below */
+   int fd = -1;
+   if (stream)
+   {
+      if (stream->hints & RFILE_HINT_UNBUFFERED)
+      {
+#ifdef VFS_HAVE_FILE_MAPPING
+         /* A mapped stream is read only */
+         if (stream->hints & RETRO_VFS_FILE_ACCESS_HINT_FREQUENT_ACCESS)
+            return -1;
+#endif
+         fd = stream->fd;
+      }
+      else if (stream->fp)
+#ifdef _WIN32
+         fd = _fileno(stream->fp);
+#elif !defined(VITA) && !defined(PSP) && !defined(PS2) && !defined(ORBIS)
+         fd = fileno(stream->fp);
+#else
+         fd = -1;
+#endif
+   }
 #ifdef _WIN32
    /* _chsize takes a long and silently truncates lengths > LONG_MAX
     * (2 GiB on Windows) -- present on all Windows CRTs including
@@ -1642,25 +1676,27 @@ int64_t retro_vfs_file_truncate_impl(libretro_vfs_implementation_file *stream, i
     * an error for larger lengths rather than silently truncating
     * the file. */
 #if defined(_MSC_VER) && _MSC_VER >= 1400
-   if (stream && stream->fp && _chsize_s(_fileno(stream->fp), len) == 0)
+   if (fd >= 0 && _chsize_s(fd, len) == 0)
    {
 	   stream->size = len;
 	   return 0;
    }
 #else
-   if (stream && stream->fp && len >= 0 && len <= (int64_t)LONG_MAX
-         && _chsize(_fileno(stream->fp), (long)len) == 0)
+   if (fd >= 0 && len >= 0 && len <= (int64_t)LONG_MAX
+         && _chsize(fd, (long)len) == 0)
    {
 	   stream->size = len;
 	   return 0;
    }
 #endif
 #elif !defined(VITA) && !defined(PSP) && !defined(PS2) && !defined(ORBIS)
-   if (stream && stream->fp && ftruncate(fileno(stream->fp), (off_t)len) == 0)
+   if (fd >= 0 && ftruncate(fd, (off_t)len) == 0)
    {
       stream->size = len;
       return 0;
    }
+#else
+   (void)fd;
 #endif
    return -1;
 }
@@ -1838,7 +1874,7 @@ int64_t retro_vfs_file_read_impl(libretro_vfs_implementation_file *stream,
 #if defined(VITA)
          ssize_t _got   = (ssize_t)sceIoRead((SceUID)stream->fd, p, (SceSize)_chunk);
 #else
-         ssize_t _got   = read(stream->fd, p, _chunk);
+         ssize_t _got   = read(stream->fd, p, (unsigned)_chunk);
 #endif
          if (_got < 0)
             return (total != 0) ? (int64_t)total : -1;
@@ -1925,7 +1961,7 @@ int64_t retro_vfs_file_write_impl(libretro_vfs_implementation_file *stream, cons
 #if defined(VITA)
          ssize_t _put   = (ssize_t)sceIoWrite((SceUID)stream->fd, p, (SceSize)_chunk);
 #else
-         ssize_t _put   = write(stream->fd, p, _chunk);
+         ssize_t _put   = write(stream->fd, p, (unsigned)_chunk);
 #endif
          if (_put < 0)
          {
@@ -1964,6 +2000,10 @@ int retro_vfs_file_flush_impl(libretro_vfs_implementation_file *stream)
    if (stream->scheme == VFS_SCHEME_NFS)
       return 0;
 #endif
+   /* A descriptor holds no bytes of its own to flush: what was
+    * written is in the file already */
+   if (stream->hints & RFILE_HINT_UNBUFFERED)
+      return stream->fd >= 0 ? 0 : -1;
    if (stream->fp && fflush(stream->fp) == 0)
       return 0;
    return -1;
@@ -2049,6 +2089,39 @@ int retro_vfs_file_remove_impl(const char *path)
    return -1;
 }
 
+/* The branches of retro_vfs_file_rename_impl that move the
+ * destination aside; a desktop Windows build takes the Windows branch
+ * whatever else is defined (a console define in a test build). */
+#if defined(_WIN32) && !defined(_XBOX)
+#if defined(LEGACY_WIN32_RUNTIME) || defined(LEGACY_WIN32)
+#define VFS_RENAME_ASIDE
+#endif
+#elif defined(_XBOX) || defined(VITA) || defined(PSP) || defined(_3DS) || defined(PS2) \
+ || defined(WIIU) || defined(GEKKO) || defined(__PSL1GHT__) || defined(__PS3__) || defined(SWITCH)
+#define VFS_RENAME_ASIDE
+#endif
+
+#ifdef VFS_RENAME_ASIDE
+/* Where to move @new_path while @old_path takes its place: "<new>.old",
+ * whose leftover from an interrupted run gets removed.  The source can
+ * be the file of that very name, as when a backup is restored, and must
+ * not be mistaken for a leftover.  Compared without regard to case for
+ * the FAT volumes most of these targets use. */
+static char *rename_aside_path(const char *old_path, const char *new_path)
+{
+   size_t _len = strlen(new_path);
+   char *aside = (char*)malloc(_len + sizeof(".old2"));
+
+   if (!aside)
+      return NULL;
+   memcpy(aside, new_path, _len);
+   memcpy(aside + _len, ".old", sizeof(".old"));
+   if (string_is_equal_case_insensitive(aside, old_path))
+      memcpy(aside + _len, ".old2", sizeof(".old2"));
+   return aside;
+}
+#endif
+
 #if defined(_WIN32) && !defined(_XBOX) && (defined(LEGACY_WIN32_RUNTIME) || defined(LEGACY_WIN32))
 /* Replace @new_local with @old_local where MoveFileEx() is not
  * available (Windows 9x): a destination in the way is moved aside,
@@ -2058,18 +2131,14 @@ int retro_vfs_file_remove_impl(const char *path)
 static int win32_rename_replace_local(const char *old_local,
       const char *new_local)
 {
-   size_t _len;
    char *aside;
    int ret;
 
    if (rename(old_local, new_local) == 0)
       return 0;
 
-   _len  = strlen(new_local);
-   if (!(aside = (char*)malloc(_len + sizeof(".old"))))
+   if (!(aside = rename_aside_path(old_local, new_local)))
       return -1;
-   memcpy(aside, new_local, _len);
-   memcpy(aside + _len, ".old", sizeof(".old"));
 
    ret = -1;
    remove(aside);                      /* a leftover from an earlier run */
@@ -2209,7 +2278,6 @@ int retro_vfs_file_rename_impl(const char *old_path, const char *new_path)
     * moved-aside copy deleted only then - or put back if the second
     * move fails. */
    {
-      size_t _len;
       char *aside;
       int ret;
 
@@ -2219,11 +2287,8 @@ int retro_vfs_file_rename_impl(const char *old_path, const char *new_path)
       if (GetFileAttributes(new_path) == INVALID_FILE_ATTRIBUTES)
          return MoveFile(old_path, new_path) ? 0 : -1;
 
-      _len  = strlen(new_path);
-      if (!(aside = (char*)malloc(_len + sizeof(".old"))))
+      if (!(aside = rename_aside_path(old_path, new_path)))
          return -1;
-      memcpy(aside, new_path, _len);
-      memcpy(aside + _len, ".old", sizeof(".old"));
 
       ret = -1;
       DeleteFile(aside);               /* a leftover from an earlier run */
@@ -2260,7 +2325,6 @@ int retro_vfs_file_rename_impl(const char *old_path, const char *new_path)
     * the replacement cannot be. */
    {
       SceIoStat st;
-      size_t _len;
       char *aside;
       int ret;
 
@@ -2274,11 +2338,8 @@ int retro_vfs_file_rename_impl(const char *old_path, const char *new_path)
       if (sceIoGetstat(new_path, &st) < 0)
          return -1;
 
-      _len  = strlen(new_path);
-      if (!(aside = (char*)malloc(_len + sizeof(".old"))))
+      if (!(aside = rename_aside_path(old_path, new_path)))
          return -1;
-      memcpy(aside, new_path, _len);
-      memcpy(aside + _len, ".old", sizeof(".old"));
 
       ret = -1;
       /* A leftover aside from an earlier run is removed only when it
@@ -2312,7 +2373,6 @@ int retro_vfs_file_rename_impl(const char *old_path, const char *new_path)
     * if the replacement cannot be. */
    {
       struct stat st;
-      size_t _len;
       char *aside;
       int ret;
 
@@ -2322,11 +2382,8 @@ int retro_vfs_file_rename_impl(const char *old_path, const char *new_path)
       if (stat(new_path, &st) != 0)
          return rename(old_path, new_path) == 0 ? 0 : -1;
 
-      _len  = strlen(new_path);
-      if (!(aside = (char*)malloc(_len + sizeof(".old"))))
+      if (!(aside = rename_aside_path(old_path, new_path)))
          return -1;
-      memcpy(aside, new_path, _len);
-      memcpy(aside + _len, ".old", sizeof(".old"));
 
       ret = -1;
       /* A leftover aside from an earlier run is removed only when it
@@ -3569,7 +3626,7 @@ static int vfs_copy_open_portable(struct retro_vfs_copy_handle *h, bool resume)
    h->out = retro_vfs_file_open_impl(h->dst,
          resume ? (RETRO_VFS_FILE_ACCESS_READ_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING)
                 : RETRO_VFS_FILE_ACCESS_WRITE,
-         RETRO_VFS_FILE_ACCESS_HINT_NONE);
+         RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
    if (!h->out)
       return -1;
    if (resume && h->done > 0)

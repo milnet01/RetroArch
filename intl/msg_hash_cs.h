@@ -2042,6 +2042,8 @@ static const struct
    char s_99b1b2f6[10];
    char s_60258de0[6];
    char s_5410e874[6];
+   char s_d65a7d95[7];
+   char s_d6611158[9];
    char s_317b17ed[6];
    char s_94c8d15f[6];
    char s_de16b5d2[11];
@@ -2125,6 +2127,7 @@ static const struct
    char s_8f379310[33];
    char s_6a9b757c[33];
    char s_6c52dfb1[35];
+   char s_334daaaa[8];
    char s_9119ef97[34];
 #if defined (WIIU)
 #ifdef WIIU
@@ -6122,6 +6125,8 @@ static const struct
    "St\305\231edn\303\255",
    "V\305\276dy",
    "V\305\276dy",
+   "Oboj\303\255",
+   "\305\275\303\241dn\303\251",
    "180\302\272",
    "270\302\272",
    "Norm\303\241ln\303\255",
@@ -6206,6 +6211,7 @@ static const struct
    "Vlastn\303\255 pom\304\233r stran (poloha Y)",
    "Nastaven\303\255 \305\241\303\255\305\231ky obrazovky VI",
    "Vertik\303\241ln\303\255 synchronizace (VSync)",
+   "Syst\303\251m",
    "Vy\304\215k\303\241v\303\241n\303\255 v\303\275m\304\233ny \305\231et\304\233zc\305\257",
 #if defined (WIIU)
 #ifdef WIIU
@@ -8804,7 +8810,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_cs_blob_check[
-      (sizeof(msg_hash_cs_blob) == (161527u
+      (sizeof(msg_hash_cs_blob) == (161551u
 #ifdef ANDROID
        + 390u
 #endif
@@ -11197,6 +11203,8 @@ static const msg_hash_id_t msg_hash_cs_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_SMOOTHING_MEDIUM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_ALWAYS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM_ALWAYS,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_BOTH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_NONE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED_ROTATED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_NORMAL,
@@ -11280,6 +11288,7 @@ static const msg_hash_id_t msg_hash_cs_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_CUSTOM_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VI_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VSYNC,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH_SYSTEM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WAITABLE_SWAPCHAINS,
 #if defined (WIIU)
 #ifdef WIIU

@@ -6409,13 +6409,13 @@ void config_set_defaults(settings_t *target)
 #ifdef HAVE_VIDEO_WINDOWS
    for (i = 0; i < RETRO_VIDEO_VIEWS_MAX; i++)
    {
-      settings->uints.video_screen_window_mode[i] = i
-         ? VIDEO_WINDOW_SEPARATE : VIDEO_WINDOW_ATTACHED;
       settings->uints.video_screen_window_pos[i] = 0;
       settings->uints.video_screen_window_dims[i] = 0;
       settings->uints.video_screen_window_monitor[i] = 0;
       settings->bools.video_screen_window_fullscreen[i] = false;
+      settings->arrays.video_screen_display[i][0] = '\0';
    }
+   settings->arrays.video_menu_display[0] = '\0';
 #endif
 
    custom_vp->dims   = 0;
@@ -7116,17 +7116,14 @@ CONFIG_NOINLINE static void config_load_video_windows(settings_t *settings, conf
       char cfg[64];
       int x = 0, y = 0;
       unsigned width = 0, height = 0;
+      unsigned old_mode = VIDEO_WINDOW_ATTACHED;
       size_t len = snprintf(cfg, sizeof(cfg), "video_screen%u_window_", i + 1);
 
-      settings->uints.video_screen_window_mode[i] = i
-         ? VIDEO_WINDOW_SEPARATE : VIDEO_WINDOW_ATTACHED;
       settings->uints.video_screen_window_monitor[i] = 0;
       settings->bools.video_screen_window_fullscreen[i] = false;
+      settings->arrays.video_screen_display[i][0] = '\0';
       strlcpy_lit(cfg + len, "mode", sizeof(cfg) - len);
-      config_get_uint(conf, cfg, &settings->uints.video_screen_window_mode[i]);
-      if (!i || settings->uints.video_screen_window_mode[i] > VIDEO_WINDOW_HIDDEN)
-         settings->uints.video_screen_window_mode[i] = i
-            ? VIDEO_WINDOW_SEPARATE : VIDEO_WINDOW_ATTACHED;
+      config_get_uint(conf, cfg, &old_mode);
       strlcpy_lit(cfg + len, "x", sizeof(cfg) - len);
       config_get_int(conf, cfg, &x);
       strlcpy_lit(cfg + len, "y", sizeof(cfg) - len);
@@ -7145,7 +7142,27 @@ CONFIG_NOINLINE static void config_load_video_windows(settings_t *settings, conf
       settings->uints.video_screen_window_dims[i] =
          width && height && VIDEO_SCALE_FITS(width, height)
          ? VIDEO_SCALE_PACK(width, height) : 0;
+      snprintf(cfg, sizeof(cfg), "video_screen%u_display", i + 1);
+      config_get_array(conf, cfg, settings->arrays.video_screen_display[i],
+            sizeof(settings->arrays.video_screen_display[i]));
+      /* Hidden, saved before a display could be Off. Auto does not
+       * stop it: a full save writes every display, "" included */
+      if (     old_mode == VIDEO_WINDOW_HIDDEN
+            && !settings->arrays.video_screen_display[i][0])
+         strlcpy(settings->arrays.video_screen_display[i],
+               VIDEO_WINDOW_DISPLAY_OFF,
+               sizeof(settings->arrays.video_screen_display[i]));
    }
+   settings->arrays.video_menu_display[0] = '\0';
+   config_get_array(conf, "video_menu_display",
+         settings->arrays.video_menu_display,
+         sizeof(settings->arrays.video_menu_display));
+   if (settings->uints.video_menu_follows > VIDEO_MENU_FOLLOWS_SEPARATE)
+      settings->uints.video_menu_follows = 0;
+   if (settings->uints.video_notifications_window
+         > VIDEO_NOTIFICATIONS_WITH_MENU)
+      settings->uints.video_notifications_window =
+         VIDEO_NOTIFICATIONS_WITH_GAME;
 }
 
 #undef CONFIG_NOINLINE
@@ -7340,6 +7357,10 @@ static bool config_load_file(const char *path, settings_t *settings)
       check_verbosity_settings(conf, settings);
    }
 
+   /* the controllers' own players, the main config's; each override's
+    * go over them by controller as it is appended */
+   input_plays_as_read(conf);
+
    if (!path_is_empty(RARCH_PATH_CONFIG_OVERRIDE) && !without_overrides)
    {
       char tmp_append_path[PATH_MAX_LENGTH];
@@ -7359,7 +7380,14 @@ static bool config_load_file(const char *path, settings_t *settings)
             *next++ = '\0';
 
          {
-            bool result = config_append_file(conf, extra_path);
+            bool result          = false;
+            config_file_t *extra =
+               config_file_new_from_path_to_string(extra_path);
+            if (extra)
+            {
+               input_plays_as_merge(extra);
+               result = config_file_append_conf(conf, extra);
+            }
             if (!first_load)
             {
                RARCH_LOG("[Config] Appending override config: \"%s\".\n", extra_path);
@@ -7378,6 +7406,9 @@ static bool config_load_file(const char *path, settings_t *settings)
          retroarch_override_setting_set(RARCH_OVERRIDE_SETTING_OVERLAY_PRESET, NULL);
 #endif
    }
+
+   /* once every override is in, against the entries before the read */
+   input_plays_as_hand_out();
 
    /* Special case for perfcnt_enable */
    {
@@ -8756,35 +8787,6 @@ static void config_parse_file(void)
    }
 }
 
-static void save_keybind_hat(config_file_t *conf, const char *key,
-      const struct retro_keybind *bind)
-{
-   size_t _len;
-   char s[16];
-   s[0]      = '\0';
-   _len      = snprintf(s, sizeof(s), "h%u", GET_HAT(bind->joykey));
-
-   switch (GET_HAT_DIR(bind->joykey))
-   {
-      case HAT_UP_MASK:
-         strlcpy_lit(s + _len, "up", sizeof(s) - _len);
-         break;
-      case HAT_DOWN_MASK:
-         strlcpy_lit(s + _len, "down", sizeof(s) - _len);
-         break;
-      case HAT_LEFT_MASK:
-         strlcpy_lit(s + _len, "left", sizeof(s) - _len);
-         break;
-      case HAT_RIGHT_MASK:
-         strlcpy_lit(s + _len, "right", sizeof(s) - _len);
-         break;
-      default:
-         break;
-   }
-
-   config_set_string(conf, key, s);
-}
-
 static void save_keybind_joykey(config_file_t *conf,
       const char *prefix,
       const char *base,
@@ -8792,19 +8794,15 @@ static void save_keybind_joykey(config_file_t *conf,
       bool save_empty)
 {
    char key[64];
+   char val[16];
    size_t _len = fill_pathname_join_delim(key, prefix,
          base, '_', sizeof(key));
    strlcpy_lit(key + _len, "_btn", sizeof(key) - _len);
 
-   if (bind->joykey == NO_BTN)
-   {
-       if (save_empty)
-         config_set_string(conf, key, "nul");
-   }
-   else if (GET_HAT_DIR(bind->joykey))
-      save_keybind_hat(conf, key, bind);
-   else
-      config_set_uint64(conf, key, bind->joykey);
+   if (bind->joykey == NO_BTN && !save_empty)
+      return;
+   input_config_format_joykey(val, sizeof(val), bind->joykey);
+   config_set_string(conf, key, val);
 }
 
 static void save_keybind_joykey_label(config_file_t *conf,
@@ -8834,23 +8832,9 @@ static void save_keybind_axis(config_file_t *conf,
    size_t _len = fill_pathname_join_delim(key, prefix, base, '_', sizeof(key));
    strlcpy_lit(key + _len, "_axis", sizeof(key) - _len);
 
-   if (bind->joyaxis == AXIS_NONE)
-   {
-      if (save_empty)
-         config_set_string(conf, key, "nul");
+   if (bind->joyaxis == AXIS_NONE && !save_empty)
       return;
-   }
-
-   if (AXIS_NEG_GET(bind->joyaxis) != AXIS_DIR_NONE)
-   {
-      snprintf(config, sizeof(config), "-%lu",
-            (unsigned long)AXIS_NEG_GET(bind->joyaxis));
-   }
-   else if (AXIS_POS_GET(bind->joyaxis) != AXIS_DIR_NONE)
-   {
-      snprintf(config, sizeof(config), "+%lu",
-            (unsigned long)AXIS_POS_GET(bind->joyaxis));
-   }
+   input_config_format_joyaxis(config, sizeof(config), bind->joyaxis);
    config_set_string(conf, key, config);
 }
 
@@ -10009,12 +9993,10 @@ bool config_save_file(const char *path)
       char cfg[64];
       size_t len = snprintf(cfg, sizeof(cfg), "video_screen%u_window_", i + 1);
 
+      /* Migrated on load; one left in the file would hide the screen
+       * again */
       strlcpy_lit(cfg + len, "mode", sizeof(cfg) - len);
-      if (   !minimal
-          || settings->uints.video_screen_window_mode[i] != defaults->uints.video_screen_window_mode[i])
-         config_set_int(conf, cfg, settings->uints.video_screen_window_mode[i]);
-      else
-         config_unset(conf, cfg);
+      config_unset(conf, cfg);
 
       strlcpy_lit(cfg + len, "x", sizeof(cfg) - len);
       if (   !minimal
@@ -10057,7 +10039,22 @@ bool config_save_file(const char *path)
          config_set_string(conf, cfg, settings->bools.video_screen_window_fullscreen[i] ? "true" : "false");
       else
          config_unset(conf, cfg);
+
+      snprintf(cfg, sizeof(cfg), "video_screen%u_display", i + 1);
+      if (   !minimal
+          || !string_is_equal(settings->arrays.video_screen_display[i],
+                defaults->arrays.video_screen_display[i]))
+         config_set_string(conf, cfg, settings->arrays.video_screen_display[i]);
+      else
+         config_unset(conf, cfg);
    }
+   if (   !minimal
+       || !string_is_equal(settings->arrays.video_menu_display,
+             defaults->arrays.video_menu_display))
+      config_set_string(conf, "video_menu_display",
+            settings->arrays.video_menu_display);
+   else
+      config_unset(conf, "video_menu_display");
 #endif
 
    for (i = 0; i < RETRO_VIDEO_VIEWS_MAX; i++)
@@ -10412,6 +10409,8 @@ bool config_save_file(const char *path)
 
    /* the entries and macros, as they are now */
    input_entries_write(conf);
+   /* and the controllers' own players */
+   input_plays_as_write(conf);
 
    /* Remove unused "quit_press_twice" after migrating to "confirm_quit" */
    {
@@ -10449,6 +10448,10 @@ bool config_save_file(const char *path)
       (void)chmod(path, S_IRUSR | S_IWUSR);
    }
 #endif
+
+   /* the session's Plays As entries as the main config now has them */
+   if (ret && string_is_equal(path, path_get(RARCH_PATH_CONFIG)))
+      input_plays_as_lay_out();
 
 #if TARGET_OS_TV
    if (ret && string_is_equal(path, path_get(RARCH_PATH_CONFIG)))
@@ -10508,6 +10511,7 @@ int8_t config_save_overrides(enum override_type type,
    unsigned i                                  = 0;
    int8_t ret                                  = 0;
    input_config_binds_copy_t *input_override_binds = NULL;
+   input_plays_as_copy_t *input_override_plays_as  = NULL;
    config_file_t *conf                         = NULL;
    settings_t *settings                        = NULL;
    struct config_bool_setting *bool_settings   = NULL;
@@ -10556,11 +10560,12 @@ int8_t config_save_overrides(enum override_type type,
 
    settings = (settings_t*)calloc(1, sizeof(settings_t));
    conf     = config_file_new_alloc();
-   /* A copy of the binds is kept off the stack (this function is
-    * reachable on small-stack platforms such as the 3DS). Made here so
-    * it shares the OOM bail below and is freed at the function-end
-    * cleanup. */
-   input_override_binds = input_config_binds_copy_new();
+   /* A copy of the binds, and one of the Plays As entries, is kept off
+    * the stack (this function is reachable on small-stack platforms
+    * such as the 3DS). Made here so it shares the OOM bail below and is
+    * freed at the function-end cleanup. */
+   input_override_binds    = input_config_binds_copy_new();
+   input_override_plays_as = input_plays_as_copy_new();
 
    /* NULL-check: both calloc and config_file_new_alloc can
     * return NULL on OOM.  config_load_file at line ~6552
@@ -10574,13 +10579,15 @@ int8_t config_save_overrides(enum override_type type,
     * Return -1 to signal hard failure (as distinct from
     * 'override was not needed' = false/0 at line 6529).
     * int8_t return value accommodates -1. */
-   if (!settings || !conf || !input_override_binds)
+   if (!settings || !conf || !input_override_binds || !input_override_plays_as)
    {
       if (conf)
          config_file_free(conf);
       free(settings);
       if (input_override_binds)
          input_config_binds_copy_free(input_override_binds);
+      if (input_override_plays_as)
+         input_plays_as_copy_free(input_override_plays_as);
       return -1;
    }
 
@@ -10816,10 +10823,6 @@ int8_t config_save_overrides(enum override_type type,
          char cfg[64];
          size_t len = snprintf(cfg, sizeof(cfg), "video_screen%u_window_", i + 1);
 
-         strlcpy_lit(cfg + len, "mode", sizeof(cfg) - len);
-         if (settings->uints.video_screen_window_mode[i] != overrides->uints.video_screen_window_mode[i])
-            config_set_int(conf, cfg, overrides->uints.video_screen_window_mode[i]);
-
          strlcpy_lit(cfg + len, "x", sizeof(cfg) - len);
          if (VIDEO_POS_X(settings->uints.video_screen_window_pos[i]) != VIDEO_POS_X(overrides->uints.video_screen_window_pos[i]))
             config_set_int(conf, cfg, VIDEO_POS_X(overrides->uints.video_screen_window_pos[i]));
@@ -10843,7 +10846,16 @@ int8_t config_save_overrides(enum override_type type,
          strlcpy_lit(cfg + len, "fullscreen", sizeof(cfg) - len);
          if (settings->bools.video_screen_window_fullscreen[i] != overrides->bools.video_screen_window_fullscreen[i])
             config_set_string(conf, cfg, overrides->bools.video_screen_window_fullscreen[i] ? "true" : "false");
+
+         snprintf(cfg, sizeof(cfg), "video_screen%u_display", i + 1);
+         if (!string_is_equal(settings->arrays.video_screen_display[i],
+                  overrides->arrays.video_screen_display[i]))
+            config_set_string(conf, cfg, overrides->arrays.video_screen_display[i]);
       }
+      if (!string_is_equal(settings->arrays.video_menu_display,
+               overrides->arrays.video_menu_display))
+         config_set_string(conf, "video_menu_display",
+               overrides->arrays.video_menu_display);
 #endif
 
       for (i = 0; i < RETRO_VIDEO_VIEWS_MAX; i++)
@@ -11022,6 +11034,9 @@ int8_t config_save_overrides(enum override_type type,
          }
       }
 
+      /* the controllers' own players and hotkeys, where they differ */
+      input_plays_as_write_changed(conf, input_override_plays_as);
+
       ret = 0;
 
       switch (type)
@@ -11108,6 +11123,8 @@ int8_t config_save_overrides(enum override_type type,
 
    /* Since config_load_file resets binds, restore overrides back to current binds */
    input_config_binds_copy_restore(input_override_binds);
+   /* and the Plays As entries it replaced */
+   input_plays_as_copy_restore(input_override_plays_as);
 
    if (bool_settings)
       free(bool_settings);
@@ -11139,6 +11156,7 @@ int8_t config_save_overrides(enum override_type type,
       free(size_overrides);
    free(settings);
    input_config_binds_copy_free(input_override_binds);
+   input_plays_as_copy_free(input_override_plays_as);
 
    return ret;
 }
@@ -11912,29 +11930,11 @@ void input_config_parse_joy_axis(char *s,
 
    fill_pathname_join_delim(key, s, "axis", '_', sizeof(key));
 
-   if (config_get_array(conf, key, tmp, sizeof(tmp)))
-   {
-      if (     tmp[0] == 'n'
-            && tmp[1] == 'u'
-            && tmp[2] == 'l'
-            && tmp[3] == '\0'
-         )
-         bind->joyaxis = AXIS_NONE;
-      else if
-         (     tmp[0] != '\0'
-          &&   tmp[1] != '\0'
-          && (*tmp    == '+'
-          ||  *tmp    == '-'))
-      {
-         int i_axis = (int)strtol(tmp + 1, NULL, 0);
-         if (*tmp == '+')
-            bind->joyaxis = AXIS_POS(i_axis);
-         else
-            bind->joyaxis = AXIS_NEG(i_axis);
-
-         RETRO_KEYBIND_SET_VALID(bind, true);
-      }
-   }
+   /* "nul" clears it; an axis read makes the bind a set one */
+   if (     config_get_array(conf, key, tmp, sizeof(tmp))
+         && input_config_parse_joyaxis(tmp, &bind->joyaxis)
+         && !string_is_equal(tmp, "nul"))
+      RETRO_KEYBIND_SET_VALID(bind, true);
 
    fill_pathname_join_delim(key, s,
          "axis_label", '_', sizeof(key));
@@ -11947,42 +11947,6 @@ void input_config_parse_joy_axis(char *s,
          free(label->joyaxis);
       label->joyaxis = strdup(tmp_a->value);
    }
-}
-
-static uint16_t input_config_parse_hat(const char *dir)
-{
-   if (     dir[0] == 'u'
-         && dir[1] == 'p'
-         && dir[2] == '\0'
-      )
-      return HAT_UP_MASK;
-   else if (
-            dir[0] == 'd'
-         && dir[1] == 'o'
-         && dir[2] == 'w'
-         && dir[3] == 'n'
-         && dir[4] == '\0'
-         )
-      return HAT_DOWN_MASK;
-   else if (
-            dir[0] == 'l'
-         && dir[1] == 'e'
-         && dir[2] == 'f'
-         && dir[3] == 't'
-         && dir[4] == '\0'
-         )
-      return HAT_LEFT_MASK;
-   else if (
-            dir[0] == 'r'
-         && dir[1] == 'i'
-         && dir[2] == 'g'
-         && dir[3] == 'h'
-         && dir[4] == 't'
-         && dir[5] == '\0'
-         )
-      return HAT_RIGHT_MASK;
-
-   return 0;
 }
 
 void input_config_parse_joy_button(
@@ -11999,32 +11963,10 @@ void input_config_parse_joy_button(
    fill_pathname_join_delim(key, s, "btn", '_', sizeof(key));
    if (config_get_array(conf, key, tmp, sizeof(tmp)))
    {
-      btn = tmp;
-      if (     btn[0] == 'n'
-            && btn[1] == 'u'
-            && btn[2] == 'l'
-            && btn[3] == '\0'
-         )
-         bind->joykey = NO_BTN;
-      else
-      {
-         if (*btn == 'h')
-         {
-            const char *str = btn + 1;
-            /* Parse hat? */
-            if (str && *str >= '0' && *str <= '9')
-            {
-               char        *dir = NULL;
-               uint16_t     hat = strtoul(str, &dir, 0);
-               uint16_t hat_dir = dir ? input_config_parse_hat(dir) : 0;
-               if (hat_dir)
-                  bind->joykey = HAT_MAP(hat, hat_dir);
-            }
-         }
-         else
-            bind->joykey = strtoull(tmp, NULL, 0);
+      input_config_parse_joykey(tmp, &bind->joykey);
+      /* any value but "nul" makes the bind a set one, read or not */
+      if (!string_is_equal(tmp, "nul"))
          RETRO_KEYBIND_SET_VALID(bind, true);
-      }
    }
    fill_pathname_join_delim(key, s,
          "btn_label", '_', sizeof(key));

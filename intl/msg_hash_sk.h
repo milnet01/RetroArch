@@ -2460,7 +2460,6 @@ static const struct
    char s_4b582a0c[34];
    char s_61213f1d[15];
    char s_95e4b29f[66];
-   char s_1ee69db0[20];
    char s_0cfd4fd0[9];
    char s_d64659c4[10];
    char s_0861dea4[24];
@@ -2483,6 +2482,8 @@ static const struct
    char s_bacb5991[19];
    char s_740ed6e5[16];
    char s_c7ab7873[32];
+   char s_d65a7d95[4];
+   char s_d6611158[8];
    char s_83ecb279[18];
    char s_317b17ed[8];
    char s_94c8d15f[8];
@@ -2628,6 +2629,7 @@ static const struct
    char s_8f379310[35];
    char s_6a9b757c[31];
    char s_6c52dfb1[36];
+   char s_334daaaa[8];
    char s_9119ef97[23];
 #if defined (WIIU)
 #ifdef WIIU
@@ -3527,9 +3529,7 @@ static const struct
 #ifdef HAVE_NFSCLIENT
    char s_0dc9bb2c[50];
    char s_1536325c[240];
-   char s_ad621411[53];
    char s_f6ec26c1[50];
-   char s_4f7fb41f[51];
    char s_70f70009[376];
    char s_3487ce71[43];
 #endif
@@ -4054,10 +4054,8 @@ static const struct
    char s_34400c79[75];
    char s_34400c7a[76];
    char s_4a09218b[39];
-   char s_dea334de[162];
    char s_cacc1492[51];
    char s_c0c6924e[210];
-   char s_c83fcc7e[235];
    char s_2fe7ca1a[241];
    char s_cdf158e0[294];
    char s_7efaf561[213];
@@ -4087,7 +4085,6 @@ static const struct
    char s_58c80718[304];
    char s_dc6f9d69[62];
    char s_1bcf70a7[134];
-   char s_fbed99aa[137];
    char s_894ecb9a[336];
    char s_67d549fd[33];
    char s_afac733c[34];
@@ -4160,7 +4157,6 @@ static const struct
    char s_3c13e61f[121];
    char s_d96182c1[33];
    char s_d740017d[86];
-   char s_675acf1d[50];
    char s_93bbb839[108];
    char s_4d0b4ce0[108];
    char s_f99a7d5e[186];
@@ -4478,7 +4474,6 @@ static const struct
    char s_b969706a[231];
    char s_a3f6ebc3[21];
    char s_98adf951[59];
-   char s_11b4cc97[23];
    char s_d3e49974[37];
    char s_a8fa00e0[63];
    char s_4c1e527b[71];
@@ -7564,7 +7559,6 @@ static const struct
    "Poz\303\255cia ozn\303\241menia (vertik\303\241lna)",
    "Index monitora",
    "Povoli\305\245 cel\303\272 obrazovku cez v\303\275rez na zariadeniach Android a iOS",
-   "Ovl\303\241da\304\215e headsetu",
    "Spojen\303\251",
    "Oddelen\303\251",
    "Vzdialenos\305\245 obrazoviek",
@@ -7587,6 +7581,8 @@ static const struct
    "Leniv\303\251 sledovanie",
    "Pod\304\276a headsetu",
    "Obnovovacia frekvencia headsetu",
+   "Obe",
+   "\305\275iadne",
    "\305\240\303\255rka obrazovky",
    "180 st.",
    "270 st.",
@@ -7732,6 +7728,7 @@ static const struct
    "Vlastn\303\275 pomer str\303\241n (poz\303\255cia Y)",
    "Nastavi\305\245 \305\241\303\255rku obrazovky VI",
    "Vertik\303\241lna synchroniz\303\241cia (VSync)",
+   "Syst\303\251m",
    "\304\214akate\304\276n\303\251 swapchain",
 #if defined (WIIU)
 #ifdef WIIU
@@ -9432,9 +9429,7 @@ static const struct
    "nguje aj pre NFS verzie 4, kde ju server m\303\264\305\276e pon\303\272ka\305\245 pod krat\305"
    "\241\303\255m menom. Nechajte pr\303\241zdne, ak export zad\303\241te v adrese ako nfs://server/"
    "export/cesta.",
-   "Port slu\305\276by MOUNT. 0 sa op\303\275ta portmappera servera.",
    "Pripojenia, ktor\303\251 sa k serveru dr\305\276ia otvoren\303\251.",
-   "Port slu\305\276by NFS. 0 sa op\303\275ta portmappera servera.",
    "D\303\241ta na\304\215\303\255tan\303\251 dopredu, ke\304\217 hra \304\215\303\255ta s\303\272bo"
    "r po mal\303\275ch k\303\272skoch, pri\304\215om vl\303\241kno na pozad\303\255 priebe\305\276ne"
    " pripravuje \304\217al\305\241ie okno. M\303\264\305\276e zjemni\305\245 ve\304\276k\303\251 obr"
@@ -10410,17 +10405,10 @@ static const struct
    "Ur\304\215i\305\245 vlastn\303\272 polohu na osi Y pre text na obrazovke. 0 je spodn\303\275 okr"
    "aj.",
    "Vybra\305\245 obrazovku, ktor\303\241 sa pou\305\276ije.",
-   "Ako sa hr\303\241 s ovl\303\241da\304\215mi headsetu. Spojen\303\251 z oboch urob\303\255 jeden "
-   "gamepad pre hr\303\241\304\215a 1. Oddelen\303\251 urob\303\255 z \304\276av\303\251ho ovl\303"
-   "\241da\304\215a hr\303\241\304\215a 1 a z prav\303\251ho hr\303\241\304\215a 2.",
    "Ako \304\217aleko pred vami headset zobrazuje obrazovky.",
    "Zobraz\303\255 obsah aj v headsete OpenXR: ka\305\276d\303\272 obrazovku ako vlastn\303\272 vzn"
    "\303\241\305\241aj\303\272cu sa obrazovku, s oboma o\304\215ami stereo 3D, a ponuku pred nimi. V"
    "ulkan, alebo OpenGL na Linuxe. Okno si ponech\303\241va be\305\276n\303\275 v\303\275stup.",
-   "Kam sp\303\272\305\241\305\245 ovl\303\241da\304\215a ukazuje a dot\303\275ka sa, namiesto stl"
-   "\303\241\304\215ania L2 alebo R2. Automaticky: menu, k\303\275m je otvoren\303\251, a druh\303"
-   "\251 obrazovky, napr\303\255klad dotykov\303\241 obrazovka. V\305\276dy: ka\305\276d\303\241 obr"
-   "azovka, pre sveteln\303\251 zbrane. Vypnut\303\251: nikde.",
    "Po\305\276iada headset o jeho najvy\305\241\305\241\303\255 takt procesora, nad r\303\241mec toh"
    "o, \304\215o dok\303\241\305\276e dlhodobo udr\305\276a\305\245, aby n\303\241ro\304\215n\303"
    "\275 obsah st\303\255hal headset. Spotrebuje viac bat\303\251rie a viac hreje; hor\303\272ci hea"
@@ -10501,8 +10489,6 @@ static const struct
    "Pripojen\303\251 ponech\303\241 t\303\272to obrazovku s ostatn\303\275mi. Oddelen\303\251 ju d"
    "\303\241 do vlastn\303\251ho okna alebo na vlastn\303\275 displej. Skryt\303\251 ju vynech\303"
    "\241.",
-   "Kam ide t\303\241to obrazovka, ke\304\217 je Oddelen\303\251. Auto vyberie druh\303\275 displej."
-   " Displej, na ktorom je RetroArch, ponech\303\241 obrazovku pripojen\303\272.",
    "Umo\305\276n\303\255 oknu SDL prep\303\255na\305\245 medzi re\305\276imami zobrazenia, ktor\303"
    "\251 uv\303\241dza. 'Auto' ho pou\305\276ije len vtedy, ke\304\217 nat\303\255vny zobrazovac\303"
    "\255 server nevie prep\303\255na\305\245 re\305\276imy. 'V\305\276dy' prep\303\255\305\241e nat"
@@ -10693,7 +10679,6 @@ static const struct
    "Zmena nastaven\303\255 re\305\276imu v okne.",
    "Umo\305\276ni\305\245 ved\304\276aj\305\241\303\255m obrazovk\303\241m pou\305\276\303\255va\305"
    "\245 samostatn\303\251 okn\303\241 na pracovnej ploche.",
-   "Zobrazi\305\245 ved\304\276aj\305\241ie obrazovky na inom displeji.",
    "Nastav\303\255 maxim\303\241lnu v\303\275\305\241ku zobrazovacieho okna pri automatickej zmene v"
    "e\304\276kosti na z\303\241klade 'Mierka okna'.",
    "Nastav\303\255 maxim\303\241lnu \305\241\303\255rku zobrazovacieho okna pri automatickej zmene v"
@@ -11077,7 +11062,6 @@ static const struct
    "robia. OK: nap\303\255\305\241te to. Start: odstr\303\241ni\305\245.",
    "Nastavi\305\245 tla\304\215idl\303\241",
    "Ovl\303\241da\304\215 %u (%04X:%04X) je ignorovan\303\275 a u\305\276 sa ne\304\215\303\255ta.",
-   "zdie\304\276an\303\251 s portom %u",
    "Ovl\303\241da\304\215 %04X:%04X sa znova \304\215\303\255ta.",
    "Men\303\255 sa ovl\303\241da\304\215 DualShock 3: povo\304\276te to vo v\303\275zve Windows.",
    "Ovl\303\241da\304\215 DualShock 3 nebol zmenen\303\275: neboli udelen\303\251 pr\303\241va spr"
@@ -11470,7 +11454,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_sk_blob_check[
-      (sizeof(msg_hash_sk_blob) == (227830u
+      (sizeof(msg_hash_sk_blob) == (227223u
 #ifdef ANDROID
        + 389u
 #endif
@@ -11878,9 +11862,7 @@ typedef char msg_hash_sk_blob_check[
 #ifdef HAVE_NFSCLIENT
        + 50u
        + 240u
-       + 53u
        + 50u
-       + 51u
        + 376u
        + 43u
 #endif
@@ -14496,7 +14478,6 @@ static const msg_hash_id_t msg_hash_sk_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_POS_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_MONITOR_INDEX,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_NOTCH_WRITE_OVER,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS_COMBINED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS_SEPARATE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_DISTANCE,
@@ -14519,6 +14500,8 @@ static const msg_hash_id_t msg_hash_sk_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_PLACEMENT_LAZY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_REFRESH_HEADSET,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_REFRESH_RATE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_BOTH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_NONE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED_ROTATED,
@@ -14664,6 +14647,7 @@ static const msg_hash_id_t msg_hash_sk_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_CUSTOM_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VI_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VSYNC,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH_SYSTEM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WAITABLE_SWAPCHAINS,
 #if defined (WIIU)
 #ifdef WIIU
@@ -15556,9 +15540,7 @@ static const msg_hash_id_t msg_hash_sk_ids[] =
 #ifdef HAVE_NFSCLIENT
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_BROWSE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_EXPORT,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_MOUNT_PORT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_NUM_CONTEXTS,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_PORT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_READAHEAD,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SERVER,
 #endif
@@ -16082,10 +16064,8 @@ static const msg_hash_id_t msg_hash_sk_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_MESSAGE_POS_X,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_MESSAGE_POS_Y,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_MONITOR_INDEX,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_CONTROLLERS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_DISTANCE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_ENABLE,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_LASER,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_PERF_BOOST,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_PLACEMENT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_REFRESH_RATE,
@@ -16115,7 +16095,6 @@ static const msg_hash_id_t msg_hash_sk_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCAN_SUBFRAMES,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_LAYOUT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MODE,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MONITOR,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SDL_DISPLAY_SERVER,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SHADERS_ENABLE,
@@ -16185,7 +16164,6 @@ static const msg_hash_id_t msg_hash_sk_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOWED_FULLSCREEN,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOWED_MODE_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOWS_ENABLE,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOWS_ENABLE_ANDROID,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOW_AUTO_HEIGHT_MAX,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOW_AUTO_WIDTH_MAX,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOW_CUSTOM_SIZE_ENABLE,
@@ -16502,7 +16480,6 @@ static const msg_hash_id_t msg_hash_sk_ids[] =
    (msg_hash_id_t)MSG_INPUT_COMBO_ROW_SUBLABEL,
    (msg_hash_id_t)MSG_INPUT_COMBO_SET_BUTTONS,
    (msg_hash_id_t)MSG_INPUT_DEVICE_IGNORED,
-   (msg_hash_id_t)MSG_INPUT_DEVICE_INDEX_SHARED,
    (msg_hash_id_t)MSG_INPUT_DEVICE_UNIGNORED,
    (msg_hash_id_t)MSG_INPUT_DS3_ASKING,
    (msg_hash_id_t)MSG_INPUT_DS3_DECLINED,

@@ -325,7 +325,7 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./upmix_test
           echo "[pass] upmix_test (ASan)"
 
-      - name: Build and run discrete_multichannel_test (plain, ASan + UBSan)
+      - name: Build and run discrete_multichannel_test (plain, ASan + UBSan, TSan)
         shell: bash
         working-directory: samples/audio/discrete_multichannel
         run: |
@@ -341,17 +341,26 @@ jobs:
           # 5.1 core reaches a Dolby Digital decoder as AC-3 bursts
           # that decode back to its own channels. Includes the
           # shipping audio_driver.c.
-          # The two builds in turn, the two runs at once: each run is
-          # one thread, so a runner's second core takes the other.
+          # The builds in turn, the runs at once: each run is one
+          # thread, so a runner's second core takes another.
+          # Under ThreadSanitizer only the lane with a core submitting
+          # from a thread of its own beside the main thread's frame
+          # ends, pauses and fast-forward changes: the fast-forward
+          # measurement is the submitter's, and no other thread may
+          # write it.
           . "$GITHUB_WORKSPACE/.github/workflows/scripts/run-parallel.sh"
           make clean && make -j$(nproc) all
           mv discrete_multichannel_test discrete_multichannel_test_plain
+          make clean && make -j$(nproc) all SANITIZER=thread
+          mv discrete_multichannel_test discrete_multichannel_test_tsan
           make clean && make -j$(nproc) all SANITIZER=address,undefined
           par "discrete_multichannel_test" ./discrete_multichannel_test_plain
           par "discrete_multichannel_test (ASan)" env ASAN_OPTIONS=detect_leaks=0 \
              UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./discrete_multichannel_test
+          par "discrete_multichannel_test (TSan: core thread)" env DM_ONLY=inlinethread \
+             TSAN_OPTIONS=halt_on_error=1 ./discrete_multichannel_test_tsan
           par_wait
-          rm -f discrete_multichannel_test_plain
+          rm -f discrete_multichannel_test_plain discrete_multichannel_test_tsan
 
       - name: Build and run embedded_alsa_test (the embedded ALSA driver, mock kernel device)
         shell: bash
@@ -624,6 +633,10 @@ jobs:
           make clean && make -j$(nproc) all SANITIZER=address,undefined
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./oss_report_test
           echo "[pass] oss_report_test (ASan)"
+          # RetroFW's jz4760 driver plays whole 16-byte DMA units only.
+          make clean && make -j$(nproc) all RETROFW=1 SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./oss_report_test
+          echo "[pass] oss_report_test (RetroFW, ASan)"
 
       - name: Build and run live_drivers_test (a live PulseAudio server, a null ALSA PCM)
         shell: bash
@@ -998,6 +1011,7 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1 timeout 60 \
              ./asio_ring_test
           echo "[pass] asio_ring_test (ASan)"
+          python3 asio_lend.py
 
       - name: Build and run asio_teardown_test (TSan, ASan, MinGW under wine)
         shell: bash
@@ -1299,6 +1313,24 @@ jobs:
           par_wait
           rm -f sibling_asan sibling_mingw.exe
 
+      - name: Build and run resampler state test (C89, ASan + UBSan, MinGW)
+        working-directory: samples/audio/resampler_state
+        run: |
+          # state() saved mid-stream and loaded into another instance
+          # continues the stream bit for bit, stages and crossfade
+          # included; a load of the wrong size is refused.
+          set -eu
+          . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
+          . "$GITHUB_WORKSPACE/.github/workflows/scripts/run-parallel.sh"
+          make clean
+          make TARGET=state_asan SANITIZER=address,undefined
+          make TARGET=state_mingw CC=x86_64-w64-mingw32-gcc
+          par "resampler_state_test (ASan)" ./state_asan
+          par "resampler_state_test (MinGW, wine)" env WINEDEBUG=-all \
+            timeout 300 wine ./state_mingw.exe
+          par_wait
+          rm -f state_asan state_mingw.exe
+
       - name: Build and run mic_handshake_test (ASan + UBSan)
         working-directory: samples/audio/mic_handshake
         run: |
@@ -1382,13 +1414,16 @@ jobs:
           # retried, since a host that takes the consumer off its core
           # shows the same with the cap off; only a cap that never runs
           # clean fails.
-          # Its five lanes run in real time on next to no CPU, so they
-          # run at once: the step takes as long as the longest lane.
+          # Its lanes run in real time on next to no CPU, so they run
+          # at once, one setting each: the step takes as long as the
+          # longest setting, about 12 s, not the longest case.
           . "$GITHUB_WORKSPACE/.github/workflows/scripts/run-parallel.sh"
           make clean && make -j$(nproc)
           test -x pipeline_clocked_test
-          for lane in audio_paced_16 audio_paced_32 audio_paced_64 setpoint \
-                rate_control sync_off ff_exit; do
+          for lane in audio_paced_16 audio_paced_32 audio_paced_64 \
+                setpoint_16 setpoint_32 setpoint_64 \
+                rate_control_32 rate_control_64 sync_off \
+                ff_exit_1 ff_exit_2 ff_exit_3 ff_exit_4 ff_exit_5; do
              par "pipeline_clocked_test (fill cap: $lane)" \
                 env PACED_ONLY=$lane timeout 300 ./pipeline_clocked_test 3
           done

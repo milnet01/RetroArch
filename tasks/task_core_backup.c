@@ -372,7 +372,7 @@ static void task_core_backup_handler(retro_task_t *task)
          backup_handle->core_file = intfstream_open_file(
                backup_handle->core_path,
                RETRO_VFS_FILE_ACCESS_READ,
-               RETRO_VFS_FILE_ACCESS_HINT_NONE);
+               RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
 
          if (!backup_handle->core_file)
          {
@@ -549,7 +549,7 @@ static void task_core_backup_handler(retro_task_t *task)
                if (!(backup_handle->core_file = intfstream_open_file(
                            backup_handle->core_path,
                            RETRO_VFS_FILE_ACCESS_READ,
-                           RETRO_VFS_FILE_ACCESS_HINT_NONE)))
+                           RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK)))
                {
                   backup_handle->status = CORE_BACKUP_END;
                   break;
@@ -563,7 +563,7 @@ static void task_core_backup_handler(retro_task_t *task)
 #else
             backup_handle->backup_file = intfstream_open_file(
                   backup_handle->backup_path, RETRO_VFS_FILE_ACCESS_WRITE,
-                  RETRO_VFS_FILE_ACCESS_HINT_NONE);
+                  RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
 #endif
             if (!backup_handle->backup_file)
             {
@@ -1064,7 +1064,7 @@ static void task_core_restore_handler(retro_task_t *task)
                    * task ticks. */
                   backup_handle->core_file = intfstream_open_file(
                         backup_handle->core_path, RETRO_VFS_FILE_ACCESS_READ,
-                        RETRO_VFS_FILE_ACCESS_HINT_NONE);
+                        RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
 
                   if (!backup_handle->core_file)
                   {
@@ -1248,7 +1248,7 @@ static void task_core_restore_handler(retro_task_t *task)
 #else
             backup_handle->backup_file = intfstream_open_file(
                   backup_handle->backup_path, RETRO_VFS_FILE_ACCESS_READ,
-                  RETRO_VFS_FILE_ACCESS_HINT_NONE);
+                  RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
 #endif
             if (!backup_handle->backup_file)
             {
@@ -1305,7 +1305,7 @@ static void task_core_restore_handler(retro_task_t *task)
                backup_handle->core_file = intfstream_open_file(
                      backup_handle->core_tmp_path,
                      RETRO_VFS_FILE_ACCESS_WRITE,
-                     RETRO_VFS_FILE_ACCESS_HINT_NONE);
+                     RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
             }
 
             if (!backup_handle->core_file)

@@ -2071,6 +2071,8 @@ static const struct
    char s_caf61308[7];
    char s_5410e874[13];
    char s_c7a27b20[7];
+   char s_d65a7d95[7];
+   char s_d6611158[4];
    char s_317b17ed[7];
    char s_94c8d15f[7];
    char s_de16b5d2[7];
@@ -2167,6 +2169,7 @@ static const struct
    char s_8f379310[19];
    char s_6a9b757c[23];
    char s_6c52dfb1[21];
+   char s_334daaaa[7];
    char s_9119ef97[22];
 #if defined (WIIU)
 #ifdef WIIU
@@ -6599,6 +6602,8 @@ static const struct
    "\350\207\252\345\213\225",
    "\345\205\250\351\203\250\345\210\227\350\241\250",
    "\350\207\252\345\213\225",
+   "\345\205\250\351\203\250",
+   "\347\204\241",
    "180\345\272\246",
    "270\345\272\246",
    "\346\255\243\345\270\270",
@@ -6708,6 +6713,7 @@ static const struct
    "\350\207\252\350\250\202\345\236\202\347\233\264\344\275\215\347\275\256",
    "\350\250\255\345\256\232\350\236\242\345\271\225(VI)\345\257\254\345\272\246",
    "\345\236\202\347\233\264\345\220\214\346\255\245 (VSync)",
+   "\347\263\273\347\265\261",
    "\345\217\257\347\255\211\345\200\231\344\272\244\346\217\233\351\217\210\347\265\220",
 #if defined (WIIU)
 #ifdef WIIU
@@ -10471,7 +10477,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_cht_blob_check[
-      (sizeof(msg_hash_cht_blob) == (120249u
+      (sizeof(msg_hash_cht_blob) == (120267u
 #ifdef ANDROID
        + 157u
 #endif
@@ -12847,6 +12853,8 @@ static const msg_hash_id_t msg_hash_cht_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_AUTO,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM_ALWAYS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_REFRESH_AUTO,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_BOTH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_NONE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED_ROTATED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_NORMAL,
@@ -12943,6 +12951,7 @@ static const msg_hash_id_t msg_hash_cht_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_CUSTOM_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VI_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VSYNC,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH_SYSTEM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WAITABLE_SWAPCHAINS,
 #if defined (WIIU)
 #ifdef WIIU

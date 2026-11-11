@@ -860,6 +860,10 @@ typedef struct
    bool mixer_mute_enable;
 #endif
 
+   /* A reset of the fast-forward measurement below, asked for by a
+    * thread that does not take it; the measuring thread carries it out
+    * (see audio_driver_ff_mult_sync()). */
+   retro_atomic_int_t ff_reset_req;
    /* Sample the flush delta-time when fast forwarding to find the correct ratio. */
    retro_time_t last_flush_time;
    /* Exponential moving averages of the flush interval and of the
@@ -984,8 +988,10 @@ typedef struct
    float                 last_out[2];
    unsigned              fade_in_frames;
    /* A resume ramp owed to the core's first audio after the pause; the
-    * menu's silence in between must not spend it. */
-   bool                  fade_in_pending;
+    * menu's silence in between must not spend it. Armed by the main
+    * thread at a resume on the threaded pipeline and taken by the
+    * producer, which may run on a core's thread of its own. */
+   retro_atomic_int_t    fade_in_pending;
    /* Rolling copy of the most recent output frames, and how much of it is
     * valid. A copy of what has already gone to the device, never a delay
     * line, so it costs nothing on the fast-forward path. Lets a pause be
@@ -1064,6 +1070,8 @@ typedef struct
       int16_t  *pair_out_i;
       float    *out_f;           /* the resampled extras, frames * channels */
       int16_t  *out_i;
+      const float   *read_f;     /* out_f, or in_f borrowed at unity */
+      const int16_t *read_i;
       size_t    cap_in;          /* frames the in buffers hold */
       size_t    cap_out;         /* frames the out and pair buffers hold */
       size_t    in_frames;       /* pending in this flush */
@@ -1096,8 +1104,13 @@ typedef struct
    void *pipe_transport_output;
    uint32_t pipe_transport_serial, pipe_transport_search;
    unsigned pipe_transport_rate;
-   /* Producer-owned source count for the current fast-forward frame. */
-   size_t pipe_ff_frames;
+   /* Source frames counted for the current fast-forward frame: added
+    * by the thread that submits, taken by the main thread's frame end,
+    * which may not be the same thread. */
+   retro_atomic_size_t pipe_ff_frames;
+   /* Whether the submitter is inside a fast-forward hold; the
+    * submitter's own. */
+   bool pipe_ff_held;
    /* A pause and a resume as ring positions, in the ring's own byte
     * count, published by the main thread and read by the consumer. What
     * the ring held at a pause is stale behind its tail: the consumer

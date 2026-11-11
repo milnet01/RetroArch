@@ -20,6 +20,7 @@
 #include <pthread.h>
 
 #include <rthreads/rthreads.h>
+#include <retro_timers.h>
 #include <formats/rac3.h>
 #include <formats/iec61937.h>
 #include "fake_wasapi.h"
@@ -73,7 +74,17 @@ static audio_pipeline_stretch_t *transport_test_new(unsigned rate,
  * time. The header's prototypes take the new names along. */
 #define retro_resampler_realloc_hq   test_resampler_realloc_hq
 #define retro_resampler_int16_new    test_resampler_int16_new
+/* The driver's clock: real time unless a case steps it itself. */
+#include <features/features_cpu.h>
+static bool fake_clock;
+static retro_time_t fake_now;
+static retro_time_t harness_time_usec(void)
+{
+   return fake_clock ? fake_now : cpu_features_get_time_usec();
+}
+#define cpu_features_get_time_usec   harness_time_usec
 #include "../../../audio/audio_driver.c"
+#undef cpu_features_get_time_usec
 #undef retro_resampler_realloc_hq
 #undef retro_resampler_int16_new
 #undef realloc
@@ -2783,6 +2794,189 @@ static void inline_transport_cases(void)
    printf("inline native transport: 10 cases, %u failures\n", failures - before);
 }
 
+static void inline_hold_frame(const float *input)
+{
+   fake_now += (retro_time_t)(735 * 1000000.0 / 44100.0) / 2;
+   CHECK(audio_driver_sample_batch_float(input, 735) == 735, "hold source accounting");
+   audio_driver_frame_end();
+}
+
+/* A gap inside a fast-forward hold, with Speedup off so only the
+ * stretch follows the measured speed. A pause is not measured at all:
+ * the estimate holds the hold's speed through it. A stall seeds it
+ * again, so the stretch stays on. After a slow spell the stretch is
+ * back within a few frames, not once fast-forward is released. */
+static void inline_hold_gap_case(bool pause, bool slow)
+{
+   static float input[735 * 2];
+   audio_driver_state_t *st = &audio_driver_st;
+   settings_t *settings = config_get_ptr();
+   unsigned before = failures;
+   int i, last_off = -1, drift = -1;
+   double speed;
+   size_t f;
+   for (f = 0; f < 735; f++)
+      input[2 * f] = input[2 * f + 1] = 0.3f * (float)sin(2 * M_PI * 441 * f / 44100.0);
+   CHECK(up(true, AUDIO_LAYOUT_STEREO, true), "hold stand-up");
+   settings->bools.audio_time_stretch = true;
+   settings->bools.audio_time_stretch_lowpass = false;
+   settings->bools.audio_fastforward_speedup = false;
+   settings->floats.fastforward_ratio = 2.0f;
+   CHECK(audio_driver_transport_configure(settings) && st->inline_transport,
+         "hold inline configuration");
+   if (!st->inline_transport)
+   {
+      settings->bools.audio_time_stretch = false;
+      settings->floats.fastforward_ratio = 0.0f;
+      audio_driver_deinit_internal(true);
+      return;
+   }
+   fake_now   = 1000000;
+   fake_clock = true;
+   runloop_state_get_ptr()->flags = RUNLOOP_FLAG_FASTMOTION;
+   audio_driver_publish_runloop();
+   for (i = 0; i < 64; i++)
+      inline_hold_frame(input);
+   CHECK(!st->inline_transport->bypassed, "inline stretch did not follow a 2x hold");
+   speed = (double)st->avg_flush_delta / st->avg_expected_delta;
+   /* A pause shorter than a gap: measured, it would read as a slower
+    * hold without ever leaving the stretch's range. */
+   if (pause)
+   {
+      audio_driver_pause_fade(true);
+      fake_now += 125000;
+      audio_driver_pause_fade(false);
+   }
+   else if (slow)
+   {
+      /* 0.2x, each interval under a gap, until the estimate leaves
+       * the stretch's range. */
+      for (i = 0; i < 64 && !st->inline_transport->bypassed; i++)
+      {
+         fake_now += (retro_time_t)(735 * 1000000.0 / 44100.0) * 9 / 2;
+         inline_hold_frame(input);
+      }
+      CHECK(st->inline_transport->bypassed,
+            "inline slow spell stayed in the stretch's range");
+   }
+   else
+      fake_now += 3 * 1000000;
+   for (i = 0; i < 64; i++)
+   {
+      inline_hold_frame(input);
+      if (st->inline_transport->bypassed)
+         last_off = i;
+      if (fabs((double)st->avg_flush_delta / st->avg_expected_delta - speed)
+            > speed * 0.05)
+         drift = i;
+   }
+   if (pause)
+   {
+      CHECK(last_off < 0, "inline stretch off %d frames after a pause",
+            last_off + 1);
+      CHECK(drift < 0, "inline pause measured: off the hold's speed until %d",
+            drift);
+   }
+   else if (slow)
+      CHECK(last_off < 8, "inline stretch still off %d frames after a slow spell",
+            last_off + 1);
+   else
+      CHECK(last_off < 0, "inline stretch off %d frames after a stall",
+            last_off + 1);
+   fake_clock = false;
+   runloop_state_get_ptr()->flags = 0;
+   settings->bools.audio_time_stretch = false;
+   settings->floats.fastforward_ratio = 0.0f;
+   audio_driver_publish_runloop();
+   audio_driver_deinit_internal(true);
+   printf("inline fast-forward %s: %u failures\n",
+         pause ? "pause" : slow ? "slow spell" : "stall", failures - before);
+}
+
+/* A core that submits from a thread of its own, without the threaded
+ * pipeline, while the main thread ends frames, releases and holds
+ * fast-forward and pauses. The submitting thread measures the hold's
+ * speed (last_flush_time and the averages), so no other thread may
+ * write them: the frame end, a pause and a stop ask for the reset, and
+ * the submitter carries it out before its next measurement. Judged by
+ * ThreadSanitizer; the checks below are what the reset must still do. */
+static float core_thread_input[735 * 2];
+static retro_atomic_int_t core_thread_frames, core_thread_done;
+static void core_thread_hold(void *data)
+{
+   int i;
+   (void)data;
+   for (i = 0; i < 600; i++)
+   {
+      audio_driver_sample_batch_float(core_thread_input, 735);
+      retro_atomic_fetch_add_int(&core_thread_frames, 1);
+      retro_sleep(0);
+   }
+   retro_atomic_store_release_int(&core_thread_done, 1);
+}
+
+static void inline_core_thread_case(void)
+{
+   audio_driver_state_t *st = &audio_driver_st;
+   settings_t *settings     = config_get_ptr();
+   unsigned before          = failures;
+   unsigned step            = 0;
+   sthread_t *th;
+   size_t f;
+   for (f = 0; f < 735; f++)
+      core_thread_input[2 * f] = core_thread_input[2 * f + 1]
+         = 0.3f * (float)sin(2 * M_PI * 441 * f / 44100.0);
+   CHECK(up(true, AUDIO_LAYOUT_STEREO, true), "core thread stand-up");
+   settings->bools.audio_time_stretch         = true;
+   settings->bools.audio_time_stretch_lowpass = false;
+   settings->bools.audio_fastforward_speedup  = false;
+   settings->floats.fastforward_ratio         = 2.0f;
+   CHECK(audio_driver_transport_configure(settings) && st->inline_transport,
+         "core thread inline configuration");
+   fake_clock = false;
+   runloop_state_get_ptr()->flags = RUNLOOP_FLAG_FASTMOTION;
+   audio_driver_publish_runloop();
+   retro_atomic_int_init(&core_thread_frames, 0);
+   retro_atomic_int_init(&core_thread_done, 0);
+   th = sthread_create(core_thread_hold, NULL);
+   CHECK(th != NULL, "core thread started");
+   while (th && !retro_atomic_load_acquire_int(&core_thread_done))
+   {
+      /* Hold, release, hold, pause and resume, a frame end each. */
+      switch (step++ % 5)
+      {
+         case 0: case 2:
+            runloop_state_get_ptr()->flags = RUNLOOP_FLAG_FASTMOTION;
+            break;
+         case 1:
+            runloop_state_get_ptr()->flags = 0;
+            break;
+         case 3:
+            audio_driver_pause_fade(true);
+            runloop_state_get_ptr()->flags = RUNLOOP_FLAG_FASTMOTION
+               | RUNLOOP_FLAG_PAUSED;
+            break;
+         case 4:
+            runloop_state_get_ptr()->flags = RUNLOOP_FLAG_FASTMOTION;
+            audio_driver_pause_fade(false);
+            break;
+      }
+      audio_driver_frame_end();
+      retro_sleep(1);
+   }
+   if (th)
+      sthread_join(th);
+   CHECK(retro_atomic_load_acquire_int(&core_thread_frames) == 600,
+         "the core thread's audio was all taken");
+   CHECK(step > 5, "the main thread ended frames beside it");
+   runloop_state_get_ptr()->flags = 0;
+   settings->bools.audio_time_stretch = false;
+   settings->floats.fastforward_ratio = 0.0f;
+   audio_driver_publish_runloop();
+   audio_driver_deinit_internal(true);
+   printf("inline core thread: %u failures\n", failures - before);
+}
+
 #include "inline_wide.h"
 #include "producer_spans.h"
 
@@ -2808,6 +3002,10 @@ int main(void)
    RUN("inlineformat", inline_format_cases());
    RUN("callbackcontinuity", inline_callback_cases());
    RUN("inline", inline_transport_cases());
+   RUN("inlinehold", inline_hold_gap_case(true, false));
+   RUN("inlinehold", inline_hold_gap_case(false, false));
+   RUN("inlinehold", inline_hold_gap_case(false, true));
+   RUN("inlinethread", inline_core_thread_case());
    RUN("canonicalreserve", canonical_reserve_cases());
    RUN("transportowner", transport_owner_cases());
    RUN("transportdiscard", transport_discard_cases());

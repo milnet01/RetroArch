@@ -177,6 +177,23 @@ void aes_ctr_crypt(const struct aes_ctx *ctx, uint8_t *counter,
       const uint8_t *in, uint8_t *out, size_t len);
 
 /**
+ * aes_cfb128_encrypt:
+ * @iv                : 16 octets; left holding the feedback register,
+ *                      so a caller can continue the stream.
+ * @num               : octets of the register's keystream already
+ *                      used, 0 at the start of a stream; updated.
+ * @len               : any length.
+ *
+ * CFB mode with 128-bit feedback (SP 800-38A), as OpenSSL's
+ * AES_cfb128_encrypt: a stream split across calls gives the same
+ * octets as one call. @in and @out may alias.
+ **/
+void aes_cfb128_encrypt(const struct aes_ctx *ctx, uint8_t *iv,
+      unsigned *num, const uint8_t *in, uint8_t *out, size_t len);
+void aes_cfb128_decrypt(const struct aes_ctx *ctx, uint8_t *iv,
+      unsigned *num, const uint8_t *in, uint8_t *out, size_t len);
+
+/**
  * aes_cbc_encrypt:
  * @iv                : 16 octets; left holding the last ciphertext
  *                      block, so a caller can continue the chain.
@@ -197,6 +214,35 @@ void aes_cbc_encrypt(const struct aes_ctx *ctx, uint8_t *iv,
  * instructions made for it. @in and @out may alias.
  **/
 void aes_cbc_decrypt(const struct aes_ctx *ctx, uint8_t *iv,
+      const uint8_t *in, uint8_t *out, size_t len);
+
+/**
+ * aes_xts_encrypt:
+ * @data_key          : the data key, made by aes_init().
+ * @tweak_key         : the tweak key, made by aes_init(); XTS takes two
+ *                      independent keys of one size (AES-128-XTS is a
+ *                      32-octet key, its halves the two).
+ * @tweak             : 16 octets, the data unit's number as IEEE 1619
+ *                      gives it (little-endian for disk sectors);
+ *                      encrypted with @tweak_key here.
+ * @len               : a multiple of 16: whole blocks, no ciphertext
+ *                      stealing.
+ *
+ * XTS-AES (IEEE 1619, SP 800-38E) over one data unit, several blocks at
+ * once where the cipher runs on instructions made for it. @in and @out
+ * may alias.
+ **/
+void aes_xts_encrypt(const struct aes_ctx *data_key,
+      const struct aes_ctx *tweak_key, const uint8_t *tweak,
+      const uint8_t *in, uint8_t *out, size_t len);
+
+/**
+ * aes_xts_decrypt:
+ *
+ * The inverse of aes_xts_encrypt(), with the same keys and tweak.
+ **/
+void aes_xts_decrypt(const struct aes_ctx *data_key,
+      const struct aes_ctx *tweak_key, const uint8_t *tweak,
       const uint8_t *in, uint8_t *out, size_t len);
 
 /**

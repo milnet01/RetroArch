@@ -27,6 +27,10 @@
 #include <streams/file_stream.h>
 #include <streams/interface_stream.h>
 #include <encodings/crc32.h>
+#include <formats/ciso.h>
+#include <formats/xdvdfs.h>
+#include <formats/zar.h>
+#include <formats/wux.h>
 #include <string/stdstring.h>
 #include "task_database_cue.h"
 
@@ -1480,7 +1484,13 @@ static bool update_cand(int64_t *cand_index, int64_t *last_index,
  * back an open stream on the winning data track (or NULL if that file
  * could not be opened during the parse) together with its size, so
  * the caller's serial/CRC probe does not pay a second open of a file
- * this parse already opened to learn its size. */
+ * this parse already opened to learn its size.
+ *
+ * A sheet with no data track at all but a second session (Atari
+ * Jaguar CD labels every track AUDIO and boots from the first track
+ * of session 2) answers the CRC path (!first) with that track.  Its
+ * span, path and stream are noted during the one parse, so no
+ * second pass reopens every track file. */
 static int cue_find_track_internal(const char *cue_path, bool first,
       uint64_t *offset, size_t *size, char *s, size_t len,
       intfstream_t **track_fd, int64_t *track_fsize)
@@ -1500,9 +1510,21 @@ static int cue_find_track_internal(const char *cue_path, bool first,
    int64_t cand_index         = -1;
    int32_t cand_track         = -1;
    int32_t track              = 0;
+   int32_t session            = 1;
+   /* the session 2 fallback; its path is kept in @s, which no
+    * candidate has written while no data track has been seen */
+   intfstream_t *fb_fd        = NULL;
+   int64_t fb_fsize           = -1;
+   int64_t fb_start           = -1;
+   int64_t fb_end             = -1;
+   int32_t fb_track           = 0;
+   bool fb_in_file            = false; /* last_file is fb's file      */
+   bool session2_seen         = false;
    uint64_t largest           = 0;
    int64_t volatile file_size = -1;
    bool is_data               = false;
+   bool has_data              = false;
+   bool after_rem             = false;
    cue_dir[0] = last_file[0]  = '\0';
 
    fill_pathname_basedir(cue_dir, cue_path, sizeof(cue_dir));
@@ -1533,11 +1555,34 @@ static int cue_find_track_internal(const char *cue_path, bool first,
 
    while (task_database_cue_get_token(&tok, tmp_token, sizeof(tmp_token)) > 0)
    {
-      if (string_is_equal_noncase(tmp_token, "FILE"))
+      bool rem  = after_rem;
+      after_rem = string_is_equal_noncase(tmp_token, "REM");
+
+      if (rem && string_is_equal_noncase(tmp_token, "SESSION"))
+      {
+         /* Multi-session sheets mark sessions with "REM SESSION nn" */
+         task_database_cue_get_token(&tok, tmp_token, sizeof(tmp_token));
+         session = atoi(tmp_token);
+      }
+      else if (string_is_equal_noncase(tmp_token, "FILE"))
       {
          /* Set last index to last EOF */
          if (file_size != -1)
             last_index = file_size;
+
+         if (fb_in_file)
+         {
+            if (fb_end == -1)
+               fb_end = last_index;
+            /* keep its stream for the CRC pass, as a candidate's is */
+            if (!has_data && cur_fd)
+            {
+               fb_fd    = cur_fd;
+               fb_fsize = file_size;
+               cur_fd   = NULL;
+            }
+            fb_in_file = false;
+         }
 
          /* We're changing files since the candidate, update it */
          if (update_cand(&cand_index, &last_index,
@@ -1601,6 +1646,15 @@ static int cue_find_track_internal(const char *cue_path, bool first,
 #endif
             }
          }
+
+         if (is_data)
+            has_data = true;
+         /* Atari Jaguar CD: note session 2's first track while no
+          * data track has turned up (see the comment above) */
+         else if (session >= 2 && !session2_seen && !has_data && !first)
+            fb_track = track;
+         if (session >= 2)
+            session2_seen = true;
       }
       else if (string_is_equal_noncase(tmp_token, "INDEX"))
       {
@@ -1643,6 +1697,20 @@ static int cue_find_track_internal(const char *cue_path, bool first,
          }
 
          last_index = (size_t)(((_m * 60 + _s) * 75) + _f) * 2352;
+         if (fb_track)
+         {
+            if (track == fb_track)
+            {
+               if (fb_start == -1 && !has_data)
+               {
+                  fb_start   = last_index;
+                  fb_in_file = true;
+                  strlcpy(s, last_file, len);
+               }
+            }
+            else if (fb_in_file && fb_end == -1)
+               fb_end = last_index;
+         }
          /* If we've changed tracks since the candidate, update it */
          if (     (cand_track != -1)
                && (track != cand_track)
@@ -1678,6 +1746,34 @@ static int cue_find_track_internal(const char *cue_path, bool first,
       rv = 0;
    }
 
+   if (fb_in_file)
+   {
+      if (fb_end == -1)
+         fb_end = last_index;
+      if (!has_data && cur_fd)
+      {
+         fb_fd    = cur_fd;
+         fb_fsize = file_size;
+         cur_fd   = NULL;
+      }
+   }
+
+   /* No data track, but a second session: hash its first track */
+   if (rv != 0 && !has_data && fb_start != -1 && fb_end > fb_start)
+   {
+#ifdef DEBUG
+      RARCH_LOG("[Scanner] No data track, using session 2 track %d\n",
+            (int)fb_track);
+#endif
+      *offset    = (uint64_t)fb_start;
+      *size      = (size_t)(fb_end - fb_start);
+      cue_track_stream_close(cand_fd);
+      cand_fd    = fb_fd;
+      cand_fsize = fb_fsize;
+      fb_fd      = NULL;
+      rv         = 0;
+   }
+
 clean:
    intfstream_close(fd);
    free(fd);
@@ -1689,6 +1785,7 @@ clean:
    }
    else
       cue_track_stream_close(cand_fd);
+   cue_track_stream_close(fb_fd);
    return rv;
 
 error:
@@ -1699,6 +1796,7 @@ error:
    }
    cue_track_stream_close(cur_fd);
    cue_track_stream_close(cand_fd);
+   cue_track_stream_close(fb_fd);
    return -1;
 }
 
@@ -2211,8 +2309,11 @@ bool is_chd_file_cdi(const char *path)
    return is_cdi;
 }
 
+static size_t detect_xbox_game(intfstream_t *fd, uint64_t pos, bool disc,
+      char *s, size_t len, uint8_t *regions);
+
 int task_database_chd_get_serial(const char *name, char *serial,
-   size_t len, uint64_t *filesize)
+   size_t len, uint64_t *filesize, uint8_t *regions)
 {
    int result;
    /* CD-i discs store data in AUDIO-labeled tracks, so we must
@@ -2229,9 +2330,500 @@ int task_database_chd_get_serial(const char *name, char *serial,
    /* TODO/FIXME: get the full CHD size instead */
    *filesize = intfstream_get_size(fd);
    result    = intfstream_get_serial(fd, serial, len, name);
+   /* An Xbox DVD is looked for only once nothing else has been found,
+    * so other discs read nothing more for it */
+   if (!result)
+      result = detect_xbox_game(fd, ~(uint64_t)0, true, serial, len,
+            regions) != 0;
    intfstream_close(fd);
    free(fd);
    return result;
+}
+
+/* The disc header the GameCube and Wii detectors read */
+#define SCAN_CISO_PROBE_SIZE 0x440
+
+/* An image read for a reader that does no I/O of its own: each range
+ * goes straight to where the reader asks, and the file is only sought
+ * when a range does not start where the last one ended. */
+typedef struct
+{
+   intfstream_t *fd;
+   uint64_t      pos;
+} task_database_src_t;
+
+static size_t task_database_pull(task_database_src_t *src,
+      uint64_t offset, uint8_t *dst, size_t length)
+{
+   int64_t got;
+   if (     src->pos != offset
+         && intfstream_seek(src->fd, (int64_t)offset, SEEK_SET) < 0)
+      return 0;
+   src->pos = offset;
+   if ((got = intfstream_read(src->fd, dst, length)) <= 0)
+   {
+      src->pos = ~(uint64_t)0;
+      return 0;
+   }
+   src->pos += (uint64_t)got;
+   return (size_t)got;
+}
+
+int task_database_ciso_get_serial(const char *name, char *s, size_t len,
+   uint64_t *filesize)
+{
+   task_database_src_t src;
+   ciso_request_t req;
+   int rv            = 0;
+   int err;
+   uint8_t *head     = NULL;
+   ciso_t *c         = NULL;
+   intfstream_t *mem = NULL;
+   /* The descriptor path: every read lands where the reader asked,
+    * not through a stdio buffer. */
+   intfstream_t *fd  = intfstream_open_file(name,
+         RETRO_VFS_FILE_ACCESS_READ,
+         RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
+
+   if (!fd)
+      return 0;
+
+   *filesize = (uint64_t)intfstream_get_size(fd);
+   src.fd    = fd;
+   src.pos   = 0;
+
+   if (     !(c    = ciso_new())
+         || !(head = (uint8_t*)malloc(SCAN_CISO_PROBE_SIZE)))
+      goto end;
+
+   while ((err = ciso_open_step(c, &req)) == CISO_PENDING)
+      ciso_feed(c, task_database_pull(&src, req.offset, req.dst, req.length));
+   if (     err != CISO_OK
+         || ciso_read_begin(c, 0, head, SCAN_CISO_PROBE_SIZE) != CISO_OK)
+      goto end;
+   while ((err = ciso_read_step(c, &req)) == CISO_PENDING)
+      ciso_feed(c, task_database_pull(&src, req.offset, req.dst, req.length));
+   if (err != CISO_OK)
+      goto end;
+
+   /* the serial detectors read the disc header where it was put */
+   if ((mem = intfstream_open_memory(head, RETRO_VFS_FILE_ACCESS_READ,
+         RETRO_VFS_FILE_ACCESS_HINT_NONE, ciso_read_progress(c))))
+   {
+      rv = intfstream_get_serial(mem, s, len, name);
+      intfstream_close(mem);
+      free(mem);
+   }
+
+end:
+   ciso_free(c);
+   free(head);
+   intfstream_close(fd);
+   free(fd);
+   return rv;
+}
+
+/* The Redump serial of an Xbox or Xbox 360 title: the publisher's two
+ * letters and the title's number, "MS-004" for 0x4D530004; an Xbox
+ * 360 disc of a set adds its place in it from 0, "FO-2046-1" */
+static size_t xbox_title_serial(const xdvdfs_title_t *t, char *s,
+      size_t len)
+{
+   char     serial[24];
+   char     digits[8];
+   unsigned n    = t->id & 0xFFFF;
+   size_t   nd   = 0;
+   size_t   _len = 0;
+   int      i;
+
+   for (i = 0; i < 2; i++)
+   {
+      char c = (char)(t->id >> (24 - 8 * i));
+      if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')))
+         return 0;
+      serial[_len++] = c;
+   }
+   serial[_len++] = '-';
+   do
+   {
+      digits[nd++] = (char)('0' + n % 10);
+      n           /= 10;
+   } while (n);
+   while (nd < 3)
+      digits[nd++] = '0';
+   while (nd)
+      serial[_len++] = digits[--nd];
+   if (     t->platform == XDVDFS_XBOX360
+         && t->discs > 1 && t->disc >= 1 && t->disc <= t->discs)
+   {
+      n = t->disc - 1u;
+      serial[_len++] = '-';
+      do
+      {
+         digits[nd++] = (char)('0' + n % 10);
+         n           /= 10;
+      } while (n);
+      while (nd)
+         serial[_len++] = digits[--nd];
+   }
+   serial[_len] = '\0';
+   return strlcpy(s, serial, len);
+}
+
+/* An Xbox or Xbox 360 serial from the title of the executable @fd
+ * holds, or with @disc of the one the disc image boots, and the
+ * regions it is for. @pos is where the stream stands. */
+static size_t detect_xbox_game(intfstream_t *fd, uint64_t pos, bool disc,
+      char *s, size_t len, uint8_t *regions)
+{
+   task_database_src_t src;
+   xdvdfs_request_t    req;
+   xdvdfs_extent_t     exe;
+   xdvdfs_title_t      title;
+   size_t              _len = 0;
+   int                 err  = XDVDFS_OK;
+   int64_t             size = intfstream_get_size(fd);
+   xdvdfs_t           *x;
+
+   if (size <= 0 || !(x = xdvdfs_new((uint64_t)size)))
+      return 0;
+   src.fd     = fd;
+   src.pos    = pos;
+   exe.offset = 0;
+   exe.size   = size > 0xFFFFFFFF ? 0xFFFFFFFFu : (uint32_t)size;
+   if (disc)
+      while ((err = xdvdfs_open_step(x, &req)) == XDVDFS_PENDING)
+         xdvdfs_feed(x, task_database_pull(&src, req.offset, req.dst,
+                  req.length));
+   if (     err == XDVDFS_OK
+         && xdvdfs_title_begin(x, disc ? NULL : &exe) == XDVDFS_OK)
+   {
+      while ((err = xdvdfs_title_step(x, &req, &title)) == XDVDFS_PENDING)
+         xdvdfs_feed(x, task_database_pull(&src, req.offset, req.dst,
+                  req.length));
+      if (err == XDVDFS_OK && (_len = xbox_title_serial(&title, s, len)))
+         *regions = title.regions;
+   }
+   xdvdfs_free(x);
+   return _len;
+}
+
+int task_database_xbox_get_serial(const char *name, bool disc, char *s,
+   size_t len, uint64_t *filesize, uint8_t *regions)
+{
+   size_t _len;
+   /* The descriptor path: the few ranges the probe needs land where
+    * it asks, with no stdio buffer filled around each one. */
+   intfstream_t *fd = intfstream_open_file(name,
+         RETRO_VFS_FILE_ACCESS_READ,
+         RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
+
+   if (!fd)
+      return 0;
+   *filesize = (uint64_t)intfstream_get_size(fd);
+   _len      = detect_xbox_game(fd, 0, disc, s, len, regions);
+   intfstream_close(fd);
+   free(fd);
+   return _len != 0;
+}
+
+/* An Xbox 360 game in a ZArchive: the title of its default.xex, read
+ * through the archive's blocks */
+typedef struct
+{
+   task_database_src_t src;
+   zar_file_t          file;
+   zar_t              *z;
+} task_database_zar_src_t;
+
+static size_t task_database_zar_pull(task_database_zar_src_t *zs,
+      uint64_t offset, uint8_t *dst, size_t length)
+{
+   zar_request_t req;
+   int           err;
+   if (zar_read_begin(zs->z, &zs->file, offset, dst, length) != ZAR_OK)
+      return 0;
+   while ((err = zar_read_step(zs->z, &req)) == ZAR_PENDING)
+      zar_feed(zs->z, task_database_pull(&zs->src, req.offset, req.dst,
+               req.length));
+   /* what came before a failure is still read */
+   return zar_read_progress(zs->z);
+}
+
+int task_database_zar_get_serial(const char *name, char *s, size_t len,
+   uint64_t *filesize, uint8_t *regions)
+{
+   task_database_zar_src_t zs;
+   zar_request_t           req;
+   xdvdfs_request_t        xreq;
+   xdvdfs_extent_t         exe;
+   xdvdfs_title_t          title;
+   xdvdfs_t               *x    = NULL;
+   zar_t                  *z    = NULL;
+   size_t                  _len = 0;
+   int                     err;
+   int64_t                 size;
+   /* The descriptor path: each range lands where the readers ask */
+   intfstream_t           *fd   = intfstream_open_file(name,
+         RETRO_VFS_FILE_ACCESS_READ,
+         RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
+
+   if (!fd)
+      return 0;
+   size       = intfstream_get_size(fd);
+   *filesize  = (uint64_t)size;
+   zs.src.fd  = fd;
+   zs.src.pos = 0;
+   if (size <= 0 || !(z = zar_new((uint64_t)size)))
+      goto end;
+   zs.z = z;
+
+   while ((err = zar_open_step(zs.z, &req)) == ZAR_PENDING)
+      zar_feed(zs.z, task_database_pull(&zs.src, req.offset, req.dst,
+               req.length));
+   if (err != ZAR_OK || zar_lookup_begin(zs.z, "default.xex") != ZAR_OK)
+      goto end;
+   while ((err = zar_lookup_step(zs.z, &req, &zs.file)) == ZAR_PENDING)
+      zar_feed(zs.z, task_database_pull(&zs.src, req.offset, req.dst,
+               req.length));
+   if (err != ZAR_OK || zs.file.dir || !(x = xdvdfs_new(zs.file.size)))
+      goto end;
+
+   exe.offset = 0;
+   exe.size   = zs.file.size > 0xFFFFFFFFu
+         ? 0xFFFFFFFFu : (uint32_t)zs.file.size;
+   if (xdvdfs_title_begin(x, &exe) != XDVDFS_OK)
+      goto end;
+   while ((err = xdvdfs_title_step(x, &xreq, &title)) == XDVDFS_PENDING)
+      xdvdfs_feed(x, task_database_zar_pull(&zs, xreq.offset, xreq.dst,
+               xreq.length));
+   if (err == XDVDFS_OK && (_len = xbox_title_serial(&title, s, len)))
+      *regions = title.regions;
+
+end:
+   xdvdfs_free(x);
+   zar_free(z);
+   intfstream_close(fd);
+   free(fd);
+   return _len != 0;
+}
+
+/* A Wii U product code's four characters, from "WUP-?-" and them;
+ * @code gets them, terminated */
+static bool wiiu_product_code(const uint8_t *p, size_t n, char *code)
+{
+   size_t i;
+   if (     n < 10
+         || p[0] != 'W' || p[1] != 'U' || p[2] != 'P' || p[3] != '-'
+         || p[4] < 'A'  || p[4] > 'Z' || p[5] != '-')
+      return false;
+   for (i = 0; i < 4; i++)
+   {
+      uint8_t c = p[6 + i];
+      if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')))
+         return false;
+      code[i] = (char)c;
+   }
+   code[4] = '\0';
+   return true;
+}
+
+/* The disc header a Wii U product code is read from */
+#define WIIU_HEAD 10
+
+int task_database_wiiu_get_serial(const char *name, char *s, size_t len,
+   uint64_t *filesize)
+{
+   task_database_src_t src;
+   wux_request_t       req;
+   uint8_t             head[WIIU_HEAD];
+   char                code[5];
+   size_t              got;
+   int                 err;
+   int                 rv = 0;
+   int64_t             size;
+   wux_t              *w  = NULL;
+   /* The descriptor path: the few octets the probe needs land where
+    * it asks */
+   intfstream_t       *fd = intfstream_open_file(name,
+         RETRO_VFS_FILE_ACCESS_READ,
+         RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
+
+   if (!fd)
+      return 0;
+   size      = intfstream_get_size(fd);
+   *filesize = (uint64_t)size;
+   src.fd    = fd;
+   src.pos   = 0;
+   if (size < WIIU_HEAD)
+      goto end;
+   for (got = 0; got < WIIU_HEAD; )
+   {
+      size_t n = task_database_pull(&src, got, head + got, WIIU_HEAD - got);
+      if (!n)
+         goto end;
+      got += n;
+   }
+
+   /* A WUX: the same octets of the disc it stands for */
+   if (wux_is_wux(head))
+   {
+      if (!(w = wux_new((uint64_t)size)))
+         goto end;
+      while ((err = wux_open_step(w, &req)) == WUX_PENDING)
+         wux_feed(w, task_database_pull(&src, req.offset, req.dst,
+                  req.length));
+      if (     err != WUX_OK
+            || wux_read_begin(w, 0, head, WIIU_HEAD) != WUX_OK)
+         goto end;
+      while ((err = wux_read_step(w, &req)) == WUX_PENDING)
+         wux_feed(w, task_database_pull(&src, req.offset, req.dst,
+                  req.length));
+      if (err != WUX_OK || wux_read_progress(w) != WIIU_HEAD)
+         goto end;
+   }
+
+   /* a disc says "WUP-P-" */
+   if (head[4] == 'P' && wiiu_product_code(head, WIIU_HEAD, code))
+      rv = strlcpy(s, code, len) < len;
+
+end:
+   wux_free(w);
+   intfstream_close(fd);
+   free(fd);
+   return rv;
+}
+
+/* The text of the first <@tag> element of @xml, which is terminated;
+ * NULL when there is none. *@n gets its length. */
+static const char *wiiu_xml_value(const char *xml, const char *tag,
+      size_t *n)
+{
+   size_t      tlen = strlen(tag);
+   const char *p    = xml;
+   while ((p = strchr(p, '<')))
+   {
+      const char *v;
+      p++;
+      if (strncmp(p, tag, tlen) || (p[tlen] != '>' && p[tlen] != ' '))
+         continue;
+      if (!(v = strchr(p + tlen, '>')))
+         return NULL;
+      v++;
+      for (*n = 0; v[*n] && v[*n] != '<'; (*n)++) { }
+      return v[*n] ? v : NULL;
+   }
+   return NULL;
+}
+
+/* meta.xml's head, which names the product and company first */
+#define WIIU_META_HEAD 2048
+
+int task_database_wua_get_serial(const char *name, char *s, size_t len,
+   uint64_t *filesize, char *maker)
+{
+   task_database_zar_src_t zs;
+   zar_request_t           req;
+   zar_dirent_t            ent;
+   char                    path[64];
+   char                    code[5];
+   char                   *xml = NULL;
+   const char             *v;
+   size_t                  n;
+   int                     err;
+   int                     rv   = 0;
+   int64_t                 size;
+   zar_t                  *z    = NULL;
+   /* The descriptor path: each range lands where the reader asks */
+   intfstream_t           *fd   = intfstream_open_file(name,
+         RETRO_VFS_FILE_ACCESS_READ,
+         RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK);
+
+   if (!fd)
+      return 0;
+   maker[0]   = '\0';
+   path[0]    = '\0';
+   size       = intfstream_get_size(fd);
+   *filesize  = (uint64_t)size;
+   zs.src.fd  = fd;
+   zs.src.pos = 0;
+   if (size <= 0 || !(z = zar_new((uint64_t)size)))
+      goto end;
+   zs.z = z;
+
+   while ((err = zar_open_step(z, &req)) == ZAR_PENDING)
+      zar_feed(z, task_database_pull(&zs.src, req.offset, req.dst,
+               req.length));
+   if (err != ZAR_OK || zar_dir_begin(z, "") != ZAR_OK)
+      goto end;
+
+   /* A title's directory is its ID, 16 hex digits, then "_v" and its
+    * version. The first base title (00050000...) is the game; any
+    * other title stands in when there is none, as an update or the
+    * content of one names the same product. */
+   for (;;)
+   {
+      size_t i;
+      while ((err = zar_dir_step(z, &req, &ent)) == ZAR_PENDING)
+         zar_feed(z, task_database_pull(&zs.src, req.offset, req.dst,
+                  req.length));
+      if (err != ZAR_OK)
+         break;
+      if (     !ent.is_dir || ent.len < 18 || ent.len > 40
+            || ent.name[16] != '_' || (ent.name[17] | 0x20) != 'v')
+         continue;
+      for (i = 0; i < 16; i++)
+      {
+         char c = ent.name[i];
+         if (!(   (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F')
+               || (c >= 'a' && c <= 'f')))
+            break;
+      }
+      if (i < 16)
+         continue;
+      if (!path[0] || !strncmp(ent.name, "00050000", 8))
+      {
+         memcpy(path, ent.name, ent.len);
+         path[ent.len] = '\0';
+         if (!strncmp(ent.name, "00050000", 8))
+            break;
+      }
+   }
+   if (!path[0])
+      goto end;
+   strlcat(path, "/meta/meta.xml", sizeof(path));
+
+   if (zar_lookup_begin(z, path) != ZAR_OK)
+      goto end;
+   while ((err = zar_lookup_step(z, &req, &zs.file)) == ZAR_PENDING)
+      zar_feed(z, task_database_pull(&zs.src, req.offset, req.dst,
+               req.length));
+   if (     err != ZAR_OK || zs.file.dir
+         || !(xml = (char*)malloc(WIIU_META_HEAD + 1)))
+      goto end;
+   n      = task_database_zar_pull(&zs, 0, (uint8_t*)xml, WIIU_META_HEAD);
+   xml[n] = '\0';
+
+   if (     !(v = wiiu_xml_value(xml, "product_code", &n))
+         || !wiiu_product_code((const uint8_t*)v, n, code))
+      goto end;
+   /* the maker: the company code's last two characters */
+   if (     (v = wiiu_xml_value(xml, "company_code", &n)) && n >= 2
+         && ISALNUM((unsigned char)v[n - 2])
+         && ISALNUM((unsigned char)v[n - 1]))
+   {
+      maker[0] = (char)TOUPPER((unsigned char)v[n - 2]);
+      maker[1] = (char)TOUPPER((unsigned char)v[n - 1]);
+      maker[2] = '\0';
+   }
+   rv = strlcpy(s, code, len) < len;
+
+end:
+   free(xml);
+   zar_free(z);
+   intfstream_close(fd);
+   free(fd);
+   return rv;
 }
 
 /* Opens what the scanner hashes for @name: the file itself, the data

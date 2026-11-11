@@ -3293,6 +3293,10 @@ enum rarch_content_type path_is_media_type(const char *path)
       ext_lower[i] = '\0';
    }
 
+#if defined(HAVE_RWMA) && (defined(HAVE_WEBMPLAYER) || defined(HAVE_AUDIOMIXER))
+   if (string_is_equal(ext_lower, "wma") || string_is_equal(ext_lower, "xwma") || string_is_equal(ext_lower, "xma"))
+      return RARCH_CONTENT_MUSIC;
+#endif
    switch (msg_hash_to_file_type(ext_lower))
    {
 #if defined(HAVE_WEBMPLAYER) && !defined(HAVE_FFMPEG) && !defined(HAVE_MPV)
@@ -3389,6 +3393,7 @@ enum rarch_content_type path_is_media_type(const char *path)
       case FILE_TYPE_TGA:
       case FILE_TYPE_BMP:
       case FILE_TYPE_WEBP:
+      case FILE_TYPE_GIF:
          return RARCH_CONTENT_IMAGE;
 #endif
       default:
@@ -5691,6 +5696,11 @@ bool command_event(enum event_command cmd, void *data)
          input_config_forget_controllers();
          input_driver_restart_with_next_video_restart();
          break;
+      case CMD_EVENT_MENU_FIRST_RUN_DOWNLOAD:
+#if defined(HAVE_MENU) && defined(HAVE_ONLINE_UPDATER) && defined(HAVE_NETWORKING) && defined(HAVE_COMPRESSION) && defined(HAVE_CONFIGFILE)
+         menu_first_run_download_start();
+#endif
+         break;
       case CMD_EVENT_MENU_SAVE_CURRENT_CONFIG:
          /* Same as at quit: the companion's live layout first. */
          ui_companion_event_command(CMD_EVENT_MENU_SAVE_CURRENT_CONFIG);
@@ -7688,6 +7698,9 @@ static void retroarch_print_features(void)
 #ifdef HAVE_RTGA
    _len += _PSUPP_BUF(buf, _len, SUPPORTS_RTGA,            "RTGA",            "TGA (RTGA) image loading/encoding");
 #endif
+#ifdef HAVE_RGIF
+   _len += _PSUPP_BUF(buf, _len, SUPPORTS_RGIF,            "RGIF",            "GIF (RGIF) image loading");
+#endif
 #ifdef HAVE_RWEBP
    _len += _PSUPP_BUF(buf, _len, SUPPORTS_RWEBP,           "RWEBP",           "WebP (RWEBP) image loading");
 #endif
@@ -9312,10 +9325,7 @@ static bool retroarch_parse_input_and_config(
 #ifdef HAVE_NETWORK_CMD
             case RA_OPT_COMMAND:
 #ifdef HAVE_COMMAND
-               if (command_network_send((const char*)optarg))
-                  exit(0);
-               else
-                  retroarch_fail(1, "network_cmd_send()");
+               exit(command_network_send((const char*)optarg) ? 0 : 1);
 #endif
                break;
 #endif
@@ -10055,7 +10065,14 @@ bool retroarch_main_init_core(int argc, char *argv[],
                   retroarch_override_setting_set(RARCH_OVERRIDE_SETTING_LIBRETRO, NULL);
                   runloop_set_current_core_type(CORE_TYPE_FFMPEG, false);
 #elif defined(HAVE_WEBMPLAYER)
-                  if (cont_type == RARCH_CONTENT_MOVIE)
+                  if (cont_type == RARCH_CONTENT_MOVIE
+#ifdef HAVE_RWMA
+                        || (cont_type == RARCH_CONTENT_MUSIC &&
+                           (string_is_equal_noncase(path_get_extension(fullpath), "wma") ||
+                            string_is_equal_noncase(path_get_extension(fullpath), "xwma") ||
+                            string_is_equal_noncase(path_get_extension(fullpath), "xma")))
+#endif
+                     )
                   {
                      retroarch_override_setting_set(RARCH_OVERRIDE_SETTING_LIBRETRO, NULL);
                      runloop_set_current_core_type(CORE_TYPE_WEBM, false);

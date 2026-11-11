@@ -314,7 +314,7 @@ if [ "$OS" = 'Darwin' ]; then
    #   * HAVE_VULKAN is forced on alongside it. Link-time libvulkan is
    #     not required on Darwin; MoltenVK is loaded dynamically at
    #     runtime by gfx/common/vulkan_common.c.
-   # Skip the force-on on pre-10.7 targets — Metal is 10.11+ and
+   # Skip the force-on on pre-10.7 targets â€” Metal is 10.11+ and
    # MoltenVK is 10.11+, so neither is buildable on Tiger/Leopard.
    if [ "$macos_target_pre_10_7" = 'no' ]; then
       [ "${USER_METAL:-}"  != 'no' ] && HAVE_METAL=yes
@@ -831,12 +831,13 @@ if [ "$HAVE_X11" != 'no' ]; then
 
    check_val '' XEXT -lXext '' xext '' '' false
    check_val '' XF86VM -lXxf86vm '' xxf86vm '' '' false
-   check_val '' XSCRNSAVER -lXss '' xscrnsaver '' '' false
    check_val '' XI2 -lXi '' xi '' '' false
 else
    die : 'Notice: X11 not present. Skipping X11 code paths.'
 fi
 
+check_enabled X11 XSCRNSAVER XScrnSaver 'X11 is' true
+check_enabled DYLIB XSCRNSAVER XScrnSaver 'Dynamic loading is' true
 check_enabled X11 XINERAMA Xinerama 'Xinerama is' false
 check_enabled X11 XSHM XShm 'XShm is' false
 check_enabled X11 XRANDR Xrandr 'Xrandr is' false
@@ -922,6 +923,14 @@ elif [ "$HAVE_VULKAN" != "no" ] && [ "$OS" = 'Darwin' ]; then
 else
    check_lib '' VULKAN -lvulkan vkCreateInstance
 fi
+
+check_platform Linux VAAPI 'VA-API' true
+check_enabled VULKAN VAAPI 'VA-API' 'Vulkan is' false
+check_enabled RMP4 VAAPI 'VA-API' 'RMP4 is' false
+check_enabled THREADS VAAPI 'VA-API' 'Threads are' false
+check_enabled 'DYLIB DYNAMIC' VAAPI 'VA-API' 'Dynamic loading is' false
+check_header '' VAAPI va/va.h va/va_dec_hevc.h va/va_drmcommon.h
+check_macro VAAPI VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2 va/va_drmcommon.h
 
 check_platform Linux OPENXR 'OpenXR is' true
 check_enabled 'VULKAN OPENGL OPENGL_CORE' OPENXR OpenXR 'Vulkan and OpenGL are' false

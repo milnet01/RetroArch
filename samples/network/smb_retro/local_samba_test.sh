@@ -35,6 +35,16 @@ stop() {
 # instead of the one this script configured - it maps the unknown
 # user to guest and knows no [share].
 port_busy() { ss -ltn 2>/dev/null | grep -q ':445 '; }
+# smbd's listener gone, or there, two seconds at most each; without ss
+# the fixed waits they replace
+port_free() {
+   command -v ss >/dev/null 2>&1 || { sleep 0.3; return 0; }
+   i=0; while port_busy && [ $i -lt 40 ]; do sleep 0.05; i=$((i + 1)); done
+}
+port_up() {
+   command -v ss >/dev/null 2>&1 || { sleep 1; return 0; }
+   i=0; until port_busy || [ $i -ge 40 ]; do sleep 0.05; i=$((i + 1)); done
+}
 if port_busy; then
    systemctl stop smbd nmbd samba-ad-dc 2>/dev/null || true
    pkill -x smbd 2>/dev/null || true
@@ -80,7 +90,7 @@ conf SMB3_11 default
 run() { # label max_protocol encrypt expect_rc password
    # smbd and the samba-dcerpcd it spawned for this config; a stale
    # rpc daemon from a previous run answers the srvsvc pipe for nobody
-   stop; sleep 0.3
+   stop; port_free
    conf $2 $3 "${SIGN_ALGS:-}"
    smbd -s $D/smb.conf -D
    # wait for the listener rather than guessing a delay
@@ -148,7 +158,7 @@ cat > $D/smb.conf << EOC
    force user = root
 EOC
 }
-stop; sleep 0.3; guestconf; smbd -s $D/smb.conf -D
+stop; port_free; guestconf; smbd -s $D/smb.conf -D
 i=0; while [ $i -lt 50 ] && ! $RUN ./smb_test$EXE 127.0.0.1 public nobody x RETRO >$D/out 2>&1; do
    grep -q "bad signature" $D/out && break
    i=$((i + 1)); sleep 0.2
@@ -160,6 +170,61 @@ else
 fi
 
 run "wrong password is refused"             SMB3_11 default  1 'wrong'
+# a refused connect names the step that failed
+refused() { # label step server share password [port]
+   if SMB_PORT=${6:-0} SMB_EXPECT_PHASE=$2 $RUN ./smb_test$EXE "$3" "$4" rsmbtest "$5" RETRO >$D/out 2>&1; then
+      echo "ok:   $1"
+   else
+      echo "FAIL: $1: $(cat $D/out)"; exit 1
+   fi
+}
+refused "wrong password fails at the session" session 127.0.0.1      share  'wrong'
+refused "unknown share fails at the tree"     tree    127.0.0.1      nosuch 'Sekret1!'
+refused "closed port fails at the connect"    connect 127.0.0.1      share  'Sekret1!' 1
+refused "unknown host fails at the lookup"    resolve nosuch.invalid share  'Sekret1!'
+# the VFS keeps why a share's connect failed, with no share configured;
+# 127.0.0.2 is on the loopback with nothing listening. libsmb2 cannot
+# tell a failed lookup from a failed connect.
+failed() { # label code server share password [binary]
+   if SMB_EXPECT_FAILURE=$2 $RUN ./${6:-vfs_test}$EXE "$3" "$4" rsmbtest "$5" RETRO >$D/out 2>&1; then
+      echo "ok:   $1"
+   else
+      echo "FAIL: $1: $(cat $D/out)"; exit 1
+   fi
+}
+# a frozen server reads as connect, then connected once it answers
+frozen() { # label binary
+   pid=$(cat $D/run/smbd.pid)
+   rm -f $D/out
+   kill -STOP $pid
+   SMB_EXPECT_FAILURE=connect SMB_WAIT_OK=20 $RUN ./$2$EXE 127.0.0.1 share rsmbtest 'Sekret1!' RETRO >$D/out 2>&1 &
+   waiter=$!
+   i=0; while ! grep -q '^ok:' $D/out 2>/dev/null && [ $i -lt 100 ]; do i=$((i + 1)); sleep 0.1; done
+   kill -CONT $pid
+   if wait $waiter; then echo "ok:   $1"; else echo "FAIL: $1: $(cat $D/out)"; exit 1; fi
+}
+# URL host and share against the settings; no server needed
+urls() { # label binary
+   if SMB_CHECK_URLS=1 $RUN ./$2$EXE >$D/out 2>&1; then
+      echo "ok:   $1"
+   else
+      echo "FAIL: $1: $(cat $D/out)"; exit 1
+   fi
+}
+failed "VFS: wrong password reads as a login failure" login   127.0.0.1      share  'wrong'
+failed "VFS: unknown share reads as a share failure"  share   127.0.0.1      nosuch 'Sekret1!'
+failed "VFS: closed port reads as a connect failure"  connect 127.0.0.2      share  'Sekret1!'
+failed "VFS: unknown host reads as a lookup failure"  resolve nosuch.invalid share  'Sekret1!'
+frozen "VFS: frozen server reads as a connect failure, then connected" vfs_test
+urls "VFS: URL host and share checked against the settings" vfs_test
+if [ -n "${WITH_LIBSMB2:-}" ]; then
+   failed "libsmb2 VFS: wrong password reads as a login failure" login   127.0.0.1      share  'wrong'    vfs_test_libsmb2
+   failed "libsmb2 VFS: unknown share reads as a share failure"  share   127.0.0.1      nosuch 'Sekret1!' vfs_test_libsmb2
+   failed "libsmb2 VFS: closed port reads as a connect failure"  connect 127.0.0.2      share  'Sekret1!' vfs_test_libsmb2
+   failed "libsmb2 VFS: unknown host reads as a connect failure" connect nosuch.invalid share  'Sekret1!' vfs_test_libsmb2
+   frozen "libsmb2 VFS: frozen server reads as a connect failure, then connected" vfs_test_libsmb2
+   urls "libsmb2 VFS: URL host and share checked against the settings" vfs_test_libsmb2
+fi
 # Kerberos configured with a realm whose KDC is not there: the client
 # must fall back to NTLMSSP and still get in (a standalone server has
 # no KDC); the AD DC matrix covers the ticket path itself
@@ -186,7 +251,7 @@ rm -f $D/share/rsmb_test.bin
 # first call after the restart is the one that finds it gone.
 restart_round() { # binary order label
    rm -f $D/share/idle.bin $D/share/idle_w.bin
-   stop; sleep 0.3; conf SMB3_11 default; smbd -s $D/smb.conf -D; sleep 1
+   stop; port_free; conf SMB3_11 default; smbd -s $D/smb.conf -D; port_up
    $RUN ./$1$EXE 127.0.0.1 share rsmbtest 'Sekret1!' RETRO 10 $2 >$D/out 2>&1 &
    idler=$!
    sleep 3
@@ -202,7 +267,7 @@ restart_round() { # binary order label
 # streams still lets their connections go (the sanitizer lane's LSan).
 gone_round() { # binary label
    rm -f $D/share/idle.bin $D/share/idle_w.bin
-   stop; sleep 0.3; conf SMB3_11 default; smbd -s $D/smb.conf -D; sleep 1
+   stop; port_free; conf SMB3_11 default; smbd -s $D/smb.conf -D; port_up
    $RUN ./$1$EXE 127.0.0.1 share rsmbtest 'Sekret1!' RETRO 10 g >$D/out 2>&1 &
    idler=$!
    sleep 3

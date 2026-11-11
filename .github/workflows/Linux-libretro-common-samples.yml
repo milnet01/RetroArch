@@ -41,7 +41,7 @@ jobs:
         group: [codecs, formats, core]
     env:
       SAMPLE_GROUP: ${{ matrix.group }}
-      APT_PKGS: build-essential zlib1g-dev clang ffmpeg ccache
+      APT_PKGS: build-essential zlib1g-dev clang ffmpeg ccache curl
     timeout-minutes: 15
 
     steps:
@@ -114,6 +114,8 @@ jobs:
           # self-contained test and exits 0 on success / non-zero on
           # failure.  These are built AND executed.
           declare -a RUN_TARGETS=(
+            rwma_test
+            audio_transfer_wma_test
             flv_mux_test
             rtmp_chunk_test
             rtmp_handshake_test
@@ -123,8 +125,17 @@ jobs:
             rtmp_publish_test
             rtmp_control_test
             rtmp_session_test
+            rtmp_client_test
             rtmp_socket_test
+            rtmp_connect_test
+            rtmp_connect_select_test
+            rtmp_resolve_test
+            rtmp_resolve_native_test
             rslc_test
+            rslc_build_test
+            rslc_ext_test
+            rslc_ext_build_test
+            rslc_plane_test
             s16_to_float_test
             float_to_s16_test
             float_to_s32_test
@@ -138,9 +149,13 @@ jobs:
             xxhash_test
             rzstd_raw_block_test
             rzstd_raw_block_test_novec
+            rzstd_dict_test
             rbzip2_test
+            shiftjis_test
             rinflate_window_test
             rdeflate_hash_test
+            rdeflate_flush_test
+            encoding_adler32_test
             emscripten_mmap_test
             archive_zip_test
             archive_zstd_test
@@ -156,7 +171,19 @@ jobs:
             fill_pathname_test
             path_mkdir_test
             path_parent_dir_test
+            # path_remove_tree and path_copy_tree on a real tree, links
+            path_tree_test
             rpng
+            # a PNG a row at a time, as stored, from input in pieces
+            rpng_rows_test
+            # a GIF's first image, straight into the caller's rows
+            rgif_test
+            # YAML: configurations, block scalars, a patch file whose
+            # entries name anchored sequences by alias, node locations
+            ryaml_test
+            # what the YAML writer writes reads back the same, over
+            # tricky scalars and 3000 random documents
+            ryaml_writer_test
             rzip_chunk_size_test
             rzip_matches_buf_test
             rzip_codec_test
@@ -168,6 +195,34 @@ jobs:
             # rvorbis' codebook size bound, and a real stream past it.
             rvorbis_codebook_test
             rjpeg_test
+            # Baseline JPEG encoding, decoded back with rjpeg; a step
+            # below has FFmpeg decode what it writes.
+            rjpeg_encode_test
+            # MP4 writing, read back with rmp4; a step below has FFmpeg
+            # decode the files.
+            rmp4_mux_test
+            # MPEG-2 video through rmpeg1_video, on its own fixtures; the
+            # step below runs it again over FFmpeg's and the conformance
+            # streams.
+            rmpeg2_test
+            # MPEG-4 Part 2 video through rmpeg4_video, on its own
+            # fixtures, whole, a unit at a time and damaged; a step below
+            # runs it over FFmpeg's and Xvid's streams.
+            rmpeg4_test
+            # MPEG-4 Part 2 encoding, decoded back with rmpeg4_video; a
+            # step below has FFmpeg decode the streams.
+            rmpeg4_encode_test
+            # AAC-LC encoding, decoded back with raac; a step below has
+            # FFmpeg decode the streams.
+            raac_encode_test
+            # H.264 encoding, decoded back with rh264; a step below has
+            # FFmpeg decode the streams.
+            rh264_encode_test
+            # Tags in each container and ID3 version, and every prefix
+            # and corruption of each file read inside it.
+            rtags_test
+            # 4:2:0 to bytes in memory order and to UYVY.
+            image_yuv_test
             rh264_lossless_test
             rh264_lossless_test_nothreads
             rh264_lossless_test_volatile
@@ -177,10 +232,16 @@ jobs:
             rh264_state_test
             # rmp3's frame-at-a-time API against its pull API.
             rmp3_frame_test
+            # rmp3's gapless trimming against ffmpeg's, and its tag parser.
+            rmp3_gapless_test
             # raac_last_size over units followed by more.
             raac_size_test
             # raac's savestates: saved between units, loaded into a new decoder.
             raac_state_test
+            # raac's ADTS header parse and WAVE channel order.
+            raac_layout_test
+            # HE-AAC v2 parametric stereo, with reset and savestates.
+            raac_ps_test
             rh265_lossless_test
             rh265_lossless_test_nothreads
             rh265_lossless_test_volatile
@@ -194,6 +255,7 @@ jobs:
             r7z_stored_test
             r7z_methods_test
             r7z_stream_test
+            r7z_peek_threads_test
             rzip_archive_test
             # The RAR reader on real archives (LZ and PPMd blocks,
             # filters, Unicode names) and on mangled copies of them.
@@ -216,6 +278,9 @@ jobs:
             filestream_rbuf_fault_test
             vfs_rename_replace_test
             vfs_close_result_test
+            # A read-write stream on the descriptor path, as an emulated
+            # file system uses it: in-place writes, truncate, reopen.
+            vfs_descriptor_rw_test
             cdrom_cuesheet_overflow_test
             rdvd_h262_test
             rdvd_lpcm_test
@@ -233,10 +298,26 @@ jobs:
             chd_meta_overflow_test
             chd_stream_threads_test
             chd_stream_ahead_test
+            chd_map_alloc_test
             rvz_test
+            ciso_test
+            xdvdfs_test
+            wux_test
+            zar_test
             filestream_printf_test
             strlcpy_append_test
             http_parse_test
+            # UPnP gateway client: parsers, and SOAP against a fake gateway.
+            net_upnp_test
+            # net_http: a 3xx handed back unfollowed, a DELETE body's
+            # Content-Length, the caller's Accept-Encoding/User-Agent.
+            net_http_options_test
+            # socket_poll past FD_SETSIZE sockets.
+            socket_poll_test
+            # Half floats both ways, against F16C.
+            float16_test
+            # TrueType and CID-keyed CFF glyphs, metrics and kerning.
+            rtt_test
             rjson_test
             rm3u_test
             rmp4_fragment_test
@@ -348,6 +429,13 @@ jobs:
             # forces every tier on Linux, Windows and macOS runners.
             retro_procbarrier_test
             retro_asym_eventcount_test
+            # Two processes hand a counter back and forth 200000 times,
+            # each parked between turns: a lost wake hangs it, and its
+            # own watchdog reports that as a failure.
+            retro_shared_eventcount_test
+            # A writer updates a record two million times while three
+            # threads copy it: no copy torn, none going back.
+            retro_seqlock_test
             sthread_ex_test
             fast_cores_test
             memshm_test
@@ -391,6 +479,11 @@ jobs:
             # stereo stream (tones, gain points, swap and negate masks)
             # and a mono one, then bad frames and garbage.
             ratrac3p_test
+            # ATRAC9 against a reference decoder's output for generated
+            # streams in every channel layout, rate and superframe size,
+            # with reset and savestates; then its own unit checks.
+            ratrac9_vectors_test
+            ratrac9_test
             # Animation playback against a scripted stream: order,
             # pacing, loops, catch-up, the worker's two jobs.
             video_player_test
@@ -402,7 +495,9 @@ jobs:
             rvp9_config_test
             rvp9_reference_test
             rvp9_hw_session_test
+            rvp9_hw_segments_test
             rwebm_language_test
+            rwebm_lacing_test
             rwebm_hw_stream_test
             # The NGX and NVAPI loaders against a stand-in NGX core
             # library on LD_LIBRARY_PATH; the Windows discovery runs
@@ -590,6 +685,51 @@ jobs:
             exit 1
           fi
 
+      # fate-suite.ffmpeg.org times out or resets connections now and
+      # then; the two files never change (their sha256s are checked), so
+      # one good download is kept in the Actions cache.
+      - name: Restore the XMA2 reference fixture
+        if: matrix.group == 'formats'
+        id: xma2_fixture
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/xma2-fixture
+          key: xma2-multistream-tail-9f0a3fbee3f2-154755c1d14c
+
+      - name: Compare native XMA2 startup and multistream tail against reference PCM
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/wma
+        run: |
+          set -euo pipefail
+          fixture="$HOME/xma2-fixture"
+          mkdir -p "$fixture"
+          check() {
+            printf '%s  %s\n' \
+              9f0a3fbee3f2da4833b3e385905e1edebacf086c53a2e5eb358941e74fc67d80 "$fixture/input.xma" \
+              154755c1d14cddcc497ceef2996a98c3ee9c054735a8fe6d5c1d790cf93981cf "$fixture/input.pcm" \
+              | sha256sum --quiet -c - 2>/dev/null
+          }
+          if ! check; then
+            for suffix in xma pcm; do
+              curl --fail --location --retry 8 --retry-all-errors --retry-max-time 300 \
+                --connect-timeout 10 --max-time 45 \
+                "https://fate-suite.ffmpeg.org/xma2/xma2-multistream-tail.$suffix" \
+                -o "$fixture/input.$suffix"
+            done
+            check || { echo "XMA2 fixture does not match its sha256s"; exit 1; }
+          fi
+          make -j2 file-reference SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+            ./rwma_file_reference "$fixture/input.xma" "$fixture/input.pcm"
+
+      - name: Save the XMA2 reference fixture
+        if: matrix.group == 'formats' && steps.xma2_fixture.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/xma2-fixture
+          key: xma2-multistream-tail-9f0a3fbee3f2-154755c1d14c
+
       - name: Parse a generated DVD VOB with the native readers
         if: matrix.group == 'formats'
         shell: bash
@@ -632,6 +772,286 @@ jobs:
             -frames:v 3 -c:v mpeg1video -g 1 -bf 0 -q:v 3 -f mpeg1video -y "$fixture"
           ffmpeg -hide_banner -loglevel error -i "$fixture" -pix_fmt yuv420p -f rawvideo -y "$reference"
           ./rdvd_h262_test "$fixture" "$reference"
+
+      # The ISO/IEC 13818-4 streams never change (their md5s are checked):
+      # one good download is kept in the Actions cache
+      - name: Restore the MPEG-2 conformance streams
+        if: matrix.group == 'formats'
+        id: mpeg2_conformance
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/mpeg2-conformance
+          key: mpeg2-conformance-main-8-1
+
+      # MPEG-2 video against FFmpeg's decode, within 3 per sample (two
+      # IEEE 1180 inverse transforms): streams FFmpeg writes, progressive,
+      # interlaced (field DCT, field motion) and with Table B.15, alternate
+      # scan, the non-linear quantiser and 10-bit intra DC; and conformance
+      # streams with field pictures, dual prime, frame and field pictures
+      # mixed, slices starting mid-row
+      - name: Decode MPEG-2 video against FFmpeg and conformance streams
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/mpeg2
+        run: |
+          set -euo pipefail
+          make -j2 SANITIZER=address,undefined
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          src="-f lavfi -i testsrc2=size=352x288:rate=25,format=yuv420p -frames:v 24"
+          i=0
+          for opts in "-bf 2 -g 12 -q:v 4" "-bf 2 -g 12 -q:v 4 -flags +ildct+ilme -top 1" \
+                      "-bf 2 -g 12 -q:v 3 -qmax 28 -intra_vlc 1 -non_linear_quant 1 -alternate_scan 1 -dc 10"; do
+            i=$((i+1))
+            ffmpeg -hide_banner -loglevel error $src -c:v mpeg2video $opts -f mpeg2video -y "$work/g$i.m2v"
+            ffmpeg -hide_banner -loglevel error -i "$work/g$i.m2v" -fps_mode passthrough \
+              -pix_fmt yuv420p -f rawvideo -y "$work/g$i.yuv"
+            ./rmpeg2_test "$work/g$i.m2v" "$work/g$i.yuv"
+          done
+          conf="$HOME/mpeg2-conformance"
+          mkdir -p "$conf"
+          base=https://standards.iso.org/ittf/PubliclyAvailableStandards/ISO_IEC_13818-4_2004_Conformance_Testing/Video/bitstreams/main-profile
+          # A stream the server will not give is reported and left out
+          # rather than failing the job; the cache is saved only once every
+          # stream is in it, and kept from then on
+          missing=0
+          while read -r path md5; do
+            f="$conf/$(basename "$path")"
+            if ! { [ -f "$f" ] && echo "$md5  $f" | md5sum --quiet -c -; }; then
+              if ! curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+                     --retry-max-time 60 --connect-timeout 10 --max-time 60 "$base/$path" -o "$f" \
+                   || ! echo "$md5  $f" | md5sum --quiet -c -; then
+                echo "::warning title=MPEG-2 conformance::$path could not be fetched; left out"
+                rm -f "$f"
+                missing=1
+                continue
+              fi
+            fi
+            gunzip -c "$f" > "$work/c.m2v"
+            ffmpeg -nostdin -hide_banner -loglevel error -i "$work/c.m2v" -fps_mode passthrough \
+              -pix_fmt yuv420p -f rawvideo -y "$work/c.yuv"
+            ./rmpeg2_test "$work/c.m2v" "$work/c.yuv"
+          done <<'LIST'
+          tcela/tcela-8-fp-dp/tcela-8.bits.gz f0ef12c0e4f4a6cdb9ba42d000054c8b
+          hhi/hhi_burst_short/hhi_burst_short.bits.gz a68d3436d89ffc896393b18e8556a33c
+          nokia/nokia6/nokia6_dual.bit.gz 9890f21e949716f67469240d4e3105c0
+          toshiba/toshiba_DPall-0/toshiba_DPall-0.mpg.gz d92090842a0c2e37cf1cda7212868cc3
+          sony/sony-ct3/sony-ct3.bs.gz 31bb0abfaf802c754254b38b500d7685
+          tcela/tcela-6-slices/tcela-6.bits.gz 1247cf986205e7dfe4413bd223be8ee6
+          mei/mei.2conftest.4f/mei_2stream.4f.gz 505375e1f68fe527f52eb3604cc8edae
+          ti/TI_cl_2/TI_c1_2.bits.gz 3b25d76d4b517ec3ab493f2f3fb767c0
+          LIST
+          [ "$missing" = 0 ] && touch "$conf/complete" || rm -f "$conf/complete"
+
+      - name: Save the MPEG-2 conformance streams
+        if: matrix.group == 'formats' && steps.mpeg2_conformance.outputs.cache-hit != 'true' && hashFiles('~/mpeg2-conformance/complete') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ~/mpeg2-conformance
+          key: mpeg2-conformance-main-8-1
+
+      # MPEG-4 Part 2 video against FFmpeg's decode, within 3 per sample:
+      # streams FFmpeg's mpeg4 encoder writes (B-VOPs, quarter sample, four
+      # vectors, MPEG quantisation, interlaced field DCT and motion with
+      # alternate scan, AC prediction, resync markers, data partitioning, a
+      # size not a multiple of 16), Xvid's
+      # (GMC S-VOPs), and H.263 for the short video header, with and
+      # without GOB headers. FFmpeg decodes with one thread: its frame
+      # threads do not share the field vectors interlaced direct mode reads.
+      # What rjpeg_encode writes - 4:2:0 and 4:2:2, sizes in and out of
+      # whole MCUs, qualities 20 to 100 - must decode in FFmpeg with no
+      # error
+      - name: Decode rjpeg_encode's JPEGs with FFmpeg
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/jpeg_encode
+        run: |
+          set -euo pipefail
+          make -j2 SANITIZER=address,undefined
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          ./rjpeg_encode_test "$work"
+          n=0
+          for f in "$work"/*.jpg; do
+            ffmpeg -nostdin -hide_banner -loglevel error -xerror -i "$f" -f null -
+            n=$((n+1))
+          done
+          [ "$n" = 9 ]
+
+      # What rmp4_mux writes - MPEG-4 video with B-VOPs and 16-bit PCM,
+      # motion JPEG and float PCM - must decode in FFmpeg with no error,
+      # every frame there and the first shown at time zero
+      - name: Read rmp4_mux's files with FFmpeg
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/mp4_mux
+        run: |
+          set -euo pipefail
+          make -j2 SANITIZER=address,undefined
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          ./rmp4_mux_test "$work"
+          for f in mpeg4_pcm:8 mjpeg_f32:6; do
+            file="$work/${f%%:*}.mp4"
+            ffmpeg -nostdin -hide_banner -loglevel error -xerror -i "$file" -f null -
+            got=$(ffprobe -v error -count_frames -select_streams v \
+              -show_entries stream=nb_read_frames,start_time -of csv=p=0 "$file")
+            echo "$file: $got"
+            [ "$got" = "0.000000,${f##*:}" ]
+          done
+
+      - name: Decode MPEG-4 video against FFmpeg
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/mpeg4
+        run: |
+          set -euo pipefail
+          make -j2 SANITIZER=address,undefined
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          i=0
+          while IFS='|' read -r size fmt opts; do
+            i=$((i+1))
+            ffmpeg -nostdin -hide_banner -loglevel error \
+              -f lavfi -i "testsrc2=size=$size:rate=25,format=yuv420p" -frames:v 24 \
+              $opts -f "$fmt" -y "$work/s$i.bin"
+            ffmpeg -nostdin -hide_banner -loglevel error -threads 1 -flags +bitexact -idct simple \
+              -f "$fmt" -i "$work/s$i.bin" -fps_mode passthrough -pix_fmt yuv420p -f rawvideo -y "$work/s$i.yuv"
+            ./rmpeg4_test "$work/s$i.bin" "$work/s$i.yuv"
+          done <<'LIST'
+          352x288|m4v|-c:v mpeg4 -g 12 -bf 2 -q:v 4
+          352x288|m4v|-c:v mpeg4 -g 12 -bf 2 -q:v 4 -flags +qpel+mv4
+          352x288|m4v|-c:v mpeg4 -g 12 -bf 2 -q:v 4 -mpeg_quant 1
+          352x288|m4v|-c:v mpeg4 -g 12 -bf 2 -q:v 4 -flags +ildct+ilme
+          352x288|m4v|-c:v mpeg4 -g 12 -bf 2 -q:v 3 -mpeg_quant 1 -flags +ildct+ilme+qpel -alternate_scan 1
+          352x288|m4v|-c:v mpeg4 -g 12 -bf 2 -q:v 8 -flags +aic
+          352x288|m4v|-c:v mpeg4 -g 12 -bf 2 -q:v 4 -ps 400
+          352x288|m4v|-c:v mpeg4 -g 12 -bf 0 -q:v 6 -ps 300 -data_partitioning 1 -flags +mv4+aic
+          350x286|m4v|-c:v mpeg4 -g 12 -bf 2 -q:v 4 -flags +mv4+qpel
+          352x288|m4v|-c:v libxvid -g 8 -bf 0 -q:v 4 -gmc 1 -flags +qpel+mv4
+          352x288|m4v|-c:v libxvid -g 8 -bf 0 -q:v 4 -flags +ildct
+          176x144|h263|-c:v h263 -g 12 -q:v 5
+          352x288|h263|-c:v h263 -g 12 -q:v 5 -ps 300
+          LIST
+
+      # What rmpeg4_encode writes - whole macroblocks and not, fine and
+      # coarse quantisers, a bit rate - FFmpeg decodes within 3 per sample
+      # of rmpeg4_video, which decodes it exactly as the encoder
+      # reconstructed it (the sample checks that)
+      - name: Decode rmpeg4_encode's streams with FFmpeg
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats
+        run: |
+          set -euo pipefail
+          make -C mpeg4 -j2 SANITIZER=address,undefined
+          make -C mpeg4_encode -j2 SANITIZER=address,undefined
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          ./mpeg4_encode/rmpeg4_encode_test "$work"
+          n=0
+          for f in "$work"/*.m4v; do
+            ffmpeg -nostdin -hide_banner -loglevel error -xerror -threads 1 -flags +bitexact -idct simple \
+              -i "$f" -pix_fmt yuv420p -f rawvideo -y "${f%.m4v}.yuv"
+            ./mpeg4/rmpeg4_test "$f" "${f%.m4v}.yuv"
+            n=$((n+1))
+          done
+          [ "$n" = 5 ]
+
+      # What raac_encode writes - tones, noise, an attack, mono and
+      # stereo, 8 to 96 kHz - FFmpeg decodes within 2 per sample of raac
+      # (the sample checks raac's decoding against the input)
+      - name: Decode raac_encode's streams with FFmpeg
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/aac_encode
+        run: |
+          set -euo pipefail
+          make -j2 SANITIZER=address,undefined
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          ./raac_encode_test "$work"
+          n=0
+          for f in "$work"/*.aac; do
+            ffmpeg -nostdin -hide_banner -loglevel error -xerror -i "$f" \
+              -f s16le -y "${f%.aac}.ff.s16"
+            ./raac_encode_test --compare "${f%.aac}.s16" "${f%.aac}.ff.s16"
+            n=$((n+1))
+          done
+          [ "$n" = 9 ]
+
+      # What rh264_encode writes - whole macroblocks and cropped, fine
+      # and coarse quantisers, a bit rate - FFmpeg decodes to exactly the
+      # encoder's reconstruction, as rh264 does (the sample checks that)
+      - name: Decode rh264_encode's streams with FFmpeg
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/h264_encode
+        run: |
+          set -euo pipefail
+          make -j2 SANITIZER=address,undefined
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          ./rh264_encode_test "$work"
+          n=0
+          for f in "$work"/*.264; do
+            ffmpeg -nostdin -hide_banner -loglevel error -xerror -i "$f" \
+              -f rawvideo -pix_fmt yuv420p -y "${f%.264}.ff.yuv"
+            cmp "${f%.264}.yuv" "${f%.264}.ff.yuv"
+            n=$((n+1))
+          done
+          [ "$n" = 5 ]
+
+      # What FFmpeg writes as tags - ID3v2.3 and 2.4, ID3v1 alone, FLAC,
+      # Vorbis and Opus in Ogg, MP4, ASF, WAVE - rtags reads as ffprobe
+      # does, non-ASCII text, numbered genres and full dates in
+      - name: Read FFmpeg's tags with rtags
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/tags
+        run: |
+          set -euo pipefail
+          make -j2 SANITIZER=address,undefined
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          tags=(-metadata 'title=Tïtle ☃' -metadata 'artist=Ärtist'
+                -metadata 'album=Albüm' -metadata genre=Rock -metadata track=3/12
+                -metadata disc=1/2 -metadata date=2004)
+          enc() { ffmpeg -nostdin -hide_banner -loglevel error -f lavfi -i sine=d=0.2 "$@"; }
+          enc "${tags[@]}" -id3v2_version 3 -y "$work/v23.mp3"
+          enc "${tags[@]}" -id3v2_version 4 -y "$work/v24.mp3"
+          enc -id3v2_version 3 -metadata genre=17 -metadata date=2004-05-01 \
+            -metadata 'title=a long title with a snowman, ☃' -y "$work/genre.mp3"
+          enc "${tags[@]}" -write_id3v1 1 -y "$work/both.mp3"
+          # ID3v1 alone: the ID3v2 tag in front cut off
+          python3 -c 'import sys
+          d = open(sys.argv[1], "rb").read()
+          s = (d[6] & 127) << 21 | (d[7] & 127) << 14 | (d[8] & 127) << 7 | (d[9] & 127)
+          open(sys.argv[2], "wb").write(d[10 + s:])' "$work/both.mp3" "$work/v1.mp3"
+          rm "$work/both.mp3"
+          enc "${tags[@]}" -y "$work/a.flac"
+          enc "${tags[@]}" -c:a libvorbis -y "$work/a.ogg"
+          enc "${tags[@]}" -c:a libopus -y "$work/a.opus"
+          enc "${tags[@]}" -y "$work/a.m4a"
+          enc -metadata genre=17 -metadata date=2004-05-01 -y "$work/b.m4a"
+          enc "${tags[@]}" -y "$work/a.wma"
+          enc "${tags[@]}" -y "$work/a.wav"
+          n=0
+          for f in "$work"/*.*; do
+            ffprobe -v error -show_entries format_tags:stream_tags \
+              -of default=nw=1 "$f" > "$f.tags"
+            ./rtags_test --ffprobe "$f" "$f.tags"
+            n=$((n+1))
+          done
+          [ "$n" = 11 ]
+
+      - name: Frontend H.264 decode interface, v1 to v4, plain and under ASan/UBSan
+        if: matrix.group == 'codecs'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/test_video_decode_interface.py
+          python3 tools/test_video_decode_interface.py --sanitize
 
       - name: Compile-test retro_atomic.h from a C++11 TU
         if: matrix.group == 'core'
@@ -769,6 +1189,20 @@ jobs:
           CC=clang make -j$(nproc) all SANITIZER=thread
 
           TSAN_OPTIONS=halt_on_error=1 ./retro_atomic_test
+
+      - name: Run r7z_peek_threads_test under Clang + ThreadSanitizer
+        if: matrix.group == 'core'
+        shell: bash
+        working-directory: libretro-common/samples/formats/r7z
+        run: |
+          # A folder peeked at while another thread decodes it, through
+          # its being held: never torn, never the other folder's.
+          set -u
+          set -o pipefail
+
+          make clean
+          CC=clang make -j$(nproc) r7z_peek_threads_test SANITIZER=thread
+          TSAN_OPTIONS=halt_on_error=1 ./r7z_peek_threads_test
 
       - name: Run video_player_test under Clang + ThreadSanitizer, and threadless
         if: matrix.group == 'core'
@@ -928,6 +1362,21 @@ jobs:
 
           make clean
           CC=clang make check SANITIZER=thread
+
+      - name: WMA checkpoint validation under fast-math
+        if: matrix.group == 'formats'
+        shell: bash
+        working-directory: libretro-common/samples/formats/wma
+        run: |
+          set -eu
+          make -j2 test TARGET=rwma_fast_math_test CFLAGS='-O2 -ffast-math'
+
+      - name: WMA codec disabled
+        if: matrix.group == 'formats'
+        working-directory: libretro-common/samples/formats/audio_transfer_wma
+        run: |
+          make -j2 WMA=0 SAMPLE_OBJDIR=obj-disabled TARGET=audio_transfer_wma_disabled_test SANITIZER=address,undefined
+          ./audio_transfer_wma_disabled_test
 
       - name: Run rzip_parallel_test under Clang + ThreadSanitizer
         if: matrix.group == 'core'
@@ -1128,7 +1577,7 @@ jobs:
   # at the hardware level even when the macros emit no barriers at all.
   #
   # This job cross-compiles retro_atomic_test for AArch64 and ARMv7 and
-  # runs the binary under qemu-user-static.  qemu-user emulates the
+  # runs the binary under qemu-user.  qemu-user emulates the
   # weak memory model faithfully enough to expose missing-barrier bugs
   # in the SPSC stress test, and is cheap enough to run on every push.
   #
@@ -1321,6 +1770,47 @@ jobs:
           done
           [[ $fails -eq 0 ]]
 
+      - name: Release eventcount thread caches under Wine
+        shell: bash
+        working-directory: libretro-common/samples/rthreads/retro_eventcount_test
+        env:
+          WINEDEBUG: -all
+        run: |
+          set -eu
+          . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
+          x86_64-w64-mingw32-gcc -std=c89 -O2 -DHAVE_THREADS -DHAVE_THREAD_STORAGE \
+            -I../../../include thread_cleanup_test.c ../../../rthreads/rthreads.c \
+            -lwinmm -o thread_cleanup_test.exe
+          timeout 30 wine ./thread_cleanup_test.exe
+
+      - name: rtt under Wine
+        shell: bash
+        working-directory: libretro-common/samples/gfx/font
+        env:
+          WINEDEBUG: -all
+        run: |
+          set -eu
+          . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
+          make clean
+          make CC=x86_64-w64-mingw32-gcc all
+          timeout 60 wine ./rtt_test.exe
+          make clean
+
+      - name: socket_poll past FD_SETSIZE under Wine
+        shell: bash
+        working-directory: libretro-common/samples/net/socket_poll
+        env:
+          WINEDEBUG: -all
+        run: |
+          set -eu
+          . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
+          # select() takes 64 sockets a set; past that the sets are sized
+          # for the call.
+          make clean
+          make CC=x86_64-w64-mingw32-gcc all
+          timeout 60 wine ./socket_poll_test.exe
+          make clean
+
       - name: Build and run the NVIDIA loaders under Wine
         shell: bash
         working-directory: libretro-common/samples/gfx/nvidia
@@ -1350,6 +1840,20 @@ jobs:
             t=$(sed -nE 's/^TARGET[[:space:]]*:?=[[:space:]]*//p' "$d/Makefile")
             ( cd "$d" && make clean && make CC=x86_64-w64-mingw32-gcc all && timeout 120 wine "./$t.exe" && make clean )
           done
+
+      - name: Build and run shader compiler samples under Wine
+        shell: bash
+        working-directory: libretro-common/samples/gfx
+        env:
+          WINEDEBUG: -all
+        run: |
+          set -eu
+          . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
+          for d in rslc rslc_build rslc_ext; do
+            ( cd "$d" && make clean && make CC=x86_64-w64-mingw32-gcc all && timeout 120 wine "./${d}_test.exe" && make clean )
+          done
+          ( cd rslc_ext && make CC=x86_64-w64-mingw32-gcc rslc_plane_test && timeout 120 wine ./rslc_plane_test.exe && make clean )
+          ( cd rslc_ext && make CC=x86_64-w64-mingw32-gcc rslc_ext_build_test && timeout 120 wine ./rslc_ext_build_test.exe && make clean )
 
       - name: Build and run the mapped read-ahead test under Wine
         shell: bash
@@ -1395,7 +1899,7 @@ jobs:
     name: Cross-arch retro_atomic_test (${{ matrix.arch }})
     runs-on: ubuntu-latest
     env:
-      APT_PKGS: build-essential ${{ matrix.apt_pkgs }} qemu-user-static ccache
+      APT_PKGS: build-essential ${{ matrix.apt_pkgs }} qemu-user ccache
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -1404,12 +1908,12 @@ jobs:
           - arch: aarch64
             cc: aarch64-linux-gnu-gcc
             apt_pkgs: gcc-aarch64-linux-gnu
-            qemu: qemu-aarch64-static
+            qemu: qemu-aarch64
             sysroot: /usr/aarch64-linux-gnu
           - arch: armv7
             cc: arm-linux-gnueabihf-gcc
             apt_pkgs: gcc-arm-linux-gnueabihf
-            qemu: qemu-arm-static
+            qemu: qemu-arm
             sysroot: /usr/arm-linux-gnueabihf
 
     steps:
@@ -1543,7 +2047,7 @@ jobs:
     name: Cross-arch crc32_test (${{ matrix.name }})
     runs-on: ubuntu-latest
     env:
-      APT_PKGS: build-essential ${{ matrix.apt_pkgs }} qemu-user-static ccache
+      APT_PKGS: build-essential ${{ matrix.apt_pkgs }} qemu-user ccache
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -1553,25 +2057,25 @@ jobs:
             cc: aarch64-linux-gnu-gcc
             cflags: ""
             apt_pkgs: gcc-aarch64-linux-gnu
-            qemu: qemu-aarch64-static
+            qemu: qemu-aarch64
             sysroot: /usr/aarch64-linux-gnu
           - name: aarch64+crc
             cc: aarch64-linux-gnu-gcc
             cflags: "-march=armv8-a+crc"
             apt_pkgs: gcc-aarch64-linux-gnu
-            qemu: qemu-aarch64-static
+            qemu: qemu-aarch64
             sysroot: /usr/aarch64-linux-gnu
           - name: armv7
             cc: arm-linux-gnueabihf-gcc
             cflags: ""
             apt_pkgs: gcc-arm-linux-gnueabihf
-            qemu: qemu-arm-static
+            qemu: qemu-arm
             sysroot: /usr/arm-linux-gnueabihf
           - name: powerpc-big-endian
             cc: powerpc-linux-gnu-gcc
             cflags: ""
             apt_pkgs: gcc-powerpc-linux-gnu
-            qemu: qemu-ppc-static
+            qemu: qemu-ppc
             sysroot: /usr/powerpc-linux-gnu
 
     steps:

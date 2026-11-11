@@ -7,6 +7,10 @@ on:
     paths:
       - 'record/**'
       - 'libretro-common/net/net_rtmp*'
+      - 'libretro-common/net/net_socket.c'
+      - 'libretro-common/net/net_resolve.c'
+      - 'libretro-common/include/net/net_resolve.h'
+      - 'libretro-common/include/net/net_socket.h'
       - 'libretro-common/include/net/net_rtmp*'
       - 'libretro-common/formats/flv/**'
       - 'libretro-common/include/formats/rflv_mux.h'
@@ -24,6 +28,10 @@ on:
     paths:
       - 'record/**'
       - 'libretro-common/net/net_rtmp*'
+      - 'libretro-common/net/net_socket.c'
+      - 'libretro-common/net/net_resolve.c'
+      - 'libretro-common/include/net/net_resolve.h'
+      - 'libretro-common/include/net/net_socket.h'
       - 'libretro-common/include/net/net_rtmp*'
       - 'libretro-common/formats/flv/**'
       - 'libretro-common/include/formats/rflv_mux.h'
@@ -52,7 +60,7 @@ jobs:
     name: Build and run samples/record
     runs-on: ubuntu-latest
     env:
-      APT_PKGS: mingw-w64 wine build-essential pkg-config ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev ccache
+      APT_PKGS: mingw-w64 wine build-essential pkg-config ffmpeg openssl python3 libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev ccache
     timeout-minutes: 25
 
     steps:
@@ -141,6 +149,8 @@ jobs:
           make clean && make check CC=x86_64-w64-mingw32-gcc EXE=.exe RUNNER=wine
           make clean
 
+
+
       - name: Native MP4 mux (ASan + UBSan, mingw-w64)
         shell: bash
         working-directory: samples/record/mp4_mux
@@ -161,14 +171,55 @@ jobs:
           make clean && make check stream-check CC=x86_64-w64-mingw32-gcc EXE=.exe RUNNER=wine
           make clean
 
-      - name: RTMP protocol and sockets (ASan + UBSan, mingw-w64)
+      - name: Media Foundation AAC portable and cross builds
+        shell: bash
+        working-directory: samples/record/mf_audio
+        run: |
+          set -eu
+          make clean all SANITIZER=address,undefined
+          make clean all CC=x86_64-w64-mingw32-gcc EXE=.exe
+          x86_64-w64-mingw32-objdump -p encode_test.exe > imports.txt
+          if grep -Ei 'DLL Name:.*(mfplat|mfaacenc|ole32)\.dll' imports.txt; then
+            echo 'Native AAC must load optional entry points at runtime'
+            exit 1
+          fi
+          make clean
+
+      - name: RTMP protocol and sockets (ASan + UBSan, TSan, mingw-w64)
         shell: bash
         working-directory: libretro-common/samples/net/rtmp
         run: |
           set -eu
           . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
           make clean && make check peer-check SANITIZER=address,undefined
+          make rtmps_socket_native_test SANITIZER=address,undefined
+          python3 media_peer.py --mux --tls 1.2 ./rtmps_socket_native_test
+          python3 media_peer.py --mux --tls 1.3 ./rtmps_socket_native_test
+          make rtmps_client_native_test SANITIZER=address,undefined
+          python3 media_peer.py --caps --mux --tls 1.2 ./rtmps_client_native_test
+          python3 media_peer.py --caps --mux --tls 1.3 ./rtmps_client_native_test
+          python3 media_peer.py --codec av1 --caps --mux --tls 1.2 ./rtmps_client_native_test
+          python3 media_peer.py --codec av1 --caps --mux --tls 1.3 ./rtmps_client_native_test
+          make clean && make rtmp_resolve_native_test SANITIZER=thread
+          TSAN_OPTIONS=halt_on_error=1 timeout 30 ./rtmp_resolve_native_test
           make clean && make check peer-check CC=x86_64-w64-mingw32-gcc EXE=.exe RUNNER=wine
+          make rtmps_socket_native_test.exe CC=x86_64-w64-mingw32-gcc EXE=.exe
+          python3 media_peer.py --runner wine --mux --tls 1.2 ./rtmps_socket_native_test.exe
+          python3 media_peer.py --runner wine --mux --tls 1.3 ./rtmps_socket_native_test.exe
+          make rtmps_client_native_test.exe CC=x86_64-w64-mingw32-gcc EXE=.exe
+          python3 media_peer.py --runner wine --caps --mux --tls 1.2 ./rtmps_client_native_test.exe
+          python3 media_peer.py --runner wine --caps --mux --tls 1.3 ./rtmps_client_native_test.exe
+          python3 media_peer.py --runner wine --codec av1 --caps --mux --tls 1.2 ./rtmps_client_native_test.exe
+          python3 media_peer.py --runner wine --codec av1 --caps --mux --tls 1.3 ./rtmps_client_native_test.exe
+          make clean
+
+      - name: Native encoder stream ownership contracts
+        working-directory: samples/record/rtmp_stream
+        run: |
+          set -eu
+          . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
+          make clean check SANITIZER=address,undefined
+          make clean check CC=x86_64-w64-mingw32-gcc EXE=.exe RUNNER=wine
           make clean
 
       - name: GPU PCM output pipeline (ASan + UBSan, TSan, mingw-w64)
@@ -177,9 +228,10 @@ jobs:
           set -eu
           . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
           make clean && make -j$(nproc) check SANITIZER=address,undefined
-          make clean && make thread_test session_test SANITIZER=thread
+          make clean && make thread_test session_test vulkan_thread_test SANITIZER=thread
           TSAN_OPTIONS=halt_on_error=1 timeout 120 ./thread_test
           TSAN_OPTIONS=halt_on_error=1 timeout 120 ./session_test
+          TSAN_OPTIONS=halt_on_error=1 timeout 120 ./vulkan_thread_test
           make clean && make -j$(nproc) check CC=x86_64-w64-mingw32-gcc EXE=.exe RUNNER=wine
           make clean
 
@@ -240,3 +292,61 @@ jobs:
         with:
           path: ~/.ccache
           key: ccache-${{ github.workflow }}-${{ github.job }}-${{ github.sha }}
+
+  mf-audio-native:
+    name: Native Windows AAC packets and source clock
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Ensure the server media component is installed
+        shell: pwsh
+        run: |
+          if ((Get-CimInstance Win32_OperatingSystem).ProductType -ne 1) {
+            $feature = Get-WindowsFeature Server-Media-Foundation -ErrorAction Stop
+            if (-not $feature.Installed) {
+              $result = Install-WindowsFeature Server-Media-Foundation -ErrorAction Stop
+              if (-not $result.Success) { throw 'Media Foundation installation failed' }
+            }
+          }
+
+      - name: Native compiler and independent decoder
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: make mingw-w64-x86_64-gcc mingw-w64-x86_64-python mingw-w64-x86_64-ffmpeg
+
+      - name: Encode and independently decode native AAC
+        shell: msys2 {0}
+        working-directory: samples/record/mf_audio
+        run: |
+          set -eu
+          make clean native-check CC=gcc EXE=.exe
+          objdump -p encode_test.exe > imports.txt
+          if grep -Ei 'DLL Name:.*(mfplat|mfaacenc|ole32)\.dll' imports.txt; then
+            echo 'Native AAC must load optional entry points at runtime'
+            exit 1
+          fi
+          make clean
+
+      - name: Native streaming worker readiness and cancellation
+        shell: msys2 {0}
+        working-directory: samples/record/gpu_dispatch
+        run: |
+          set -eu
+          make clean
+          make stream_dispatch_test.exe CC=gcc EXE=.exe
+          ./stream_dispatch_test.exe
+          make clean
+
+      - name: Native FLV source color metadata interoperability
+        shell: msys2 {0}
+        working-directory: libretro-common/samples/formats/flv
+        run: |
+          set -eu
+          make clean
+          make check stream-check CC=gcc EXE=.exe COLOR_METADATA_ORACLE=1
+          make clean

@@ -1636,6 +1636,7 @@ static const struct
    char s_fa6d4901[27];
    char s_4e2d78a1[20];
    char s_7ea8ec8f[27];
+   char s_0cb936fe[29];
    char s_e1606ab3[30];
    char s_7772fc51[31];
    char s_29889f9f[15];
@@ -2452,7 +2453,6 @@ static const struct
    char s_4b582a0c[38];
    char s_61213f1d[14];
    char s_95e4b29f[61];
-   char s_1ee69db0[19];
    char s_0cfd4fd0[11];
    char s_d64659c4[9];
    char s_0861dea4[18];
@@ -2483,6 +2483,8 @@ static const struct
    char s_bacb5991[20];
    char s_740ed6e5[21];
    char s_c7ab7873[31];
+   char s_d65a7d95[6];
+   char s_d6611158[5];
    char s_83ecb279[17];
    char s_317b17ed[9];
    char s_94c8d15f[9];
@@ -2616,6 +2618,7 @@ static const struct
    char s_9e5c39c0[17];
    char s_6fbfde48[35];
    char s_482ee1f1[11];
+   char s_3794746e[31];
    char s_214b7699[9];
    char s_3e628390[10];
    char s_574badd6[34];
@@ -2637,6 +2640,8 @@ static const struct
    char s_8f379310[22];
    char s_6a9b757c[15];
    char s_6c52dfb1[34];
+   char s_9e5596c6[35];
+   char s_b9bc0c48[24];
 #if defined (WIIU)
 #ifdef WIIU
    char s_afb881f7[54];
@@ -3538,9 +3543,9 @@ static const struct
 #ifdef HAVE_NFSCLIENT
    char s_0dc9bb2c[57];
    char s_1536325c[300];
-   char s_ad621411[64];
+   char s_ad621411[114];
    char s_f6ec26c1[40];
-   char s_4f7fb41f[62];
+   char s_4f7fb41f[119];
    char s_70f70009[466];
    char s_3487ce71[33];
 #endif
@@ -3636,6 +3641,7 @@ static const struct
    char s_abf90aae[138];
    char s_b48e1eda[92];
    char s_4113227d[49];
+   char s_1e07c6ac[102];
    char s_0a1cf5a1[169];
    char s_64e37a7f[75];
    char s_cac7ba4d[68];
@@ -4071,7 +4077,6 @@ static const struct
    char s_34400c79[85];
    char s_34400c7a[86];
    char s_4a09218b[37];
-   char s_dea334de[251];
    char s_cacc1492[107];
    char s_9382c86e[306];
    char s_774bb68a[275];
@@ -4080,7 +4085,6 @@ static const struct
    char s_3e7750f7_0[500];
    char s_3e7750f7_1[29];
    char s_c0c6924e[267];
-   char s_c83fcc7e[304];
    char s_d0c5c252[230];
    char s_ac07820e[302];
    char s_2fe7ca1a[298];
@@ -4113,7 +4117,6 @@ static const struct
    char s_dc6f9d69[89];
    char s_417085f4[53];
    char s_1bcf70a7[189];
-   char s_fbed99aa[208];
    char s_2e2ca41a[396];
    char s_f48b1fac[54];
    char s_f4ad1b37[104];
@@ -4189,6 +4192,9 @@ static const struct
    char s_9506fc7d[87];
    char s_9506fc7e[79];
    char s_47ae341f[104];
+   char s_5e122df4[266];
+   char s_cc84c32d[47];
+   char s_fa09f4f6[55];
    char s_48696c85[76];
 #if defined (WIIU)
 #ifdef WIIU
@@ -4198,7 +4204,6 @@ static const struct
    char s_3c13e61f[99];
    char s_d96182c1[36];
    char s_d740017d[76];
-   char s_675acf1d[57];
    char s_93bbb839[125];
    char s_4d0b4ce0[126];
    char s_f99a7d5e[242];
@@ -4341,6 +4346,7 @@ static const struct
    char s_f0b48289[54];
    char s_19b9a241[23];
    char s_92998c8d[29];
+   char s_7541bcd3[78];
    char s_ca731381[14];
    char s_6b6a247d[49];
    char s_6704b41f[37];
@@ -4518,7 +4524,6 @@ static const struct
    char s_b969706a[248];
    char s_a3f6ebc3[16];
    char s_98adf951[68];
-   char s_11b4cc97[26];
    char s_d3e49974[45];
    char s_a8fa00e0[64];
    char s_4c1e527b[92];
@@ -4594,6 +4599,7 @@ static const struct
    char s_f279fcb2[54];
    char s_8b487430[39];
 #endif
+   char s_4e346408[32];
    char s_a602dd84[41];
    char s_aa7139c6[61];
    char s_4ae9f9f9[77];
@@ -4696,6 +4702,7 @@ static const struct
    char s_bd039188[26];
    char s_9c7aa654[23];
    char s_e43d27b3[28];
+   char s_3d24ce62[66];
    char s_fbd2d537[79];
    char s_bd8967e3[74];
    char s_58cc2bb3[50];
@@ -4791,6 +4798,12 @@ static const struct
    char s_bdc78c0d[31];
    char s_850e7bf8[25];
    char s_710d99e5[30];
+   char s_ad0b447c[41];
+   char s_18bc6492[44];
+   char s_607ae60d[29];
+   char s_dee6b223[37];
+   char s_ff0097ff[52];
+   char s_a9177805[63];
    char s_efceecfb[23];
    char s_60038fe5[21];
    char s_91ec0bdf[47];
@@ -4850,6 +4863,13 @@ static const struct
    char s_4f3bb585[53];
    char s_5876788a[63];
    char s_b7248c5d[61];
+   char s_a3e7b13a[143];
+   char s_966a8865[104];
+   char s_69e2b087[96];
+   char s_098459c5[58];
+   char s_35e09a43[40];
+   char s_a27fec29[109];
+   char s_7182190e[118];
    char s_a7ae1b42[22];
 #ifdef HAVE_LAKKA
    char s_ebacf443[23];
@@ -6715,6 +6735,7 @@ static const struct
    "()-Informationen entfernen",
    "() und [] entfernen",
    "Wiedergabelisten verwalten",
+   "Alle Playlists aktualisieren",
    "Wiedergabeliste aktualisieren",
    "Core-Zuordnungen zur\303\274cksetzen",
    "Sortiermethode",
@@ -7541,7 +7562,6 @@ static const struct
    "Benachrichtigungs-Position (vertikal)",
    "Monitor-Index",
    "Vollbild \303\274ber Notch auf Android und iOS-Ger\303\244ten aktivieren",
-   "Headset-Controller",
    "Kombiniert",
    "Getrennt",
    "Bildschirmabstand",
@@ -7572,6 +7592,8 @@ static const struct
    "Verz\303\266gertes Folgen",
    "Vorgabe des Headsets",
    "Bildwiederholrate des Headsets",
+   "Beide",
+   "Nein",
    "Bildschirmbreite",
    "180 Grad",
    "270 Grad",
@@ -7705,6 +7727,7 @@ static const struct
    "Voreinstellung O",
    "Qualit\303\244t des temporalen Upscalers",
    "Ausgewogen",
+   "Nativ (DLAA, nur Antialiasing)",
    "Leistung",
    "Qualit\303\244t",
    "Sch\303\244rfe des temporalen Upscalers",
@@ -7726,6 +7749,8 @@ static const struct
    "Y-Position des Bildes",
    "VI-Bildgr\303\266\303\237e",
    "Vertikale Synchronisation (VSync)",
+   "Benutzerdefinierter Vulkan-Treiber",
+   "System (Sicherer Start)",
 #if defined (WIIU)
 #ifdef WIIU
    "F\303\274r Wii U GamePad optimieren (Neustart erforderlich)",
@@ -9225,9 +9250,11 @@ static const struct
    "funktioniert auch f\303\274r NFS Version 4, wo der Server es m\303\266glicherweise unter einem k"
    "\303\274rzeren Namen bereitstellt. Das Feld leer lassen, um den Export in der Adresse als nfs://"
    "server/export/path anzugeben.",
-   "Port des MOUNT-Dienstes. 0 fragt den Portmapper des Servers ab.",
+   "Port des MOUNT-Dienstes. 0 fragt den Portmapper des Servers ab. Bei Version 4 wird dieser Dienst"
+   " nicht verwendet.",
    "Zum Server offengehaltene Verbindungen.",
-   "Port des NFS-Dienstes. 0 fragt den Portmapper des Servers ab.",
+   "Port des NFS-Dienstes. 0 fragt den Portmapper des Servers bei Version 3 ab und entspricht bei Ve"
+   "rsion 4 dem Port 2049.",
    "Daten werden vorab abgerufen, wenn ein Spiel eine Datei in kleinen Abschnitten liest, wobei ein "
    "Hintergrundthread daf\303\274r sorgt, dass das n\303\244chste Fenster angezeigt wird. Dies kann "
    "gro\303\237e Disc-Images \303\274ber eine langsame Verbindung fl\303\274ssiger wiedergeben; es e"
@@ -9382,6 +9409,8 @@ static const struct
    "et werden soll, dem kein Core zugeordnet wurde.",
    "Die Art und Weise, wie die Inhaltsbezeichnungen in dieser Wiedergabeliste angezeigt werden.",
    "Wartungsarbeiten an Wiedergabelisten ausf\303\274hren.",
+   "Alle Playlists, f\303\274r die Scaneinstellungen gespeichert sind, mit diesen Einstellungen erne"
+   "ut scannen.",
    "Neue Inhalte hinzuf\303\274gen und ung\303\274ltige Eintr\303\244ge entfernen, indem der zuletzt"
    " zum Erstellen oder Bearbeiten der Wiedergabeliste verwendete Inhaltsscan wiederholt wird.",
    "Vorhandene Core-Zuordnungen f\303\274r alle Wiedergabelisteneintr\303\244ge entfernen.",
@@ -10094,10 +10123,6 @@ static const struct
    "Eine eigene Y-Achsenposition f\303\274r Bildschirmmeldungen w\303\244hlen. 0 ist der untere Rand"
    ".",
    "Den Wiedergabebildschirm ausw\303\244hlen.",
-   "Legt fest, wie die Headset-Controller verwendet werden. Im Modus \342\200\236Kombiniert\342\200"
-   "\234 bilden beide Controller zusammen ein Gamepad f\303\274r Spieler 1. Im Modus \342\200\236Get"
-   "rennt\342\200\234 wird der linke Controller Spieler 1 und der rechte Controller Spieler 2 zugewi"
-   "esen.",
    "Legt fest, in welcher Entfernung vor dem aktuellen Blickpunkt die Bildschirme im Headset angezei"
    "gt werden.",
    "Legt den Abstand zwischen Bildschirmen fest, die Kante an Kante, nebeneinander, an einer Ecke od"
@@ -10127,10 +10152,6 @@ static const struct
    "Inhalte zus\303\244tzlich in einem OpenXR-Headset anzeigen: Jeder Bildschirm wird als eigener sc"
    "hwebender Bildschirm dargestellt, mit stereoskopischem 3D f\303\274r beide Augen und dem Men\303"
    "\274 davor. Vulkan oder unter Linux OpenGL. Das Fenster zeigt weiterhin die normale Ausgabe.",
-   "Legt fest, auf welchen Bildschirmen der Trigger eines Controllers als Zeiger und Touch-Eingabe f"
-   "ungiert, statt L2 oder R2 zu bet\303\244tigen. Automatisch: im ge\303\266ffneten Men\303\274 und"
-   " auf Zweitbildschirmen wie einem Touchscreen. Immer: auf allen Bildschirmen, etwa f\303\274r Lic"
-   "htpistolen. Aus: auf keinem Bildschirm.",
    "Eine d\303\274nne Linie von jedem Controller bis zum Zielpunkt seines Lasers. Nur im Bearbeitung"
    "smodus: W\303\244hrend des Verschiebens der Bildschirme mit \342\200\236Bildschirme bearbeiten"
    "\342\200\234. Immer: Auch f\303\274r das Men\303\274 und die Lightguns. Aus: nie.",
@@ -10211,9 +10232,6 @@ static const struct
    "\342\200\236Verbunden\342\200\234 zeigt diesen Bildschirm zusammen mit den anderen an. \342\200"
    "\236Getrennt\342\200\234 zeigt ihn in einem eigenen Fenster oder auf einem eigenen Display an. "
    "\342\200\236Ausgeblendet\342\200\234 l\303\244sst ihn weg.",
-   "Legt fest, wo dieser Bildschirm angezeigt wird, wenn er getrennt ist. \342\200\236Automatisch"
-   "\342\200\234 w\303\244hlt ein zweites Display. Auf dem Display, auf dem RetroArch ausgef\303\274"
-   "hrt wird, bleibt der Bildschirm \342\200\236verbunden\342\200\234.",
    "Schlie\303\237t das Men\303\274 und verschiebt die Bildschirme und das Men\303\274 des Headsets "
    "mithilfe der Controller: Mit der Grifftaste werden Objekte gegriffen, mit dem Trigger geneigt un"
    "d mit dem Stick Abstand und Gr\303\266\303\237e ver\303\244ndert. Der Stick der freien Hand dreh"
@@ -10388,6 +10406,12 @@ static const struct
    "Angepasster Viewport-Offset zur Definition der Y-Achsenposition des Viewports.",
    "Die Video-Ausgabe der Grafikkarte mit der Bildwiederholrate des Bildschirms synchronisieren. Emp"
    "fohlen.",
+   "Ein Vulkan-Treiberpaket (.zip) anstelle des Systemtreibers verwenden. Der Treiber wird innerhalb"
+   " von RetroArch ausgef\303\274hrt. Daher nur Pakete aus vertrauensw\303\274rdigen Quellen verwend"
+   "en. Die \303\204nderung wird beim n\303\244chsten Start von Vulkan wirksam. Start: Systemtreiber"
+   ".",
+   "Absturz beim letzten Start, daher \342\200\236System\342\200\234",
+   "%s wird beim n\303\244chsten normalen Start wieder verwendet",
    "CPU und GPU fest synchronisieren. Reduziert Latenz auf Kosten der Leistung.",
 #if defined (WIIU)
 #ifdef WIIU
@@ -10399,7 +10423,6 @@ static const struct
    "n.",
    "Fenstermodus-Einstellungen \303\244ndern.",
    "Sekund\303\244rbildschirmen die Verwendung separater Desktopfenster erm\303\266glichen.",
-   "Sekund\303\244rbildschirme auf einem anderen Display anzeigen.",
    "Die maximale H\303\266he des Anzeigefensters bei der automatischen Gr\303\266\303\237enanpassung"
    " auf Basis der 'Fenster-Skalierung' festlegen.",
    "Die maximale Breite des Anzeigefensters bei der automatischen Gr\303\266\303\237enanpassung auf "
@@ -10579,6 +10602,7 @@ static const struct
    "Sicherung des installierten Cores existiert bereits: ",
    "Core-Backup erstellt: ",
    "Core-Backup fehlgeschlagen: ",
+   "Eine Sicherung oder Wiederherstellung dieses Cores wird bereits ausgef\303\274hrt: ",
    "Scanne Core: ",
    "L\303\266schen des Cores deaktiviert - Core gesperrt: ",
    "Core unterst\303\274tzt kein Disc Control.",
@@ -10763,7 +10787,6 @@ static const struct
    ".",
    "Tasten zuweisen",
    "Controller %u (%04X:%04X) wird ignoriert und nicht mehr ausgelesen.",
-   "freigegeben \303\274ber Port %u",
    "Controller %04X:%04X wird erneut ausgelesen.",
    "DualShock-3-Treiber wird ge\303\244ndert: Im Windows-Dialog zulassen.",
    "Der DualShock-3-Treiber wurde nicht ge\303\244ndert: Es wurden keine Administratorrechte erteilt"
@@ -10850,6 +10873,7 @@ static const struct
    "Starte Wi-Fi Access Point mit SSID=%s und Passwort=%s",
    "Wi-Fi Access Point wird ausgeschaltet.",
 #endif
+   "Ein Inhaltsscan l\303\244uft bereits.",
    "Ung\303\274ltige Arcade-DAT-Datei ausgew\303\244hlt.",
    "Fehler beim Laden der Arcade-DAT-Datei (ung\303\274ltiges Format?)",
    "Ausgew\303\244hlte Arcade-DAT-Datei ist zu gro\303\237 (unzureichender freier Speicher).",
@@ -10967,6 +10991,7 @@ static const struct
    "Reinige Wiedergabeliste: ",
    "Cores zur\303\274ckgesetzt: ",
    "Wiedergabeliste bereinigt: ",
+   "Playlists aktualisiert: %u, \303\274bersprungen: %u, fehlgeschlagen: %u",
    "Aktualisieren fehlgeschlagen - Arcade-DAT-Datei zu gro\303\237 (zu wenig Speicher): ",
    "Aktualisieren fehlgeschlagen - ung\303\274ltiges/fehlendes Inhaltsverzeichnis: ",
    "Aktualisieren fehlgeschlagen - ung\303\274ltiger Core: ",
@@ -11070,6 +11095,12 @@ static const struct
    "Verzeichnisscan abgeschlossen.",
    "Dateiscan abgeschlossen.",
    "Suche nach WLAN-Netzwerken...",
+   "Verbindung zum SMB-Server nicht m\303\266glich",
+   "SMB-Servername kann nicht aufgel\303\266st werden",
+   "SMB-Anmeldung fehlgeschlagen",
+   "SMB-Serveradresse nicht konfiguriert",
+   "SMB-Freigabe nicht gefunden oder Zugriff verweigert",
+   "Freigabe stimmt nicht mit der SMB-Freigabeeinstellung \303\274berein",
    "Screenshot gespeichert",
    "Angewendet: Standard",
    "Angewendet: %dx%d - %s\nSTART zum Zur\303\274cksetzen",
@@ -11134,6 +11165,17 @@ static const struct
    "Virtuelles Laufwerk konnte nicht ausgeworfen werden.",
    "Synchronisation mit exakter Inhaltssignalfrequenz deaktiviert.",
    "Synchronisation mit exakter Inhaltssignalfrequenz aktiviert.",
+   "Der benutzerdefinierter Vulkan-Treiber ist zuvor mit diesem Core abgest\303\274rzt und wurde dea"
+   "ktiviert. Zur erneuten Verwendung wieder ausw\303\244hlen.",
+   "Der benutzerdefinierter Vulkan-Treiber konnte nicht gestartet werden. Der Systemtreiber wird ver"
+   "wendet.",
+   "Benutzerdefiniertes Vulkan-Treiberpaket ist nicht verwendbar. Der Systemtreiber wird verwendet.",
+   "RetroArch neu starten, um den Vulkan-Treiber zu wechseln.",
+   "Mit dem Vulkan-Systemtreiber gestartet.",
+   "Benutzerdefinierte Vulkan-Treiber erfordern eine Adreno-GPU und Android 9. Der Systemtreiber wir"
+   "d verwendet.",
+   "Benutzerdefinierter Vulkan-Treiber wurde im Men\303\274 nicht ausgew\303\244hlt oder ge\303\244n"
+   "dert. Zur Verwendung erneut ausw\303\244hlen.",
    "Auf Client warten ...",
 #ifdef HAVE_LAKKA
    "Verbinde mit WLAN '%s'",
@@ -11147,7 +11189,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_de_blob_check[
-      (sizeof(msg_hash_de_blob) == (254279u
+      (sizeof(msg_hash_de_blob) == (255124u
 #ifdef ANDROID
        + 358u
 #endif
@@ -11560,9 +11602,9 @@ typedef char msg_hash_de_blob_check[
 #ifdef HAVE_NFSCLIENT
        + 57u
        + 300u
-       + 64u
+       + 114u
        + 40u
-       + 62u
+       + 119u
        + 466u
        + 33u
 #endif
@@ -13354,6 +13396,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_REMOVE_PARENS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_REMOVE_PARENS_AND_BRACKETS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LIST,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_REFRESH_ALL_PLAYLISTS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_REFRESH_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_RESET_CORES,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_SORT_MODE,
@@ -14169,7 +14212,6 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_POS_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_MONITOR_INDEX,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_NOTCH_WRITE_OVER,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS_COMBINED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS_SEPARATE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_DISTANCE,
@@ -14200,6 +14242,8 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_PLACEMENT_LAZY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_REFRESH_HEADSET,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_REFRESH_RATE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_BOTH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_NONE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED_ROTATED,
@@ -14333,6 +14377,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_PRESET_O,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY_BALANCED,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY_NATIVE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY_PERFORMANCE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_QUALITY_QUALITY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_SHARPNESS,
@@ -14354,6 +14399,8 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_CUSTOM_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VI_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VSYNC,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH_SAFE_MODE,
 #if defined (WIIU)
 #ifdef WIIU
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WIIU_PREFER_DRC,
@@ -15342,6 +15389,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_PLAYLIST_MANAGER_DEFAULT_CORE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_PLAYLIST_MANAGER_LIST,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_PLAYLIST_MANAGER_REFRESH_ALL_PLAYLISTS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_PLAYLIST_MANAGER_REFRESH_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_PLAYLIST_MANAGER_RESET_CORES,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_PLAYLIST_MANAGER_SORT_MODE,
@@ -15771,7 +15819,6 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_MESSAGE_POS_X,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_MESSAGE_POS_Y,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_MONITOR_INDEX,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_CONTROLLERS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_DISTANCE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_HINGE_GAP,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_PAUSE,
@@ -15779,7 +15826,6 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_SNAP,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_EDIT_SNAP_ANGLES,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_ENABLE,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_LASER,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_LASER_BEAM,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_MENU_FOLLOW,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_OPENXR_PERF_BOOST,
@@ -15812,7 +15858,6 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_LAYOUT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_SELECTED,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MODE,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MONITOR,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_EDIT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_PITCH,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_RESET,
@@ -15884,6 +15929,9 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_CUSTOM_X,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_CUSTOM_Y,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VSYNC,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_CRASHED,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_SAFE_MODE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WAITABLE_SWAPCHAINS,
 #if defined (WIIU)
 #ifdef WIIU
@@ -15893,7 +15941,6 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOWED_FULLSCREEN,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOWED_MODE_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOWS_ENABLE,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOWS_ENABLE_ANDROID,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOW_AUTO_HEIGHT_MAX,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOW_AUTO_WIDTH_MAX,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WINDOW_CUSTOM_SIZE_ENABLE,
@@ -16035,6 +16082,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MSG_CORE_BACKUP_ALREADY_EXISTS,
    (msg_hash_id_t)MSG_CORE_BACKUP_COMPLETE,
    (msg_hash_id_t)MSG_CORE_BACKUP_FAILED,
+   (msg_hash_id_t)MSG_CORE_BACKUP_IN_PROGRESS,
    (msg_hash_id_t)MSG_CORE_BACKUP_SCANNING_CORE,
    (msg_hash_id_t)MSG_CORE_DELETE_DISABLED,
    (msg_hash_id_t)MSG_CORE_DOES_NOT_SUPPORT_DISK_OPTIONS,
@@ -16212,7 +16260,6 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MSG_INPUT_COMBO_ROW_SUBLABEL,
    (msg_hash_id_t)MSG_INPUT_COMBO_SET_BUTTONS,
    (msg_hash_id_t)MSG_INPUT_DEVICE_IGNORED,
-   (msg_hash_id_t)MSG_INPUT_DEVICE_INDEX_SHARED,
    (msg_hash_id_t)MSG_INPUT_DEVICE_UNIGNORED,
    (msg_hash_id_t)MSG_INPUT_DS3_ASKING,
    (msg_hash_id_t)MSG_INPUT_DS3_DECLINED,
@@ -16288,6 +16335,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MSG_LOCALAP_STARTING,
    (msg_hash_id_t)MSG_LOCALAP_SWITCHING_OFF,
 #endif
+   (msg_hash_id_t)MSG_MANUAL_CONTENT_SCAN_ALREADY_RUNNING,
    (msg_hash_id_t)MSG_MANUAL_CONTENT_SCAN_DAT_FILE_INVALID,
    (msg_hash_id_t)MSG_MANUAL_CONTENT_SCAN_DAT_FILE_LOAD_ERROR,
    (msg_hash_id_t)MSG_MANUAL_CONTENT_SCAN_DAT_FILE_TOO_LARGE,
@@ -16390,6 +16438,7 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MSG_PLAYLIST_MANAGER_CLEANING_PLAYLIST,
    (msg_hash_id_t)MSG_PLAYLIST_MANAGER_CORES_RESET,
    (msg_hash_id_t)MSG_PLAYLIST_MANAGER_PLAYLIST_CLEANED,
+   (msg_hash_id_t)MSG_PLAYLIST_MANAGER_REFRESH_ALL_DONE,
    (msg_hash_id_t)MSG_PLAYLIST_MANAGER_REFRESH_DAT_FILE_TOO_LARGE,
    (msg_hash_id_t)MSG_PLAYLIST_MANAGER_REFRESH_INVALID_CONTENT_DIR,
    (msg_hash_id_t)MSG_PLAYLIST_MANAGER_REFRESH_INVALID_CORE,
@@ -16485,6 +16534,12 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MSG_SCANNING_OF_DIRECTORY_FINISHED,
    (msg_hash_id_t)MSG_SCANNING_OF_FILE_FINISHED,
    (msg_hash_id_t)MSG_SCANNING_WIRELESS_NETWORKS,
+   (msg_hash_id_t)MSG_SCAN_SMB_CANNOT_CONNECT,
+   (msg_hash_id_t)MSG_SCAN_SMB_CANNOT_RESOLVE,
+   (msg_hash_id_t)MSG_SCAN_SMB_LOGIN_FAILED,
+   (msg_hash_id_t)MSG_SCAN_SMB_NO_SERVER,
+   (msg_hash_id_t)MSG_SCAN_SMB_NO_SHARE,
+   (msg_hash_id_t)MSG_SCAN_SMB_SHARE_DIFFERS,
    (msg_hash_id_t)MSG_SCREENSHOT_SAVED,
    (msg_hash_id_t)MSG_SCREEN_RESOLUTION_APPLYING_DEFAULT,
    (msg_hash_id_t)MSG_SCREEN_RESOLUTION_APPLYING_DESC,
@@ -16544,6 +16599,13 @@ static const msg_hash_id_t msg_hash_de_ids[] =
    (msg_hash_id_t)MSG_VIRTUAL_DISK_TRAY_EJECT,
    (msg_hash_id_t)MSG_VRR_RUNLOOP_DISABLED,
    (msg_hash_id_t)MSG_VRR_RUNLOOP_ENABLED,
+   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_CRASHED,
+   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_FAILED,
+   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_INVALID,
+   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_RESTART,
+   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_SAFE_MODE,
+   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_UNSUPPORTED,
+   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_UNTRUSTED,
    (msg_hash_id_t)MSG_WAITING_FOR_CLIENT,
 #ifdef HAVE_LAKKA
    (msg_hash_id_t)MSG_WIFI_CONNECTING_TO,

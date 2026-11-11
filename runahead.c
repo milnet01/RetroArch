@@ -496,7 +496,7 @@ static bool runahead_tmp_dir_private(const char *dir)
  * main thread); the worker touches only its own task state. */
 
 /* Bytes offered to one step of the VFS copy.  On the kernel paths
- * (copy_file_range, CopyFileW, clonefile) this is a request the
+ * (copy_file_range, clonefile) this is a request the
  * kernel satisfies without the bytes entering user space; elsewhere
  * it bounds the buffered loop.  What ends a handler pass is the
  * shared per-frame I/O window, not this. */
@@ -546,10 +546,10 @@ typedef struct runahead_copy_handle
 
 /* Copies a core through the VFS copy, which uses the platform's own
  * copy primitive where there is one: copy_file_range on Linux,
- * CopyFileW on Windows, clonefile on APFS (constant time, no bytes
- * move at all).  Nothing is buffered in user space on those paths, so
- * a 40MB core costs no transfer buffer; elsewhere the VFS uses one
- * bounded buffer of its own.  A failed or abandoned copy leaves no
+ * clonefile on APFS (constant time, no bytes move at all).  Nothing
+ * is buffered in user space on those paths, so a 40MB core costs no
+ * transfer buffer; elsewhere the VFS uses one bounded buffer of its
+ * own.  A failed or abandoned copy leaves no
  * partial file behind.
  *
  * Advances an in-flight copy by one share of the shared per-frame
@@ -756,7 +756,7 @@ static void runahead_copy_task_handler(retro_task_t *task)
        * on while the loader maps the copy. A copy that will not
        * open is still published; the main thread's own open of it
        * then reports why. */
-      h->lib      = dylib_load(h->out_path);
+      h->lib      = runloop_core_dylib_load(h->out_path, true);
    }
    else
    {

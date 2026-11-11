@@ -219,20 +219,6 @@ char *bin_to_hex_alloc(const uint8_t *data, size_t len)
    return ret;
 }
 
-/* Field selection flags for database_cursor_iterate_filtered.
- * 0 = extract all fields (backward compatible). */
-#define DB_EXTRACT_NAME     (1 << 0)
-#define DB_EXTRACT_CRC      (1 << 1)
-#define DB_EXTRACT_SERIAL   (1 << 2)
-#define DB_EXTRACT_SIZE     (1 << 3)
-#define DB_EXTRACT_MD5      (1 << 4)
-#define DB_EXTRACT_SHA1     (1 << 5)
-#define DB_EXTRACT_ROM_NAME (1 << 6)
-
-/* Combination used by the scanner */
-#define DB_EXTRACT_SCAN_FIELDS \
-   (DB_EXTRACT_NAME | DB_EXTRACT_CRC | DB_EXTRACT_SERIAL | DB_EXTRACT_SIZE)
-
 static int database_cursor_iterate(libretrodb_cursor_t *cur,
       database_info_t *db_info)
 {
@@ -681,6 +667,16 @@ static int database_info_fill_from_dom(struct rmsgpack_dom_value *item,
                   const char *vs = val->val.string.buff;
                   if (vs && *vs)
                      db_info->serial = strdup(vs);
+               }
+            }
+            else if (   (fields & DB_EXTRACT_REGION)
+                     && memcmp(str, "region", 6) == 0)
+            {
+               if (val->type == RDT_STRING || val->type == RDT_BINARY)
+               {
+                  const char *vs = val->val.string.buff;
+                  if (vs && *vs)
+                     db_info->region = strdup(vs);
                }
             }
             break;
@@ -1586,6 +1582,7 @@ struct db_index_build
    struct db_arc_build    arc;
    bool                   want_crc;
    bool                   want_serial;
+   bool                   want_setfp;
    bool                   want_arc;
    bool                   has_serial;
 };
@@ -1596,6 +1593,19 @@ static int db_index_collect(void *ctx, const uint8_t *key, size_t key_len,
 {
    struct db_index_build *b = (struct db_index_build*)ctx;
 
+   /* The walk reads set_fpm1 where it reads the serial.  A record can
+    * carry both fingerprints; each indexes it, once when they agree, as
+    * for a set with no clones. */
+   if (b->want_setfp)
+   {
+      if (!b->crc.failed)
+         db_crc_collect(&b->crc, key, key_len, offset, NULL);
+      if (   !b->crc.failed
+          && !(   key_len == serial_len
+               && !memcmp(key, serial, key_len)))
+         db_crc_collect(&b->crc, serial, serial_len, offset, NULL);
+      return b->crc.failed;
+   }
    if (serial_len)
       b->has_serial = true;
    if (b->want_crc && !b->crc.failed)
@@ -1725,7 +1735,11 @@ database_info_index_job_t *database_info_index_job_new(
 
    job->b.want_crc         = (want & DATABASE_INFO_INDEX_CRC)    != 0;
    job->b.want_serial      = (want & DATABASE_INFO_INDEX_SERIAL) != 0;
-   job->b.want_arc         = job->b.want_crc
+   job->b.want_setfp       = job->b.want_crc
+      && (want & DATABASE_INFO_INDEX_SETFP) != 0;
+   if (job->b.want_setfp)
+      job->b.want_serial   = false;
+   job->b.want_arc         = job->b.want_crc && !job->b.want_setfp
       && (want & DATABASE_INFO_INDEX_ARCHIVE_SIZES) != 0;
    job->b.arc.max_bytes    = max_bytes;
    job->b.crc.max_bytes    = max_bytes;
@@ -1740,12 +1754,16 @@ database_info_index_job_t *database_info_index_job_new(
    }
    if (libretrodb_open(rdb_path, db, false) == 0)
    {
-      job->scan = libretrodb_scan_begin(db,
-            job->b.want_crc ? "crc" : NULL,
-            (want & (DATABASE_INFO_INDEX_SERIAL
-                   | DATABASE_INFO_INDEX_HAS_SERIAL)) ? "serial" : NULL,
-            job->b.want_crc ? "size" : NULL,
-            job->b.want_arc ? "rom_name" : NULL);
+      if (job->b.want_setfp)
+         job->scan = libretrodb_scan_begin(db,
+               "set_fp1", "set_fpm1", NULL, NULL);
+      else
+         job->scan = libretrodb_scan_begin(db,
+               job->b.want_crc ? "crc" : NULL,
+               (want & (DATABASE_INFO_INDEX_SERIAL
+                      | DATABASE_INFO_INDEX_HAS_SERIAL)) ? "serial" : NULL,
+               job->b.want_crc ? "size" : NULL,
+               job->b.want_arc ? "rom_name" : NULL);
       libretrodb_close(db);
    }
    libretrodb_free(db);

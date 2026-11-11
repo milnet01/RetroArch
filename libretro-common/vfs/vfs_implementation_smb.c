@@ -174,6 +174,8 @@ struct smb_pool
    /* the settings copy last found to match key (0: none): a take on
     * that copy and the key's share skips building and comparing a key */
    retro_atomic_int_t  gen;
+   retro_atomic_int_t  failure;     /* enum smb_failure of the last connect */
+   retro_atomic_int_t  key_sum;     /* of all of key, read without a use */
    unsigned            count;
 };
 
@@ -198,10 +200,13 @@ struct smb_cfg_snap
 static vfs_cfg_slot_t     smb_cfg_slot;
 static retro_atomic_int_t smb_cfg_gen;
 /* Last error for smb_get_last_error(), kept as nfs_get_last_error()
- * keeps it: each writer fills a ring slot of its own, claimed by an
- * atomic counter, then publishes its index for the reader. */
+ * keeps it: a writer takes a free ring slot, fills it and publishes
+ * its index for the reader. The counter only says where to start
+ * looking: once it wraps, two writers can start on the same slot, and
+ * the slot's busy flag is what keeps one of them out. */
 #define SMB_ERR_SLOTS 8
 static char               smb_err_ring[SMB_ERR_SLOTS][256];
+static retro_atomic_int_t smb_err_busy[SMB_ERR_SLOTS];
 static retro_atomic_int_t smb_err_seq;
 static retro_atomic_int_t smb_err_latest;
 
@@ -220,8 +225,21 @@ static void smb_cfg_leave(vfs_cfg_hdr_t *h)
 /* "@what: @why", or @what alone when the client gave no reason. */
 static void smb_note_error(const char *what, const char *why)
 {
-   int slot = retro_atomic_fetch_add_int(&smb_err_seq, 1);
-   slot &= (SMB_ERR_SLOTS - 1);
+   int i;
+   int slot   = retro_atomic_fetch_add_int(&smb_err_seq, 1);
+   int latest = retro_atomic_load_acquire_int(&smb_err_latest)
+              & (SMB_ERR_SLOTS - 1);
+   /* Never the published slot, which a reader may be holding; with
+    * every other one taken this message goes unrecorded */
+   for (i = 0; i < SMB_ERR_SLOTS; i++, slot++)
+   {
+      slot &= (SMB_ERR_SLOTS - 1);
+      if (     slot != latest
+            && retro_atomic_cas_int(&smb_err_busy[slot], 0, 1))
+         break;
+   }
+   if (i == SMB_ERR_SLOTS)
+      return;
    strlcpy(smb_err_ring[slot], what, sizeof(smb_err_ring[slot]));
    if (why && *why)
    {
@@ -229,6 +247,7 @@ static void smb_note_error(const char *what, const char *why)
       strlcat(smb_err_ring[slot], why, sizeof(smb_err_ring[slot]));
    }
    retro_atomic_store_release_int(&smb_err_latest, slot);
+   retro_atomic_store_release_int(&smb_err_busy[slot], 0);
 }
 
 const char *smb_get_last_error(void)
@@ -326,8 +345,47 @@ static void smb_conn_key_fill(struct smb_conn_key *key, const char *share)
    smb_cfg_leave(h);
 }
 
-/* A context set up from @key with @auth, connected to the key's share. */
-static struct smb2_context *smb_connect_with(const struct smb_conn_key *key, int auth)
+/* Why the connect on @ctx failed. */
+static int smb_failure_of(struct smb2_context *ctx)
+{
+#ifdef HAVE_RETROSMB
+   switch (smb2_get_phase(ctx))
+   {
+      case RSMB_PHASE_RESOLVE:
+         return SMB_FAILURE_RESOLVE;
+      case RSMB_PHASE_CONNECT:
+         return SMB_FAILURE_CONNECT;
+      case RSMB_PHASE_TREE:
+         return SMB_FAILURE_SHARE;
+      default:
+         /* the session; none: a KRB5 request with no realm or ticket */
+         break;
+   }
+   return SMB_FAILURE_LOGIN;
+#else
+   switch ((uint32_t)smb2_get_nterror(ctx))
+   {
+      case SMB2_STATUS_LOGON_FAILURE:
+      case SMB2_STATUS_ACCOUNT_RESTRICTION:
+      case SMB2_STATUS_PASSWORD_EXPIRED:
+      case SMB2_STATUS_ACCOUNT_DISABLED:
+         return SMB_FAILURE_LOGIN;
+      case SMB2_STATUS_BAD_NETWORK_NAME:
+      case SMB2_STATUS_ACCESS_DENIED:
+      case SMB2_STATUS_NETWORK_ACCESS_DENIED:
+         return SMB_FAILURE_SHARE;
+      default:
+         /* 0 too: a failed lookup, refused or timed out connect */
+         break;
+   }
+   return SMB_FAILURE_CONNECT;
+#endif
+}
+
+/* A context set up from @key with @auth, connected to the key's share;
+ * on failure *@failure says why. */
+static struct smb2_context *smb_connect_with(const struct smb_conn_key *key, int auth,
+      int *failure)
 {
    struct smb2_context *ctx = smb_ctx_new();
    const char *username = *key->username ? key->username : NULL;
@@ -357,6 +415,7 @@ static struct smb2_context *smb_connect_with(const struct smb_conn_key *key, int
             key->server_address, key->share,
             auth == RETRO_SMB2_SEC_KRB5 ? "Kerberos" : "NTLMSSP");
       smb_note_error(what, smb2_get_error(ctx));
+      *failure = smb_failure_of(ctx);
       smb_ctx_free(ctx);
       return NULL;
    }
@@ -364,21 +423,21 @@ static struct smb2_context *smb_connect_with(const struct smb_conn_key *key, int
 }
 
 /* Connect for @key in *@auth_mode, or - when undefined - Kerberos
- * first and NTLMSSP after it, the first success settling the mode. */
+ * first and NTLMSSP after it, the first success settling the mode.
+ * *@failure gets the outcome, the last attempt's. */
 static struct smb2_context *smb_create_context(const struct smb_conn_key *key,
-      retro_atomic_int_t *auth_mode)
+      retro_atomic_int_t *auth_mode, retro_atomic_int_t *failure)
 {
    int mode = retro_atomic_load_acquire_int(auth_mode);
+   int why  = SMB_FAILURE_UNKNOWN;
    struct smb2_context *ctx;
    if (mode != RETRO_SMB2_SEC_UNDEFINED)
-      return smb_connect_with(key, mode);
-   if ((ctx = smb_connect_with(key, RETRO_SMB2_SEC_KRB5)))
-   {
+      ctx = smb_connect_with(key, mode, &why);
+   else if ((ctx = smb_connect_with(key, RETRO_SMB2_SEC_KRB5, &why)))
       retro_atomic_store_release_int(auth_mode, RETRO_SMB2_SEC_KRB5);
-      return ctx;
-   }
-   if ((ctx = smb_connect_with(key, RETRO_SMB2_SEC_NTLMSSP)))
+   else if ((ctx = smb_connect_with(key, RETRO_SMB2_SEC_NTLMSSP, &why)))
       retro_atomic_store_release_int(auth_mode, RETRO_SMB2_SEC_NTLMSSP);
+   retro_atomic_store_release_int(failure, ctx ? SMB_FAILURE_CONNECTED : why);
    return ctx;
 }
 
@@ -454,6 +513,18 @@ static int smb_key_hash(const struct smb_conn_key *key)
    return (int)h;
 }
 
+/* All of @key: smb_url_failure() finds a pool without a use, so it
+ * must not read the pool's key. */
+static int smb_key_sum(const struct smb_conn_key *key)
+{
+   const uint8_t *b = (const uint8_t*)key;
+   uint32_t       h = 2166136261u;
+   size_t         i;
+   for (i = 0; i < sizeof(*key); i++)
+      h = (h ^ b[i]) * 16777619u;
+   return (int)h;
+}
+
 /* A use of the live pool for @key, or NULL. */
 static struct smb_pool *smb_pool_find(const struct smb_conn_key *key, int h)
 {
@@ -503,6 +574,8 @@ static struct smb_pool *smb_pool_for(const struct smb_conn_key *key)
          for (j = 0; j < SMB_MAX_SLOTS; j++)
             p->slots[j].pool = p;
          retro_atomic_store_release_int(&p->auth_mode, (int)key->auth_mode);
+         retro_atomic_store_release_int(&p->failure, SMB_FAILURE_UNKNOWN);
+         retro_atomic_store_release_int(&p->key_sum, smb_key_sum(key));
          retro_atomic_store_release_int(&p->hash, h);
          /* live, with this caller's use */
          retro_atomic_fetch_add_int(&p->word,
@@ -588,10 +661,59 @@ bool smb_init_cfg(const struct smb_settings *new_cfg)
    return true;
 }
 
-/* A private connection for @key, owned by the caller. */
+/* No use is taken, as giving one back can close a retired pool's
+ * connections; an entry rebuilt meanwhile gives at worst a stale code. */
+enum smb_failure smb_url_failure(const char *url)
+{
+   struct smb_conn_key key;
+   unsigned            i;
+   int                 sum;
+   smb_conn_key_fill(&key, NULL);
+   smb_effective_share(url, key.share, sizeof(key.share));
+   sum = smb_key_sum(&key);
+   for (i = 0; i < SMB_MAX_POOLS; i++)
+   {
+      struct smb_pool *p = &smb_pools[i];
+      if (   SMB_POOL_STATE(retro_atomic_load_acquire_int(&p->word)) == SMB_POOL_LIVE
+          && retro_atomic_load_acquire_int(&p->key_sum) == sum)
+         return (enum smb_failure)retro_atomic_load_acquire_int(&p->failure);
+   }
+   return SMB_FAILURE_UNKNOWN;
+}
+
+/* The host a URL names is not compared: every URL is read from the
+ * configured server, so a playlist saved under an older server
+ * address still refreshes. */
+enum smb_url_result smb_url_check(const char *url, char *detail, size_t len)
+{
+   vfs_cfg_hdr_t *h;
+   const struct smb_cfg_snap *snap = smb_cfg_enter(&h);
+   enum smb_url_result r = SMB_URL_OK;
+   char got[256];
+   detail[0] = '\0';
+   if (!snap || !*snap->server_address)
+      r = SMB_URL_NO_SERVER;
+   /* an empty URL share differs too: the VFS would read the
+    * configured share in its place */
+   else if (   *snap->share
+            && (   !smb_url_share(url, got, sizeof(got))
+                || !string_is_equal_case_insensitive(got, snap->share)))
+   {
+      strlcpy(detail, snap->share, len);
+      r = SMB_URL_SHARE_DIFFERS;
+   }
+   smb_cfg_leave(h);
+   return r;
+}
+
+/* A private connection for @key, owned by the caller; the outcome is
+ * recorded on @key's pool when there is one. */
 static struct smb2_context *smb_connect_private(const struct smb_conn_key *key)
 {
-   retro_atomic_int_t mode;
+   retro_atomic_int_t   mode;
+   retro_atomic_int_t   failure;
+   struct smb2_context *ctx;
+   struct smb_pool     *p;
    if (!*key->server_address || !network_init())
    {
       smb_note_error(*key->server_address ? "network init failed"
@@ -600,7 +722,15 @@ static struct smb2_context *smb_connect_private(const struct smb_conn_key *key)
    }
    retro_atomic_int_init(&mode, smb_settled_mode(key->server_address,
             key->username, (int)key->auth_mode));
-   return smb_create_context(key, &mode);
+   retro_atomic_int_init(&failure, SMB_FAILURE_UNKNOWN);
+   ctx = smb_create_context(key, &mode, &failure);
+   if ((p = smb_pool_find(key, smb_key_hash(key))))
+   {
+      retro_atomic_store_release_int(&p->failure,
+            retro_atomic_load_acquire_int(&failure));
+      smb_pool_put(p);
+   }
+   return ctx;
 }
 
 /* A connection to @want_share for one caller. *slot is the pool slot
@@ -640,7 +770,7 @@ static struct smb2_context *smb_take(const char *want_share, struct smb_slot **s
          {
             if (sl->ctx)
                smb_ctx_free(sl->ctx);
-            sl->ctx = smb_create_context(&pool->key, &pool->auth_mode);
+            sl->ctx = smb_create_context(&pool->key, &pool->auth_mode, &pool->failure);
          }
          if (sl->ctx)
          {
@@ -687,7 +817,8 @@ static struct smb2_context *smb_heal(struct smb2_context *ctx, struct smb_slot *
    if (smb2_echo(ctx) == 0)
       return NULL;
    if (slot)
-      fresh = smb_create_context(&slot->pool->key, &slot->pool->auth_mode);
+      fresh = smb_create_context(&slot->pool->key, &slot->pool->auth_mode,
+            &slot->pool->failure);
    else
    {
       struct smb_conn_key key;

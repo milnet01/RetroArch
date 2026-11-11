@@ -652,6 +652,7 @@ typedef struct video_frame_info
       float x;
       float y;
       float scale;
+      float x_scale;
       /* Drop shadow color multiplier. */
       float drop_mod;
       /* Drop shadow alpha */
@@ -722,6 +723,8 @@ typedef struct video_frame_info
    /* The scale the worker lays the widgets out at, worked out from the
     * settings as the frame is built */
    float widget_scale_factor;
+   /* video_driver_ui_display_aspect() as the frame is built */
+   float widget_display_aspect;
 #ifdef HAVE_OPENXR
    /* 1 + the host's token for the eyes the core drew this frame from,
     * given on the drawing thread before it is drawn; 0 for none */
@@ -785,9 +788,9 @@ typedef struct video_frame_info
     * when the frame is drawn whole. */
    video_views_map_t views;
    video_views_layout_t views_layout;
-   /* The screens' own windows: NULL while they are off, the driver has
-    * none, or no views are presented. Owned by video_driver_state_t,
-    * or under the threaded wrapper by the frame's slot. */
+   /* The screens' own windows: NULL while they are off or the driver
+    * has none. Owned by video_driver_state_t, or under the threaded
+    * wrapper by the frame's slot. */
    const video_windows_frame_t *windows;
    /* Each screen's placement from its menu rows, normalized. */
    video_screen_xr_t headset_screens[RETRO_VIDEO_VIEWS_MAX];
@@ -1730,6 +1733,10 @@ typedef struct video_window_layout
    video_views_map_t core_map;
    unsigned core_dims;
    unsigned window_dims;
+   /* The display it was drawn on */
+   unsigned display;
+   /* The serial of the frame snapshot it was drawn from */
+   unsigned serial;
    unsigned generation;
 } video_window_layout_t;
 
@@ -1744,6 +1751,10 @@ typedef struct video_window_layouts
    unsigned next;                 /* the publisher's: slot to fill */
    unsigned last;                 /* the publisher's: slot + 1 */
    unsigned held;                 /* the main thread's: slot + 1 */
+   /* The main thread's: the serial of the snapshot that last asked
+    * for the window differently; a layout drawn before it is not
+    * shown */
+   unsigned from;
 } video_window_layouts_t;
 
 /* The platform's displays, handed over by index as the window layouts
@@ -1810,6 +1821,10 @@ typedef struct
    gfx_ctx_driver_t current_video_context;               /* ptr alignment */
    struct retro_hw_render_callback hw_render;            /* ptr alignment */
    struct rarch_dir_shader_list dir_shader_list;         /* ptr alignment */
+   /* VIDEO_CACHE_KEEPER of a thread whose retires leave the cached frame
+    * be: drawing a filter into lent memory, in which it never lies.
+    * Without threads the one thread is keeper 1 */
+   retro_atomic_size_t frame_cache_keeper;
 #ifdef HAVE_THREADS
    /* Whether the threaded video wrapper is installed. Its own storage
     * rather than a bit in ::flags, because the video thread reads it
@@ -2123,6 +2138,15 @@ typedef struct
    /* The main thread's last route, which a redraw keeps; written only
     * when it changes, as Win32's redraws run beside the main thread */
    video_windows_route_t windows_route;
+   /* RetroArch's moves between displays; app thread */
+   video_windows_host_t windows_host;
+   /* Each UI layer's target as this frame laid it out, and the next */
+   video_window_ui_target_t windows_ui[VIDEO_WINDOW_UI_LAYERS];
+   /* When a UI layer's window was first wanted and had not shown; 0
+    * for none */
+   retro_time_t windows_ui_asked;
+   /* The Presentation's display windows_ui_asked counts for */
+   unsigned windows_ui_display;
    /* The last video_driver_window_generation(); never reset, so a
     * replacement window never reuses one. */
    retro_atomic_int_t window_generation;
@@ -2131,6 +2155,12 @@ typedef struct
    retro_atomic_int_t windows_failed;
    unsigned windows_forced_attached;
    unsigned windows_restore;
+   /* A bit a window id: those the last snapshot wanted, 0 while
+    * windows are off; main thread */
+   unsigned windows_wanted;
+   /* The serial of the snapshot the driver draws: the video thread's
+    * under the wrapper */
+   unsigned windows_drawn;
 #endif
 } video_driver_state_t;
 
@@ -2489,6 +2519,23 @@ bool video_driver_views_status_changed(void);
 /* The size the menu and widgets lay out at: the output size, or one
  * eye's UI size when views are drawn side by side or top-bottom. */
 unsigned video_driver_get_ui_dims(void);
+
+/* Any thread: the size frame @video_info draws UI layer @layer at: its
+ * target's when drawn in another window, else the main window's UI
+ * size */
+unsigned video_frame_ui_layer_dims(const video_frame_info_t *video_info,
+      unsigned layer);
+
+/* App thread: the window UI layer @layer lays out for this frame, 0
+ * for the main window */
+unsigned video_driver_get_ui_layer_window(unsigned layer);
+
+/* App thread: the size UI layer @layer lays out at this frame */
+unsigned video_driver_get_ui_layer_dims(unsigned layer);
+
+/* Main thread: width over height of the screen the output fills when
+ * its pixels are not square (a CRT at a super resolution), or 0. */
+float video_driver_ui_display_aspect(void);
 /* Main thread: the layout the last frame presented a core's views
  * with, or NULL when it was drawn whole. */
 const video_views_layout_t *video_driver_get_views_layout(void);
@@ -2556,6 +2603,40 @@ float video_driver_get_aspect_ratio(void);
 /* The aspect ratio, as the bits of the float in an atomic word. A
  * union, not a cast through a pointer, so it stays inside what the
  * standard allows and MSVC's aliasing rules. */
+#ifdef HAVE_THREADS
+#define VIDEO_CACHE_KEEPER ((size_t)sthread_get_current_thread_id())
+#else
+#define VIDEO_CACHE_KEEPER ((size_t)1)
+#endif
+
+/* Where a software filter draws: memory the driver lends, read back at
+ * cached speed as filters may, in the format and size of the frames it
+ * makes. NULL when there is none; *pitch is then left alone. */
+static INLINE void *video_driver_filter_lend(
+      const video_poke_interface_t *poke, void *driver_data,
+      unsigned dims, unsigned bpp, unsigned *pitch)
+{
+   struct retro_framebuffer fb;
+   if (     !poke || !poke->get_current_software_framebuffer || !driver_data)
+      return NULL;
+   fb.data         = NULL;
+   fb.width        = VIDEO_SCALE_W(dims);
+   fb.height       = VIDEO_SCALE_H(dims);
+   fb.pitch        = 0;
+   fb.format       = RETRO_PIXEL_FORMAT_UNKNOWN;
+   fb.access_flags = RETRO_MEMORY_ACCESS_READ | RETRO_MEMORY_ACCESS_WRITE;
+   fb.memory_flags = 0;
+   if (     !poke->get_current_software_framebuffer(driver_data, &fb)
+         || !fb.data
+         || !(fb.memory_flags & RETRO_MEMORY_TYPE_CACHED)
+         || fb.format != (bpp == sizeof(uint32_t)
+            ? RETRO_PIXEL_FORMAT_XRGB8888 : RETRO_PIXEL_FORMAT_RGB565)
+         || fb.pitch < (size_t)fb.width * bpp)
+      return NULL;
+   *pitch = (unsigned)fb.pitch;
+   return fb.data;
+}
+
 static INLINE float video_driver_aspect_ratio_of(
       const retro_atomic_int_t *bits)
 {
@@ -2634,6 +2715,8 @@ bool video_monitor_fps_statistics(double *refresh_rate,
  * coordinates based on viewport info. If report_oob is true,
  * -0x8000 will be returned for the coordinate which is offscreen,
  * otherwise offscreen coordinate is clamped to 0x7fff / -0x7fff.
+ * A window whose views layout shows no screen gives @res_pos -0x8000
+ * either way.
  *
  * Returns: true (1) if successful, false if video driver doesn't support
  * viewport info.

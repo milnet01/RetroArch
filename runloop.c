@@ -847,6 +847,28 @@ void libretro_get_environment_info(
    runloop_st->flags &= ~RUNLOOP_FLAG_IGNORE_ENVIRONMENT_CB;
 }
 
+dylib_t runloop_core_dylib_load(const char *path, bool quiet)
+{
+#if defined(ANDROID)
+   /* Another app's intent can name the core.  The resolved path that
+    * passed the check is the one opened, so no symlink on the way can
+    * be swapped between the check and the open. */
+   char real_path[PATH_MAX_LENGTH];
+   if (!android_core_path_resolve(path, real_path, sizeof(real_path)))
+   {
+      if (!quiet)
+         RARCH_ERR("[Core] Not loading \"%s\": not found in the app's own folders.\n",
+               path);
+      /* Leave no stale loader error for the failure path to print */
+      dylib_error();
+      return NULL;
+   }
+   return dylib_load(real_path);
+#else
+   return dylib_load(path);
+#endif
+}
+
 /* Whether the core path is resolved through symlinks before it is
  * opened (and saved to history) */
 static bool load_dynamic_core_resolves_symlinks(void)
@@ -898,7 +920,7 @@ static void core_preload_task_handler(retro_task_t *task)
    core_preload_handle_t *h = task ? (core_preload_handle_t*)task->state : NULL;
    /* The open: the one thing off the main thread */
    if (h && h->path)
-      h->lib = dylib_load(h->path);
+      h->lib = runloop_core_dylib_load(h->path, true);
    if (task)
       task_set_flags(task, RETRO_TASK_FLG_FINISHED, true);
 }
@@ -1059,7 +1081,7 @@ static dylib_t load_dynamic_core(const char *path, char *s,
          return pre;
    }
 #endif
-   return dylib_load(path);
+   return runloop_core_dylib_load(path, false);
 }
 
 /* @live is set when @path opened the library already loaded as the
@@ -1070,7 +1092,7 @@ static dylib_t libretro_get_system_info_lib(const char *path,
       struct retro_system_info *sysinfo, bool *load_no_content,
       bool *live)
 {
-   dylib_t lib = dylib_load(path);
+   dylib_t lib = runloop_core_dylib_load(path, false);
    void (*proc)(struct retro_system_info*);
 
    *live = false;
@@ -2047,6 +2069,16 @@ static int runloop_video_decode_get_gpu_frame(void *decoder,
    return 1;
 }
 
+static void runloop_video_decode_set_tag(void *decoder, uint64_t tag)
+{
+   rh264_video_set_tag((rh264_video*)decoder, tag);
+}
+
+static uint64_t runloop_video_decode_get_tag(void *decoder)
+{
+   return rh264_video_tag((rh264_video*)decoder);
+}
+
 static void runloop_video_decode_close(void *decoder)
 {
    rh264_video_close((rh264_video*)decoder);
@@ -2935,7 +2967,7 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
                   for (p = 0; p < input_driver_max_users; p++)
                   {
-                     unsigned mapped_port = settings->uints.input_remap_ports[p];
+                     unsigned mapped_port = input_remapping_user_port(p);
 
                      RARCH_DBG("%s %u:\n", msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PORT), p + 1);
 
@@ -3402,6 +3434,11 @@ bool runloop_environment_cb(unsigned cmd, void *data)
             }
             if (iface->interface_version >= 3)
                iface->get_gpu_frame = runloop_video_decode_get_gpu_frame;
+            if (iface->interface_version >= 4)
+            {
+               iface->set_tag = runloop_video_decode_set_tag;
+               iface->get_tag = runloop_video_decode_get_tag;
+            }
             return true;
          }
 #else
@@ -5052,10 +5089,12 @@ bool libretro_get_system_info(
       core_probe_capture = NULL;
       if (!lib)
       {
+         const char *err = dylib_error();
          RARCH_ERR("[Core] %s: \"%s\"\n",
                msg_hash_to_str(MSG_FAILED_TO_OPEN_LIBRETRO_CORE),
                path);
-         RARCH_ERR("[Core] Error(s): %s\n", dylib_error());
+         if (err)
+            RARCH_ERR("[Core] Error(s): %s\n", err);
          return false;
       }
       if (load_no_content)
@@ -5187,7 +5226,11 @@ bool runloop_init_libretro_symbols(
                            )))
                {
                   const char *_msg = msg_hash_to_str(MSG_FAILED_TO_OPEN_LIBRETRO_CORE);
-                  RARCH_ERR("[Core] %s: \"%s\"\nError(s): %s\n", _msg, path, dylib_error());
+                  const char *err  = dylib_error();
+                  if (err)
+                     RARCH_ERR("[Core] %s: \"%s\"\nError(s): %s\n", _msg, path, err);
+                  else
+                     RARCH_ERR("[Core] %s: \"%s\"\n", _msg, path);
                   runloop_msg_queue_push(_msg, strlen(_msg), 1, 180, true, NULL,
                         MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
                   return false;
@@ -5203,7 +5246,7 @@ bool runloop_init_libretro_symbols(
                 * unless the caller has opened it already */
                if (!(lib_handle_local = *lib_handle_p))
                {
-                  if (!(lib_handle_local = dylib_load(lib_path)))
+                  if (!(lib_handle_local = runloop_core_dylib_load(lib_path, false)))
                      return false;
                   *lib_handle_p = lib_handle_local;
                }
@@ -5453,11 +5496,12 @@ static retro_time_t runloop_core_runtime_tick(
    uint32_t flags                 = runloop_st->flags;
    double fps                     = video_st->av_info.timing.fps;
    retro_time_t frame_time        = 0;
+   retro_time_t since             = current_time
+      - runloop_st->core_runtime_last;
 
    /* A core that reports no frame rate - the dummy core, or one that
     * has not set its timing yet - has no frame time to count, and
-    * neither has a rate so small that one frame outlasts a day.
-    * Any other rate is counted exactly as it always was. */
+    * neither has a rate so small that one frame outlasts a day. */
    if (fps > 0.0)
    {
       double frame_usec = (1.0 / fps) * 1000000.0;
@@ -5467,22 +5511,11 @@ static retro_time_t runloop_core_runtime_tick(
 
    /* Account for slow motion */
    if (flags & RUNLOOP_FLAG_SLOWMOTION)
-      return (retro_time_t)(frame_time * slowmotion_ratio);
+      frame_time = (retro_time_t)(frame_time * slowmotion_ratio);
 
-   /* Account for fast forward */
-   if (flags & RUNLOOP_FLAG_FASTMOTION)
-   {
-      retro_time_t potential_frame_time = current_time
-         - runloop_st->core_runtime_last;
-      runloop_st->core_runtime_last     = current_time;
-
-      if (potential_frame_time < frame_time)
-         return potential_frame_time;
-
-      return frame_time;
-   }
-
-   return frame_time;
+   runloop_st->core_runtime_last = current_time;
+   return runloop_core_runtime_step(frame_time, since,
+         &runloop_st->core_runtime_credit);
 }
 
 static bool core_unload_game(void)
@@ -6112,6 +6145,7 @@ static void runloop_runtime_log_init(runloop_state_t *runloop_st)
    const char *core_path               = path_get(RARCH_PATH_CORE);
 
    runloop_st->core_runtime_last       = cpu_features_get_time_usec();
+   runloop_st->core_runtime_credit     = 0;
    runloop_st->core_runtime_usec       = 0;
 
    /* Have to cache content and core path here, otherwise
@@ -8334,8 +8368,8 @@ static enum runloop_state_enum runloop_check_state(
 #endif
 
 #if defined(HAVE_MENU) || defined(HAVE_GFX_WIDGETS)
-   /* Per-eye UI lays out at one eye's size. */
-   output_dims = video_driver_get_ui_dims();
+   /* The menu lays out at its window's size: one eye's for per-eye UI */
+   output_dims = video_driver_get_ui_layer_dims(VIDEO_WINDOW_UI_MENU);
 
    gfx_animation_update(
          current_time,
@@ -8368,7 +8402,8 @@ static enum runloop_state_enum runloop_check_state(
          gfx_widgets_iterate(
                p_disp,
                settings,
-               output_dims,
+               video_driver_get_ui_layer_dims(
+                  VIDEO_WINDOW_UI_NOTIFICATIONS),
                video_is_fullscreen,
                settings->paths.directory_assets,
                settings->paths.path_font,
@@ -10204,8 +10239,9 @@ int runloop_iterate(void)
     * nothing was set. */
    input_driver_flush_rumble();
    led_driver_flush();
-   /* a first press seen by this frame's poll: the user gets its core
-    * port now, with the core off the stack */
+   /* a first press, or a controller beginning or ending to share a
+    * player, seen by this frame's poll: the core is told now, with the
+    * core off the stack */
    if (input_st->first_press_pending)
       input_first_press_apply();
 #ifdef HAVE_PRESENCE

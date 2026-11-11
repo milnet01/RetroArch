@@ -24,6 +24,7 @@
 #include "../cloud_sync_driver.h"
 #include "../../retroarch.h"
 #include "../../tasks/tasks_internal.h"
+#include "../../tasks/task_file_transfer.h"
 #include "../../verbosity.h"
 #include <compat/strl.h>
 
@@ -864,32 +865,26 @@ static void s3_read_cb(retro_task_t *task, void *task_data, void *user_data, con
       s3_log_http_failure(s3_cb_st->path, data, err);
 
    /* A body delimited only by the connection closing may have been
-    * cut off; do not let it replace the local file.  Only a 2xx
-    * writes one: success here also covers 404 and 400, which mean
-    * "not on the server". */
-   if (success && data->status >= 200 && data->status < 300
+    * cut off; do not hand it on as the file.  Only a 2xx wrote one:
+    * success here also covers 404 and 400, which mean "not on the
+    * server". */
+   if (success && data && data->status >= 200 && data->status < 300
          && !net_http_body_is_framed(data->headers))
    {
       RARCH_WARN(S3_PFX "%s: response body has no Content-Length or "
             "chunked framing; treating as failure.\n", s3_cb_st->path);
+      filestream_delete(s3_cb_st->file);
       success = false;
    }
 
+   /* The body went to the file as it arrived */
    if (success && data && data->status >= 200 && data->status < 300)
    {
-      /* Staged through <file>.tmp and renamed into place, so a download
-       * cut short by power loss or a kill leaves the previous copy intact
-       * instead of a truncated one. Reopened read-only for the caller's
-       * hash-then-close. */
-      if (filestream_write_file_atomic(s3_cb_st->file,
-               data->data ? (const void*)data->data : (const void*)"",
-               (int64_t)data->len))
-         file = filestream_open(s3_cb_st->file,
-               RETRO_VFS_FILE_ACCESS_READ,
-               RETRO_VFS_FILE_ACCESS_HINT_NONE);
-      if (!file)
+      if (!(file = filestream_open(s3_cb_st->file,
+                  RETRO_VFS_FILE_ACCESS_READ,
+                  RETRO_VFS_FILE_ACCESS_HINT_SEQUENTIAL_BULK)))
       {
-         RARCH_WARN(S3_PFX "Failed to write local file '%s'\n", s3_cb_st->file);
+         RARCH_WARN(S3_PFX "Failed to open local file for read '%s'\n", s3_cb_st->file);
          success = false;
       }
    }
@@ -943,10 +938,11 @@ static void s3_delete_cb(retro_task_t *task, void *task_data, void *user_data, c
    free(s3_cb_st);
 }
 
+/* GET straight into @cb_state's file, as the body arrives */
 static bool s3_http_get_async(const char *url, const char *headers, s3_cb_state_t *cb_state)
 {
-   return task_push_http_transfer_with_headers(url, true, NULL,
-         headers, s3_read_cb, cb_state) != NULL;
+   return task_push_http_download_file_with_headers(url, cb_state->file,
+         true, NULL, headers, s3_read_cb, cb_state) != NULL;
 }
 
 /* PUT @cb_state's body, streamed from its file */

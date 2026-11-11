@@ -167,7 +167,8 @@ const char *msg_hash_to_str_us(enum msg_hash_enums msg)
    if (msg == MSG_SCANNING_OF_DIRECTORY_FINISHED && end_hold)
       end_step_hold();
    if (   msg == MSG_PLAYLIST_MANAGER_REFRESH_ALL_DONE
-       || msg == MSG_MANUAL_CONTENT_SCAN_ALREADY_RUNNING)
+       || msg == MSG_MANUAL_CONTENT_SCAN_ALREADY_RUNNING
+       || (msg >= MSG_SCAN_SMB_NO_SERVER && msg <= MSG_SCAN_SMB_NO_SHARE))
       return msg_hash_us_row(msg);
    if (msg == MSG_MANUAL_CONTENT_SCAN_INVALID_CONTENT)
       return "invalid content";
@@ -203,6 +204,9 @@ settings_t *config_get_ptr(void)
 static bool invalid_content_pushed = false;
 /* How often a refused scan or chain said why. */
 static unsigned busy_pushed = 0;
+/* Set when a message equal to push_watch is pushed. */
+static const char *push_watch;
+static bool        push_seen;
 
 /* Additional stubs for retroarch-core symbols referenced transitively,
  * to avoid pulling in retroarch.c, runloop.c, frontend drivers, and the
@@ -219,6 +223,8 @@ void runloop_msg_queue_push(const char *msg, size_t len,
    if (msg && !strcmp(msg,
             msg_hash_to_str(MSG_MANUAL_CONTENT_SCAN_ALREADY_RUNNING)))
       busy_pushed++;
+   if (msg && push_watch && !strcmp(msg, push_watch))
+      push_seen = true;
 }
 
 /* Whether the scan prints what --scan prints. */
@@ -306,9 +312,13 @@ int retro_vfs_file_error_smb(libretro_vfs_implementation_file *stream)
    return 1;
 }
 
+/* How often a folder was opened */
+static retro_atomic_int_t smb_stub_opendirs;
+
 smb_dir_handle *retro_vfs_opendir_smb(const char *path, bool include_hidden)
 {
    (void)path; (void)include_hidden;
+   retro_atomic_fetch_add_int(&smb_stub_opendirs, 1);
    return NULL;
 }
 
@@ -324,10 +334,68 @@ int retro_vfs_closedir_smb(smb_dir_handle *dh)
    return -1;
 }
 
+/* Set: the share answers, names ending .bin are files and the rest
+ * folders.  How often a stat was asked on the main thread, and that
+ * count when a scan was pushed (-1: none was). */
+static bool               smb_stub_live;
+static retro_atomic_int_t smb_stub_stats_main;
+static retro_atomic_int_t smb_stats_at_push;
+/* Stats are counted and, while smb_stat_log is set, listed there; the
+ * folders in smb_stat_valid, when set, answer as well. */
+static retro_atomic_int_t smb_stat_count;
+static char              *smb_stat_log;
+static const char *const *smb_stat_valid;
+
 int retro_vfs_stat_smb(const char *path, int64_t *size)
 {
-   (void)path; (void)size;
-   return 0;
+   const char *const *v;
+   size_t n = strlen(path);
+
+   if (size)
+      *size = 0;
+   retro_atomic_fetch_add_int(&smb_stat_count, 1);
+   if (smb_stat_log)
+   {
+      strlcat(smb_stat_log, path, 512);
+      strlcat(smb_stat_log, " ", 512);
+   }
+   if (task_is_on_main_thread())
+      retro_atomic_fetch_add_int(&smb_stub_stats_main, 1);
+   for (v = smb_stat_valid; v && *v; v++)
+      if (string_is_equal(path, *v))
+         return RETRO_VFS_STAT_IS_VALID | RETRO_VFS_STAT_IS_DIRECTORY;
+   if (!smb_stub_live)
+      return 0;
+   if (n > 4 && !strcmp(path + n - 4, ".bin"))
+      return RETRO_VFS_STAT_IS_VALID;
+   return RETRO_VFS_STAT_IS_VALID | RETRO_VFS_STAT_IS_DIRECTORY;
+}
+
+/* What smb_url_check() and smb_url_failure() answer, and how often
+ * each was asked. */
+static enum smb_url_result smb_stub_check;
+static const char         *smb_stub_detail = "";
+static enum smb_failure    smb_stub_failure;
+static retro_atomic_int_t  smb_stub_checks;
+static retro_atomic_int_t  smb_stub_checks_main;
+static retro_atomic_int_t  smb_stub_failures;
+
+enum smb_url_result smb_url_check(const char *url, char *detail,
+      size_t len)
+{
+   (void)url;
+   retro_atomic_fetch_add_int(&smb_stub_checks, 1);
+   if (task_is_on_main_thread())
+      retro_atomic_fetch_add_int(&smb_stub_checks_main, 1);
+   strlcpy(detail, smb_stub_detail, len);
+   return smb_stub_check;
+}
+
+enum smb_failure smb_url_failure(const char *url)
+{
+   (void)url;
+   retro_atomic_fetch_add_int(&smb_stub_failures, 1);
+   return smb_stub_failure;
 }
 #endif
 
@@ -798,14 +866,35 @@ database_info_index_job_t *__real_database_info_index_job_new(
 /* When set, the most every index build may take: 1 refuses them all,
  * as a spent or too small budget does. */
 static size_t index_cap;
+/* When set, the most a fingerprint index build may take. */
+static size_t setfp_cap;
+/* Fingerprint index builds begun, refused ones too. */
+static unsigned setfp_builds;
+/* When set, the budget checks after the fingerprint index build's
+ * steps fail: setfp_yield_n times, or with setfp_stall always, its
+ * steps then doing nothing.  setfp_yields counts those failures. */
+static unsigned                   setfp_yield_n;
+static bool                       setfp_stall;
+static bool                       setfp_stepped;
+static database_info_index_job_t *setfp_job_live;
+static retro_atomic_int_t         setfp_yields;
 
 database_info_index_job_t *__wrap_database_info_index_job_new(
       const char *rdb_path, size_t max_bytes, unsigned want)
 {
-   database_info_index_job_t *job = __real_database_info_index_job_new(
-         rdb_path, index_cap ? index_cap : max_bytes, want);
+   size_t                     cap = index_cap ? index_cap : max_bytes;
+   database_info_index_job_t *job;
 
-   if (   job && walk_name && strstr(rdb_path, walk_name)
+   if (want & DATABASE_INFO_INDEX_SETFP)
+      setfp_builds++;
+   if (setfp_cap && (want & DATABASE_INFO_INDEX_SETFP))
+      cap = setfp_cap;
+   job = __real_database_info_index_job_new(rdb_path, cap, want);
+   if ((setfp_stall || setfp_yield_n) && (want & DATABASE_INFO_INDEX_SETFP))
+      setfp_job_live = job;
+
+   if (   job && walk_name && !(want & DATABASE_INFO_INDEX_SETFP)
+       && strstr(rdb_path, walk_name)
        && __real_task_queue_is_threaded())
    {
       walk_hold(walk_want);
@@ -823,6 +912,12 @@ bool __wrap_database_info_index_job_step(database_info_index_job_t *job,
 {
    bool done;
 
+   if ((setfp_stall || setfp_yield_n) && job && job == setfp_job_live)
+   {
+      setfp_stepped = true;
+      if (setfp_stall)
+         return false;
+   }
    if (job == walk_job && !walk_steps++ && !walk_late)
    {
       if (walk_more)
@@ -831,6 +926,8 @@ bool __wrap_database_info_index_job_step(database_info_index_job_t *job,
          retro_sleep(WALK_IDLE_MS);
    }
    done = __real_database_info_index_job_step(job, records, entries);
+   if (done && job == setfp_job_live)
+      setfp_stepped = false;
    if (done && job == walk_job)
    {
       walk_to  = retro_atomic_load_acquire_int(&rd_wholes);
@@ -846,6 +943,14 @@ bool __wrap_task_nbio_slice_within_budget(void *ud, size_t avail,
 {
    if (walk_job)
       return true;
+   if ((setfp_stall || setfp_yield_n) && setfp_stepped)
+   {
+      setfp_stepped = false;
+      if (setfp_yield_n)
+         setfp_yield_n--;
+      retro_atomic_fetch_add_int(&setfp_yields, 1);
+      return false;
+   }
    return __real_task_nbio_slice_within_budget(ud, avail, len);
 }
 
@@ -1043,13 +1148,24 @@ static void prep_cancel_begun(void)
    }
 }
 
+/* The title of the last task pushed with one, a reader's aside. */
+static char pushed_title[256];
+
 bool __real_task_queue_push(retro_task_t *task);
 bool __wrap_task_queue_push(retro_task_t *task)
 {
    int n;
 
+#ifdef HAVE_SMBCLIENT
+   /* Only a scan has a title */
+   if (task->title)
+      retro_atomic_store_release_int(&smb_stats_at_push,
+            retro_atomic_load_acquire_int(&smb_stub_stats_main));
+#endif
    if (!(task_get_flags(task) & RETRO_TASK_FLG_PARALLEL))
    {
+      if (task->title)
+         strlcpy(pushed_title, task->title, sizeof(pushed_title));
       if (   prep_cancel_at && !task->title
           && ++prep_pushes == prep_cancel_at)
          prep_cancel_task = task;
@@ -1206,12 +1322,15 @@ typedef struct
    uint32_t    size;
    const char *rom_name;
    bool        unsized;
+   uint32_t    set_fp;
 } db_rec_t;
 
-/* One database holding @n records; a NULL serial or rom_name, or
- * unsized, leaves the key out. */
-static int write_db_set(const char *path, const db_rec_t *recs,
-      unsigned n)
+/* One database holding @n records; a NULL serial or rom_name, a 0
+ * set_fp, or unsized leaves the key out. */
+/* As write_db_set(), each record @i given the region @regions[i] when
+ * that is not NULL */
+static int write_db_set_regions(const char *path, const db_rec_t *recs,
+      const char *const *regions, unsigned n)
 {
    buf_t    body, meta;
    FILE    *f;
@@ -1226,12 +1345,24 @@ static int write_db_set(const char *path, const db_rec_t *recs,
    for (r = 0; r < n; r++)
    {
       bfixmap(&body, 2 + (recs[r].serial ? 1 : 0)
-            + (recs[r].rom_name ? 1 : 0) + (recs[r].unsized ? 0 : 1));
+            + (recs[r].rom_name ? 1 : 0) + (recs[r].unsized ? 0 : 1)
+            + (regions && regions[r] ? 1 : 0)
+            + (recs[r].set_fp ? 1 : 0));
       bfixstr(&body, "name"); bfixstr(&body, recs[r].name);
+      if (regions && regions[r])
+      {
+         bfixstr(&body, "region");
+         bfixstr(&body, regions[r]);
+      }
       if (recs[r].rom_name)
       {
          bfixstr(&body, "rom_name");
          bfixstr(&body, recs[r].rom_name);
+      }
+      if (recs[r].set_fp)
+      {
+         bfixstr(&body, "set_fp1");
+         bbin4(&body, recs[r].set_fp);
       }
       if (recs[r].serial)
       {
@@ -1273,6 +1404,12 @@ static int write_db_set(const char *path, const db_rec_t *recs,
    free(body.d);
    free(meta.d);
    return 1;
+}
+
+static int write_db_set(const char *path, const db_rec_t *recs,
+      unsigned n)
+{
+   return write_db_set_regions(path, recs, NULL, n);
 }
 
 /* One database holding a single named record. */
@@ -1796,10 +1933,12 @@ static uint32_t rar_bytes(const zip_entry_t *e, unsigned n)
 /* A RAR 4 archive of @n stored entries, written by hand as the zip is:
  * the marker, a main header, a file header and the data for each
  * entry, then the end block.  A header's CRC field is the low 16 bits
- * of the CRC-32 of the rest of that header.  A name ending in '/' is
- * a directory, stored without the '/'. */
+ * of the CRC-32 of the rest of that header.  @solid marks the archive
+ * solid and its entries past the first packed, which the reader then
+ * cannot unpack.  A name ending in '/' is a directory, stored without
+ * the '/'. */
 static int write_rar_entries(const char *path, const zip_entry_t *e,
-      unsigned n)
+      unsigned n, bool solid)
 {
    static const uint8_t marker[7] = { 'R', 'a', 'r', '!', 0x1A, 0x07, 0x00 };
    FILE    *f;
@@ -1817,6 +1956,8 @@ static int write_rar_entries(const char *path, const zip_entry_t *e,
 
    memset(h, 0, 13);
    h[2] = 0x73;                     /* main header */
+   if (solid)
+      PUT16(h + 3, 0x0008);         /* solid */
    PUT16(h + 5, 13);
    c = crc_of(h + 2, 11);
    PUT16(h, c);
@@ -1840,7 +1981,7 @@ static int write_rar_entries(const char *path, const zip_entry_t *e,
       PUT32(h + 11, e[i].len);      /* unpacked */
       PUT32(h + 16, e[i].crc);
       h[24] = 29;                   /* unpack version */
-      h[25] = 0x30;                 /* stored */
+      h[25] = (solid && i) ? 0x31 : 0x30; /* packed, or stored */
       PUT16(h + 26, nlen);
       PUT32(h + 28, dir ? 0x10 : 0x20); /* directory, archive */
       memcpy(h + 32, e[i].name, nlen);
@@ -1998,6 +2139,11 @@ static void msgq_push(retro_task_t *task, const char *msg,
    (void)task; (void)msg; (void)prio; (void)duration; (void)flush;
 }
 
+/* While set, run_scan() pushes a group scan of these playlists, its
+ * --scan lines labelled group_label, in place of a scan of its dir. */
+static const struct string_list *group_names;
+static const char               *group_label;
+
 /* Returns false if the scan could not be started; otherwise waits for
  * it, and scan_completed says whether it finished in time. */
 static bool run_scan(const char *dir)
@@ -2024,7 +2170,10 @@ static bool run_scan(const char *dir)
    scan_result.errors     = 9999;
    scan_result.failed     = true;
    scan_err               = false;
-   if (!task_push_dbscan(dir, scan_cb, &scan_result))
+   if (!(group_names
+         ? task_push_manual_content_scan_group(group_names, group_label,
+               scan_cb, &scan_result)
+         : task_push_dbscan(dir, scan_cb, &scan_result)))
       return false;
 
    started = time(NULL);
@@ -2174,6 +2323,703 @@ end:
    free(p);
 }
 
+#define CISO_BLOCK 0x8000
+
+/* A CISO of one stored 32 KiB block, disc block @at, holding a disc
+ * header with @id and the system's @magic at @magic_at. */
+static int write_ciso(const char *path, unsigned at, const char *id,
+      const char *magic, unsigned magic_at)
+{
+   uint8_t *d = (uint8_t*)calloc(1, 2 * CISO_BLOCK);
+   int      ok;
+
+   if (!d)
+      return 0;
+   memcpy(d, "CISO", 4);
+   d[5]      = (uint8_t)(CISO_BLOCK >> 8);
+   d[8 + at] = 1;
+   memcpy(d + CISO_BLOCK, id, strlen(id));
+   memcpy(d + CISO_BLOCK + magic_at, magic, 4);
+   ok = write_bytes(path, d, 2 * CISO_BLOCK);
+   free(d);
+   return ok;
+}
+
+/* CISO files take the serial lookup through the disc image they stand
+ * for: a GameCube and a Wii image match by serial, and one whose disc
+ * starts with a block left out matches nothing, though its first
+ * stored block holds a header. */
+static void ciso_lane(const char *root, const char *pl_dir,
+      const char *db_dir)
+{
+   static const db_rec_t gc_recs[] = {
+      { "Cube The Game", "DL-DOL-GALE-USA", 0x3C150001u, 2 * CISO_BLOCK },
+      { "Gap The Game",  "DL-DOL-GAPE-USA", 0x3C150003u, 2 * CISO_BLOCK }
+   };
+   static const db_rec_t wii_recs[] = {
+      { "Wii The Game",  "RMCE01",          0x3C150002u, 2 * CISO_BLOCK }
+   };
+   char *ciso_db = (char*)malloc(512);
+   char *ciso_in = (char*)malloc(512);
+   char *p       = (char*)malloc(1024);
+   bool  started;
+
+   if (!ciso_db || !ciso_in || !p)
+   {
+      check(0, "ciso lane", "out of memory");
+      goto end;
+   }
+
+   sprintf(ciso_db, "%s/scan_db_ciso", root);
+   sprintf(ciso_in, "%s/scan_ciso",    root);
+   path_mkdir(ciso_db);
+   path_mkdir(ciso_in);
+
+   sprintf(p, "%s/Test GameCube.rdb", ciso_db);
+   if (!write_db_set(p, gc_recs, ARRAY_SIZE(gc_recs)))
+   { check(0, "fixture", "could not write database"); goto end; }
+   sprintf(p, "%s/Test Wii.rdb", ciso_db);
+   if (!write_db_set(p, wii_recs, ARRAY_SIZE(wii_recs)))
+   { check(0, "fixture", "could not write database"); goto end; }
+
+   sprintf(p, "%s/50_cube.ciso", ciso_in);
+   if (!write_ciso(p, 0, "GALE01", "\xc2\x33\x9f\x3d", 0x1c))
+   { check(0, "fixture", "could not write image"); goto end; }
+   sprintf(p, "%s/51_wii.ciso", ciso_in);
+   if (!write_ciso(p, 0, "RMCE01", "\x5d\x1c\x9e\xa3", 0x18))
+   { check(0, "fixture", "could not write image"); goto end; }
+   sprintf(p, "%s/52_gap.ciso", ciso_in);
+   if (!write_ciso(p, 1, "GAPE01", "\xc2\x33\x9f\x3d", 0x1c))
+   { check(0, "fixture", "could not write image"); goto end; }
+
+   strlcpy(config_get_ptr()->paths.path_content_database, ciso_db,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   started = run_scan(ciso_in);
+   strlcpy(config_get_ptr()->paths.path_content_database, db_dir,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   if (!started)
+   {
+      check(0, "ciso scan started", "task_push_dbscan refused");
+      goto end;
+   }
+
+   check(scan_completed, "ciso scan completed",
+         scan_completed ? "callback fired" : "timed out");
+   sprintf(p, "%s/Test GameCube.lpl", pl_dir);
+   check(   file_contains(p, "50_cube.ciso")
+         && file_contains(p, "Cube The Game"),
+         "GameCube CISO matches by serial", "50_cube.ciso");
+   check(!file_contains(p, "52_gap.ciso"),
+         "CISO read as its disc image", "52_gap.ciso unmatched");
+   sprintf(p, "%s/Test Wii.lpl", pl_dir);
+   check(   file_contains(p, "51_wii.ciso")
+         && file_contains(p, "Wii The Game"),
+         "Wii CISO matches by serial", "51_wii.ciso");
+
+end:
+   free(ciso_db);
+   free(ciso_in);
+   free(p);
+}
+
+#define XBOX_SECTOR 2048
+
+static void xbox_put_be32(uint8_t *p, uint32_t v)
+{
+   p[0] = (uint8_t)(v >> 24);
+   p[1] = (uint8_t)(v >> 16);
+   p[2] = (uint8_t)(v >> 8);
+   p[3] = (uint8_t)v;
+}
+
+/* An XEX's head: one optional header, the execution info, with
+ * @title, disc @disc of @discs */
+static void xbox_xex(uint8_t *x, uint32_t title, uint8_t disc,
+      uint8_t discs)
+{
+   memcpy(x, "XEX2", 4);
+   xbox_put_be32(x + 8, 0x200);
+   xbox_put_be32(x + 16, 0x60);
+   xbox_put_be32(x + 20, 1);
+   xbox_put_be32(x + 0x60 + 0x178, 0x000000FFu);
+   xbox_put_be32(x + 24, 0x00040006u);
+   xbox_put_be32(x + 28, 0x48);
+   xbox_put_be32(x + 0x48 + 12, title);
+   x[0x48 + 18] = disc;
+   x[0x48 + 19] = discs;
+}
+
+static void xbox_put32(uint8_t *p, uint32_t v)
+{
+   p[0] = (uint8_t)v;
+   p[1] = (uint8_t)(v >> 8);
+   p[2] = (uint8_t)(v >> 16);
+   p[3] = (uint8_t)(v >> 24);
+}
+
+/* An Xbox disc image of @size with its game partition at @base: the
+ * volume descriptor, a root holding default.xbe, and its title @title.
+ * With @ps2_spaces the field at 0x8008 holds what detect_system()
+ * takes for a PS2 DVD. Written sparsely: only the partition's head. */
+static int write_xbox_disc(const char *path, uint32_t base, uint32_t size,
+      uint32_t title, bool ps2_spaces, bool x360, uint8_t disc,
+      uint8_t discs)
+{
+   uint8_t *d = (uint8_t*)calloc(1, 40 * XBOX_SECTOR);
+   uint8_t *v = d + 32 * XBOX_SECTOR;
+   uint8_t *r = d + 33 * XBOX_SECTOR;
+   uint8_t *x = d + 34 * XBOX_SECTOR;
+   FILE    *f;
+   int      ok;
+
+   if (!d)
+      return 0;
+   memcpy(v, "MICROSOFT*XBOX*MEDIA", 20);
+   xbox_put32(v + 0x14, 33);
+   xbox_put32(v + 0x18, XBOX_SECTOR);
+   xbox_put32(r + 4, 34);
+   xbox_put32(r + 8, 4 * XBOX_SECTOR);
+   r[12] = 0x20;
+   r[13] = 11;
+   memcpy(r + 14, x360 ? "default.xex" : "default.xbe", 11);
+   if (x360)
+      xbox_xex(x, title, disc, discs);
+   else
+   {
+      memcpy(x, "XBEH", 4);
+      xbox_put32(x + 0x104, 0x10000);
+      xbox_put32(x + 0x118, 0x10000 + 0x178);
+      xbox_put32(x + 0x178 + 8, title);
+      xbox_put32(x + 0x178 + 0xA0, 1);
+   }
+
+   if (!(f = fopen(path, "wb")))
+   {
+      free(d);
+      return 0;
+   }
+   ok = 1;
+   if (ps2_spaces)
+      ok = !fseek(f, 0x8008, SEEK_SET) && fwrite("           ", 1, 11, f) == 11;
+   ok = ok && !fseek(f, (long)base, SEEK_SET)
+           && fwrite(d, 1, 40 * XBOX_SECTOR, f) == 40 * XBOX_SECTOR
+           && !fseek(f, (long)size - 1, SEEK_SET)
+           && fputc(0, f) == 0;
+   ok = !fclose(f) && ok;
+   free(d);
+   return ok;
+}
+
+static int write_xbox(const char *path, uint32_t base, uint32_t size,
+      uint32_t title, bool ps2_spaces)
+{
+   return write_xbox_disc(path, base, size, title, ps2_spaces,
+         false, 0, 0);
+}
+
+/* Xbox discs take the serial lookup by their XBE's title: an XISO, a
+ * trimmed one named .iso, which the ISO size hint would rule out, and
+ * a whole XGD3 image whose video partition reads as a PS2 DVD to
+ * detect_system(). */
+static void xbox_lane(const char *root, const char *pl_dir,
+      const char *db_dir)
+{
+   /* sizes no trimmed image comes near, as Redump's do */
+   static const db_rec_t xbox_recs[] = {
+      /* an extra of another region's release, ahead of the game */
+      { "Halo Extras",    "MS-004", 0x3B0E0004u, 0xF0000000u },
+      { "Halo The Game",  "MS-004", 0x3B0E0001u, 0xF0000000u },
+      { "Trim The Game",  "MS-012", 0x3B0E0002u, 0xF0000000u },
+      { "Whole The Game", "EA-013", 0x3B0E0003u, 0xF0000000u }
+   };
+   static const char *const xbox_regions[] = {
+      "Japan", "USA, Europe", NULL, NULL
+   };
+   char *xbox_db = (char*)malloc(512);
+   char *xbox_in = (char*)malloc(512);
+   char *p       = (char*)malloc(1024);
+   bool  started;
+
+   if (!xbox_db || !xbox_in || !p)
+   {
+      check(0, "xbox lane", "out of memory");
+      goto end;
+   }
+
+   sprintf(xbox_db, "%s/scan_db_xbox", root);
+   sprintf(xbox_in, "%s/scan_xbox",    root);
+   path_mkdir(xbox_db);
+   path_mkdir(xbox_in);
+
+   sprintf(p, "%s/Test Xbox.rdb", xbox_db);
+   if (!write_db_set_regions(p, xbox_recs, xbox_regions,
+         ARRAY_SIZE(xbox_recs)))
+   { check(0, "fixture", "could not write database"); goto end; }
+
+   sprintf(p, "%s/60_halo.xiso", xbox_in);
+   if (!write_xbox(p, 0, 0x100000, 0x4D530004u, false))
+   { check(0, "fixture", "could not write image"); goto end; }
+   sprintf(p, "%s/61_trim.iso", xbox_in);
+   if (!write_xbox(p, 0, 0x100000, 0x4D53000Cu, false))
+   { check(0, "fixture", "could not write image"); goto end; }
+   sprintf(p, "%s/62_whole.iso", xbox_in);
+   if (!write_xbox(p, 0x2080000, 0x2080000 + 0x100000, 0x4541000Du, true))
+   { check(0, "fixture", "could not write image"); goto end; }
+
+   strlcpy(config_get_ptr()->paths.path_content_database, xbox_db,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   started = run_scan(xbox_in);
+   strlcpy(config_get_ptr()->paths.path_content_database, db_dir,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   if (!started)
+   {
+      check(0, "xbox scan started", "task_push_dbscan refused");
+      goto end;
+   }
+
+   check(scan_completed, "xbox scan completed",
+         scan_completed ? "callback fired" : "timed out");
+   sprintf(p, "%s/Test Xbox.lpl", pl_dir);
+   check(   file_contains(p, "60_halo.xiso")
+         && file_contains(p, "Halo The Game"),
+         "XISO matches by its XBE title", "60_halo.xiso");
+   check(!file_contains(p, "Halo Extras"),
+         "the XBE's regions pick the release", "not the extra");
+   check(   file_contains(p, "61_trim.iso")
+         && file_contains(p, "Trim The Game"),
+         "trimmed .iso not ruled out by size", "61_trim.iso");
+   check(   file_contains(p, "62_whole.iso")
+         && file_contains(p, "Whole The Game"),
+         "whole XGD3 image past the PS2 magic", "62_whole.iso");
+
+end:
+   free(xbox_db);
+   free(xbox_in);
+   free(p);
+}
+
+/* A ZArchive holding default.xex (@title) and one other file, its one
+ * block compressed */
+static int write_zar(const char *path, uint32_t title)
+{
+   uint8_t *stream = (uint8_t*)calloc(1, 65536);
+   size_t   cap    = rzstd_compress_bound(65536);
+   uint8_t *out    = (uint8_t*)calloc(1, cap + 4096);
+   uint8_t  tree[3 * 16];
+   uint8_t  names[64];
+   size_t   nsize  = 0;
+   size_t   bsize  = 0;
+   size_t   at;
+   uint8_t *ft;
+   int      ok     = 0;
+
+   if (!stream || !out)
+      goto end;
+   xbox_xex(stream, title, 1, 1);
+   memcpy(stream + 0x1000, "readme", 6);
+   if (     rzstd_encode(out, cap, stream, 65536, 3, &bsize)
+               != RZSTD_PROCESS_END
+         || !bsize || bsize >= 65536)
+      goto end;
+
+   /* root: a.txt then default.xex */
+   names[nsize++] = 5;
+   memcpy(names + nsize, "a.txt", 5);
+   nsize += 5;
+   names[nsize++] = 11;
+   memcpy(names + nsize, "default.xex", 11);
+   nsize += 11;
+   memset(tree, 0, sizeof(tree));
+   xbox_put_be32(tree + 0, 0x7FFFFFFFu);
+   xbox_put_be32(tree + 4, 1);
+   xbox_put_be32(tree + 8, 2);
+   xbox_put_be32(tree + 16, 0x80000000u | 0);
+   xbox_put_be32(tree + 20, 0x1000);
+   xbox_put_be32(tree + 24, 6);
+   xbox_put_be32(tree + 32, 0x80000000u | 6);
+   xbox_put_be32(tree + 36, 0);
+   xbox_put_be32(tree + 40, 0x1000);
+
+   /* blocks, the record, names, tree, two empty sections, footer */
+   at = bsize;
+   memset(out + at, 0, 40);
+   out[at + 8] = (uint8_t)((bsize - 1) >> 8);
+   out[at + 9] = (uint8_t)(bsize - 1);
+   memcpy(out + at + 40, names, nsize);
+   memcpy(out + at + 40 + nsize, tree, sizeof(tree));
+   ft = out + at + 40 + nsize + sizeof(tree);
+   memset(ft, 0, 144);
+   xbox_put_be32(ft + 12, (uint32_t)bsize);
+   xbox_put_be32(ft + 20, (uint32_t)at);
+   xbox_put_be32(ft + 28, 40);
+   xbox_put_be32(ft + 36, (uint32_t)(at + 40));
+   xbox_put_be32(ft + 44, (uint32_t)nsize);
+   xbox_put_be32(ft + 52, (uint32_t)(at + 40 + nsize));
+   xbox_put_be32(ft + 60, sizeof(tree));
+   xbox_put_be32(ft + 68, (uint32_t)(ft - out));
+   xbox_put_be32(ft + 84, (uint32_t)(ft - out));
+   xbox_put_be32(ft + 132, (uint32_t)(ft - out + 144));
+   xbox_put_be32(ft + 136, 0x61BF3A01u);
+   xbox_put_be32(ft + 140, 0x169F52D6u);
+   ok = write_bytes(path, out, (size_t)(ft - out + 144));
+end:
+   free(stream);
+   free(out);
+   return ok;
+}
+
+/* Xbox 360 content takes the serial lookup by its title: a whole XGD3
+ * disc, the second of a set, an XEX and an STFS package on their own;
+ * a .xex that is no Xbox 360 executable (an Atari 8-bit one) still
+ * matches its own database by CRC. */
+static void x360_lane(const char *root, const char *pl_dir,
+      const char *db_dir)
+{
+   static const db_rec_t x360_recs[] = {
+      { "Set The Game (Disc 1)", "FO-2046-0", 0x3B360001u, 0xF0000000u },
+      { "Set The Game (Disc 2) (Japan)", "FO-2046-1", 0x3B360007u,
+        0xF0000000u },
+      { "Set The Game (Disc 2)", "FO-2046-1", 0x3B360002u, 0xF0000000u },
+      { "Exe The Game",          "AV-2071",   0x3B360003u, 0xF0000000u },
+      { "Arcade The Game",       "XA-2209",   0x3B360004u, 0xF0000000u },
+      { "Zar The Game",          "SE-2142",   0x3B360006u, 0xF0000000u }
+   };
+   static const char *const x360_regions[] = {
+      NULL, "Japan", "USA", NULL, NULL, NULL
+   };
+   char    *x_db = (char*)malloc(512);
+   char    *x_in = (char*)malloc(512);
+   char    *p    = (char*)malloc(1024);
+   uint8_t *d    = (uint8_t*)calloc(1, 0x1000);
+   bool     started;
+
+   if (!x_db || !x_in || !p || !d)
+   {
+      check(0, "x360 lane", "out of memory");
+      goto end;
+   }
+
+   sprintf(x_db, "%s/scan_db_x360", root);
+   sprintf(x_in, "%s/scan_x360",    root);
+   path_mkdir(x_db);
+   path_mkdir(x_in);
+
+   sprintf(p, "%s/Test Xbox 360.rdb", x_db);
+   if (!write_db_set_regions(p, x360_recs, x360_regions,
+         ARRAY_SIZE(x360_recs)))
+   { check(0, "fixture", "could not write database"); goto end; }
+   sprintf(p, "%s/Test Atari.rdb", x_db);
+   if (!write_db(p, "Atari The Game", 0x3B360005u, 0x1000))
+   { check(0, "fixture", "could not write database"); goto end; }
+
+   sprintf(p, "%s/70_disc2.iso", x_in);
+   if (!write_xbox_disc(p, 0x2080000, 0x2080000 + 0x100000, 0x464F07FEu,
+         false, true, 2, 2))
+   { check(0, "fixture", "could not write image"); goto end; }
+   xbox_xex(d, 0x41560817u, 1, 1);
+   sprintf(p, "%s/71_game.xex", x_in);
+   if (!write_bytes(p, d, 0x1000))
+   { check(0, "fixture", "could not write executable"); goto end; }
+   memset(d, 0, 0x1000);
+   memcpy(d, "LIVE", 4);
+   xbox_put_be32(d + 0x360, 0x584108A1u);
+   sprintf(p, "%s/72_arcade.xcp", x_in);
+   if (!write_bytes(p, d, 0x1000))
+   { check(0, "fixture", "could not write package"); goto end; }
+   sprintf(p, "%s/74_game.zar", x_in);
+   if (!write_zar(p, 0x5345085Eu))
+   { check(0, "fixture", "could not write archive"); goto end; }
+   sprintf(p, "%s/73_atari.xex", x_in);
+   if (!write_content(p, 0x3B360005u, 0x1000))
+   { check(0, "fixture", "crc forcing failed"); goto end; }
+
+   strlcpy(config_get_ptr()->paths.path_content_database, x_db,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   started = run_scan(x_in);
+   strlcpy(config_get_ptr()->paths.path_content_database, db_dir,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   if (!started)
+   {
+      check(0, "x360 scan started", "task_push_dbscan refused");
+      goto end;
+   }
+
+   check(scan_completed, "x360 scan completed",
+         scan_completed ? "callback fired" : "timed out");
+   sprintf(p, "%s/Test Xbox 360.lpl", pl_dir);
+   check(   file_contains(p, "70_disc2.iso")
+         && file_contains(p, "Set The Game (Disc 2)")
+         && !file_contains(p, "Set The Game (Disc 1)"),
+         "360 disc matches its place in the set", "70_disc2.iso");
+   check(!file_contains(p, "Set The Game (Disc 2) (Japan)"),
+         "the XEX's regions pick the release", "not the Japanese one");
+   check(   file_contains(p, "71_game.xex")
+         && file_contains(p, "Exe The Game"),
+         "XEX matches by its title", "71_game.xex");
+   check(   file_contains(p, "72_arcade.xcp")
+         && file_contains(p, "Arcade The Game"),
+         "STFS package matches by its title", "72_arcade.xcp");
+   check(   file_contains(p, "74_game.zar")
+         && file_contains(p, "Zar The Game"),
+         "ZArchive matches by its default.xex", "74_game.zar");
+   sprintf(p, "%s/Test Atari.lpl", pl_dir);
+   check(   file_contains(p, "73_atari.xex")
+         && file_contains(p, "Atari The Game"),
+         "other .xex still matches by CRC", "73_atari.xex");
+
+end:
+   free(x_db);
+   free(x_in);
+   free(p);
+   free(d);
+}
+
+/* A Wii U disc of @sectors 32 KiB sectors whose header says @code;
+ * with @wux, as a WUX that keeps the empty sectors once */
+static int write_wiiu_disc(const char *path, const char *code,
+      unsigned sectors, bool wux)
+{
+   uint8_t *d  = (uint8_t*)calloc(sectors + 1, 0x8000);
+   size_t   n  = (size_t)sectors * 0x8000;
+   int      ok = 0;
+   unsigned i;
+
+   if (!d)
+      return 0;
+   memcpy(d, "WUP-P-", 6);
+   memcpy(d + 6, code, 4);
+   memcpy(d + 10, "-0-00", 5);
+   if (wux)
+   {
+      /* the header, the index (sector 0, then the empty one for the
+       * rest), padding to a sector, then the two sectors */
+      uint8_t *w = (uint8_t*)calloc(3, 0x8000);
+      if (!w)
+      {
+         free(d);
+         return 0;
+      }
+      memcpy(w, "WUX0", 4);
+      w[4] = 0x2E; w[5] = 0xD0; w[6] = 0x99; w[7] = 0x10;
+      w[9] = 0x80;
+      w[16] = (uint8_t)n; w[17] = (uint8_t)(n >> 8);
+      w[18] = (uint8_t)(n >> 16); w[19] = (uint8_t)(n >> 24);
+      for (i = 1; i < sectors; i++)
+         w[32 + i * 4] = 1;
+      memcpy(w + 0x8000, d, 0x8000);
+      ok = write_bytes(path, w, 3 * 0x8000);
+      free(w);
+   }
+   else
+      ok = write_bytes(path, d, n);
+   free(d);
+   return ok;
+}
+
+/* A Wii U archive of two titles - an update listed first, then the
+ * base game - each with meta/meta.xml; the update's names @upd_code,
+ * the game's @code and @company. Its one block is kept as it is. */
+static int write_wua(const char *path, const char *code,
+      const char *company, const char *upd_code)
+{
+   static const char *const dirs[2] = {
+      "0005000E101C9500_v32", "00050000101C9500_v0" };
+   uint8_t *out = (uint8_t*)calloc(1, 65536 + 4096);
+   uint8_t  tree[7 * 16];
+   uint8_t  names[128];
+   uint32_t name_at[7];
+   size_t   nsize = 0;
+   size_t   xml_len[2];
+   size_t   at;
+   uint8_t *ft;
+   int      ok    = 0;
+   unsigned i;
+
+   if (!out)
+      return 0;
+   /* the stream: the update's meta.xml, then the game's at 2048 */
+   for (i = 0; i < 2; i++)
+      xml_len[i] = (size_t)sprintf((char*)out + i * 2048,
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+            "<menu type=\"complex\" access=\"777\">\n"
+            "  <version type=\"unsignedInt\" length=\"4\">33</version>\n"
+            "  <product_code type=\"string\" length=\"32\">WUP-%c-%s"
+            "</product_code>\n"
+            "  <content_platform type=\"string\" length=\"32\">WUP"
+            "</content_platform>\n"
+            "  <company_code type=\"string\" length=\"8\">%s"
+            "</company_code>\n</menu>\n",
+            i ? 'P' : 'N', i ? code : upd_code, i ? company : "0001");
+
+   /* names: the two titles, "meta" twice, "meta.xml" twice */
+   name_at[0] = 0x7FFFFFFFu;
+   for (i = 1; i < 7; i++)
+   {
+      const char *nm = (i < 3) ? dirs[i - 1] : (i < 5) ? "meta" : "meta.xml";
+      size_t      l  = strlen(nm);
+      name_at[i]     = (uint32_t)nsize;
+      names[nsize++] = (uint8_t)l;
+      memcpy(names + nsize, nm, l);
+      nsize         += l;
+   }
+   /* root: the titles; each title: its meta; each meta: its meta.xml */
+   memset(tree, 0, sizeof(tree));
+   for (i = 0; i < 7; i++)
+      xbox_put_be32(tree + i * 16, name_at[i] | (i >= 5 ? 0x80000000u : 0));
+   xbox_put_be32(tree + 0 * 16 + 4, 1); xbox_put_be32(tree + 0 * 16 + 8, 2);
+   xbox_put_be32(tree + 1 * 16 + 4, 3); xbox_put_be32(tree + 1 * 16 + 8, 1);
+   xbox_put_be32(tree + 2 * 16 + 4, 4); xbox_put_be32(tree + 2 * 16 + 8, 1);
+   xbox_put_be32(tree + 3 * 16 + 4, 5); xbox_put_be32(tree + 3 * 16 + 8, 1);
+   xbox_put_be32(tree + 4 * 16 + 4, 6); xbox_put_be32(tree + 4 * 16 + 8, 1);
+   xbox_put_be32(tree + 5 * 16 + 4, 0);
+   xbox_put_be32(tree + 5 * 16 + 8, (uint32_t)xml_len[0]);
+   xbox_put_be32(tree + 6 * 16 + 4, 2048);
+   xbox_put_be32(tree + 6 * 16 + 8, (uint32_t)xml_len[1]);
+
+   /* the block, the record, names, tree, two empty sections, footer */
+   at = 65536;
+   memset(out + at, 0, 40);
+   out[at + 8] = 0xFF;
+   out[at + 9] = 0xFF;
+   memcpy(out + at + 40, names, nsize);
+   memcpy(out + at + 40 + nsize, tree, sizeof(tree));
+   ft = out + at + 40 + nsize + sizeof(tree);
+   memset(ft, 0, 144);
+   xbox_put_be32(ft + 12, 65536);
+   xbox_put_be32(ft + 20, (uint32_t)at);
+   xbox_put_be32(ft + 28, 40);
+   xbox_put_be32(ft + 36, (uint32_t)(at + 40));
+   xbox_put_be32(ft + 44, (uint32_t)nsize);
+   xbox_put_be32(ft + 52, (uint32_t)(at + 40 + nsize));
+   xbox_put_be32(ft + 60, sizeof(tree));
+   xbox_put_be32(ft + 68, (uint32_t)(ft - out));
+   xbox_put_be32(ft + 84, (uint32_t)(ft - out));
+   xbox_put_be32(ft + 132, (uint32_t)(ft - out + 144));
+   xbox_put_be32(ft + 136, 0x61BF3A01u);
+   xbox_put_be32(ft + 140, 0x169F52D6u);
+   ok = write_bytes(path, out, (size_t)(ft - out + 144));
+   free(out);
+   return ok;
+}
+
+/* Wii U content takes the serial lookup by its product code, in the
+ * Wii U database alone: a release's serial adds its maker's two
+ * characters, or nothing for a title sold as a download. A WUD, a WUX
+ * and a Wii U disc named .iso match a disc release; an archive matches
+ * the release of the maker its meta.xml names, and the download when
+ * there is none, reading its base title rather than the update listed
+ * before it. Another database holding the code alone is not
+ * consulted. */
+static void wiiu_lane(const char *root, const char *pl_dir,
+      const char *db_dir)
+{
+   static const db_rec_t wiiu_recs[] = {
+      { "Kart Download (USA)",  "AMKE",   0, 0, NULL, true },
+      { "Kart Disc (USA)",      "AMKE01", 0, 0, NULL, true },
+      { "Kart Other (USA)",     "AMKEXY", 0, 0, NULL, true },
+      { "Kart Long (USA)",      "AMKE01Z", 0, 0, NULL, true },
+      { "Pikmin Disc (Europe)", "AC3P01", 0, 0, NULL, true },
+      { "Zelda Disc (USA)",     "ALZE01", 0, 0, NULL, true },
+      { "Splat Disc (USA)",     "WSPE01", 0, 0, NULL, true },
+      { "Splat Download (USA)", "WSPE",   0, 0, NULL, true },
+      { "Mii Other (Japan)",    "WMIJ01", 0, 0, NULL, true },
+      { "Mii Maker (Japan)",    "WMIJ8P", 0, 0, NULL, true },
+      { "Update Trap (USA)",    "UPDE",   0, 0, NULL, true }
+   };
+   static const db_rec_t decoy_recs[] = {
+      { "Decoy Pikmin", "AC3P", 0, 0, NULL, true },
+      { "Decoy Zelda",  "ALZE", 0, 0, NULL, true },
+      { "Decoy Kart",   "AMKE", 0, 0, NULL, true }
+   };
+   char *w_db = (char*)malloc(512);
+   char *w_in = (char*)malloc(512);
+   char *p    = (char*)malloc(1024);
+   bool  started;
+
+   if (!w_db || !w_in || !p)
+   {
+      check(0, "wiiu lane", "out of memory");
+      goto end;
+   }
+
+   sprintf(w_db, "%s/scan_db_wiiu", root);
+   sprintf(w_in, "%s/scan_wiiu",    root);
+   path_mkdir(w_db);
+   path_mkdir(w_in);
+
+   sprintf(p, "%s/Nintendo - Wii U.rdb", w_db);
+   if (!write_db_set(p, wiiu_recs, ARRAY_SIZE(wiiu_recs)))
+   { check(0, "fixture", "could not write database"); goto end; }
+   sprintf(p, "%s/Test Decoy.rdb", w_db);
+   if (!write_db_set(p, decoy_recs, ARRAY_SIZE(decoy_recs)))
+   { check(0, "fixture", "could not write database"); goto end; }
+
+   sprintf(p, "%s/80_kart.wud", w_in);
+   if (!write_wiiu_disc(p, "AMKE", 4, false))
+   { check(0, "fixture", "could not write image"); goto end; }
+   sprintf(p, "%s/81_pikmin.wux", w_in);
+   if (!write_wiiu_disc(p, "AC3P", 4, true))
+   { check(0, "fixture", "could not write image"); goto end; }
+   sprintf(p, "%s/82_zelda.iso", w_in);
+   if (!write_wiiu_disc(p, "ALZE", 4, false))
+   { check(0, "fixture", "could not write image"); goto end; }
+   sprintf(p, "%s/83_splat.wua", w_in);
+   if (!write_wua(p, "WSPE", "0099", "UPDE"))
+   { check(0, "fixture", "could not write archive"); goto end; }
+   sprintf(p, "%s/84_mii.wua", w_in);
+   if (!write_wua(p, "WMIJ", "008P", "UPDE"))
+   { check(0, "fixture", "could not write archive"); goto end; }
+
+   strlcpy(config_get_ptr()->paths.path_content_database, w_db,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   started = run_scan(w_in);
+   strlcpy(config_get_ptr()->paths.path_content_database, db_dir,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   if (!started)
+   {
+      check(0, "wiiu scan started", "task_push_dbscan refused");
+      goto end;
+   }
+
+   check(scan_completed, "wiiu scan completed",
+         scan_completed ? "callback fired" : "timed out");
+   sprintf(p, "%s/Nintendo - Wii U.lpl", pl_dir);
+   check(   file_contains(p, "80_kart.wud")
+         && file_contains(p, "Kart Disc (USA)")
+         && file_contains(p, "AMKE01|serial")
+         && !file_contains(p, "Kart Download")
+         && !file_contains(p, "Kart Other")
+         && !file_contains(p, "Kart Long"),
+         "a WUD matches a disc release of its product code",
+         "80_kart.wud");
+   check(   file_contains(p, "81_pikmin.wux")
+         && file_contains(p, "Pikmin Disc (Europe)"),
+         "a WUX is read through its index", "81_pikmin.wux");
+   check(   file_contains(p, "82_zelda.iso")
+         && file_contains(p, "Zelda Disc (USA)"),
+         "a Wii U disc named .iso", "82_zelda.iso");
+   check(   file_contains(p, "83_splat.wua")
+         && file_contains(p, "Splat Download (USA)")
+         && !file_contains(p, "Splat Disc"),
+         "an archive whose maker has no release takes the download",
+         "83_splat.wua");
+   check(   file_contains(p, "84_mii.wua")
+         && file_contains(p, "Mii Maker (Japan)")
+         && !file_contains(p, "Mii Other"),
+         "an archive's maker picks the release", "84_mii.wua");
+   check(!file_contains(p, "Update Trap"),
+         "an archive's base title, not its update", "UPDE");
+   sprintf(p, "%s/Test Decoy.lpl", pl_dir);
+   check(!path_is_valid(p) || !file_contains(p, "Decoy"),
+         "a product code is looked up in the Wii U database alone",
+         "Test Decoy.lpl");
+
+end:
+   free(w_db);
+   free(w_in);
+   free(p);
+}
+
 /* The folder a playlist refreshes from, its default core and
  * whether it recurses.  False when the playlist holds no scan record. */
 static bool scan_record(const char *lpl, char *dir, char *core,
@@ -2215,6 +3061,111 @@ static bool scan_gone(const char *dir, char *gone)
    sprintf(gone, "%s_gone", dir);
    ran = !filestream_rename(dir, gone) && run_scan(dir) && scan_completed;
    return !filestream_rename(gone, dir) && ran;
+}
+
+static void dotted_names_lane(const char *root, const char *pl_dir,
+      const char *db_dir, uint32_t crc, uint32_t size)
+{
+   char dir[512], db[512], out[512], p[1024], lpl[1024];
+   playlist_config_t *cfg = (playlist_config_t*)calloc(1, sizeof(*cfg));
+   manual_content_scan_task_config_t *scan =
+         (manual_content_scan_task_config_t*)calloc(1, sizeof(*scan));
+   playlist_t *pl = NULL;
+   bool ready;
+
+   if (!cfg || !scan)
+   {
+      check(0, "dotted names", "out of memory");
+      goto end;
+   }
+
+   sprintf(dir, "%s/scan.dotted", root);
+   sprintf(db, "%s/scan_dotted_db", root);
+   sprintf(out, "%s/scan_dotted_playlist", root);
+   path_mkdir(dir);
+   path_mkdir(db);
+   path_mkdir(out);
+   sprintf(p, "%s/Tiger - Game.com.rdb", db);
+   if (!write_db(p, "Dotted Game", crc, size))
+      goto fixture;
+   sprintf(p, "%s/before.bin", dir);
+   if (!write_content(p, crc, size))
+      goto fixture;
+   sprintf(p, "%s/after.bin", dir);
+   filestream_delete(p);
+   sprintf(lpl, "%s/Tiger - Game.com.lpl", out);
+   filestream_delete(lpl);
+   sprintf(p, "%s/Tiger - Game.lpl", out);
+   filestream_delete(p);
+
+   strlcpy(config_get_ptr()->paths.directory_playlist, out,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   strlcpy(config_get_ptr()->paths.path_content_database, db,
+         sizeof(config_get_ptr()->paths.path_content_database));
+   manual_content_scan_set_menu_scan_method(
+         MANUAL_CONTENT_SCAN_METHOD_AUTOMATIC);
+   ready = run_scan(dir) && scan_completed;
+   check(ready && file_contains(lpl, "Dotted Game"),
+         "automatic scan keeps a dotted database", "Tiger - Game.com");
+
+   playlist_config_set_path(cfg, lpl);
+   cfg->capacity = COLLECTION_SIZE;
+   pl = playlist_init(cfg);
+   ready = pl && manual_content_scan_set_menu_from_playlist(pl, db, false)
+         == MANUAL_CONTENT_SCAN_PLAYLIST_REFRESH_OK;
+   if (pl)
+      playlist_free(pl);
+   sprintf(p, "%s/after.bin", dir);
+   if (!write_content(p, crc, size))
+      goto fixture;
+   ready = ready && run_scan(dir) && scan_completed;
+   check(ready && file_contains(lpl, "after.bin"),
+         "refresh keeps the dotted playlist and database", "Tiger - Game.com");
+   sprintf(p, "%s/Tiger - Game.lpl", out);
+   check(!path_is_valid(p), "refresh creates no truncated playlist",
+         "Tiger - Game.lpl");
+
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_NONE);
+   strlcpy(manual_content_scan_get_system_name_custom_ptr(),
+         "VTech - V.Smile", manual_content_scan_get_system_name_custom_size());
+   manual_content_scan_set_menu_system_name(
+         MANUAL_CONTENT_SCAN_SYSTEM_NAME_CUSTOM, NULL);
+   sprintf(p, "%s/VTech - V.Smile.lpl", out);
+   filestream_delete(p);
+   ready = run_scan(dir) && scan_completed;
+   check(ready && file_contains(p, "after.bin"),
+         "custom playlist keeps dots", "VTech - V.Smile.lpl");
+
+   manual_content_scan_set_menu_system_name(
+         MANUAL_CONTENT_SCAN_SYSTEM_NAME_CONTENT_DIR, NULL);
+   sprintf(p, "%s/scan.dotted.lpl", out);
+   filestream_delete(p);
+   ready = run_scan(dir) && scan_completed;
+   check(ready && file_contains(p, "after.bin"),
+         "folder playlist keeps dots", "scan.dotted.lpl");
+
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_STRICT);
+   manual_content_scan_set_menu_scan_db_select(
+         MANUAL_CONTENT_SCAN_SELECT_DB_AUTO, NULL);
+   ready = manual_content_scan_get_task_config(scan, out);
+   check(ready && !strcmp(scan->dat_file_path, "scan.dotted.lpl"),
+         "fallback database name keeps dots", "scan.dotted.lpl");
+   goto restore;
+
+fixture:
+   check(0, "fixture", "could not write the dotted-name set");
+restore:
+   manual_content_scan_set_menu_scan_method(
+         MANUAL_CONTENT_SCAN_METHOD_AUTOMATIC);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl_dir,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   strlcpy(config_get_ptr()->paths.path_content_database, db_dir,
+         sizeof(config_get_ptr()->paths.path_content_database));
+end:
+   free(cfg);
+   free(scan);
 }
 
 /* A file given as the content location is only added: Overwrite is
@@ -2702,6 +3653,38 @@ static retro_time_t run_scan_cancelled(const char *dir, bool on_stuck)
    return (scan_completed && cancelled) ? cb_usec - cancelled : -1;
 }
 
+/* As run_scan(), but cancels once the fingerprint index build has
+ * yielded.  True when the scan then ends. */
+static bool run_scan_cancel_setfp(const char *dir)
+{
+   task_finder_data_t finder;
+   bool               cancelled = false;
+   time_t             started;
+
+   loop_active    = true;
+   scan_completed = false;
+   if (!task_push_dbscan(dir, scan_cb, NULL))
+      return false;
+   finder.func     = find_scan;
+   finder.userdata = NULL;
+   started         = time(NULL);
+   while (loop_active)
+   {
+      if (   !cancelled
+          && retro_atomic_load_acquire_int(&setfp_yields) > 0
+          && task_queue_find(&finder))
+      {
+         task_queue_cancel_ident(lane_ident);
+         cancelled = true;
+      }
+      task_queue_check();
+      if (difftime(time(NULL), started) > SCAN_TIMEOUT_SECONDS)
+         return false;
+      retro_sleep(1);
+   }
+   return cancelled;
+}
+
 /* Reader tasks on the threaded queue's parallel workers.  The cancel
  * lane's files sleep 2 ms each, so the scan is still running when it
  * is cancelled. */
@@ -3022,6 +4005,117 @@ end:
    free(out);
    free(err);
    free(log);
+   free(want);
+}
+
+static unsigned file_count(const char *path, const char *needle);
+
+/* A DAT scan and one that matches nothing print a database scan's
+ * lines: the folder, a line per file and a "??" for each file the
+ * totals count unmatched.  Rescans counts_lane()'s folders. */
+static void cli_lines_lane(const char *root, const char *pl_dir)
+{
+   char    *dat_dir = (char*)malloc(512);
+   char    *m3u_dir = (char*)malloc(512);
+   char    *res_pl  = (char*)malloc(512);
+   char    *dat     = (char*)malloc(512);
+   char    *out     = (char*)malloc(512);
+   char    *err     = (char*)malloc(512);
+   char    *want    = (char*)malloc(1024);
+   char     detail[64];
+   unsigned qq;
+
+   if (!dat_dir || !m3u_dir || !res_pl || !dat || !out || !err || !want)
+   {
+      check(0, "lines lane", "out of memory");
+      goto end;
+   }
+
+   sprintf(dat_dir, "%s/scan_result_dat", root);
+   sprintf(m3u_dir, "%s/scan_result_m3u", root);
+   sprintf(res_pl,  "%s/scan_result_pl",  root);
+   sprintf(dat,     "%s/scan_result.dat", root);
+   sprintf(out,     "%s/scan_lines.out",  root);
+   sprintf(err,     "%s/scan_lines.err",  root);
+   strlcpy(config_get_ptr()->paths.directory_playlist, res_pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   manual_content_scan_set_menu_scan_method(
+         MANUAL_CONTENT_SCAN_METHOD_CUSTOM);
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_DAT_STRICT);
+   strlcpy(manual_content_scan_get_dat_file_path_ptr(), dat,
+         manual_content_scan_get_dat_file_path_size());
+
+   delete_playlists(res_pl);
+   if (capture_scan(dat_dir, out, err, true))
+   {
+      sprintf(want, "\"%s\"...", dat_dir);
+      check(file_contains(out, want),
+            "lines: a DAT scan starts with its folder", want);
+      check(   file_contains(out, "1/2: \"01_alpha.bin\"...")
+            && file_contains(out, "2/2: \"02_none.bin\"..."),
+            "lines: and prints a line per file", out);
+      sprintf(want, " ?? \"%s/02_none.bin\"", dat_dir);
+      check(file_contains(out, want),
+            "lines: and ?? for the file it leaves out", want);
+      qq = file_count(out, " ?? \"");
+      sprintf(detail, "%u ??, %u unmatched", qq, scan_result.unmatched);
+      check(qq == 1 && scan_result.unmatched == 1,
+            "lines: one ?? per unmatched file", detail);
+   }
+
+   /* Nothing the DAT lists: two discs, then the m3u in its own pass. */
+   delete_playlists(res_pl);
+   if (capture_scan(m3u_dir, out, err, true))
+   {
+      sprintf(want, " ?? \"%s/Game.m3u\"", m3u_dir);
+      qq = file_count(out, " ?? \"");
+      sprintf(detail, "%u ??, %u unmatched", qq, scan_result.unmatched);
+      check(   file_contains(out, want)
+            && qq == 3 && scan_result.unmatched == 3,
+            "lines: an unmatched m3u gets its ??", detail);
+   }
+
+   delete_playlists(res_pl);
+   if (capture_scan(dat_dir, out, err, false))
+      check(path_get_size(out) == 0 && path_get_size(err) == 0,
+            "lines: none without --scan", out);
+
+   manual_content_scan_get_dat_file_path_ptr()[0] = '\0';
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_NONE);
+   manual_content_scan_set_menu_system_name(
+         MANUAL_CONTENT_SCAN_SYSTEM_NAME_CONTENT_DIR, NULL);
+   delete_playlists(res_pl);
+   if (capture_scan(dat_dir, out, err, true))
+   {
+      sprintf(want, "\"%s\"...", dat_dir);
+      check(   file_contains(out, want)
+            && file_contains(out, "1/2: \"01_alpha.bin\"...")
+            && file_contains(out, "2/2: \"02_none.bin\"..."),
+            "lines: match none prints them too", want);
+      qq = file_count(out, " ?? \"");
+      sprintf(detail, "%u ??, %u unmatched", qq, scan_result.unmatched);
+      check(qq == 0 && scan_result.unmatched == 0,
+            "lines: and no ?? with nothing unmatched", detail);
+   }
+
+   manual_content_scan_set_menu_system_name(
+         MANUAL_CONTENT_SCAN_SYSTEM_NAME_AUTO, NULL);
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_STRICT);
+   manual_content_scan_set_menu_scan_method(
+         MANUAL_CONTENT_SCAN_METHOD_AUTOMATIC);
+   delete_playlists(res_pl);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl_dir,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+end:
+   free(dat_dir);
+   free(m3u_dir);
+   free(res_pl);
+   free(dat);
+   free(out);
+   free(err);
    free(want);
 }
 
@@ -3586,6 +4680,7 @@ static void set_rec(db_rec_t *rec, const char *name, uint32_t crc,
    rec->size   = size;
    rec->rom_name = NULL;
    rec->unsized  = false;
+   rec->set_fp   = 0;
 }
 
 #define MIX_BIG_ONE 70000
@@ -4690,19 +5785,24 @@ fixture:
 }
 
 /* TorrentZip sets of several members are read whole by the readers
- * with no grant while a database opens zip; a TorrentZip zip of one
- * member is not; plain ones only by the scan, once the size lets it;
- * neither while no database opens zip.  No record matches, so no
- * whole match grants a read ahead. */
+ * with no grant while a database opens zip and none of those carries
+ * set fingerprints; a refused fingerprint index carries none.  A
+ * TorrentZip zip of one member is not read so; plain ones only by the
+ * scan, once the size lets it; neither while no database opens zip.
+ * No record matches, so no whole match grants a read ahead.  The
+ * fingerprint index build resumes after a yield and is freed when the
+ * scan is cancelled during it. */
 static void tz_reader_lane(const char *root)
 {
    static uint8_t d[2][MF_MEMBER_LEN];
-   char           db[2][512], dir[2][512], p[1024], detail[64];
-   db_rec_t       arc[2], cart;
+   static char    p[1024];
+   static char    db[4][512];
+   char           dir[2][512], detail[64];
+   db_rec_t       arc[2], cart, fp[2];
    zip_entry_t    e[2];
    uint32_t       one_bytes;
-   unsigned       k, j;
-   int            scan, rdr, one;
+   unsigned       k, j, walks[5];
+   int            scan, rdr, one, yields;
    bool           started;
 
    if (!readers_expected())
@@ -4712,6 +5812,8 @@ static void tz_reader_lane(const char *root)
    }
    sprintf(db[0],  "%s/tz_reader_db",    root);
    sprintf(db[1],  "%s/tz_reader_nozip", root);
+   sprintf(db[2],  "%s/tz_reader_fp",    root);
+   sprintf(db[3],  "%s/tz_reader_nocm",  root);
    sprintf(dir[0], "%s/tz_reader_tz",    root);
    sprintf(dir[1], "%s/tz_reader_plain", root);
    for (j = 0; j < 2; j++)
@@ -4719,6 +5821,8 @@ static void tz_reader_lane(const char *root)
       path_mkdir(db[j]);
       path_mkdir(dir[j]);
    }
+   path_mkdir(db[2]);
+   path_mkdir(db[3]);
    memset(e, 0, sizeof(e));
    e[0].name = "a.ar";
    e[1].name = "b.ar";
@@ -4756,17 +5860,26 @@ static void tz_reader_lane(const char *root)
    sprintf(p, "%s/Test Arc Gate.rdb", db[0]);
    if (!write_db_set(p, arc, 2))
       goto fixture;
+   /* The same records, one keyed on a fingerprint no set has. */
+   fp[0]        = arc[0];
+   fp[1]        = arc[1];
+   fp[0].set_fp = 0x0CA701FEu;
+   sprintf(p, "%s/Test Arc Gate.rdb", db[2]);
+   if (!write_db_set(p, fp, 2))
+      goto fixture;
    set_rec(&cart, "TZR Cart", 0x0CA701F2u, MF_MEMBER_LEN);
    sprintf(p, "%s/Test Cart Gate.rdb", db[1]);
    if (!write_db_set(p, &cart, 1))
       goto fixture;
 
    use_queue(true);
-   for (j = 0; j < 3; j++)
+   for (j = 0; j < 5; j++)
    {
       bool tz = (j != 1);
 
-      use_db(db[j == 2]);
+      use_db(db[j == 2 ? 1 : (j > 2 ? 2 : 0)]);
+      setfp_cap    = (j == 4) ? 1 : 0;
+      setfp_builds = 0;
       retro_atomic_store_release_int(&reads_begun,  0);
       retro_atomic_store_release_int(&reader_begun, 0);
       retro_atomic_store_release_int(&watch_scan,   0);
@@ -4774,6 +5887,8 @@ static void tz_reader_lane(const char *root)
       begun_size = tz ? TZ_ZIP_LEN : ARC_ZIP_LEN;
       watch_size = one_bytes;
       started    = run_scan(dir[tz ? 0 : 1]) && scan_completed;
+      setfp_cap  = 0;
+      walks[j]   = setfp_builds;
       begun_size = 0;
       watch_size = 0;
       rdr        = retro_atomic_load_acquire_int(&reader_begun);
@@ -4792,26 +5907,102 @@ static void tz_reader_lane(const char *root)
       else if (j == 1)
          check(started && scan == GATE_ZIPS && rdr == 0,
                "plain sets: the scan reads them once sized", detail);
-      else
+      else if (j == 2)
          check(started && scan == 0 && rdr == 0,
                "TorrentZip sets: no zip database, no read", detail);
+      else if (j == 3)
+         check(started && scan == GATE_ZIPS && rdr == 0,
+               "TorrentZip sets: a zip database with fingerprints, "
+               "the scan reads them", detail);
+      else
+         check(started && scan == 0 && rdr == GATE_ZIPS,
+               "TorrentZip sets: a refused fingerprint index counts "
+               "as none", detail);
    }
+   /* One walk for each database that opens zip, none for the other. */
+   sprintf(detail, "%u %u %u %u %u walks", walks[0], walks[1], walks[2],
+         walks[3], walks[4]);
+   check(   walks[0] == 1 && walks[1] == 1 && walks[2] == 0
+         && walks[3] == 1 && walks[4] == 1,
+         "TorrentZip sets: one fingerprint index walk per zip database",
+         detail);
+
+   /* Without core match every database opens zip: a keyed one whose
+    * cores open no zip keeps the readers off the TorrentZip sets. */
+   cart.set_fp = 0x0CA701FDu;
+   sprintf(p, "%s/Test Arc Gate.rdb", db[3]);
+   if (!write_db_set(p, arc, 2))
+      goto fixture;
+   sprintf(p, "%s/Test Cart Gate.rdb", db[3]);
+   if (!write_db_set(p, &cart, 1))
+      goto fixture;
+   use_db(db[3]);
+   config_get_ptr()->bools.scan_without_core_match = true;
+   setfp_builds = 0;
+   retro_atomic_store_release_int(&reads_begun,  0);
+   retro_atomic_store_release_int(&reader_begun, 0);
+   begun_size   = TZ_ZIP_LEN;
+   started      = run_scan(dir[0]) && scan_completed;
+   begun_size   = 0;
+   config_get_ptr()->bools.scan_without_core_match = false;
+   rdr          = retro_atomic_load_acquire_int(&reader_begun);
+   scan         = retro_atomic_load_acquire_int(&reads_begun) - rdr;
+   sprintf(detail, "scan %d, readers %d, %u walks for 2", scan, rdr,
+         setfp_builds);
+   check(started && setfp_builds == 2,
+         "without core match: one fingerprint index walk per database",
+         detail);
+   check(started && scan == GATE_ZIPS && rdr == 0,
+         "without core match: a keyed non-zip database, the scan "
+         "reads them", detail);
+
+   use_db(db[2]);
+   setfp_builds  = 0;
+   setfp_yield_n = 1;
+   retro_atomic_store_release_int(&setfp_yields, 0);
+   retro_atomic_store_release_int(&reads_begun,  0);
+   retro_atomic_store_release_int(&reader_begun, 0);
+   begun_size     = TZ_ZIP_LEN;
+   started        = run_scan(dir[0]) && scan_completed;
+   begun_size     = 0;
+   setfp_yield_n  = 0;
+   setfp_job_live = NULL;
+   rdr            = retro_atomic_load_acquire_int(&reader_begun);
+   scan           = retro_atomic_load_acquire_int(&reads_begun) - rdr;
+   yields         = retro_atomic_load_acquire_int(&setfp_yields);
+   sprintf(detail, "scan %d, readers %d, %u walks, %d yields", scan, rdr,
+         setfp_builds, yields);
+   check(   started && scan == GATE_ZIPS && rdr == 0
+         && setfp_builds == 1 && yields == 1,
+         "fingerprint index build: resumed after a yield", detail);
+
+   setfp_stall = true;
+   retro_atomic_store_release_int(&setfp_yields, 0);
+   started        = run_scan_cancel_setfp(dir[0]);
+   setfp_stall    = false;
+   setfp_job_live = NULL;
+   sprintf(detail, "%d yields", retro_atomic_load_acquire_int(&setfp_yields));
+   check(started, "fingerprint index build: a cancel during it ends the "
+         "scan", detail);
    return;
 
 fixture:
    zip_comment = NULL;
+   setfp_cap   = 0;
    check(0, "fixture", "could not write the TorrentZip sets");
 }
 
 #define TZU_ZIPS    24
-#define TZU_SLOW_MS 150
+#define TZU_SLOW_MS 500
 
 /* TorrentZip sets a zip database cannot hold by their size: once the
  * scan has kept one from a whole read, the readers stop reading the
  * next ones whole, whose CRCs the scan would drop.  Their whole reads
  * are slowed, so each reader has one under way when the scan rules on
  * the first set and may begin one more before it does: two rounds,
- * three allowed, of TZU_ZIPS without the stop. */
+ * three allowed, of TZU_ZIPS without the stop.  Slowed well past what
+ * the scan takes to rule: at 150 ms a sanitized scan on a loaded
+ * four-core runner ruled after four rounds. */
 static void tz_unsized_lane(const char *root)
 {
    static uint8_t d[2][MF_MEMBER_LEN];
@@ -5260,8 +6451,6 @@ end:
    free(cfg);
 }
 
-static unsigned file_count(const char *path, const char *needle);
-
 /* Skip Database References names a match after the playlist it is
  * written to, and only when the scan has one playlist: left to the
  * scan, a match goes to its database's playlist. */
@@ -5377,17 +6566,22 @@ fixture:
  * database whose core opens rar, names the archive; a later member's,
  * in one whose core does not, is held; an archive of several members
  * is read whole only while a database whose cores open rar holds a rar
- * record of its size. */
+ * record of its size.  A fingerprint in rar writes nothing where no
+ * core opens rar.  A solid archive whose members the reader
+ * cannot unpack has no fingerprint, not that of the one it can; a
+ * folder leaves it as it is. */
 static void rar_lane(const char *root, const char *pl_dir, bool threaded)
 {
-   static uint8_t d[4][MF_MEMBER_LEN];
-   static const uint32_t crc[4] = {
-      0x0BF80001u, 0x0BF80011u, 0x0BF80012u, 0x0BF80002u };
+   static uint8_t d[8][MF_MEMBER_LEN];
+   static const uint32_t crc[8] = {
+      0x0BF80001u, 0x0BF80011u, 0x0BF80012u, 0x0BF80002u, 0x0BF80021u,
+      0x0BF80022u, 0x0BF80031u, 0x0BF80032u };
    char           db[512], noclaim[512], dir[512], p[1024];
-   static char    cart_lpl[1024], member_lpl[1024];
+   static char    cart_lpl[1024], member_lpl[1024], nc_lpl[1024];
    char           what[64], detail[64];
-   db_rec_t       cart[3], held, nc;
-   zip_entry_t    e[2];
+   uint8_t        be[8];
+   db_rec_t       cart[6], held, nc[2];
+   zip_entry_t    e[3];
    uint32_t       cart_bytes, multi_bytes;
    int            cart_reads, multi_reads;
    bool           started;
@@ -5400,7 +6594,7 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    path_mkdir(db);
    path_mkdir(noclaim);
    path_mkdir(dir);
-   for (j = 0; j < 4; j++)
+   for (j = 0; j < 8; j++)
       fill_forced(d[j], MF_MEMBER_LEN, 101 + 2 * j, crc[j]);
    memset(e, 0, sizeof(e));
    e[0].len = MF_MEMBER_LEN;
@@ -5410,7 +6604,7 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    e[0].data = d[0];
    e[0].crc  = crc[0];
    sprintf(p, "%s/rar_cart.rar", dir);
-   if (!write_rar_entries(p, e, 1))
+   if (!write_rar_entries(p, e, 1, false))
       goto fixture;
    cart_bytes = rar_bytes(e, 1);
    set_rec(&cart[0], "RAR Cart", crc[0], MF_MEMBER_LEN);
@@ -5422,7 +6616,7 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    e[1].data = d[2];
    e[1].crc  = crc[2];
    sprintf(p, "%s/rar_multi.rar", dir);
-   if (!write_rar_entries(p, e, 2))
+   if (!write_rar_entries(p, e, 2, false))
       goto fixture;
    multi_bytes = rar_bytes(e, 2);
    /* A rar record of its size: the size gate lets it be read whole. */
@@ -5430,8 +6624,8 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    cart[1].rom_name = "set.rar";
    set_rec(&held, "RAR Held", crc[2], MF_MEMBER_LEN);
    /* A rar record of that size whose core does not open rar. */
-   set_rec(&nc, "RAR NoClaim Sized", 0x0BF8FFFCu, multi_bytes);
-   nc.rom_name = "set.rar";
+   set_rec(&nc[1], "RAR NoClaim Sized", 0x0BF8FFFCu, multi_bytes);
+   nc[1].rom_name = "set.rar";
 
    /* A folder is no member: its one member's hit names it. */
    e[0].name = "d/";
@@ -5442,13 +6636,64 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    e[1].data = d[3];
    e[1].crc  = crc[3];
    sprintf(p, "%s/rar_folder.rar", dir);
-   if (   !write_rar_entries(p, e, 2)
+   if (   !write_rar_entries(p, e, 2, false)
        || path_get_size(p) != (int64_t)rar_bytes(e, 2))
       goto fixture;
    set_rec(&cart[2], "RAR Folder", crc[3], MF_MEMBER_LEN);
 
+   /* A set whose fingerprint a database whose core opens rar holds. */
+   e[0].name = "A.ROM";
+   e[0].data = d[4];
+   e[0].len  = MF_MEMBER_LEN;
+   e[0].crc  = crc[4];
+   e[1].name = "B.ROM";
+   e[1].data = d[5];
+   e[1].crc  = crc[5];
+   sprintf(p, "%s/rar_fp.rar", dir);
+   if (!write_rar_entries(p, e, 2, false))
+      goto fixture;
+   set_rec(&cart[3], "RAR FP Set", 0x0BF8FFFFu, 2 * MF_MEMBER_LEN);
+   for (j = 0; j < 4; j++)
+   {
+      be[j]     = (uint8_t)(crc[4] >> (24 - 8 * j));
+      be[4 + j] = (uint8_t)(crc[5] >> (24 - 8 * j));
+   }
+   cart[3].set_fp = crc_of(be, sizeof(be));
+   nc[0]          = cart[3];
+
+   /* Solid, its second member packed: the record holds the
+    * fingerprint of the first alone. */
+   sprintf(p, "%s/rar_solid.rar", dir);
+   if (!write_rar_entries(p, e, 2, true))
+      goto fixture;
+   set_rec(&cart[4], "RAR Solid Set", 0x0BF8FFFDu, MF_MEMBER_LEN);
+   cart[4].set_fp = crc_of(be, 4);
+
+   /* A folder among the members. */
+   e[0].name = "sub/";
+   e[0].data = NULL;
+   e[0].len  = 0;
+   e[0].crc  = 0;
+   e[1].name = "sub/C.ROM";
+   e[1].data = d[6];
+   e[1].crc  = crc[6];
+   e[2].name = "D.ROM";
+   e[2].data = d[7];
+   e[2].len  = MF_MEMBER_LEN;
+   e[2].crc  = crc[7];
+   sprintf(p, "%s/rar_fpdir.rar", dir);
+   if (!write_rar_entries(p, e, 3, false))
+      goto fixture;
+   set_rec(&cart[5], "RAR FP Dir Set", 0x0BF8FFFBu, 2 * MF_MEMBER_LEN);
+   for (j = 0; j < 4; j++)
+   {
+      be[j]     = (uint8_t)(crc[6] >> (24 - 8 * j));
+      be[4 + j] = (uint8_t)(crc[7] >> (24 - 8 * j));
+   }
+   cart[5].set_fp = crc_of(be, sizeof(be));
+
    sprintf(p, "%s/Test RAR Cart.rdb", db);
-   if (!write_db_set(p, cart, 3))
+   if (!write_db_set(p, cart, 6))
       goto fixture;
    sprintf(p, "%s/Test EM Member.rdb", db);
    if (!write_db_set(p, &held, 1))
@@ -5457,13 +6702,15 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    if (!write_db_set(p, &held, 1))
       goto fixture;
    sprintf(p, "%s/Test EM Cart.rdb", noclaim);
-   if (!write_db_set(p, &nc, 1))
+   if (!write_db_set(p, nc, 2))
       goto fixture;
 
    sprintf(cart_lpl,   "%s/Test RAR Cart.lpl",  pl_dir);
    sprintf(member_lpl, "%s/Test EM Member.lpl", pl_dir);
+   sprintf(nc_lpl,     "%s/Test EM Cart.lpl",   pl_dir);
    filestream_delete(cart_lpl);
    filestream_delete(member_lpl);
+   filestream_delete(nc_lpl);
    use_queue(threaded);
 
    use_db(db);
@@ -5491,6 +6738,17 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    sprintf(what, "rar: a later member's hit is held %s", q);
    check(started && file_contains(member_lpl, "rar_multi.rar#b.rd"),
          what, "rar_multi.rar#b.rd");
+   sprintf(what, "rar: a fingerprint is a hit where a core opens rar %s", q);
+   check(   started && file_contains(cart_lpl, "RAR FP Set")
+         && file_contains(cart_lpl, "rar_fp.rar")
+         && !file_contains(cart_lpl, "rar_fp.rar#"), what, "rar_fp.rar");
+   sprintf(what, "rar: solid, no fingerprint of one member %s", q);
+   check(started && !file_contains(cart_lpl, "RAR Solid Set"), what,
+         "rar_solid.rar");
+   sprintf(what, "rar: a directory entry keeps the fingerprint %s", q);
+   check(   started && file_contains(cart_lpl, "RAR FP Dir Set")
+         && file_contains(cart_lpl, "rar_fpdir.rar"), what,
+         "rar_fpdir.rar");
    if (!threaded)
    {
       sprintf(detail, "%d read steps", cart_reads);
@@ -5502,6 +6760,7 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    }
 
    filestream_delete(member_lpl);
+   filestream_delete(nc_lpl);
    use_db(noclaim);
    retro_atomic_store_release_int(&reads_begun, 0);
    begun_size  = multi_bytes;
@@ -5511,6 +6770,9 @@ static void rar_lane(const char *root, const char *pl_dir, bool threaded)
    sprintf(what, "rar: no core opens rar: held %s", q);
    check(started && file_contains(member_lpl, "rar_multi.rar#b.rd"),
          what, "rar_multi.rar#b.rd");
+   sprintf(what, "rar: a fingerprint in rar writes nothing %s", q);
+   check(started && !file_contains(nc_lpl, "RAR FP Set"), what,
+         "rar_fp.rar");
    if (!threaded)
    {
       sprintf(detail, "%d whole reads", multi_reads);
@@ -6284,12 +7546,13 @@ fixture:
 }
 
 /* The first member in a database claimed only for it, the archive's
- * own CRC in one a core listing zip claims: held as archive#member
- * either way. */
+ * own CRC and fingerprint in one a core listing zip claims: held as
+ * archive#member either way. */
 static void dual_match_lane(const char *root, const char *pl_dir,
       bool threaded)
 {
    static const char *const pl[2] = { "Test Cart Gate", "Test Arc Gate" };
+   static const uint8_t     be[4] = { 0x0C, 0xA7, 0x00, 0x40 };
    char     db[512], dir[512], p[1024], crc[16];
    db_rec_t rec[2];
 
@@ -6302,6 +7565,7 @@ static void dual_match_lane(const char *root, const char *pl_dir,
             0x0CA70040u, &rec[0])
        || !set_whole_rec(&rec[1], "Gate DM0", p))
       goto fixture;
+   rec[1].set_fp = crc_of(be, sizeof(be));
    sprintf(p, "%s/%s.rdb", db, pl[0]);
    if (!write_db_set(p, &rec[0], 1))
       goto fixture;
@@ -6315,6 +7579,699 @@ static void dual_match_lane(const char *root, const char *pl_dir,
 
 fixture:
    check(0, "fixture", "could not write the dual match set");
+}
+
+#ifdef HAVE_7ZIP
+/* A 7z set's fingerprint is a hit where a core opens 7z, and stays one
+ * with a directory entry among the members. */
+static void sevenzip_lane(const char *root, const char *pl_dir,
+      bool threaded)
+{
+   static uint8_t d[4][MF_MEMBER_LEN];
+   static const uint32_t crc[4] = {
+      0x0BFB0001u, 0x0BFB0002u, 0x0BFB0011u, 0x0BFB0012u };
+   static char    lpl[1024];
+   char           db[512], dir[512], p[1024], what[64];
+   uint8_t        be[8];
+   db_rec_t       rec[2];
+   zip_entry_t    e[3];
+   bool           started;
+   unsigned       j, k;
+   const char    *q = threaded ? "(threaded)" : "(regular)";
+
+   sprintf(db,  "%s/7z_db", root);
+   sprintf(dir, "%s/7z",    root);
+   path_mkdir(db);
+   path_mkdir(dir);
+   for (j = 0; j < 4; j++)
+      fill_forced(d[j], MF_MEMBER_LEN, 131 + 2 * j, crc[j]);
+
+   memset(e, 0, sizeof(e));
+   e[0].name = "A.ROM";
+   e[0].data = d[0];
+   e[0].len  = MF_MEMBER_LEN;
+   e[0].crc  = crc[0];
+   e[1].name = "B.ROM";
+   e[1].data = d[1];
+   e[1].len  = MF_MEMBER_LEN;
+   e[1].crc  = crc[1];
+   sprintf(p, "%s/7z_fp.7z", dir);
+   if (!write_7z_entries(p, e, 2))
+      goto fixture;
+
+   e[0].name = "sub/";
+   e[0].data = NULL;
+   e[0].len  = 0;
+   e[0].crc  = 0;
+   e[1].name = "sub/C.ROM";
+   e[1].data = d[2];
+   e[1].crc  = crc[2];
+   e[2].name = "D.ROM";
+   e[2].data = d[3];
+   e[2].len  = MF_MEMBER_LEN;
+   e[2].crc  = crc[3];
+   sprintf(p, "%s/7z_fpdir.7z", dir);
+   if (!write_7z_entries(p, e, 3))
+      goto fixture;
+
+   set_rec(&rec[0], "7Z FP Set",     0x0BFBFFFFu, 2 * MF_MEMBER_LEN);
+   set_rec(&rec[1], "7Z FP Dir Set", 0x0BFBFFFEu, 2 * MF_MEMBER_LEN);
+   for (j = 0; j < 2; j++)
+   {
+      for (k = 0; k < 4; k++)
+      {
+         be[k]     = (uint8_t)(crc[2 * j]     >> (24 - 8 * k));
+         be[4 + k] = (uint8_t)(crc[2 * j + 1] >> (24 - 8 * k));
+      }
+      rec[j].set_fp = crc_of(be, sizeof(be));
+   }
+   sprintf(p, "%s/Test 7Z Cart.rdb", db);
+   if (!write_db_set(p, rec, 2))
+      goto fixture;
+
+   sprintf(lpl, "%s/Test 7Z Cart.lpl", pl_dir);
+   filestream_delete(lpl);
+   use_queue(threaded);
+   use_db(db);
+   started = run_scan(dir) && scan_completed;
+   sprintf(what, "7z: a fingerprint is a hit where a core opens 7z %s", q);
+   check(   started && file_contains(lpl, "7Z FP Set")
+         && file_contains(lpl, "7z_fp.7z")
+         && !file_contains(lpl, "7z_fp.7z#"), what, "7z_fp.7z");
+   sprintf(what, "7z: a directory entry keeps the fingerprint %s", q);
+   check(   started && file_contains(lpl, "7Z FP Dir Set")
+         && file_contains(lpl, "7z_fpdir.7z")
+         && !file_contains(lpl, "7z_fpdir.7z#"), what, "7z_fpdir.7z");
+   return;
+
+fixture:
+   check(0, "fixture", "could not write the 7z set");
+}
+#endif
+
+/* A set packed two ways: TorrentZip-like, and with other names, order
+ * and a duplicate, as a zstd or 7z repack differs.  The record holds
+ * the first's CRC, the second's size and the fingerprint of its member
+ * CRCs, so the second matches by fingerprint, from its one directory
+ * read and not read whole, and is written as the first would be.  So
+ * do repacks with a directory first, or a cue or gdi sheet or an empty
+ * member beside the ROMs; one with a member that stores no CRC has no
+ * fingerprint.  Without the key nothing matches. */
+static void set_fp_lane(const char *root, const char *pl_dir,
+      bool threaded)
+{
+   static const char cue[] = "FILE \"A.ROM\" BINARY\n";
+   static const char gdi[] = "1\n1 0 4 2352 \"A.ROM\" 0\n";
+   static uint8_t d[2][MF_MEMBER_LEN];
+   static char    p[1024], lpl[1024];
+   char           db[512], nofp[512], dir[512];
+   char           what[64], detail[64], crc[16];
+   uint8_t        be[8];
+   db_rec_t       rec;
+   zip_entry_t    e[3];
+   uint32_t       repack_bytes, dirfirst_bytes;
+   int            reads, stored, dir_reads;
+   bool           started;
+   const char    *q = threaded ? "(threaded)" : "(regular)";
+
+   sprintf(db,   "%s/set_fp_db",   root);
+   sprintf(nofp, "%s/set_fp_nofp", root);
+   sprintf(dir,  "%s/set_fp",      root);
+   path_mkdir(db);
+   path_mkdir(nofp);
+   path_mkdir(dir);
+
+   fill_forced(d[0], MF_MEMBER_LEN, 59, 0x5E7F0002u);
+   fill_forced(d[1], MF_MEMBER_LEN, 61, 0x5E7F0001u);
+
+   /* The packing the record's CRC was taken from: not scanned. */
+   memset(e, 0, sizeof(e));
+   e[0].name = "a.rd";
+   e[0].data = d[0];
+   e[0].len  = MF_MEMBER_LEN;
+   e[0].crc  = 0x5E7F0002u;
+   e[1].name = "b.rd";
+   e[1].data = d[1];
+   e[1].len  = MF_MEMBER_LEN;
+   e[1].crc  = 0x5E7F0001u;
+   sprintf(p, "%s/set_fp_tz.zip", root);
+   if (   !write_zip_entries(p, e, 2)
+       || !set_whole_rec(&rec, "FP Set", p))
+      goto fixture;
+
+   e[0].name = "B.ROM";
+   e[0].data = d[1];
+   e[0].crc  = 0x5E7F0001u;
+   e[1].name = "A.ROM";
+   e[1].data = d[0];
+   e[1].crc  = 0x5E7F0002u;
+   e[2]      = e[1];
+   e[2].name = "copy/A.ROM";
+   sprintf(p, "%s/fp_repack.zip", dir);
+   if (!write_zip_entries(p, e, 3))
+      goto fixture;
+   repack_bytes = zip_bytes(e, 3);
+   rec.size     = repack_bytes;
+
+   /* A directory first. */
+   e[0].name = "d/";
+   e[0].data = NULL;
+   e[0].len  = 0;
+   e[0].crc  = 0;
+   e[1].name = "d/A.ROM";
+   e[1].data = d[0];
+   e[1].len  = MF_MEMBER_LEN;
+   e[1].crc  = 0x5E7F0002u;
+   e[2].name = "d/B.ROM";
+   e[2].data = d[1];
+   e[2].len  = MF_MEMBER_LEN;
+   e[2].crc  = 0x5E7F0001u;
+   sprintf(p, "%s/fp_dirfirst.zip", dir);
+   if (!write_zip_entries(p, e, 3))
+      goto fixture;
+   dirfirst_bytes = zip_bytes(e, 3);
+
+   /* A cue sheet beside the ROMs. */
+   e[0].name = "A.ROM";
+   e[0].data = d[0];
+   e[0].len  = MF_MEMBER_LEN;
+   e[0].crc  = 0x5E7F0002u;
+   e[1].name = "B.ROM";
+   e[1].data = d[1];
+   e[1].crc  = 0x5E7F0001u;
+   e[2].name = "set.cue";
+   e[2].data = (const uint8_t*)cue;
+   e[2].len  = (uint32_t)(sizeof(cue) - 1);
+   e[2].crc  = crc_of((const uint8_t*)cue, sizeof(cue) - 1);
+   sprintf(p, "%s/fp_cue.zip", dir);
+   if (!write_zip_entries(p, e, 3))
+      goto fixture;
+
+   /* A member that stores no CRC. */
+   e[2].name = "C.ROM";
+   e[2].data = d[0];
+   e[2].len  = MF_MEMBER_LEN;
+   e[2].crc  = 0;
+   sprintf(p, "%s/fp_zero.zip", dir);
+   if (!write_zip_entries(p, e, 3))
+      goto fixture;
+
+   /* An empty member beside the ROMs: its stored CRC is 0, but it is
+    * no input. */
+   e[2].name = "E.ROM";
+   e[2].data = NULL;
+   e[2].len  = 0;
+   e[2].crc  = 0;
+   sprintf(p, "%s/fp_empty.zip", dir);
+   if (!write_zip_entries(p, e, 3))
+      goto fixture;
+
+   /* A gdi sheet beside the ROMs. */
+   e[2].name = "set.gdi";
+   e[2].data = (const uint8_t*)gdi;
+   e[2].len  = (uint32_t)(sizeof(gdi) - 1);
+   e[2].crc  = crc_of((const uint8_t*)gdi, sizeof(gdi) - 1);
+   sprintf(p, "%s/fp_gdi.zip", dir);
+   if (!write_zip_entries(p, e, 3))
+      goto fixture;
+
+   sprintf(p, "%s/Test FP Arcade.rdb", nofp);
+   if (!write_db_set(p, &rec, 1))
+      goto fixture;
+   be[0] = 0x5E; be[1] = 0x7F; be[2] = 0x00; be[3] = 0x01;
+   be[4] = 0x5E; be[5] = 0x7F; be[6] = 0x00; be[7] = 0x02;
+   rec.set_fp = crc_of(be, sizeof(be));
+   sprintf(p, "%s/Test FP Arcade.rdb", db);
+   if (!write_db_set(p, &rec, 1))
+      goto fixture;
+
+   sprintf(lpl, "%s/Test FP Arcade.lpl", pl_dir);
+   sprintf(crc, "%08X|crc", (unsigned)rec.crc);
+   use_queue(threaded);
+
+   filestream_delete(lpl);
+   use_db(db);
+   retro_atomic_store_release_int(&reads_begun, 0);
+   retro_atomic_store_release_int(&stored_reads, 0);
+   retro_atomic_store_release_int(&watch_scan, 0);
+   retro_atomic_store_release_int(&watch_reader, 0);
+   begun_size  = repack_bytes;
+   watch_size  = dirfirst_bytes;
+   stored_name = "fp_repack.zip";
+   started     = run_scan(dir) && scan_completed;
+   begun_size  = 0;
+   watch_size  = 0;
+   stored_name = NULL;
+   reads       = retro_atomic_load_acquire_int(&reads_begun);
+   stored      = retro_atomic_load_acquire_int(&stored_reads);
+   dir_reads   = retro_atomic_load_acquire_int(&watch_scan)
+      + retro_atomic_load_acquire_int(&watch_reader);
+   sprintf(what, "repacked set matched by fingerprint %s", q);
+   check(   started && file_contains(lpl, "FP Set")
+         && file_contains(lpl, crc)
+         && file_contains(lpl, "fp_repack.zip")
+         && !file_contains(lpl, "fp_repack.zip#"), what,
+         "fp_repack.zip, the record's CRC");
+   if (!threaded)
+   {
+      sprintf(detail, "%d whole reads", reads);
+      check(started && reads == 0,
+            "a fingerprint match reads no archive whole", detail);
+   }
+   sprintf(detail, "%d directory reads", stored);
+   sprintf(what, "fingerprint from the one directory read %s", q);
+   check(started && stored == 1, what, detail);
+   sprintf(what, "directory first: matched by fingerprint %s", q);
+   check(started && file_contains(lpl, "fp_dirfirst.zip"), what,
+         "fp_dirfirst.zip");
+   sprintf(detail, "%d whole reads", dir_reads);
+   sprintf(what, "directory first: not read whole %s", q);
+   check(started && dir_reads == 0, what, detail);
+   sprintf(what, "a cue sheet is left out of it %s", q);
+   check(started && file_contains(lpl, "fp_cue.zip"), what, "fp_cue.zip");
+   sprintf(what, "a gdi sheet is left out of it %s", q);
+   check(started && file_contains(lpl, "fp_gdi.zip"), what, "fp_gdi.zip");
+   sprintf(what, "an empty member is left out of it %s", q);
+   check(started && file_contains(lpl, "fp_empty.zip"), what,
+         "fp_empty.zip");
+   sprintf(what, "a member with no stored CRC: none %s", q);
+   check(started && !file_contains(lpl, "fp_zero.zip"), what,
+         "fp_zero.zip");
+
+   filestream_delete(lpl);
+   use_db(nofp);
+   started = run_scan(dir) && scan_completed;
+   sprintf(what, "no fingerprint key: no match %s", q);
+   check(started && !file_contains(lpl, "FP Set"), what,
+         "fp_repack.zip");
+   return;
+
+fixture:
+   check(0, "fixture", "could not write the set fingerprint set");
+}
+
+/* The set fingerprint of members @a and @b, @a < @b. */
+static uint32_t set_fp_of(uint32_t a, uint32_t b)
+{
+   uint8_t  be[8];
+   unsigned k;
+
+   for (k = 0; k < 4; k++)
+   {
+      be[k]     = (uint8_t)(a >> (24 - 8 * k));
+      be[k + 4] = (uint8_t)(b >> (24 - 8 * k));
+   }
+   return crc_of(be, sizeof(be));
+}
+
+/* Records that share a fingerprint, as a set's split and non-merged
+ * packings do.  The one whose size is the file's is taken unread, even
+ * over one named for the archive; with that size on two the whole read
+ * decides, and with it on none, a repack, the one named for the
+ * archive, else the first. */
+static void fp_size_lane(const char *root, const char *pl_dir,
+      bool threaded)
+{
+   static uint8_t d[2][MF_MEMBER_LEN];
+   static char    p[1024], lpl[1024];
+   char           db[512], dir[512], tie_dir[512], name_dir[512];
+   char           what[64], detail[64], crc[9][16];
+   db_rec_t       rec[9];
+   zip_entry_t    e[2];
+   uint32_t       pick_bytes, tie_bytes, repack_bytes;
+   int            reads;
+   bool           started;
+   unsigned       k;
+   const char    *q = threaded ? "(threaded)" : "(regular)";
+
+   sprintf(db,       "%s/fp_size_db",   root);
+   sprintf(dir,      "%s/fp_size",      root);
+   sprintf(tie_dir,  "%s/fp_size_tie",  root);
+   sprintf(name_dir, "%s/fp_size_name", root);
+   path_mkdir(db);
+   path_mkdir(dir);
+   path_mkdir(tie_dir);
+   path_mkdir(name_dir);
+   memset(e, 0, sizeof(e));
+   e[0].data = d[0];
+   e[0].len  = MF_MEMBER_LEN;
+   e[1].data = d[1];
+   e[1].len  = MF_MEMBER_LEN;
+
+   zip_comment = TZ_COMMENT;
+   fill_forced(d[0], MF_MEMBER_LEN, 67, 0x51A5E011u);
+   fill_forced(d[1], MF_MEMBER_LEN, 71, 0x51A5E012u);
+   e[0].name = "a.rd";
+   e[0].crc  = 0x51A5E011u;
+   e[1].name = "b.rd";
+   e[1].crc  = 0x51A5E012u;
+   sprintf(p, "%s/fs_pick.zip", dir);
+   if (   !write_zip_entries(p, e, 2)
+       || !set_whole_rec(&rec[1], "FS Beta", p))
+      goto fixture;
+   pick_bytes = zip_bytes(e, 2);
+   set_rec(&rec[0], "FS Alpha", 0x51A5F001u, pick_bytes + 100);
+   set_rec(&rec[8], "FS Kappa", 0x51A5F009u, pick_bytes + 200);
+   rec[0].rom_name = "set.zip";
+   rec[8].rom_name = "fs_pick.zip";
+   rec[0].set_fp   = rec[1].set_fp = rec[8].set_fp
+                   = set_fp_of(0x51A5E011u, 0x51A5E012u);
+
+   fill_forced(d[0], MF_MEMBER_LEN, 73, 0x51A5E021u);
+   fill_forced(d[1], MF_MEMBER_LEN, 79, 0x51A5E022u);
+   e[0].name = "tie_a.rd";
+   e[0].crc  = 0x51A5E021u;
+   e[1].name = "tie_b.rd";
+   e[1].crc  = 0x51A5E022u;
+   sprintf(p, "%s/fs_tie.zip", tie_dir);
+   if (   !write_zip_entries(p, e, 2)
+       || !set_whole_rec(&rec[3], "FS Delta", p))
+      goto fixture;
+   tie_bytes = zip_bytes(e, 2);
+   set_rec(&rec[2], "FS Gamma", 0x51A5F003u, tie_bytes);
+   rec[2].rom_name = "set.zip";
+   rec[2].set_fp   = rec[3].set_fp = set_fp_of(0x51A5E021u, 0x51A5E022u);
+   zip_comment = NULL;
+
+   fill_forced(d[0], MF_MEMBER_LEN, 83, 0x51A5E031u);
+   fill_forced(d[1], MF_MEMBER_LEN, 89, 0x51A5E032u);
+   e[0].name = "B.ROM";
+   e[0].data = d[1];
+   e[0].crc  = 0x51A5E032u;
+   e[1].name = "A.ROM";
+   e[1].data = d[0];
+   e[1].crc  = 0x51A5E031u;
+   sprintf(p, "%s/fs_repack.zip", dir);
+   if (!write_zip_entries(p, e, 2))
+      goto fixture;
+   repack_bytes = zip_bytes(e, 2);
+   set_rec(&rec[4], "FS Epsilon", 0x51A5F005u, repack_bytes + 10);
+   set_rec(&rec[5], "FS Zeta",    0x51A5F006u, repack_bytes + 20);
+   rec[4].rom_name = rec[5].rom_name = "set.zip";
+   rec[4].set_fp   = rec[5].set_fp = set_fp_of(0x51A5E031u, 0x51A5E032u);
+
+   fill_forced(d[0], MF_MEMBER_LEN, 97, 0x51A5E041u);
+   fill_forced(d[1], MF_MEMBER_LEN, 101, 0x51A5E042u);
+   e[0].name = "a.rd";
+   e[0].data = d[0];
+   e[0].crc  = 0x51A5E041u;
+   e[1].name = "b.rd";
+   e[1].data = d[1];
+   e[1].crc  = 0x51A5E042u;
+   sprintf(p, "%s/fs_theta.zip", name_dir);
+   if (!write_zip_entries(p, e, 2))
+      goto fixture;
+   sprintf(p, "%s/fs_iota.zip", dir);
+   if (!write_zip_entries(p, e, 2))
+      goto fixture;
+   repack_bytes = zip_bytes(e, 2);
+   set_rec(&rec[6], "FS Eta",   0x51A5F007u, repack_bytes + 10);
+   set_rec(&rec[7], "FS Theta", 0x51A5F008u, repack_bytes + 20);
+   rec[6].rom_name = "fs_eta.zip";
+   rec[7].rom_name = "FS_Theta.zip";
+   rec[6].set_fp   = rec[7].set_fp = set_fp_of(0x51A5E041u, 0x51A5E042u);
+
+   sprintf(p, "%s/Test FP Arcade.rdb", db);
+   if (!write_db_set(p, rec, 9))
+      goto fixture;
+   for (k = 0; k < 9; k++)
+      sprintf(crc[k], "%08X|crc", (unsigned)rec[k].crc);
+
+   sprintf(lpl, "%s/Test FP Arcade.lpl", pl_dir);
+   use_queue(threaded);
+   use_db(db);
+
+   filestream_delete(lpl);
+   retro_atomic_store_release_int(&reads_begun, 0);
+   begun_size = pick_bytes;
+   started    = run_scan(dir) && scan_completed;
+   begun_size = 0;
+   reads      = retro_atomic_load_acquire_int(&reads_begun);
+   sprintf(what, "fingerprint tie: the size picks the record %s", q);
+   check(   started && file_contains(lpl, "FS Beta")
+         && file_contains(lpl, crc[1]) && !file_contains(lpl, crc[0])
+         && !file_contains(lpl, crc[8])
+         && file_contains(lpl, "fs_pick.zip")
+         && !file_contains(lpl, "fs_pick.zip#"), what, "fs_pick.zip");
+   sprintf(detail, "%d whole reads", reads);
+   sprintf(what, "fingerprint tie: picked unread %s", q);
+   check(started && reads == 0, what, detail);
+   sprintf(what, "fingerprint tie: a repack takes the first %s", q);
+   check(   started && file_contains(lpl, "FS Epsilon")
+         && file_contains(lpl, crc[4]) && !file_contains(lpl, crc[5])
+         && file_contains(lpl, "fs_repack.zip")
+         && !file_contains(lpl, "fs_repack.zip#"), what, "fs_repack.zip");
+   sprintf(what, "fingerprint tie: named for neither, the first %s", q);
+   check(   started && file_contains(lpl, "FS Eta")
+         && file_contains(lpl, crc[6]) && !file_contains(lpl, crc[7])
+         && file_contains(lpl, "fs_iota.zip")
+         && !file_contains(lpl, "fs_iota.zip#"), what, "fs_iota.zip");
+
+   filestream_delete(lpl);
+   retro_atomic_store_release_int(&reads_begun, 0);
+   begun_size = tie_bytes;
+   started    = run_scan(tie_dir) && scan_completed;
+   begun_size = 0;
+   reads      = retro_atomic_load_acquire_int(&reads_begun);
+   sprintf(what, "fingerprint tie: one size, the whole read %s", q);
+   check(   started && file_contains(lpl, "FS Delta")
+         && file_contains(lpl, crc[3]) && !file_contains(lpl, "FS Gamma")
+         && file_contains(lpl, "fs_tie.zip")
+         && !file_contains(lpl, "fs_tie.zip#"), what, "fs_tie.zip");
+   sprintf(detail, "%d whole reads", reads);
+   sprintf(what, "fingerprint tie: read whole once %s", q);
+   check(started && reads == 1, what, detail);
+
+   filestream_delete(lpl);
+   started = run_scan(name_dir) && scan_completed;
+   sprintf(what, "fingerprint tie: the name picks the record %s", q);
+   check(   started && file_contains(lpl, "FS Theta")
+         && file_contains(lpl, crc[7]) && !file_contains(lpl, crc[6])
+         && file_contains(lpl, "fs_theta.zip")
+         && !file_contains(lpl, "fs_theta.zip#"), what, "fs_theta.zip");
+   filestream_delete(lpl);
+   return;
+
+fixture:
+   zip_comment = NULL;
+   check(0, "fixture", "could not write the fingerprint tie sets");
+}
+
+/* One member whose CRC no database holds: its fingerprint is looked up
+ * before its size lets it be read whole. */
+static void fp_one_lane(const char *root, const char *pl_dir,
+      bool threaded)
+{
+   static uint8_t d[MF_MEMBER_LEN];
+   static char    lpl[1024];
+   char           db[512], dir[512], p[1024];
+   char           what[64], detail[64], crc[16];
+   uint8_t        be[4];
+   db_rec_t       rec;
+   zip_entry_t    e;
+   uint32_t       bytes;
+   int            reads;
+   bool           started;
+   unsigned       k;
+   const char    *q = threaded ? "(threaded)" : "(regular)";
+
+   sprintf(db,  "%s/fp_one_db", root);
+   sprintf(dir, "%s/fp_one",    root);
+   path_mkdir(db);
+   path_mkdir(dir);
+   fill_forced(d, MF_MEMBER_LEN, 171, 0x0CA70301u);
+   memset(&e, 0, sizeof(e));
+   e.name = "solo.rd";
+   e.data = d;
+   e.len  = MF_MEMBER_LEN;
+   e.crc  = 0x0CA70301u;
+   sprintf(p, "%s/fp_one.zip", dir);
+   if (!write_zip_entries(p, &e, 1))
+      goto fixture;
+   bytes = zip_bytes(&e, 1);
+   /* The zip's size, which lets it be read whole, but not its CRC. */
+   set_rec(&rec, "FP One", 0x0CA703FFu, bytes);
+   rec.rom_name = "fp_one.zip";
+   for (k = 0; k < 4; k++)
+      be[k] = (uint8_t)(0x0CA70301u >> (24 - 8 * k));
+   rec.set_fp = crc_of(be, sizeof(be));
+   sprintf(p, "%s/Test FP Arcade.rdb", db);
+   if (!write_db_set(p, &rec, 1))
+      goto fixture;
+
+   sprintf(lpl, "%s/Test FP Arcade.lpl", pl_dir);
+   sprintf(crc, "%08X|crc", (unsigned)rec.crc);
+   filestream_delete(lpl);
+   use_queue(threaded);
+   use_db(db);
+   retro_atomic_store_release_int(&reads_begun, 0);
+   begun_size = bytes;
+   started    = run_scan(dir) && scan_completed;
+   begun_size = 0;
+   reads      = retro_atomic_load_acquire_int(&reads_begun);
+   sprintf(what, "one member: matched by fingerprint %s", q);
+   check(   started && file_contains(lpl, "FP One")
+         && file_contains(lpl, crc)
+         && !file_contains(lpl, "fp_one.zip#"), what, "fp_one.zip");
+   if (!threaded)
+   {
+      sprintf(detail, "%d whole reads", reads);
+      check(started && reads == 0,
+            "one member: the fingerprint before the size", detail);
+   }
+   return;
+
+fixture:
+   check(0, "fixture", "could not write the one-member set");
+}
+
+/* Several members: a fingerprint in a database whose cores open zip
+ * wins over the first member's hit in one claimed only for its type,
+ * and the archive is not read whole. */
+static void fp_cart_first_lane(const char *root, const char *pl_dir,
+      bool threaded)
+{
+   static const char *const pl[2] = { "Test Cart Gate", "Test Arc Gate" };
+   static uint8_t d[2][MF_MEMBER_LEN];
+   static char    lpl[2][1024];
+   char           db[512], dir[512], p[1024];
+   char           what[64], detail[64], crc[16];
+   uint8_t        be[8];
+   db_rec_t       cart, arc;
+   zip_entry_t    e[2];
+   uint32_t       bytes;
+   int            reads;
+   bool           started;
+   unsigned       k;
+   const char    *q = threaded ? "(threaded)" : "(regular)";
+
+   sprintf(db,  "%s/fp_cart_first_db", root);
+   sprintf(dir, "%s/fp_cart_first",    root);
+   path_mkdir(db);
+   path_mkdir(dir);
+   fill_forced(d[0], MF_MEMBER_LEN, 163, 0x0CA70201u);
+   fill_forced(d[1], MF_MEMBER_LEN, 167, 0x0CA70202u);
+   memset(e, 0, sizeof(e));
+   e[0].name = "a.ct";
+   e[0].data = d[0];
+   e[0].len  = MF_MEMBER_LEN;
+   e[0].crc  = 0x0CA70201u;
+   e[1].name = "b.ct";
+   e[1].data = d[1];
+   e[1].len  = MF_MEMBER_LEN;
+   e[1].crc  = 0x0CA70202u;
+   sprintf(p, "%s/fcf0.zip", dir);
+   if (!write_zip_entries(p, e, 2))
+      goto fixture;
+   bytes = zip_bytes(e, 2);
+
+   set_rec(&cart, "FCF Cart", 0x0CA70201u, MF_MEMBER_LEN);
+   /* The zip's size, which lets it be read whole, but not its CRC. */
+   set_rec(&arc, "FCF Arcade", 0x0CA702FFu, bytes);
+   arc.rom_name = "fcf0.zip";
+   for (k = 0; k < 4; k++)
+   {
+      be[k]     = (uint8_t)(0x0CA70201u >> (24 - 8 * k));
+      be[4 + k] = (uint8_t)(0x0CA70202u >> (24 - 8 * k));
+   }
+   arc.set_fp = crc_of(be, sizeof(be));
+   sprintf(p, "%s/%s.rdb", db, pl[0]);
+   if (!write_db_set(p, &cart, 1))
+      goto fixture;
+   sprintf(p, "%s/%s.rdb", db, pl[1]);
+   if (!write_db_set(p, &arc, 1))
+      goto fixture;
+
+   for (k = 0; k < 2; k++)
+   {
+      sprintf(lpl[k], "%s/%s.lpl", pl_dir, pl[k]);
+      filestream_delete(lpl[k]);
+   }
+   sprintf(crc, "%08X|crc", 0x0CA702FFu);
+   use_queue(threaded);
+   use_db(db);
+   retro_atomic_store_release_int(&reads_begun, 0);
+   begun_size = bytes;
+   started    = run_scan(dir) && scan_completed;
+   begun_size = 0;
+   reads      = retro_atomic_load_acquire_int(&reads_begun);
+   sprintf(what, "several members: the fingerprint record wins %s", q);
+   check(   started && file_contains(lpl[1], "FCF Arcade")
+         && file_contains(lpl[1], crc)
+         && !file_contains(lpl[1], "fcf0.zip#"), what, "fcf0.zip");
+   sprintf(what, "several members: no cartridge entry %s", q);
+   check(started && !file_contains(lpl[0], "fcf0.zip"), what,
+         "fcf0.zip#a.ct");
+   if (!threaded)
+   {
+      sprintf(detail, "%d whole reads", reads);
+      check(started && reads == 0,
+            "several members, a fingerprint hit: not read whole", detail);
+   }
+   return;
+
+fixture:
+   check(0, "fixture", "could not write the fingerprint-first set");
+}
+
+/* A database matched by its members, as MAME's, never matches a set by
+ * its fingerprint. */
+static void fp_member_db_lane(const char *root, const char *pl_dir,
+      bool threaded)
+{
+   static uint8_t d[2][MF_MEMBER_LEN];
+   static char    lpl[1024];
+   char           db[512], dir[512], p[1024], what[64];
+   uint8_t        be[8];
+   db_rec_t       rec;
+   zip_entry_t    e[2];
+   bool           started;
+   unsigned       k;
+   const char    *q = threaded ? "(threaded)" : "(regular)";
+
+   sprintf(db,  "%s/fp_member_db", root);
+   sprintf(dir, "%s/fp_member",    root);
+   path_mkdir(db);
+   path_mkdir(dir);
+   fill_forced(d[0], MF_MEMBER_LEN, 173, 0x0CA70401u);
+   fill_forced(d[1], MF_MEMBER_LEN, 179, 0x0CA70402u);
+   memset(e, 0, sizeof(e));
+   e[0].name = "a.rd";
+   e[0].data = d[0];
+   e[0].len  = MF_MEMBER_LEN;
+   e[0].crc  = 0x0CA70401u;
+   e[1].name = "b.rd";
+   e[1].data = d[1];
+   e[1].len  = MF_MEMBER_LEN;
+   e[1].crc  = 0x0CA70402u;
+   sprintf(p, "%s/fp_member.zip", dir);
+   if (!write_zip_entries(p, e, 2))
+      goto fixture;
+
+   set_rec(&rec, "ES FP Set", 0x0CA704FFu, zip_bytes(e, 2));
+   rec.rom_name = "fp_member.zip";
+   for (k = 0; k < 4; k++)
+   {
+      be[k]     = (uint8_t)(0x0CA70401u >> (24 - 8 * k));
+      be[4 + k] = (uint8_t)(0x0CA70402u >> (24 - 8 * k));
+   }
+   rec.set_fp = crc_of(be, sizeof(be));
+   sprintf(p, "%s/Test ES Arcade.rdb", db);
+   if (!write_db_set(p, &rec, 1))
+      goto fixture;
+
+   sprintf(lpl, "%s/Test ES Arcade.lpl", pl_dir);
+   filestream_delete(lpl);
+   use_queue(threaded);
+   use_db(db);
+   started = run_scan(dir) && scan_completed;
+   sprintf(what, "a member database: no fingerprint match %s", q);
+   check(started && !file_contains(lpl, "ES FP Set"), what,
+         "fp_member.zip");
+   return;
+
+fixture:
+   check(0, "fixture", "could not write the member database set");
 }
 
 /* With "Scan Inside Archives" off nothing expands, so the member pass
@@ -6913,7 +8870,8 @@ fixture:
  * arcade zip by its own CRC, B the same 100 bytes longer, G an A whose
  * member is a cart gate ROM, H a zip whose member the gate database
  * holds and S a 7z of a gate ROM, by its own CRC in a database whose
- * core opens 7z. */
+ * core opens 7z.  P is a zip of two members, m.rd and n.rd, an arcade
+ * record holds by its set fingerprint alone. */
 #define AH_GATE_CRC 0x0CBFFFFFu
 #define AH_FILES   40
 #define AH_BIG     66000
@@ -6941,6 +8899,28 @@ static uint32_t ah_member_len(char role)
 static uint32_t ah_len(char role)
 {
    return 30 + 4 + ah_member_len(role) + 46 + 4 + 22;
+}
+
+/* A P's second member's CRC, and the fingerprint of both. */
+static uint32_t ah_p_crc(unsigned pos)
+{
+   return 0x0CBE0000u + pos;
+}
+
+static uint32_t ah_p_fp(unsigned pos)
+{
+   uint32_t c[2];
+   uint8_t  be[8];
+   unsigned k;
+
+   c[0] = 0x0CB00000u + pos;
+   c[1] = ah_p_crc(pos);
+   for (k = 0; k < 4; k++)
+   {
+      be[k]     = (uint8_t)(c[0] >> (24 - 8 * k));
+      be[4 + k] = (uint8_t)(c[1] >> (24 - 8 * k));
+   }
+   return crc_of(be, sizeof(be));
 }
 
 /* Writes wa_<k>.zip, or .7z for an S, as the file at @pos in
@@ -6974,11 +8954,23 @@ static bool write_ah_zip(const char *dir, unsigned k, unsigned pos,
    if (role == 'S')
       return write_7z(p, e.name, d, e.len, crc) != 0;
 #endif
+   if (role == 'P')
+   {
+      zip_entry_t pe[2];
+
+      fill_forced(d + 2048, ah_member_len(role), 89 + pos, ah_p_crc(pos));
+      pe[0]      = e;
+      pe[1]      = e;
+      pe[1].name = "n.rd";
+      pe[1].data = d + 2048;
+      pe[1].crc  = ah_p_crc(pos);
+      return write_zip_entries(p, pe, 2) != 0;
+   }
    return write_zip_entries(p, &e, 1) != 0;
 }
 
 /* Scans zips of @roles, in content-list order, on the threaded queue;
- * true when every K, F, A, B, G and W is in its playlist.  The first
+ * true when every K, F, A, B, G, P and W is in its playlist.  The first
  * zip's directory read waits for the others', so a reader has read
  * each directory by the scan's first verdict.  With @gate, the readers
  * instead wait in the F zips' (one each: the last), until all are in
@@ -7043,6 +9035,13 @@ static bool ah_scan(const char *root, const char *pl_dir, const char *tag,
             if (!set_whole_rec(&set7[ns], names[pos[i]], p))
                goto fail;
             set7[ns++].rom_name = "set.7z";
+         }
+         else if (role == 'P')
+         {
+            /* Neither its own CRC nor its size: only the fingerprint. */
+            set_rec(&arc[na], names[pos[i]], 0x0CBEFFFFu - pos[i], 0);
+            arc[na].unsized  = true;
+            arc[na++].set_fp = ah_p_fp(pos[i]);
          }
       }
       sprintf(p, "%s/Test MF Cart.rdb", db);
@@ -7211,6 +9210,37 @@ static void ahead_streak_lane(const char *root, const char *pl_dir)
    sprintf(detail, "%d reader reads", begun);
    check(   ok && !retro_atomic_load_acquire_int(&look_late)
          && begun == 2, "read ahead: a member hit ends the run", detail);
+}
+
+/* Match, fingerprint hit, match: a fingerprint hit ends the run as a
+ * member hit does, so the second match lets the readers read one zip
+ * whole ahead again, not two.  Test only: the P's lookup and the last
+ * K's wait for the reads granted before them. */
+static void ahead_fp_streak_lane(const char *root, const char *pl_dir)
+{
+   char detail[64];
+   bool ok;
+   int  begun;
+
+   if (!readers_expected())
+   {
+      check(1, "read ahead: a fingerprint hit ends the run",
+            "no readers");
+      return;
+   }
+   look_crc[0]  = ah_p_fp(2);
+   look_want[0] = 1;
+   look_crc[1]  = 0x0CB00004u;
+   look_want[1] = 2;
+   look_n       = 2;
+   ok           = ah_scan(root, pl_dir, "fpstreak", "KAPAKKKKKKKK", 0, 0,
+         0, 0);
+   look_n       = 0;
+   begun        = retro_atomic_load_acquire_int(&rd_wholes);
+   sprintf(detail, "%d reader reads", begun);
+   check(   ok && !retro_atomic_load_acquire_int(&look_late)
+         && begun == 2, "read ahead: a fingerprint hit ends the run",
+         detail);
 }
 
 /* @head, then an F for each reader: the last zips, which the readers
@@ -8929,6 +10959,180 @@ end:
    ovr_cfg = NULL;
 }
 
+/* A refresh drops a missing entry only when the folder it is judged
+ * by - the content folder for an entry inside it, else its own or its
+ * archive's - holds something; extensions count only inside. */
+struct anchor_case
+{
+   const char *path;
+   const char *needle;
+   bool        kept;
+   const char *what;
+};
+
+/* Refreshes @lpl as the menu does: an entry per case under @root,
+ * saved folder @saved, extension bin, no database. */
+static void anchor_refresh(const char *root, const char *lpl,
+      const char *saved, const struct anchor_case *cases, size_t n)
+{
+   playlist_config_t    *cfg = (playlist_config_t*)calloc(1, sizeof(*cfg));
+   playlist_t           *pl  = NULL;
+   char                  p[1024];
+   struct playlist_entry e;
+   size_t                i;
+   bool                  ran = false;
+
+   if (!cfg)
+   {
+      check(0, "anchor lane", "out of memory");
+      return;
+   }
+   filestream_delete(lpl);
+   playlist_config_set_path(cfg, lpl);
+   cfg->capacity = COLLECTION_SIZE;
+   if (!(pl = playlist_init(cfg)))
+      goto fixture;
+   for (i = 0; i < n; i++)
+   {
+      sprintf(p, "%s/%s", root, cases[i].path);
+      memset(&e, 0, sizeof(e));
+      e.path      = p;
+      e.label     = (char*)"Anchor";
+      e.core_path = (char*)"DETECT";
+      e.core_name = (char*)"DETECT";
+      if (!playlist_push(pl, &e))
+         goto fixture;
+   }
+   playlist_set_scan_content_dir(pl, saved);
+   playlist_set_scan_file_exts(pl, "bin");
+   playlist_set_scan_db_usage(pl, MANUAL_CONTENT_SCAN_USE_DB_NONE);
+   playlist_write_file(pl);
+
+   ran =    manual_content_scan_set_menu_from_playlist(pl,
+               config_get_ptr()->paths.path_content_database, false)
+               == MANUAL_CONTENT_SCAN_PLAYLIST_REFRESH_OK
+         && run_scan(saved) && scan_completed;
+   check(ran, "validate: refresh ran", lpl);
+   for (i = 0; ran && i < n; i++)
+      check(file_contains(lpl, cases[i].needle) == cases[i].kept,
+            cases[i].what, cases[i].needle);
+   goto end;
+
+fixture:
+   check(0, "fixture", "could not write the anchor lane");
+end:
+   if (pl)
+      playlist_free(pl);
+   free(cfg);
+   manual_content_scan_reset_settings();
+}
+
+static void anchor_lane(const char *root, const char *pl_dir)
+{
+   /* The needles leave the folders out: Windows stores backslashes. */
+   static const struct anchor_case cases[] = {
+      { "anchor_saved/in_here.bin",      "in_here.bin",     true,
+        "validate: inside, present: kept" },
+      { "anchor_saved/in_gone.bin",      "in_gone.bin",     false,
+        "validate: inside, missing: dropped" },
+      { "anchor_saved/in_here.img",      "in_here.img",     false,
+        "validate: inside, extension not saved: dropped" },
+      { "anchor_full/full_gone.bin",     "full_gone.bin",   false,
+        "validate: outside, missing, folder there: dropped" },
+      { "anchor_absent/absent_gone.bin", "absent_gone.bin", true,
+        "validate: outside, missing, folder gone: kept" },
+      { "anchor_void/void_gone.bin",     "void_gone.bin",   true,
+        "validate: outside, missing, folder empty: kept" },
+      { "anchor_full/full_here.img",     "full_here.img",   true,
+        "validate: outside, extension not saved: kept" },
+      { "anchor_saved2/sib_gone.bin",    "sib_gone.bin",    true,
+        "validate: outside, name shares the prefix: kept" },
+      { "anchor_absent/absent.zip#sub/m.bin", "absent.zip#sub", true,
+        "validate: member, archive's folder gone: kept" },
+      { "anchor_full/full.zip#sub/m.bin",     "full.zip#sub",   false,
+        "validate: member, archive's folder there: dropped" }
+   };
+#ifdef _WIN32
+   static const struct anchor_case other_case[] = {
+      { "anchor_saved/in_here.img", "in_here.img", false,
+        "validate: saved folder in another case: inside" }
+   };
+#else
+   /* Saved through a link to anchor_real.  Entries are saved with
+    * their symlinks resolved, so a missing one names anchor_real. */
+   static const struct anchor_case linked[] = {
+      { "anchor_link/link_here.img",          "link_here.img", false,
+        "validate: via symlink, extension not saved: dropped" },
+      { "anchor_real/link_sub/link_gone.bin", "link_gone.bin", false,
+        "validate: via symlink, missing: dropped" }
+   };
+#endif
+   char saved[512], full[512], plist[512], lpl[1024];
+   char p[1024];
+
+   sprintf(saved, "%s/anchor_saved", root);
+   sprintf(full,  "%s/anchor_full",  root);
+   sprintf(plist, "%s/anchor_pl",    root);
+   sprintf(lpl,   "%s/Anchor.lpl",   plist);
+   path_mkdir(saved);
+   path_mkdir(full);
+   path_mkdir(plist);
+   sprintf(p, "%s/anchor_void", root);
+   path_mkdir(p);
+   sprintf(p, "%s/in_here.bin", saved);
+   if (!filestream_write_file(p, "bin", 3))
+      goto fixture;
+   sprintf(p, "%s/in_here.img", saved);
+   if (!filestream_write_file(p, "img", 3))
+      goto fixture;
+   sprintf(p, "%s/full_here.img", full);
+   if (!filestream_write_file(p, "img", 3))
+      goto fixture;
+
+   strlcpy(config_get_ptr()->paths.directory_playlist, plist,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   anchor_refresh(root, lpl, saved, cases,
+         sizeof(cases) / sizeof(cases[0]));
+
+#ifdef _WIN32
+   sprintf(saved, "%s/ANCHOR_SAVED", root);
+   sprintf(lpl, "%s/AnchorCase.lpl", plist);
+   anchor_refresh(root, lpl, saved, other_case,
+         sizeof(other_case) / sizeof(other_case[0]));
+   printf("  skip  validate: via symlink (none made on Windows)\n");
+#else
+   sprintf(p, "%s/anchor_real", root);
+   path_mkdir(p);
+   sprintf(p, "%s/anchor_real/link_here.bin", root);
+   if (!filestream_write_file(p, "bin", 3))
+      goto fixture;
+   sprintf(p, "%s/anchor_real/link_here.img", root);
+   if (!filestream_write_file(p, "img", 3))
+      goto fixture;
+   sprintf(saved, "%s/anchor_link", root);
+   sprintf(lpl, "%s/AnchorLink.lpl", plist);
+   filestream_delete(saved);
+   if (symlink("anchor_real", saved) != 0)
+      goto fixture;
+   strlcpy(p, saved, sizeof(p));
+   if (   !path_resolve_realpath(p, sizeof(p), true)
+       || !strcmp(p, saved))
+   {
+      printf("  skip  validate: via symlink (links not resolved)\n");
+      goto end;
+   }
+   anchor_refresh(root, lpl, saved, linked,
+         sizeof(linked) / sizeof(linked[0]));
+#endif
+   goto end;
+
+fixture:
+   check(0, "fixture", "could not write the anchor lane");
+end:
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl_dir,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+}
+
 /* --scan-core: a path, then a file name, then a display name; more
  * than one match in the step that decides is ambiguous. */
 static void core_lookup_lane(const char *root)
@@ -9505,6 +11709,21 @@ static void refresh_began_one(int k)
       retro_atomic_fetch_add_int(&refresh_began_main[k], 1);
 }
 
+/* Linked with --wrap: file stats on the main thread while at most
+ * stat_loads playlist loads have begun (0: none counted). */
+static int                stat_loads;
+static retro_atomic_int_t stat_main;
+
+int __real_retro_vfs_stat_64_impl(const char *path, int64_t *size);
+int __wrap_retro_vfs_stat_64_impl(const char *path, int64_t *size)
+{
+   if (   task_is_on_main_thread() && stat_loads
+       && retro_atomic_load_acquire_int(&refresh_began[REFRESH_LOAD])
+          <= stat_loads)
+      retro_atomic_fetch_add_int(&stat_main, 1);
+   return __real_retro_vfs_stat_64_impl(path, size);
+}
+
 /* Set by the walk's own thread, which is the one that steps it. */
 static retro_atomic_int_t lpl_walk_fail;
 static dir_list_iter_t   *lpl_fail_iter;
@@ -9544,6 +11763,10 @@ int __wrap_dir_list_iter_step(dir_list_iter_t *iter,
    return __real_dir_list_iter_step(iter, within_budget, ud);
 }
 
+/* The folder made as load mkdir_at_load begins (0: none). */
+static int         mkdir_at_load;
+static const char *mkdir_at_path;
+
 /* Linked with --wrap: a refresh's load reads the playlist's header. */
 playlist_parse_t *__real_playlist_parse_begin_header(
       const playlist_config_t *config);
@@ -9552,6 +11775,10 @@ playlist_parse_t *__wrap_playlist_parse_begin_header(
 {
    refresh_began_one(REFRESH_LOAD);
    prep_cancel_begun();
+   if (   mkdir_at_load
+       && retro_atomic_load_acquire_int(&refresh_began[REFRESH_LOAD])
+          == mkdir_at_load)
+      path_mkdir(mkdir_at_path);
    return __real_playlist_parse_begin_header(config);
 }
 
@@ -9653,6 +11880,677 @@ static bool listed_as(const char *dir, const char *name, char *detail,
    string_list_free(l);
    return found;
 }
+
+#ifdef HAVE_SMBCLIENT
+/* An smb:// folder that cannot be scanned says why: --scan's line on
+ * stderr (the item fails, no totals), the menu's notification with
+ * the folder appended, one log line.  Without a reason, "not found"
+ * and the invalid content message.  The stub VFS finds nothing;
+ * smb_url_check() answers as the case says, and smb_url_failure() is
+ * asked only when that passes.  A local folder asks neither. */
+static void smb_reason_lane(const char *root, bool threaded)
+{
+   static const struct
+   {
+      const char         *name;
+      enum smb_url_result check;
+      enum smb_failure    failure;
+      const char         *detail;
+      enum msg_hash_enums reason; /* MSG_UNKNOWN: none */
+   } cases[] = {
+      { "no server",      SMB_URL_NO_SERVER,     SMB_FAILURE_UNKNOWN,
+            "",          MSG_SCAN_SMB_NO_SERVER },
+      { "share differs",  SMB_URL_SHARE_DIFFERS, SMB_FAILURE_UNKNOWN,
+            "retro",     MSG_SCAN_SMB_SHARE_DIFFERS },
+      { "cannot resolve", SMB_URL_OK,            SMB_FAILURE_RESOLVE,
+            "",          MSG_SCAN_SMB_CANNOT_RESOLVE },
+      { "cannot connect", SMB_URL_OK,            SMB_FAILURE_CONNECT,
+            "",          MSG_SCAN_SMB_CANNOT_CONNECT },
+      { "login failed",   SMB_URL_OK,            SMB_FAILURE_LOGIN,
+            "",          MSG_SCAN_SMB_LOGIN_FAILED },
+      { "no share",       SMB_URL_OK,            SMB_FAILURE_SHARE,
+            "",          MSG_SCAN_SMB_NO_SHARE },
+      { "connected",      SMB_URL_OK,            SMB_FAILURE_CONNECTED,
+            "",          MSG_UNKNOWN },
+      { "no record",      SMB_URL_OK,            SMB_FAILURE_UNKNOWN,
+            "",          MSG_UNKNOWN }
+   };
+   const char         *url = "smb://host/share/roms";
+   const char         *q   = threaded ? "(threaded)" : "(regular)";
+   char                out[512], err[512], log[512], pl[512], local[512];
+   char                line[512], menu[512], what[96], detail[64];
+   struct string_list *l;
+   size_t              i;
+   bool                captured, pushed, off_main = false;
+   char               *saved_pl = strdup(
+         config_get_ptr()->paths.directory_playlist);
+
+#ifdef HAVE_THREADS
+   off_main = threaded;
+#endif
+   sprintf(out,   "%s/smb_reason.out",     root);
+   sprintf(err,   "%s/smb_reason.err",     root);
+   sprintf(log,   "%s/smb_reason.log",     root);
+   sprintf(pl,    "%s/smb_reason_pl",      root);
+   sprintf(local, "%s/smb_reason_missing", root);
+   path_mkdir(pl);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   use_queue(threaded);
+   for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      const char *text = cases[i].reason == MSG_UNKNOWN
+            ? "not found" : msg_hash_to_str_us(cases[i].reason);
+      int         checks_n, main_n, failures_n;
+
+      smb_stub_check   = cases[i].check;
+      smb_stub_failure = cases[i].failure;
+      smb_stub_detail  = cases[i].detail;
+      retro_atomic_store_release_int(&smb_stub_checks,      0);
+      retro_atomic_store_release_int(&smb_stub_checks_main, 0);
+      retro_atomic_store_release_int(&smb_stub_failures,    0);
+      if (*cases[i].detail)
+      {
+         sprintf(line, "%s: %s %s", url, text, cases[i].detail);
+         sprintf(menu, "%s %s: %s", text, cases[i].detail, url);
+      }
+      else
+      {
+         sprintf(line, "%s: %s", url, text);
+         sprintf(menu, "%s: %s", text, url);
+      }
+
+      invalid_content_pushed = false;
+      push_seen              = false;
+      push_watch             = menu;
+      retro_main_log_file_init(log, false);
+      verbosity_enable();
+      cli_output = true;
+      captured   = capture_begin(out, err);
+      pushed     = chain_push(chain_items(1, url, NULL), 1);
+      chain_wait(false);
+      if (captured)
+         capture_end();
+      cli_output = false;
+      verbosity_disable();
+      retro_main_log_file_deinit();
+      push_watch = NULL;
+      sprintf(what, "smb %s: %s, --scan", q, cases[i].name);
+      check(   captured && pushed && chain_seen == 1
+            && chain_outcomes[0] == TASK_DBSCAN_FAILED
+            && !strcmp(chain_names[0], url)
+            && chain_totals.failed == 1 && !chain_totals.ran
+            && file_contains(err, line) && !file_contains(out, " added, "),
+            what, line);
+      sprintf(what, "smb %s: %s, --scan notification", q, cases[i].name);
+      check(   push_seen == (cases[i].reason != MSG_UNKNOWN)
+            && !invalid_content_pushed, what, menu);
+      sprintf(what, "smb %s: %s, --scan log", q, cases[i].name);
+      if (cases[i].reason == MSG_UNKNOWN)
+         check(captured && !file_contains(log, "SMB"), what, "no SMB line");
+      else
+      {
+         char want[600];
+
+         sprintf(want, "[Scanner] %s", line);
+         check(captured && file_contains(log, want), what, want);
+      }
+      checks_n   = retro_atomic_load_acquire_int(&smb_stub_checks);
+      main_n     = retro_atomic_load_acquire_int(&smb_stub_checks_main);
+      failures_n = retro_atomic_load_acquire_int(&smb_stub_failures);
+      sprintf(what, "smb %s: %s, asked in order", q, cases[i].name);
+      sprintf(detail, "check %d (%d main), failure %d", checks_n, main_n,
+            failures_n);
+      check(   checks_n == 1 && (!off_main || !main_n)
+            && failures_n == (cases[i].check == SMB_URL_OK ? 1 : 0),
+            what, detail);
+
+      invalid_content_pushed = false;
+      push_seen              = false;
+      push_watch             = menu;
+      retro_main_log_file_init(log, false);
+      verbosity_enable();
+      captured = capture_scan(url, out, err, false);
+      verbosity_disable();
+      retro_main_log_file_deinit();
+      push_watch = NULL;
+      sprintf(what, "smb %s: %s, menu", q, cases[i].name);
+      if (cases[i].reason == MSG_UNKNOWN)
+      {
+         sprintf(detail, "failed %d, invalid content %d",
+               (int)scan_result.failed, (int)invalid_content_pushed);
+         check(   captured && scan_result.failed && invalid_content_pushed
+               && !push_seen, what, detail);
+      }
+      else
+         check(   captured && scan_result.failed && push_seen
+               && !invalid_content_pushed, what, menu);
+      sprintf(what, "smb %s: %s, log", q, cases[i].name);
+      if (cases[i].reason == MSG_UNKNOWN)
+         check(captured && !file_contains(log, "SMB"), what, "no SMB line");
+      else
+      {
+         char want[600];
+
+         sprintf(want, "[Scanner] %s", line);
+         check(captured && file_contains(log, want), what, want);
+      }
+   }
+   l = dir_list_new(pl, "lpl", false, false, false, false);
+   sprintf(what, "smb %s: no playlist written", q);
+   check(l && !l->size, what, pl);
+   string_list_free(l);
+
+   retro_atomic_store_release_int(&smb_stub_checks,   0);
+   retro_atomic_store_release_int(&smb_stub_failures, 0);
+   captured = capture_scan(local, out, err, false);
+   sprintf(what, "smb %s: a local folder asks neither", q);
+   check(   captured
+         && !retro_atomic_load_acquire_int(&smb_stub_checks)
+         && !retro_atomic_load_acquire_int(&smb_stub_failures), what, local);
+   if (saved_pl)
+      strlcpy(config_get_ptr()->paths.directory_playlist, saved_pl,
+            sizeof(config_get_ptr()->paths.directory_playlist));
+   free(saved_pl);
+}
+
+/* A refresh of a playlist saved with an smb:// folder that cannot be
+ * scanned skips it with the reason and the folder, on stderr and in
+ * the log, and leaves its file alone; a local playlist beside it
+ * refreshes.  Without a reason, "content folder not found".
+ * The load asks, off the main thread when the queue has a worker. */
+static void smb_refresh_lane(const char *root, uint32_t crc_a,
+      uint32_t sz_a, bool threaded)
+{
+   static const struct
+   {
+      const char         *name;
+      enum smb_url_result check;
+      enum smb_failure    failure;
+      const char         *detail;
+      enum msg_hash_enums reason; /* MSG_UNKNOWN: none */
+   } cases[] = {
+      { "no server",      SMB_URL_NO_SERVER,     SMB_FAILURE_UNKNOWN,
+            "",          MSG_SCAN_SMB_NO_SERVER },
+      { "share differs",  SMB_URL_SHARE_DIFFERS, SMB_FAILURE_UNKNOWN,
+            "retro",     MSG_SCAN_SMB_SHARE_DIFFERS },
+      { "cannot resolve", SMB_URL_OK,            SMB_FAILURE_RESOLVE,
+            "",          MSG_SCAN_SMB_CANNOT_RESOLVE },
+      { "cannot connect", SMB_URL_OK,            SMB_FAILURE_CONNECT,
+            "",          MSG_SCAN_SMB_CANNOT_CONNECT },
+      { "login failed",   SMB_URL_OK,            SMB_FAILURE_LOGIN,
+            "",          MSG_SCAN_SMB_LOGIN_FAILED },
+      { "no share",       SMB_URL_OK,            SMB_FAILURE_SHARE,
+            "",          MSG_SCAN_SMB_NO_SHARE },
+      { "connected",      SMB_URL_OK,            SMB_FAILURE_CONNECTED,
+            "",          MSG_UNKNOWN },
+      { "no record",      SMB_URL_OK,            SMB_FAILURE_UNKNOWN,
+            "",          MSG_UNKNOWN }
+   };
+   const char         *url = "smb://host/share/roms";
+   const char         *q   = threaded ? "(threaded)" : "(regular)";
+   char                pl[512], a[512], ref[512], lpl_a[1024], lpl_s[1024];
+   char                out[512], err[512], log[512], p[1024], stale[1024];
+   char                line[256], want[320], what[96], detail[96];
+   task_dbscan_item_t *items;
+   size_t              i;
+   bool                ran, off_main = false;
+   char               *saved_pl = strdup(
+         config_get_ptr()->paths.directory_playlist);
+
+#ifdef HAVE_THREADS
+   off_main = threaded;
+#endif
+   sprintf(pl,    "%s/smb_refresh_pl",      root);
+   sprintf(a,     "%s/smb_refresh_a",       root);
+   sprintf(ref,   "%s/smb_refresh_ref.lpl", root);
+   sprintf(out,   "%s/smb_refresh.out",     root);
+   sprintf(err,   "%s/smb_refresh.err",     root);
+   sprintf(log,   "%s/smb_refresh.log",     root);
+   sprintf(lpl_a, "%s/a_local.lpl",         pl);
+   sprintf(lpl_s, "%s/s_smb.lpl",           pl);
+   sprintf(stale, "%s/00_gone.bin",         a);
+   path_mkdir(pl);
+   path_mkdir(a);
+   delete_playlists(pl);
+   filestream_delete(ref);
+   sprintf(p, "%s/01_alpha.bin", a);
+   if (   !write_content(p, crc_a, sz_a)
+       || !refresh_write(ref, url, NULL, stale))
+      goto fixture;
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   use_queue(threaded);
+   for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      const char *text = cases[i].reason == MSG_UNKNOWN
+            ? "content folder not found"
+            : msg_hash_to_str_us(cases[i].reason);
+      int         checks_n, main_n, failures_n;
+
+      smb_stub_check   = cases[i].check;
+      smb_stub_failure = cases[i].failure;
+      smb_stub_detail  = cases[i].detail;
+      retro_atomic_store_release_int(&smb_stub_checks,      0);
+      retro_atomic_store_release_int(&smb_stub_checks_main, 0);
+      retro_atomic_store_release_int(&smb_stub_failures,    0);
+      /* A stale entry again, so the local one adds its file each time */
+      delete_playlists(pl);
+      if (   !refresh_write(lpl_a, a,   NULL, stale)
+          || !refresh_write(lpl_s, url, NULL, stale)
+          || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+         goto fixture;
+      refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+      if (*cases[i].detail)
+         sprintf(line, "s_smb: skipped: %s %s (%s)", text,
+               cases[i].detail, url);
+      else
+         sprintf(line, "s_smb: skipped: %s (%s)", text, url);
+
+      retro_main_log_file_init(log, false);
+      verbosity_enable();
+      ran = refresh_run(items, 1, out, err, true);
+      verbosity_disable();
+      retro_main_log_file_deinit();
+      sprintf(what, "smb refresh %s: %s, refresh-all", q, cases[i].name);
+      sprintf(detail, "%u items, ran %u, added %u, failed %u, skipped %u",
+            chain_seen, chain_totals.ran, chain_totals.added,
+            chain_totals.failed, chain_totals.skipped);
+      check(   ran && chain_seen == 2
+            && chain_saw(0, "a_local", TASK_DBSCAN_RAN,     1)
+            && chain_saw(1, "s_smb",   TASK_DBSCAN_SKIPPED, -1)
+            && chain_totals.ran == 1 && chain_totals.added == 1
+            && !chain_totals.failed && chain_totals.skipped == 1,
+            what, detail);
+      sprintf(what, "smb refresh %s: %s, the skip line", q, cases[i].name);
+      check(file_contains(err, line) && !file_contains(out, "s_smb"),
+            what, line);
+      sprintf(what, "smb refresh %s: %s, log", q, cases[i].name);
+      sprintf(want, "[Playlist Refresh] %s.", line);
+      check(file_contains(log, want), what, want);
+      checks_n   = retro_atomic_load_acquire_int(&smb_stub_checks);
+      main_n     = retro_atomic_load_acquire_int(&smb_stub_checks_main);
+      failures_n = retro_atomic_load_acquire_int(&smb_stub_failures);
+      sprintf(what, "smb refresh %s: %s, asked by the load", q,
+            cases[i].name);
+      sprintf(detail, "check %d (%d main), failure %d", checks_n, main_n,
+            failures_n);
+      check(   checks_n == 1 && (!off_main || !main_n)
+            && failures_n == (cases[i].check == SMB_URL_OK ? 1 : 0),
+            what, detail);
+      sprintf(what, "smb refresh %s: %s, s_smb.lpl untouched", q,
+            cases[i].name);
+      check(files_equal(ref, lpl_s), what, lpl_s);
+   }
+
+   /* --scan-refresh=NAME skips it the same way. */
+   smb_stub_check   = SMB_URL_SHARE_DIFFERS;
+   smb_stub_failure = SMB_FAILURE_UNKNOWN;
+   smb_stub_detail  = "retro";
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH, "s_smb");
+   ran = refresh_run(items, 1, out, err, true);
+   sprintf(line, "s_smb: skipped: %s retro (%s)",
+         msg_hash_to_str_us(MSG_SCAN_SMB_SHARE_DIFFERS), url);
+   sprintf(what, "smb refresh %s: by name, skipped", q);
+   check(   ran && chain_seen == 1
+         && chain_saw(0, "s_smb", TASK_DBSCAN_SKIPPED, -1)
+         && chain_totals.skipped == 1 && !chain_totals.ran
+         && !chain_totals.failed && file_contains(err, line)
+         && files_equal(ref, lpl_s), what, line);
+   goto done;
+
+fixture:
+   check(0, "fixture", "could not write the smb refresh lane");
+done:
+   smb_stub_check   = SMB_URL_OK;
+   smb_stub_failure = SMB_FAILURE_UNKNOWN;
+   smb_stub_detail  = "";
+   /* A refresh leaves its playlist's settings; later lanes scan with
+    * the defaults. */
+   manual_content_scan_reset_settings();
+   if (saved_pl)
+      strlcpy(config_get_ptr()->paths.directory_playlist, saved_pl,
+            sizeof(config_get_ptr()->paths.directory_playlist));
+   free(saved_pl);
+}
+
+enum smb_kind_push
+{
+   SMB_KIND_DBSCAN = 0, /* task_push_dbscan(), kind unknown */
+   SMB_KIND_FOLDER,     /* task_push_dbscan_known(), a folder */
+   SMB_KIND_FILE,       /* task_push_dbscan_known(), a file */
+   SMB_KIND_AS_SET      /* the settings as set */
+};
+
+static void smb_kind_reset(void)
+{
+   retro_atomic_store_release_int(&smb_stub_stats_main, 0);
+   retro_atomic_store_release_int(&smb_stats_at_push,   -1);
+   retro_atomic_store_release_int(&smb_stub_opendirs,   0);
+}
+
+/* Scans @path as run_scan() does, pushed as @how says.  Returns the
+ * main thread's smb:// stats before the push (since smb_kind_reset()
+ * for SMB_KIND_AS_SET), or -1 if none was. */
+static int smb_kind_scan(const char *path, enum smb_kind_push how)
+{
+   time_t started;
+   bool   pushed;
+
+   if (how != SMB_KIND_AS_SET)
+      smb_kind_reset();
+   loop_active        = true;
+   scan_completed     = false;
+   scan_result.failed = true;
+   switch (how)
+   {
+      case SMB_KIND_DBSCAN:
+         pushed = task_push_dbscan(path, scan_cb, &scan_result);
+         break;
+      case SMB_KIND_FOLDER:
+      case SMB_KIND_FILE:
+         pushed = task_push_dbscan_known(path, how == SMB_KIND_FOLDER,
+               scan_cb, &scan_result);
+         break;
+      default:
+         pushed = task_push_manual_content_scan(false, scan_cb,
+               &scan_result);
+         break;
+   }
+   if (!pushed)
+      return -1;
+   started = time(NULL);
+   while (loop_active)
+   {
+      task_queue_check();
+      if (difftime(time(NULL), started) > SCAN_TIMEOUT_SECONDS)
+         break;
+      retro_sleep(1);
+   }
+   return retro_atomic_load_acquire_int(&smb_stats_at_push);
+}
+
+/* A chain run of @items; the main thread's smb:// stats before its
+ * scan was pushed. */
+static int smb_kind_chain(task_dbscan_item_t *items, const char *out,
+      const char *err, bool *ran)
+{
+   smb_kind_reset();
+   *ran = refresh_run(items, 1, out, err, true);
+   return retro_atomic_load_acquire_int(&smb_stats_at_push);
+}
+
+/* An smb:// path of known kind is not stat'd on the main thread
+ * before its scan is pushed: Scan Directory and Scan File, the menu's
+ * folder pick, a lone refresh, and the chain's --scan and refresh
+ * items, whose path or load task stats it off the main thread
+ * instead.  Unknown kind is stat'd.  A single smb:// file keeps its
+ * folder's playlist name and single-file database scan, saves no
+ * settings and ignores Overwrite, as when the stat told it. */
+static void smb_kind_lane(const char *root, bool threaded)
+{
+   const char *dir  = "smb://host/share/roms";
+   const char *file = "smb://host/share/roms/01_alpha.bin";
+   const char *q    = threaded ? "(threaded)" : "(regular)";
+   char        pl[512], lpl[1024], ref[1024], loc[512], p[1024];
+   char        out[512], err[512], line[1024], what[96], detail[160];
+   manual_content_scan_task_config_t *cfg = (manual_content_scan_task_config_t*)
+         calloc(2, sizeof(*cfg));
+   task_dbscan_result_t res;
+   task_dbscan_item_t  *items;
+   playlist_config_t   *pcfg = (playlist_config_t*)calloc(1, sizeof(*pcfg));
+   playlist_t          *plst;
+   int                  n, n2, task_n;
+   bool                 ok, ok2, ran, as_folder, as_file, off_main = false;
+   char                *saved_pl = strdup(
+         config_get_ptr()->paths.directory_playlist);
+
+#ifdef HAVE_THREADS
+   off_main = threaded;
+#endif
+   /* The path or load task's one stat */
+   task_n = off_main ? 0 : 1;
+   if (!cfg || !pcfg)
+      goto fixture;
+   sprintf(pl,  "%s/smb_kind_pl",       root);
+   sprintf(loc, "%s/smb_kind_local",    root);
+   sprintf(lpl, "%s/roms.lpl",          pl);
+   sprintf(ref, "%s/smb_kind_ref.lpl",  root);
+   sprintf(out, "%s/smb_kind.out",      root);
+   sprintf(err, "%s/smb_kind.err",      root);
+   path_mkdir(pl);
+   path_mkdir(loc);
+   delete_playlists(pl);
+   sprintf(p, "%s/02_beta.bin", loc);
+   if (!write_content(p, 0x52A3ED00u, 1024))
+      goto fixture;
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   use_queue(threaded);
+   smb_stub_check   = SMB_URL_OK;
+   smb_stub_failure = SMB_FAILURE_UNKNOWN;
+   smb_stub_detail  = "";
+   smb_stub_live    = true;
+
+   /* Unknown kind: set_menu_content_dir and get_task_config stat it;
+    * the directory flag comes from the config they made. */
+   manual_content_scan_reset_settings();
+   n  = smb_kind_scan(dir,  SMB_KIND_DBSCAN);
+   n2 = smb_kind_scan(file, SMB_KIND_DBSCAN);
+   sprintf(what, "smb kind %s: unknown kind stats the path", q);
+   sprintf(detail, "folder %d, file %d", n, n2);
+   check(n == 2 && n2 == 2, what, detail);
+
+   /* Scan Directory, Scan File.  Only a folder push opens the
+    * folder. */
+   n  = smb_kind_scan(dir,  SMB_KIND_FOLDER);
+   as_folder = retro_atomic_load_acquire_int(&smb_stub_opendirs) == 1
+         && manual_content_scan_get_task_config(&cfg[0], pl)
+         && !cfg[0].content_is_file;
+   n2 = smb_kind_scan(file, SMB_KIND_FILE);
+   as_file = !retro_atomic_load_acquire_int(&smb_stub_opendirs);
+   sprintf(what, "smb kind %s: Scan Directory and Scan File", q);
+   sprintf(detail, "folder %d, as a folder %d, file %d, as a file %d",
+         n, (int)as_folder, n2, (int)as_file);
+   check(n == 0 && as_folder && n2 == 0 && as_file, what, detail);
+
+   /* The menu's folder pick */
+   smb_kind_reset();
+   ok  = manual_content_scan_set_menu_content_dir_kind(dir,
+         MANUAL_CONTENT_SCAN_PATH_FOLDER);
+   as_folder = ok && manual_content_scan_get_task_config(&cfg[0], pl)
+         && !cfg[0].content_is_file;
+   n   = ok ? smb_kind_scan(dir, SMB_KIND_AS_SET) : -1;
+   as_folder = as_folder
+         && retro_atomic_load_acquire_int(&smb_stub_opendirs) == 1;
+   smb_kind_reset();
+   ok2 = manual_content_scan_set_menu_content_dir_kind(file,
+         MANUAL_CONTENT_SCAN_PATH_FILE);
+   n2  = ok2 ? smb_kind_scan(file, SMB_KIND_AS_SET) : -1;
+   as_file = ok2 && !retro_atomic_load_acquire_int(&smb_stub_opendirs);
+   sprintf(what, "smb kind %s: the menu's folder pick", q);
+   sprintf(detail, "folder %d, as a folder %d, file %d, as a file %d",
+         n, (int)as_folder, n2, (int)as_file);
+   check(n == 0 && as_folder && n2 == 0 && as_file, what, detail);
+
+   /* A lone refresh: the saved folder is a folder. */
+   delete_playlists(pl);
+   n = -1;
+   if (!refresh_write(lpl, dir, NULL, "smb://host/share/roms/00_old.bin"))
+      goto fixture;
+   playlist_config_set_path(pcfg, lpl);
+   pcfg->capacity = COLLECTION_SIZE;
+   if ((plst = playlist_init(pcfg)))
+   {
+      manual_content_scan_reset_settings();
+      smb_kind_reset();
+      if (manual_content_scan_set_menu_from_playlist(plst,
+            config_get_ptr()->paths.path_content_database, false)
+            == MANUAL_CONTENT_SCAN_PLAYLIST_REFRESH_OK)
+         n = smb_kind_scan(dir, SMB_KIND_AS_SET);
+      playlist_free(plst);
+   }
+   sprintf(what, "smb kind %s: a lone refresh", q);
+   sprintf(detail, "%d", n);
+   check(n == 0, what, detail);
+
+   /* The chain: --scan of a folder and of a file with
+    * --scan-overwrite, --scan-refresh, refresh-all. */
+   delete_playlists(pl);
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   chain_item(&items[0], dir, NULL);
+   if ((items[0].overrides = manual_content_scan_overrides_new()))
+      items[0].overrides->flags |= MANUAL_CONTENT_SCAN_OVR_OVERWRITE;
+   n = smb_kind_chain(items, out, err, &ran);
+   sprintf(what, "smb kind %s: --scan of a folder", q);
+   sprintf(detail, "%d (want %d), %u items", n, task_n, chain_seen);
+   check(   ran && n == task_n && chain_seen == 1
+         && !file_contains(err, "single file")
+         && !file_contains(err, "not found"), what, detail);
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   chain_item(&items[0], file, NULL);
+   if ((items[0].overrides = manual_content_scan_overrides_new()))
+      items[0].overrides->flags |= MANUAL_CONTENT_SCAN_OVR_OVERWRITE;
+   n = smb_kind_chain(items, out, err, &ran);
+   sprintf(line, "%s: --scan-overwrite ignored for a single file", file);
+   sprintf(what, "smb kind %s: --scan of a file", q);
+   sprintf(detail, "%d (want %d), %u items", n, task_n, chain_seen);
+   check(   ran && n == task_n && chain_seen == 1
+         && file_contains(err, line), what, detail);
+
+   delete_playlists(pl);
+   if (!refresh_write(lpl, dir, NULL, "smb://host/share/roms/00_old.bin")
+         || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH, "roms");
+   n  = smb_kind_chain(items, out, err, &ran);
+   ok = ran;
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   n2 = smb_kind_chain(items, out, err, &ran);
+   /* Refresh All loads the playlist again to run it. */
+   sprintf(what, "smb kind %s: --scan-refresh and refresh-all", q);
+   sprintf(detail, "%d, %d (want %d, %d)", n, n2, task_n, 2 * task_n);
+   check(ok && ran && n == task_n && n2 == 2 * task_n, what, detail);
+
+   /* A picked file is one still once a chain has put the settings
+    * back. */
+   manual_content_scan_reset_settings();
+   manual_content_scan_set_menu_scan_method(
+         MANUAL_CONTENT_SCAN_METHOD_CUSTOM);
+   manual_content_scan_set_menu_scan_use_db(MANUAL_CONTENT_SCAN_USE_DB_NONE);
+   ok = manual_content_scan_set_menu_content_dir_kind(file,
+         MANUAL_CONTENT_SCAN_PATH_FILE);
+   delete_playlists(pl);
+   if (!refresh_write(lpl, dir, NULL, "smb://host/share/roms/00_old.bin")
+         || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   smb_kind_chain(items, out, err, &ran);
+   smb_kind_reset();
+   ok2 = ok && ran && manual_content_scan_get_task_config(&cfg[0], pl);
+   n   = retro_atomic_load_acquire_int(&smb_stub_stats_main);
+   sprintf(what, "smb kind %s: a picked file after refresh-all", q);
+   sprintf(detail, "%s, file %d, %d stats",
+         ok2 ? path_basename(cfg[0].content_dir) : "-",
+         ok2 && cfg[0].content_is_file, n);
+   check(   ok2 && n == 0 && cfg[0].content_is_file
+         && !strcmp(cfg[0].content_dir, file), what, detail);
+
+   /* One file: the folder's playlist name, no Overwrite, from the
+    * kind as from the stat. */
+   manual_content_scan_reset_settings();
+   manual_content_scan_set_menu_scan_method(
+         MANUAL_CONTENT_SCAN_METHOD_CUSTOM);
+   manual_content_scan_set_menu_scan_use_db(MANUAL_CONTENT_SCAN_USE_DB_NONE);
+   *manual_content_scan_get_overwrite_playlist_ptr() = true;
+   ok = manual_content_scan_set_menu_content_dir(file)
+      && manual_content_scan_get_task_config(&cfg[0], pl);
+   smb_kind_reset();
+   ok2 = manual_content_scan_set_menu_content_dir_kind(file,
+         MANUAL_CONTENT_SCAN_PATH_FILE)
+      && manual_content_scan_get_task_config(&cfg[1], pl);
+   n = retro_atomic_load_acquire_int(&smb_stub_stats_main);
+   sprintf(what, "smb kind %s: one file's playlist and Overwrite", q);
+   sprintf(detail, "%s, %s, overwrite %d, %d stats",
+         ok ? path_basename(cfg[0].playlist_file) : "-",
+         ok2 ? path_basename(cfg[1].playlist_file) : "-",
+         (int)cfg[1].overwrite_playlist, n);
+   check(   ok && ok2 && n == 0
+         && cfg[0].content_is_file && cfg[1].content_is_file
+         && !cfg[0].overwrite_playlist && !cfg[1].overwrite_playlist
+         && !strcmp(cfg[0].playlist_file, cfg[1].playlist_file)
+         && !strcmp(path_basename(cfg[1].playlist_file), "roms.lpl"),
+         what, detail);
+   sprintf(p, "%s/02_beta.bin", loc);
+   ok = manual_content_scan_set_menu_content_dir_kind(p,
+         MANUAL_CONTENT_SCAN_PATH_FILE)
+      && manual_content_scan_get_task_config(&cfg[0], pl);
+   sprintf(what, "smb kind %s: a local file's playlist", q);
+   check(   ok && cfg[0].content_is_file
+         && !strcmp(path_basename(cfg[0].playlist_file),
+               "smb_kind_local.lpl"), what,
+         ok ? path_basename(cfg[0].playlist_file) : "-");
+
+   /* With no database: one entry added to the folder's playlist,
+    * no settings saved, Overwrite and Validate not applied. */
+   *manual_content_scan_get_validate_entries_ptr() = true;
+   delete_playlists(pl);
+   if (!refresh_write(lpl, NULL, NULL, "smb://host/share/roms/00_old.bin"))
+      goto fixture;
+   n = smb_kind_scan(file, SMB_KIND_DBSCAN);
+   ok = !filestream_rename(lpl, ref);
+   if (!refresh_write(lpl, NULL, NULL, "smb://host/share/roms/00_old.bin"))
+      goto fixture;
+   n2 = smb_kind_scan(file, SMB_KIND_FILE);
+   sprintf(what, "smb kind %s: one file with no database", q);
+   sprintf(detail, "%d, %d stats, same %d, new %d, old %d", n, n2,
+         files_equal(ref, lpl), file_contains(lpl, "01_alpha.bin"),
+         file_contains(lpl, "00_old.bin"));
+   check(   ok && n == 2 && n2 == 0 && files_equal(ref, lpl)
+         && file_contains(lpl, "01_alpha.bin")
+         && file_contains(lpl, "00_old.bin")
+         && !scan_record(lpl, line, p, sizeof(p), &ran), what, detail);
+   filestream_delete(ref);
+
+   /* With the database: the single-file scan, not a folder's. */
+   manual_content_scan_reset_settings();
+   delete_playlists(pl);
+   smb_kind_scan(file, SMB_KIND_DBSCAN);
+   res = scan_result;
+   smb_kind_scan(file, SMB_KIND_FILE);
+   sprintf(what, "smb kind %s: one file with the database", q);
+   sprintf(detail, "added %u/%u, unmatched %u/%u, errors %u/%u, "
+         "failed %d/%d", res.added, scan_result.added, res.unmatched,
+         scan_result.unmatched, res.errors, scan_result.errors,
+         (int)res.failed, (int)scan_result.failed);
+   check(   res.added == scan_result.added
+         && res.unmatched == scan_result.unmatched
+         && res.errors == scan_result.errors
+         && res.failed == scan_result.failed, what, detail);
+   printf("  info smb kind %s: one file with the database: %s\n", q,
+         detail);
+   goto done;
+
+fixture:
+   check(0, "fixture", "could not write the smb kind lane");
+done:
+   smb_stub_live = false;
+   delete_playlists(pl);
+   manual_content_scan_reset_settings();
+   if (saved_pl)
+      strlcpy(config_get_ptr()->paths.directory_playlist, saved_pl,
+            sizeof(config_get_ptr()->paths.directory_playlist));
+   free(saved_pl);
+   free(pcfg);
+   free(cfg);
+}
+#endif
 
 /* Refresh items over a playlist folder: a refresh-all takes every
  * playlist with saved settings in name order, history and favorites
@@ -9769,8 +12667,9 @@ static void refresh_lane(const char *root, const char *pl_dir,
    sprintf(p, "%s/x_history.lpl", pl);
    sprintf(detail, "%d loads",
          retro_atomic_load_acquire_int(&refresh_began[REFRESH_LOAD]));
+   /* Five, then a_ok, e_core and n_new again to run. */
    check(   file_contains(p, stale) && !file_contains(p, want)
-         && retro_atomic_load_acquire_int(&refresh_began[REFRESH_LOAD]) == 5,
+         && retro_atomic_load_acquire_int(&refresh_began[REFRESH_LOAD]) == 8,
          what, detail);
    sprintf(what, "refresh %s: the refresh lines", q);
    sprintf(want, "%s: skipped: content folder not found (%s)", "b_gone",
@@ -9996,7 +12895,7 @@ static void refresh_lane(const char *root, const char *pl_dir,
          what, err);
 
    /* Cancelled while the folder is walked, then while its second
-    * playlist loads: nothing after runs. */
+    * playlist loads, before the first runs: nothing runs. */
    strlcpy(config_get_ptr()->paths.directory_playlist, pl,
          sizeof(config_get_ptr()->paths.directory_playlist));
    if (!(items = (task_dbscan_item_t*)calloc(2, sizeof(*items))))
@@ -10023,13 +12922,11 @@ static void refresh_lane(const char *root, const char *pl_dir,
    ran            = refresh_run(items, 2, out, err, true);
    prep_cancel_at = 0;
    sprintf(what, "refresh %s: cancelled while loading a playlist", q);
-   sprintf(detail, "%u items: %s, ran %u, done %u%s", chain_seen,
-         chain_names[0], chain_totals.ran, chain_dones,
+   sprintf(detail, "%u items, ran %u, done %u%s", chain_seen,
+         chain_totals.ran, chain_dones,
          chain_totals.cancelled ? ", cancelled" : "");
-   check(   ran && !prep_cancel_task && chain_seen == 1
-         && !strcmp(chain_names[0], "a_ok")
-         && chain_outcomes[0] == TASK_DBSCAN_RAN
-         && chain_totals.cancelled && chain_totals.ran == 1
+   check(   ran && !prep_cancel_task && !chain_seen
+         && chain_totals.cancelled && !chain_totals.ran
          && !chain_totals.skipped && !chain_totals.failed, what, detail);
 
    /* Without --scan: the outcome, no lines. */
@@ -10060,6 +12957,8 @@ fixture:
 static bool     fs_main_watch;
 static unsigned fs_main_calls;
 static char     fs_main_last[64];
+static const char *stat_watch_path;
+static unsigned    stat_watch_calls;
 
 static void fs_main_note(const char *fn)
 {
@@ -10078,6 +12977,11 @@ int __real_path_stat(const char *path);
 int __wrap_path_stat(const char *path)
 {
    fs_main_note("path_stat");
+#ifdef HAVE_THREADS
+   if (current_tid() == main_tid)
+#endif
+      if (stat_watch_path && !strcmp(path, stat_watch_path))
+         stat_watch_calls++;
    return __real_path_stat(path);
 }
 
@@ -10109,6 +13013,163 @@ char *__wrap_path_resolve_realpath(char *s, size_t len,
 {
    fs_main_note("path_resolve_realpath");
    return __real_path_resolve_realpath(s, len, resolve_symlinks);
+}
+
+static void local_refresh_lane(const char *root, const char *pl_dir,
+      bool threaded)
+{
+   char dir[512], lpl[512], ref[512], entry[1024], what[128], detail[128];
+   playlist_config_t *cfg = (playlist_config_t*)calloc(1, sizeof(*cfg));
+   playlist_t *playlist = NULL;
+   void *data = NULL;
+   int64_t len;
+   unsigned replaced, overwrite;
+   const char *q = threaded ? "threaded" : "regular";
+
+   sprintf(lpl, "%s/Local Offline.lpl", pl_dir);
+   sprintf(ref, "%s/local_refresh.ref", root);
+   if (!cfg)
+      goto fixture;
+   use_queue(threaded);
+   for (replaced = 0; replaced < 2; replaced++)
+   {
+      sprintf(dir, "%s/local_refresh_%s", root,
+            replaced ? "file.bin" : "missing");
+      if (replaced && !write_content(dir, 0x52A3ED00u, 1024))
+         goto fixture;
+      sprintf(entry, "%s/game.bin", dir);
+      for (overwrite = 0; overwrite < 2; overwrite++)
+      {
+         bool pushed;
+         time_t started;
+
+         filestream_delete(lpl);
+         if (!refresh_write(lpl, dir, NULL, entry))
+            goto fixture;
+         playlist_config_set_path(cfg, lpl);
+         cfg->capacity = COLLECTION_SIZE;
+         if (!(playlist = playlist_init(cfg)))
+            goto fixture;
+         playlist_set_scan_db_usage(playlist, MANUAL_CONTENT_SCAN_USE_DB_NONE);
+         playlist_set_scan_overwrite_playlist(playlist, overwrite != 0);
+         playlist_write_file(playlist);
+         if (   !filestream_read_file(lpl, &data, &len)
+             || !filestream_write_file(ref, data, len))
+            goto fixture;
+         free(data);
+         data = NULL;
+         manual_content_scan_reset_settings();
+         stat_watch_calls = 0;
+         stat_watch_path = dir;
+         pushed = manual_content_scan_set_menu_from_playlist_list(
+               playlist, NULL) == MANUAL_CONTENT_SCAN_PLAYLIST_REFRESH_OK;
+         playlist_free(playlist);
+         playlist = NULL;
+         loop_active = true;
+         scan_completed = false;
+         pushed = pushed && task_push_manual_content_scan(
+               false, scan_cb, &scan_result);
+         stat_watch_path = NULL;
+         started = time(NULL);
+         while (pushed && loop_active
+               && difftime(time(NULL), started) <= SCAN_TIMEOUT_SECONDS)
+         {
+            task_queue_check();
+            retro_sleep(1);
+         }
+         sprintf(what, "local refresh (%s): %s, overwrite %u", q,
+               replaced ? "folder replaced" : "offline", overwrite);
+         sprintf(detail, "%u main stats, failed %d, unchanged %d",
+               stat_watch_calls, (int)scan_result.failed, files_equal(ref, lpl));
+         check(   pushed && scan_completed && scan_result.failed
+               && stat_watch_calls == 0 && files_equal(ref, lpl), what, detail);
+      }
+   }
+   goto done;
+
+fixture:
+   check(0, "fixture", "could not build the local refresh lane");
+done:
+   stat_watch_path = NULL;
+   filestream_delete(lpl);
+   filestream_delete(ref);
+   playlist_free(playlist);
+   free(data);
+   free(cfg);
+   manual_content_scan_reset_settings();
+}
+
+static void local_kind_lane(const char *root, const char *pl_dir)
+{
+   char dir[512], path[1024], what[96], detail[128];
+   manual_content_scan_task_config_t *cfg = (manual_content_scan_task_config_t*)
+         calloc(1, sizeof(*cfg));
+   unsigned file, source;
+
+   if (!cfg)
+      goto fixture;
+   sprintf(dir, "%s/local_kind", root);
+   path_mkdir(dir);
+   sprintf(path, "%s/game.bin", dir);
+   if (!write_content(path, 0x52A3ED00u, 1024))
+      goto fixture;
+
+   for (file = 0; file < 2; file++)
+   {
+      if (file)
+         sprintf(path, "%s/game.bin", dir);
+      else
+         strlcpy(path, dir, sizeof(path));
+      for (source = 0; source < 3; source++)
+      {
+         manual_content_scan_fs_t *fs = NULL;
+         bool ok;
+
+         manual_content_scan_reset_settings();
+         manual_content_scan_set_menu_scan_method(
+               MANUAL_CONTENT_SCAN_METHOD_CUSTOM);
+         manual_content_scan_set_menu_scan_use_db(
+               MANUAL_CONTENT_SCAN_USE_DB_NONE);
+         *manual_content_scan_get_overwrite_playlist_ptr() = true;
+         *manual_content_scan_get_validate_entries_ptr() = true;
+         if (source == 2 && !(fs = manual_content_scan_fs_read(
+                     path, NULL, NULL, NULL)))
+            goto fixture;
+
+         stat_watch_calls = 0;
+         stat_watch_path  = path;
+         if (source == 2)
+            ok = manual_content_scan_set_menu_content_dir_fs(path, fs);
+         else
+            ok = manual_content_scan_set_menu_content_dir_kind(path,
+                  source == 0 ? MANUAL_CONTENT_SCAN_PATH_UNKNOWN
+                  : file ? MANUAL_CONTENT_SCAN_PATH_FILE
+                         : MANUAL_CONTENT_SCAN_PATH_FOLDER);
+         ok = ok && manual_content_scan_get_task_config(cfg, pl_dir);
+         stat_watch_path = NULL;
+         manual_content_scan_fs_free(fs);
+
+         sprintf(what, "local %s: %s kind", file ? "file" : "folder",
+               source == 0 ? "unknown" : source == 1 ? "supplied" : "snapshot");
+         sprintf(detail, "%u stats, file %d, overwrite %d, validate %d",
+               stat_watch_calls, (int)cfg->content_is_file,
+               (int)cfg->overwrite_playlist, (int)cfg->validate_entries);
+         check(   ok && stat_watch_calls == (source == 0 ? 2u : 0u)
+               && cfg->content_is_file == (file != 0)
+               && cfg->overwrite_playlist == (file == 0)
+               && cfg->validate_entries
+               && !strcmp(path_basename(cfg->playlist_file), "local_kind.lpl"),
+               what, detail);
+      }
+   }
+   goto done;
+
+fixture:
+   check(0, "fixture", "could not build the local kind lane");
+done:
+   stat_watch_path = NULL;
+   manual_content_scan_reset_settings();
+   free(cfg);
 }
 
 /* On a threaded queue the chain asks the file system nothing on the
@@ -10304,9 +13365,1363 @@ fixture:
          sizeof(config_get_ptr()->paths.directory_playlist));
 }
 
+/* A refresh-all skips a playlist whose saved folder is empty, as it
+ * skips one whose folder is gone: an unplugged drive's mount point.
+ * The menu's single refresh is not a chain item; it stops at the
+ * empty listing and leaves the playlist as it was. */
+static void empty_folder_lane(const char *root, const char *pl_dir,
+      uint32_t crc_a, uint32_t sz_a, bool threaded)
+{
+   char                pl[512], one_pl[512], a[512], gone[512];
+   char                mount[512], out[1024], err[1024], p[1024];
+   char                stale[1024], want[1536], what[128], detail[160];
+   const char         *q = threaded ? "(threaded)" : "(regular)";
+   task_dbscan_item_t *items;
+   playlist_config_t  *cfg    = NULL;
+   playlist_t         *one    = NULL;
+   void               *before = NULL, *after = NULL;
+   int64_t             before_len, after_len;
+   bool                ran, captured, pushed, same;
+
+   sprintf(pl,     "%s/empty_pl",      root);
+   sprintf(one_pl, "%s/empty_one_pl",  root);
+   sprintf(a,      "%s/empty_a",       root);
+   sprintf(gone,   "%s/empty_gone",    root);
+   sprintf(mount,  "%s/empty_mount",   root);
+   sprintf(out,    "%s/empty_out.txt", root);
+   sprintf(err,    "%s/empty_err.txt", root);
+   path_mkdir(pl);
+   path_mkdir(one_pl);
+   path_mkdir(a);
+   path_mkdir(mount);
+   delete_playlists(pl);
+   sprintf(p, "%s/01_alpha.bin", a);
+   if (!write_content(p, crc_a, sz_a))
+      goto fixture;
+   sprintf(p, "%s/a_ok.lpl", pl);
+   sprintf(stale, "%s/00_gone.bin", a);
+   if (!refresh_write(p, a, NULL, stale))
+      goto fixture;
+   sprintf(p, "%s/b_gone.lpl", pl);
+   sprintf(stale, "%s/00_gone.bin", gone);
+   if (!refresh_write(p, gone, NULL, stale))
+      goto fixture;
+   sprintf(p, "%s/d_mount.lpl", pl);
+   sprintf(stale, "%s/00_gone.bin", mount);
+   if (!refresh_write(p, mount, NULL, stale))
+      goto fixture;
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   use_queue(threaded);
+
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   ran = refresh_run(items, 1, out, err, true);
+   sprintf(what, "empty mount %s: skipped like a gone folder", q);
+   snprintf(detail, sizeof(detail), "%u items, ran %u, skipped %u, "
+         "failed %u", chain_seen, chain_totals.ran, chain_totals.skipped,
+         chain_totals.failed);
+   check(   ran && chain_seen == 3
+         && chain_saw(0, "a_ok",    TASK_DBSCAN_RAN,     1)
+         && chain_saw(1, "b_gone",  TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(2, "d_mount", TASK_DBSCAN_SKIPPED, -1)
+         && chain_totals.ran == 1 && chain_totals.skipped == 2
+         && !chain_totals.failed, what, detail);
+   sprintf(what, "empty mount %s: its line", q);
+   sprintf(want, "%s: skipped: content folder empty (%s)", "d_mount",
+         mount);
+   check(file_contains(err, want), what, err);
+   sprintf(what, "empty mount %s: its entry kept", q);
+   sprintf(p, "%s/d_mount.lpl", pl);
+   check(file_contains(p, stale), what, p);
+
+   chain_seen      = 0;
+   chain_dones     = 0;
+   chain_ud_ok     = true;
+   menu_all_msg[0] = '\0';
+   cli_output      = false;
+   captured        = capture_begin(out, err);
+   pushed          = task_push_dbscan_chain(menu_all_item(), 1, NULL,
+         menu_all_done_cb, NULL);
+   chain_wait(false);
+   if (captured)
+      capture_end();
+   sprintf(what, "empty mount %s: the menu's summary", q);
+   check(   pushed && chain_dones == 1 && chain_ud_ok
+         && !strcmp(menu_all_msg,
+               "Playlists refreshed: 1, skipped: 2, failed: 0")
+         && captured && path_get_size(err) == 0, what, menu_all_msg);
+
+   if (!threaded)
+   {
+      sprintf(p, "%s/Empty.lpl", one_pl);
+      strlcpy(config_get_ptr()->paths.directory_playlist, one_pl,
+            sizeof(config_get_ptr()->paths.directory_playlist));
+      filestream_delete(p);
+      if (   !refresh_write(p, mount, NULL, stale)
+          || !filestream_read_file(p, &before, &before_len)
+          || !(cfg = (playlist_config_t*)calloc(1, sizeof(*cfg))))
+         goto fixture;
+      playlist_config_set_path(cfg, p);
+      cfg->capacity          = COLLECTION_SIZE;
+      invalid_content_pushed = false;
+      one = playlist_init(cfg);
+      ran =    one
+            && manual_content_scan_set_menu_from_playlist(one,
+                  config_get_ptr()->paths.path_content_database, false)
+                  == MANUAL_CONTENT_SCAN_PLAYLIST_REFRESH_OK
+            && run_scan(mount) && scan_completed;
+      same =    filestream_read_file(p, &after, &after_len)
+             && after_len == before_len
+             && !memcmp(after, before, (size_t)before_len);
+      check(   ran && invalid_content_pushed && same
+            && scan_result.failed && scan_result.added == 0
+            && scan_result.errors == 0,
+            "empty mount: a menu refresh fails, the playlist as it was", p);
+   }
+   goto end;
+
+fixture:
+   check(0, "fixture", "could not write the empty folder lane");
+end:
+   if (one)
+      playlist_free(one);
+   free(cfg);
+   free(before);
+   free(after);
+   manual_content_scan_reset_settings();
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl_dir,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+}
+
+/* Runs the queue until no scan is left on it. */
+static void group_drain(void)
+{
+   task_finder_data_t finder;
+   time_t             started = time(NULL);
+
+   finder.func     = find_scan;
+   finder.userdata = NULL;
+   while (task_queue_find(&finder))
+   {
+      task_queue_check();
+      if (difftime(time(NULL), started) > SCAN_TIMEOUT_SECONDS)
+         break;
+      retro_sleep(1);
+   }
+}
+
+/* Linked with --wrap: the playlist sorts. */
+static retro_atomic_int_t pl_sorts;
+
+void __real_playlist_qsort(playlist_t *playlist);
+void __wrap_playlist_qsort(playlist_t *playlist)
+{
+   retro_atomic_fetch_add_int(&pl_sorts, 1);
+   __real_playlist_qsort(playlist);
+}
+
+/* The most of these playlists written, and opened, between two window
+ * opens. */
+static const char *spent_lpl[2];
+static unsigned    spent_had;
+static unsigned    spent_most;
+static unsigned    spent_opens;
+static unsigned    spent_opens_most;
+
+/* Linked with --wrap: counts the opens of spent_lpl. */
+playlist_t *__real_playlist_init(const playlist_config_t *config);
+playlist_t *__wrap_playlist_init(const playlist_config_t *config)
+{
+   if (   spent_lpl[0] && config
+       && (   string_is_equal(config->path, spent_lpl[0])
+           || string_is_equal(config->path, spent_lpl[1])))
+      spent_opens++;
+   return __real_playlist_init(config);
+}
+
+static void spent_count(void)
+{
+   unsigned now = (unsigned)path_is_valid(spent_lpl[0])
+         + (unsigned)path_is_valid(spent_lpl[1]);
+
+   if (now - spent_had > spent_most)
+      spent_most = now - spent_had;
+   spent_had = now;
+   if (spent_opens > spent_opens_most)
+      spent_opens_most = spent_opens;
+   spent_opens = 0;
+}
+
+static void spent_open(void)
+{
+   scan_tick_open();
+   spent_count();
+   spend_window();
+}
+
+/* Loads @lpl's saved settings as a refresh does, lays strict matching
+ * (refresh_write() saves none), @archives and @overwrite over them as
+ * overrides would, and runs the group scan of group_names; with @out,
+ * its --scan lines go to @out and @err. */
+static bool group_load(const char *lpl, const char *db)
+{
+   playlist_config_t *cfg = (playlist_config_t*)calloc(1, sizeof(*cfg));
+   playlist_t        *pl  = NULL;
+   bool               set = false;
+
+   if (!cfg)
+      return false;
+   cfg->capacity = COLLECTION_SIZE;
+   playlist_config_set_path(cfg, lpl);
+   manual_content_scan_reset_settings();
+   if ((pl = playlist_init(cfg)))
+   {
+      set = manual_content_scan_set_menu_from_playlist(pl, db, false)
+            == MANUAL_CONTENT_SCAN_PLAYLIST_REFRESH_OK;
+      playlist_free(pl);
+   }
+   free(cfg);
+   if (set)
+      manual_content_scan_set_menu_scan_use_db(
+            MANUAL_CONTENT_SCAN_USE_DB_STRICT);
+   return set;
+}
+
+static bool group_run(const char *lpl, const char *db, const char *dir,
+      bool archives, bool overwrite, const char *out, const char *err)
+{
+   if (!group_load(lpl, db))
+      return false;
+   *manual_content_scan_get_search_archives_ptr()    = archives;
+   *manual_content_scan_get_overwrite_playlist_ptr() = overwrite;
+   if (out)
+      return capture_scan(dir, out, err, true);
+   return run_scan(dir) && scan_completed;
+}
+
+/* A group scan: one scan of a folder for two playlists named after
+ * their databases.  Each gets only its own match and a third database
+ * is never opened; each drops its stale entry and gets the settings,
+ * new entries or not; overwrite clears both. */
+static void group_scan_lane(const char *root, const char *pl_dir,
+      const char *db_dir, bool threaded)
+{
+   static const char *const names[3] =
+         { "Test Alpha", "Test Beta", "Test Disc" };
+   static const char *const games[3] =
+         { "Group Alpha", "Group Beta", "Group Disc" };
+   static const uint32_t    crcs[3]  =
+         { 0x6E0A0001u, 0x6E0A0002u, 0x6E0A0003u };
+   char               *db    = (char*)malloc(512);
+   char               *pl    = (char*)malloc(512);
+   char               *dir   = (char*)malloc(512);
+   char               *label = (char*)malloc(640);
+   char               *out   = (char*)malloc(1024);
+   char               *err   = (char*)malloc(1024);
+   char               *keep  = (char*)malloc(1024);
+   char               *p     = (char*)malloc(1024);
+   char              (*lpl)[1024] = (char(*)[1024])malloc(3 * sizeof(*lpl));
+   char                what[128], detail[128];
+   db_rec_t            rec;
+   union string_list_elem_attr attr;
+   struct string_list *group = string_list_new();
+   const char         *q     = threaded ? "(threaded)" : "(regular)";
+   unsigned            k, qq, opens;
+   int                 sorts;
+   bool                ran;
+
+   if (   !db || !pl || !dir || !label || !out || !err || !keep || !p
+       || !lpl)
+   {
+      check(0, "group lane", "out of memory");
+      goto end;
+   }
+   sprintf(db,   "%s/group_db",       root);
+   sprintf(pl,   "%s/group_pl",       root);
+   sprintf(dir,  "%s/group",          root);
+   sprintf(out,  "%s/group_out.txt",  root);
+   sprintf(err,  "%s/group_err.txt",  root);
+   sprintf(keep, "%s/group_keep.bin", root);
+   path_mkdir(db);
+   path_mkdir(pl);
+   path_mkdir(dir);
+   delete_playlists(pl);
+   for (k = 0; k < 2; k++)
+   {
+      sprintf(p, "%s/%c.bin", dir, 'd' + k);
+      filestream_delete(p);
+   }
+   for (k = 0; k < 3; k++)
+   {
+      set_rec(&rec, games[k], crcs[k], 1024);
+      sprintf(p, "%s/%s.rdb", db, names[k]);
+      if (!write_db_set(p, &rec, 1))
+         goto fixture;
+      sprintf(p, "%s/%c.bin", dir, 'a' + k);
+      if (!write_content(p, crcs[k], 1024))
+         goto fixture;
+      sprintf(lpl[k], "%s/%s.lpl", pl, names[k]);
+   }
+   for (k = 0; k < 2; k++)
+   {
+      sprintf(p, "%s/00_gone_%c.bin", dir, 'a' + k);
+      if (!refresh_write(lpl[k], dir, NULL, p))
+         goto fixture;
+   }
+   attr.i = 0;
+   if (   !write_content(keep, 0x6E0A00FFu, 1024)
+       || !group
+       || !string_list_append(group, names[0], attr)
+       || !string_list_append(group, names[1], attr))
+      goto fixture;
+   sprintf(label, "%s (%s, %s)", dir, names[0], names[1]);
+   use_db(db);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   use_queue(threaded);
+   group_names = group;
+   group_label = label;
+
+   open_name   = names[2];
+   named_opens = 0;
+   ran         = group_run(lpl[0], db, dir, false, false, out, err);
+   opens       = named_opens;
+   open_name   = NULL;
+   sprintf(what, "group %s: one scan for both", q);
+   check_result(what, 2, 0, 1, 0, false);
+   /* Cut to the task's 128 bytes, as a long label is. */
+   strlcpy(p, msg_hash_to_str(MSG_MANUAL_CONTENT_SCAN_START), 128);
+   strlcat(p, label, 128);
+   sprintf(what, "group %s: its title names the group", q);
+   check(ran && !strcmp(pushed_title, p), what, pushed_title);
+   sprintf(what, "group %s: each playlist gets its own", q);
+   check(   ran
+         && file_contains(lpl[0], "/a.bin\"")
+         && file_contains(lpl[0], games[0])
+         && !file_contains(lpl[0], "/b.bin\"")
+         && file_contains(lpl[1], "/b.bin\"")
+         && file_contains(lpl[1], games[1])
+         && !file_contains(lpl[1], "/a.bin\""), what, "a.bin, b.bin");
+   sprintf(what, "group %s: a third database never opened", q);
+   sprintf(detail, "%u opens of %s", opens, names[2]);
+   check(   ran && opens == 0 && !path_is_valid(lpl[2])
+         && !file_contains(lpl[0], "/c.bin\"")
+         && !file_contains(lpl[1], "/c.bin\""), what, detail);
+   qq = file_count(out, " ?? ");
+   sprintf(p, " ?? \"%s/c.bin\"", dir);
+   sprintf(what, "group %s: one ?? for the file neither has", q);
+   check(ran && qq == 1 && file_contains(out, p), what, p);
+   sprintf(p, "%s: 2 added, 0 duplicates, 1 unmatched, 0 errors", label);
+   sprintf(what, "group %s: its totals line", q);
+   check(ran && file_contains(out, p), what, p);
+   sprintf(what, "group %s: each drops its stale entry", q);
+   check(   ran && !file_contains(lpl[0], "00_gone_a")
+         && !file_contains(lpl[1], "00_gone_b"), what,
+         "00_gone_a.bin, 00_gone_b.bin");
+   sprintf(what, "group %s: each saves its own database name", q);
+   check(   ran
+         && file_contains(lpl[0],
+               "\"scan_database_name\": \"Test Alpha.lpl\"")
+         && file_contains(lpl[1],
+               "\"scan_database_name\": \"Test Beta.lpl\""),
+         what, "Test Alpha.lpl, Test Beta.lpl");
+
+   /* Beta's file gone: Beta gets no result, Alpha a duplicate. */
+   sprintf(p, "%s/b.bin", dir);
+   filestream_delete(p);
+   ran = group_run(lpl[0], db, dir, true, false, NULL, NULL);
+   sprintf(what, "group %s: settings saved without a new entry", q);
+   sprintf(detail, "%u added, %u duplicates, %u unmatched",
+         scan_result.added, scan_result.duplicates, scan_result.unmatched);
+   check(   ran && scan_result.added == 0 && scan_result.duplicates == 1
+         && scan_result.unmatched == 1
+         && !file_contains(lpl[1], "/b.bin\"")
+         && file_contains(lpl[1], "\"scan_search_archives\": true")
+         && file_contains(lpl[0], "\"scan_search_archives\": true"),
+         what, detail);
+
+   /* An entry a refresh keeps, in both. */
+   if (   !write_content(p, crcs[1], 1024)
+       || !refresh_write(lpl[0], dir, NULL, keep)
+       || !refresh_write(lpl[1], dir, NULL, keep))
+      goto fixture;
+   ran = group_run(lpl[0], db, dir, false, true, NULL, NULL);
+   sprintf(what, "group %s: overwrite clears both", q);
+   sprintf(detail, "%u added, %u duplicates, %u unmatched",
+         scan_result.added, scan_result.duplicates, scan_result.unmatched);
+   check(   ran && scan_result.added == 2
+         && !file_contains(lpl[0], "group_keep")
+         && !file_contains(lpl[1], "group_keep")
+         && file_contains(lpl[0], "/a.bin\"")
+         && file_contains(lpl[1], "/b.bin\"")
+         && file_contains(lpl[0], "\"scan_overwrite_playlist\": true")
+         && file_contains(lpl[1], "\"scan_overwrite_playlist\": true"),
+         what, detail);
+
+   /* Members interleaved in content order: a, b, (c,) d, e. */
+   sprintf(p, "%s/d.bin", dir);
+   if (!write_content(p, crcs[0], 1024))
+      goto fixture;
+   sprintf(p, "%s/e.bin", dir);
+   if (!write_content(p, crcs[1], 1024))
+      goto fixture;
+   sorts = retro_atomic_load_acquire_int(&pl_sorts);
+   ran   = group_run(lpl[0], db, dir, false, false, NULL, NULL);
+   sorts = retro_atomic_load_acquire_int(&pl_sorts) - sorts;
+   sprintf(what, "group %s: interleaved, each sorted once", q);
+   sprintf(detail, "%d sorts; %u added, %u duplicates, %u unmatched",
+         sorts, scan_result.added, scan_result.duplicates,
+         scan_result.unmatched);
+   check(   ran && sorts == 2 && scan_result.added == 2
+         && scan_result.duplicates == 2 && scan_result.unmatched == 1,
+         what, detail);
+   sprintf(what, "group %s: interleaved, each gets only its own", q);
+   check(   ran
+         && file_contains(lpl[0], "/a.bin\"")
+         && file_contains(lpl[0], "/d.bin\"")
+         && !file_contains(lpl[0], "/b.bin\"")
+         && !file_contains(lpl[0], "/e.bin\"")
+         && file_contains(lpl[1], "/b.bin\"")
+         && file_contains(lpl[1], "/e.bin\"")
+         && !file_contains(lpl[1], "/a.bin\"")
+         && !file_contains(lpl[1], "/d.bin\""), what, "a, d / b, e");
+
+   /* The first member empty: the second is still validated. */
+   filestream_delete(lpl[0]);
+   sprintf(p, "%s/00_gone_b.bin", dir);
+   if (!refresh_write(lpl[1], dir, NULL, p))
+      goto fixture;
+   ran = group_run(lpl[1], db, dir, false, false, NULL, NULL);
+   sprintf(what, "group %s: first member empty, second validated", q);
+   check(   ran && file_contains(lpl[0], "/a.bin\"")
+         && !file_contains(lpl[1], "00_gone_b"), what, "00_gone_b.bin");
+
+   /* Each window held to its floor: one member written in each. */
+   if (!threaded)
+   {
+      sprintf(p, "%s/group_src", root);
+      path_mkdir(p);
+      strlcat(p, "/Test Alpha.lpl", 1024);
+      filestream_delete(p);
+      filestream_delete(lpl[0]);
+      filestream_delete(lpl[1]);
+      if (!refresh_write(p, dir, NULL, keep))
+         goto fixture;
+      spent_lpl[0]     = lpl[0];
+      spent_lpl[1]     = lpl[1];
+      spent_had        = 0;
+      spent_most       = 0;
+      spent_opens      = 0;
+      spent_opens_most = 0;
+      window_open_hook = spent_open;
+      ran              = group_run(p, db, dir, false, false, NULL, NULL);
+      window_open_hook = scan_tick_open;
+      spent_count();
+      spent_lpl[0]     = NULL;
+      sprintf(what, "group %s: one member written a window", q);
+      sprintf(detail, "%u written at most, %u in all", spent_most,
+            spent_had);
+      check(ran && spent_had == 2 && spent_most == 1, what, detail);
+      sprintf(what, "group %s: one member opened a window", q);
+      sprintf(detail, "%u opened at most", spent_opens_most);
+      check(ran && spent_opens_most == 1, what, detail);
+   }
+
+   /* A member's own refresh and the group never run at once, either
+    * started first. */
+   if (!threaded)
+   {
+      bool grouped, lone;
+
+      grouped = group_load(lpl[0], db)
+            && task_push_manual_content_scan_group(group, label,
+                  NULL, NULL);
+      lone    = group_load(lpl[1], db)
+            && task_push_manual_content_scan(false, NULL, NULL);
+      group_drain();
+      sprintf(what, "group %s: no member refresh while it runs", q);
+      check(grouped && !lone, what, lone ? "both pushed" : "group");
+      lone    = group_load(lpl[1], db)
+            && task_push_manual_content_scan(false, NULL, NULL);
+      grouped = group_load(lpl[0], db)
+            && task_push_manual_content_scan_group(group, label,
+                  NULL, NULL);
+      group_drain();
+      sprintf(what, "group %s: not while a member's refresh runs", q);
+      check(lone && !grouped, what, grouped ? "both pushed" : "lone");
+   }
+
+   /* Only a strict database scan sends each match to a member. */
+   ran = group_load(lpl[0], db);
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_LOOSE);
+   ran = ran && !task_push_manual_content_scan_group(group, label,
+         NULL, NULL);
+   group_drain();
+   sprintf(what, "group %s: a loose scan refused", q);
+   check(ran, what, "pushed");
+   goto restore;
+
+fixture:
+   check(0, "fixture", "could not write the group scan set");
+restore:
+   group_names = NULL;
+   group_label = NULL;
+   open_name   = NULL;
+   manual_content_scan_reset_settings();
+   use_db(db_dir);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl_dir,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+end:
+   string_list_free(group);
+   free(db);
+   free(pl);
+   free(dir);
+   free(label);
+   free(out);
+   free(err);
+   free(keep);
+   free(p);
+   free(lpl);
+}
+
+/* refresh_write() with strict matching, the extensions @exts and the
+ * saved database name @db_name (NULL: none for either). */
+static bool refresh_group_write(const char *lpl, const char *dir,
+      const char *exts, const char *db_name, const char *core,
+      const char *entry)
+{
+   playlist_config_t *cfg = NULL;
+   playlist_t        *pl  = NULL;
+   bool               ok  = false;
+
+   if (   !refresh_write(lpl, dir, core, entry)
+       || !(cfg = (playlist_config_t*)calloc(1, sizeof(*cfg))))
+      return false;
+   playlist_config_set_path(cfg, lpl);
+   cfg->capacity = COLLECTION_SIZE;
+   if ((pl = playlist_init(cfg)))
+   {
+      playlist_set_scan_db_usage(pl, MANUAL_CONTENT_SCAN_USE_DB_STRICT);
+      if (exts)
+         playlist_set_scan_file_exts(pl, exts);
+      if (db_name)
+         playlist_set_scan_database_name(pl, db_name);
+      playlist_write_file(pl);
+      playlist_free(pl);
+      ok = true;
+   }
+   free(cfg);
+   return ok;
+}
+
+/* Saves @usage and the DAT @dat as @lpl's match settings. */
+static bool refresh_group_match(const char *lpl, int usage, const char *dat)
+{
+   playlist_config_t *cfg = NULL;
+   playlist_t        *pl  = NULL;
+   bool               ok  = false;
+
+   if (!(cfg = (playlist_config_t*)calloc(1, sizeof(*cfg))))
+      return false;
+   playlist_config_set_path(cfg, lpl);
+   cfg->capacity = COLLECTION_SIZE;
+   if ((pl = playlist_init(cfg)))
+   {
+      playlist_set_scan_db_usage(pl, usage);
+      playlist_set_scan_dat_file_path(pl, dat);
+      playlist_write_file(pl);
+      playlist_free(pl);
+      ok = true;
+   }
+   free(cfg);
+   return ok;
+}
+
+/* Refresh All over database playlists that share a folder: Alpha and
+ * Beta, equal but for a saved database name empty in one and its own
+ * in the other, share one scan and one line, each validated and saved;
+ * Disc with other extensions and Custom, named after no database, run
+ * alone.  The keys are made with no stat on the main thread.  A
+ * missing folder skips the pair with one line, an override leaves it
+ * one scan and is saved to both, a cancel during it stops the rest,
+ * and the menu still counts playlists.  Loose, a DAT or another
+ * database's name, or another load status, runs alone; a pair whose
+ * scan cannot start fails under its label. */
+static void refresh_group_lane(const char *root, const char *pl_dir,
+      const char *db_dir, bool threaded)
+{
+   static const char *const names[3] =
+         { "Test Alpha", "Test Beta", "Test Disc" };
+   static const char *const games[3] =
+         { "Refresh Group Alpha", "Refresh Group Beta", "Refresh Group Disc" };
+   static const uint32_t    crcs[3]  =
+         { 0x6E0B0001u, 0x6E0B0002u, 0x6E0B0003u };
+   static char         db[512], pl[512], dir[512], gone[512], slow[512];
+   static char         late[512], dat[512], dot_db[512], dot_lpl[1024];
+   static char         label[640], gone_label[640], slow_label[640];
+   static char         dot_label[640];
+   static char         out[1024], err[1024], lpl[4][1024], stale[4][1024];
+   static char         p[1024], want[1536];
+   char                what[128], detail[192];
+   db_rec_t            rec;
+   task_dbscan_item_t *items;
+   const char         *q = threaded ? "(threaded)" : "(regular)";
+   unsigned            k;
+   bool                ran, pushed, back, off_main = false;
+
+#ifdef HAVE_THREADS
+   off_main = threaded;
+#endif
+   sprintf(db,   "%s/rgroup_db",      root);
+   sprintf(dot_db, "%s/rgroup_db_dot", root);
+   sprintf(pl,   "%s/rgroup_pl",      root);
+   sprintf(dir,  "%s/rgroup",         root);
+   sprintf(gone, "%s/rgroup_gone",    root);
+   sprintf(slow, "%s/rgroup_slow",    root);
+   sprintf(late, "%s/rgroup_late_%c", root, threaded ? 't' : 'r');
+   sprintf(dat,  "%s/rgroup.dat",     root);
+   sprintf(out,  "%s/rgroup_out.txt", root);
+   sprintf(err,  "%s/rgroup_err.txt", root);
+   path_mkdir(db);
+   path_mkdir(dot_db);
+   path_mkdir(pl);
+   path_mkdir(dir);
+   path_mkdir(slow);
+   for (k = 0; k < 3; k++)
+   {
+      set_rec(&rec, games[k], crcs[k], 1024);
+      sprintf(p, "%s/%s.rdb", db, names[k]);
+      if (!write_db_set(p, &rec, 1))
+         goto fixture;
+      sprintf(p, "%s/%c.bin", dir, 'a' + k);
+      if (!write_content(p, crcs[k], 1024))
+         goto fixture;
+   }
+   for (k = 0; k < 2; k++)
+   {
+      set_rec(&rec, games[k], crcs[k], 1024);
+      sprintf(p, "%s/%s.rdb", dot_db, k ? "Test Dot.Com" : names[0]);
+      if (!write_db_set(p, &rec, 1))
+         goto fixture;
+   }
+   sprintf(p, "%s/00_slow.bin", slow);
+   if (!write_content(p, 0x6E0B00FFu, 1536))
+      goto fixture;
+   {
+      FILE *f = fopen(dat, "w");
+
+      if (!f)
+         goto fixture;
+      fputs("<?xml version=\"1.0\"?>\n<datafile>\n"
+            "<header><name>Group</name></header>\n"
+            "<game name=\"c\"><description>Disc</description></game>\n"
+            "</datafile>\n", f);
+      fclose(f);
+   }
+   sprintf(lpl[0], "%s/Test Alpha.lpl",  pl);
+   sprintf(lpl[1], "%s/Test Beta.lpl",   pl);
+   sprintf(lpl[2], "%s/Test Custom.lpl", pl);
+   sprintf(lpl[3], "%s/Test Disc.lpl",   pl);
+   for (k = 0; k < 4; k++)
+      sprintf(stale[k], "%s/00_gone_%c.bin", dir, 'a' + k);
+   sprintf(label,      "%s (Test Alpha, Test Beta)", dir);
+   sprintf(gone_label, "%s (Test Alpha, Test Beta)", gone);
+   sprintf(slow_label, "%s (Test Alpha, Test Beta)", slow);
+   sprintf(dot_label,  "%s (Test Alpha, Test Dot.Com)", dir);
+   sprintf(dot_lpl,    "%s/Test Dot.Com.lpl", pl);
+   use_db(db);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   use_queue(threaded);
+
+   delete_playlists(pl);
+   if (   !refresh_group_write(lpl[0], dir, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], dir, NULL, "Test Beta.lpl", NULL,
+            stale[1])
+       || !refresh_group_write(lpl[2], dir, NULL, NULL, NULL, stale[2])
+       || !refresh_group_write(lpl[3], dir, "bin", NULL, NULL, stale[3])
+       || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   refresh_began_reset();
+   retro_atomic_store_release_int(&stat_main, 0);
+   stat_loads = 4;
+   ran        = refresh_run(items, 1, out, err, true);
+   stat_loads = 0;
+   sprintf(what, "refresh groups %s: equal keys, one scan", q);
+   snprintf(detail, sizeof(detail), "%u items: %s", chain_seen,
+         chain_names[0]);
+   check(   ran && chain_seen == 3
+         && chain_saw(0, label, TASK_DBSCAN_RAN, 2), what, detail);
+   sprintf(what, "refresh groups %s: a name no database has, alone", q);
+   check(ran && chain_saw(1, "Test Custom", TASK_DBSCAN_RAN, 3), what,
+         chain_names[1]);
+   sprintf(what, "refresh groups %s: other extensions, another scan", q);
+   check(ran && chain_saw(2, "Test Disc", TASK_DBSCAN_RAN, 1), what,
+         chain_names[2]);
+   sprintf(what, "refresh groups %s: the totals count playlists", q);
+   sprintf(detail, "ran %u, added %u, failed %u, skipped %u",
+         chain_totals.ran, chain_totals.added, chain_totals.failed,
+         chain_totals.skipped);
+   check(   chain_totals.ran == 4 && chain_totals.added == 4
+         && !chain_totals.failed && !chain_totals.skipped, what, detail);
+   sprintf(what, "refresh groups %s: both refreshed and validated", q);
+   check(   ran
+         && file_contains(lpl[0], "/a.bin\"")
+         && !file_contains(lpl[0], "/b.bin\"")
+         && !file_contains(lpl[0], "00_gone_a")
+         && file_contains(lpl[1], "/b.bin\"")
+         && !file_contains(lpl[1], "/a.bin\"")
+         && !file_contains(lpl[1], "00_gone_b"), what, "a.bin, b.bin");
+   sprintf(what, "refresh groups %s: both settings saved", q);
+   check(   ran
+         && file_contains(lpl[0],
+               "\"scan_database_name\": \"Test Alpha.lpl\"")
+         && file_contains(lpl[1],
+               "\"scan_database_name\": \"Test Beta.lpl\""),
+         what, lpl[1]);
+   sprintf(what, "refresh groups %s: one line for the pair", q);
+   sprintf(want, "%s: 2 added, 0 duplicates, 1 unmatched, 0 errors",
+         label);
+   check(   ran && file_contains(out, want)
+         && file_contains(out,
+               "Test Custom: 3 added, 0 duplicates, 0 unmatched, 0 errors")
+         && file_contains(out,
+               "Test Disc: 1 added, 0 duplicates, 2 unmatched, 0 errors")
+         && !file_contains(out, "Test Alpha: ")
+         && !file_contains(out, "Test Beta: ")
+         && file_count(out, " added, ") == 3, what, want);
+   /* Four to group them, then one per scan. */
+   sprintf(what, "refresh groups %s: loaded to group, then once per scan",
+         q);
+   sprintf(detail, "%d loads",
+         retro_atomic_load_acquire_int(&refresh_began[REFRESH_LOAD]));
+   check(retro_atomic_load_acquire_int(&refresh_began[REFRESH_LOAD]) == 7,
+         what, detail);
+   sprintf(what, "refresh groups %s: keys made %s", q,
+         off_main ? "with no stat on the main thread" : "while loading");
+   sprintf(detail, "%d stats on the main thread",
+         retro_atomic_load_acquire_int(&stat_main));
+   check(   ran
+         && (!off_main || !retro_atomic_load_acquire_int(&stat_main)),
+         what, detail);
+
+   /* The pair's folder gone, Custom's there. */
+   delete_playlists(pl);
+   if (   !refresh_group_write(lpl[0], gone, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], gone, NULL, NULL, NULL, stale[1])
+       || !refresh_group_write(lpl[2], dir, NULL, NULL, NULL, stale[2])
+       || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   ran = refresh_run(items, 1, out, err, true);
+   sprintf(what, "refresh groups %s: a missing folder skips the pair", q);
+   snprintf(detail, sizeof(detail), "%u items: %s, skipped %u, ran %u",
+         chain_seen, chain_names[0], chain_totals.skipped, chain_totals.ran);
+   check(   ran && chain_seen == 2
+         && chain_saw(0, gone_label, TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(1, "Test Custom", TASK_DBSCAN_RAN, 3)
+         && chain_totals.skipped == 2 && chain_totals.ran == 1, what,
+         detail);
+   sprintf(what, "refresh groups %s: one skipped line", q);
+   sprintf(want, "%s: skipped: content folder not found (%s)", gone_label,
+         gone);
+   check(   ran && file_contains(err, want)
+         && file_count(err, "skipped") == 1, what, want);
+
+   /* Each of these would join Alpha but for the one setting. */
+   delete_playlists(pl);
+   if (   !refresh_group_write(lpl[0], dir, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], dir, NULL, NULL, NULL, stale[1])
+       || !refresh_group_match(lpl[1], MANUAL_CONTENT_SCAN_USE_DB_LOOSE,
+            NULL)
+       || !refresh_group_write(lpl[3], dir, NULL, NULL, NULL, stale[3])
+       || !refresh_group_match(lpl[3], MANUAL_CONTENT_SCAN_USE_DB_STRICT,
+            dat)
+       || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   ran = refresh_run(items, 1, out, err, true);
+   sprintf(what, "refresh groups %s: loose and a DAT run alone", q);
+   snprintf(detail, sizeof(detail), "%u items: %s | %s | %s", chain_seen,
+         chain_names[0], chain_names[1], chain_names[2]);
+   check(   ran && chain_seen == 3
+         && !strcmp(chain_names[0], "Test Alpha")
+         && !strcmp(chain_names[1], "Test Beta")
+         && !strcmp(chain_names[2], "Test Disc"), what, detail);
+   delete_playlists(pl);
+   if (   !refresh_group_write(lpl[0], dir, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], dir, NULL, "Test Disc.lpl", NULL,
+            stale[1])
+       || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   ran = refresh_run(items, 1, out, err, true);
+   sprintf(what, "refresh groups %s: another database's name, alone", q);
+   snprintf(detail, sizeof(detail), "%u items: %s | %s", chain_seen,
+         chain_names[0], chain_names[1]);
+   check(   ran && chain_seen == 2
+         && !strcmp(chain_names[0], "Test Alpha")
+         && !strcmp(chain_names[1], "Test Beta"), what, detail);
+
+   /* A database name with a dot, run twice: it groups both times. */
+   delete_playlists(pl);
+   use_db(dot_db);
+   if (   !refresh_group_write(lpl[0], dir, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(dot_lpl, dir, NULL, NULL, NULL, stale[1]))
+      goto fixture;
+   for (k = 0; k < 2; k++)
+   {
+      if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+         goto fixture;
+      refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+      ran = refresh_run(items, 1, out, err, true);
+      sprintf(what, "refresh groups %s: a dotted name groups, run %u", q,
+            k + 1);
+      snprintf(detail, sizeof(detail), "%u items: %s, %d added",
+            chain_seen, chain_names[0], chain_added[0]);
+      check(   ran && chain_seen == 1
+            && chain_saw(0, dot_label, TASK_DBSCAN_RAN, k ? 0 : 2)
+            && file_contains(dot_lpl,
+                  "\"scan_database_name\": \"Test Dot.Com.lpl\""),
+            what, detail);
+   }
+   use_db(db);
+
+   /* The folder appears between the pair's loads. */
+   delete_playlists(pl);
+   path_rmdir(late);
+   if (   !refresh_group_write(lpl[0], late, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], late, NULL, NULL, NULL, stale[1])
+       || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   refresh_began_reset();
+   mkdir_at_path = late;
+   mkdir_at_load = 2;
+   ran           = refresh_run(items, 1, out, err, true);
+   mkdir_at_load = 0;
+   sprintf(what, "refresh groups %s: another load status, alone", q);
+   snprintf(detail, sizeof(detail), "%u items: %s, skipped %u, failed %u",
+         chain_seen, chain_names[0], chain_totals.skipped,
+         chain_totals.failed);
+   /* Beta's folder is there but empty. */
+   check(   ran && chain_seen == 2
+         && chain_saw(0, "Test Alpha", TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(1, "Test Beta", TASK_DBSCAN_SKIPPED, -1)
+         && chain_totals.skipped == 2 && chain_totals.failed == 0, what,
+         detail);
+
+   /* The listing, two loads, then the pair's second load fails. */
+   delete_playlists(pl);
+   if (   !refresh_group_write(lpl[0], dir, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], dir, NULL, NULL, NULL, stale[1])
+       || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   retro_atomic_store_release_int(&task_init_fail_in, 5);
+   ran = refresh_run(items, 1, out, err, true);
+   retro_atomic_store_release_int(&task_init_fail_in, 0);
+   sprintf(what, "refresh groups %s: a pair that cannot start, its label",
+         q);
+   sprintf(want, "%s: the scan could not start", label);
+   check(   ran && chain_seen == 1
+         && chain_saw(0, label, TASK_DBSCAN_FAILED, -1)
+         && chain_totals.failed == 2 && file_contains(err, want)
+         && !file_contains(err, "Test Alpha: "), what, err);
+
+   /* An override over the pair alone. */
+   delete_playlists(pl);
+   if (   !refresh_group_write(lpl[0], dir, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], dir, NULL, NULL, NULL, stale[1])
+       || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   if ((items[0].overrides = manual_content_scan_overrides_new()))
+      items[0].overrides->exts = ovr_str("bin");
+   ran = refresh_run(items, 1, out, err, true);
+   sprintf(what, "refresh groups %s: an override, still one scan", q);
+   snprintf(detail, sizeof(detail), "%u items: %s", chain_seen,
+         chain_names[0]);
+   check(   ran && chain_seen == 1
+         && chain_saw(0, label, TASK_DBSCAN_RAN, 2), what, detail);
+   sprintf(what, "refresh groups %s: the override saved to both", q);
+   check(   ran
+         && file_contains(lpl[0], "\"scan_file_exts\": \"bin\"")
+         && file_contains(lpl[1], "\"scan_file_exts\": \"bin\""), what,
+         lpl[1]);
+
+   /* Held on the threaded queue, so the scan cannot end before the
+    * cancel; the regular one reads on this thread */
+   delete_playlists(pl);
+   if (   !refresh_group_write(lpl[0], slow, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], slow, NULL, NULL, NULL, stale[1])
+       || !refresh_group_write(lpl[2], dir, NULL, NULL, NULL, stale[2])
+       || !(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   slow_reset(1536, 300);
+   if (threaded)
+      retro_atomic_store_release_int(&slow_hold, 1);
+   pushed = chain_push(items, 1);
+   chain_wait(true);
+   retro_atomic_store_release_int(&slow_hold, 0);
+   slow_size = 0;
+   back      = slow_reads_back() && readers_gone();
+   sprintf(what, "refresh groups %s: a cancel in the pair stops the rest",
+         q);
+   sprintf(detail, "%u items, ran %u%s, done %u", chain_seen,
+         chain_totals.ran, chain_totals.cancelled ? ", cancelled" : "",
+         chain_dones);
+   check(   pushed && back && chain_seen == 1 && chain_dones == 1
+         && chain_saw(0, slow_label, TASK_DBSCAN_RAN, chain_added[0])
+         && chain_totals.ran == 2 && chain_totals.cancelled
+         && file_contains(lpl[2], "00_gone_c"), what, detail);
+
+   /* As the menu pushes it: the pair, and Custom with a missing core. */
+   delete_playlists(pl);
+   if (   !refresh_group_write(lpl[0], dir, NULL, NULL, NULL, stale[0])
+       || !refresh_group_write(lpl[1], dir, NULL, NULL, NULL, stale[1])
+       || !refresh_group_write(lpl[2], dir, NULL, NULL, "No Such Core",
+            stale[2]))
+      goto fixture;
+   chain_dones     = 0;
+   chain_ud_ok     = true;
+   menu_all_msg[0] = '\0';
+   pushed          = task_push_dbscan_chain(menu_all_item(), 1, NULL,
+         menu_all_done_cb, NULL);
+   chain_wait(false);
+   sprintf(what, "refresh groups %s: the menu counts playlists", q);
+   check(   pushed && chain_dones == 1 && chain_ud_ok
+         && !strcmp(menu_all_msg,
+               "Playlists refreshed: 2, skipped: 0, failed: 1"),
+         what, menu_all_msg);
+   goto restore;
+
+fixture:
+   check(0, "fixture", "could not write the refresh group set");
+restore:
+   slow_size     = 0;
+   mkdir_at_load = 0;
+   path_rmdir(late);
+   retro_atomic_store_release_int(&task_init_fail_in, 0);
+   manual_content_scan_reset_settings();
+   use_db(db_dir);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl_dir,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+}
+
+/* As many "??" lines in @out as the totals count unmatched, @want. */
+static void qq_check(const char *what, const char *q, const char *out,
+      unsigned want)
+{
+   char     name[128], detail[64];
+   unsigned qq = file_count(out, " ?? \"");
+
+   snprintf(name, sizeof(name), "?? lines %s: %s", q, what);
+   snprintf(detail, sizeof(detail), "%u ??, %u unmatched, want %u", qq,
+         scan_result.unmatched, want);
+   check(qq == scan_result.unmatched && qq == want, name, detail);
+}
+
+/* Every scan kind prints a "??" for each file its totals count
+ * unmatched and for no other.  Rescans counts_lane()'s folders; then a
+ * .lutro, which matches by extension alone, in a refresh and in a
+ * group without a Lutro playlist. */
+static void unmatched_lines_run(const char *root, const char *db_dir,
+      bool threaded)
+{
+   static const char *const names[2] = { "Test Alpha", "Test Beta" };
+   static char         dir[512], dat_dir[512], m3u_dir[512], res_pl[512];
+   static char         dat[512], db[512], gdir[512], pl[512], label[640];
+   static char         out[1024], err[1024], lpl[2][1024], p[1024];
+   db_rec_t            rec;
+   union string_list_elem_attr attr;
+   struct string_list *group = string_list_new();
+   const char         *q     = threaded ? "(threaded)" : "(regular)";
+   unsigned            k;
+
+   sprintf(dir,     "%s/scan_result",     root);
+   sprintf(dat_dir, "%s/scan_result_dat", root);
+   sprintf(m3u_dir, "%s/scan_result_m3u", root);
+   sprintf(res_pl,  "%s/scan_result_pl",  root);
+   sprintf(dat,     "%s/scan_result.dat", root);
+   sprintf(out,     "%s/qq_lines.out",    root);
+   sprintf(err,     "%s/qq_lines.err",    root);
+   strlcpy(config_get_ptr()->paths.directory_playlist, res_pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   use_queue(threaded);
+
+   /* One archive's member stores no CRC, so it is expanded. */
+   delete_playlists(res_pl);
+   if (capture_scan(dir, out, err, true))
+      qq_check("strict, an archive expanded", q, out, 2);
+   delete_playlists(res_pl);
+   if (capture_scan(m3u_dir, out, err, true))
+      qq_check("an m3u its discs match", q, out, 0);
+
+   manual_content_scan_set_menu_scan_method(
+         MANUAL_CONTENT_SCAN_METHOD_CUSTOM);
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_LOOSE);
+   delete_playlists(res_pl);
+   if (capture_scan(dir, out, err, true))
+      qq_check("loose, all added", q, out, 0);
+
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_DAT_STRICT);
+   strlcpy(manual_content_scan_get_dat_file_path_ptr(), dat,
+         manual_content_scan_get_dat_file_path_size());
+   delete_playlists(res_pl);
+   if (capture_scan(dat_dir, out, err, true))
+      qq_check("DAT", q, out, 1);
+
+   manual_content_scan_get_dat_file_path_ptr()[0] = '\0';
+   manual_content_scan_set_menu_scan_use_db(
+         MANUAL_CONTENT_SCAN_USE_DB_NONE);
+   manual_content_scan_set_menu_system_name(
+         MANUAL_CONTENT_SCAN_SYSTEM_NAME_CONTENT_DIR, NULL);
+   delete_playlists(res_pl);
+   if (capture_scan(dir, out, err, true))
+      qq_check("match none", q, out, 0);
+   manual_content_scan_reset_settings();
+   delete_playlists(res_pl);
+
+   sprintf(db,   "%s/qq_db",    root);
+   sprintf(gdir, "%s/qq_group", root);
+   sprintf(pl,   "%s/qq_pl",    root);
+   path_mkdir(db);
+   path_mkdir(gdir);
+   path_mkdir(pl);
+   delete_playlists(pl);
+   for (k = 0; k < 2; k++)
+   {
+      set_rec(&rec, names[k], 0x6E0C0001u + k, 1024);
+      sprintf(p, "%s/%s.rdb", db, names[k]);
+      if (!write_db_set(p, &rec, 1))
+         goto fixture;
+      sprintf(lpl[k], "%s/%s.lpl", pl, names[k]);
+      sprintf(p, "%s/00_gone.bin", gdir);
+      if (!refresh_write(lpl[k], gdir, NULL, p))
+         goto fixture;
+   }
+   sprintf(p, "%s/a.bin", gdir);
+   if (!write_content(p, 0x6E0C0001u, 1024))
+      goto fixture;
+   sprintf(p, "%s/x.lutro", gdir);
+   if (!write_content(p, 0x6E0C00FFu, 1024))
+      goto fixture;
+   attr.i = 0;
+   if (   !group
+       || !string_list_append(group, names[0], attr)
+       || !string_list_append(group, names[1], attr))
+      goto fixture;
+   sprintf(label, "%s (%s, %s)", gdir, names[0], names[1]);
+   use_db(db);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+
+   if (group_run(lpl[0], db, gdir, false, false, out, err))
+      qq_check("a refresh, a .lutro", q, out, 1);
+   group_names = group;
+   group_label = label;
+   if (group_run(lpl[0], db, gdir, false, false, out, err))
+      qq_check("a group, a .lutro", q, out, 1);
+   goto restore;
+
+fixture:
+   check(0, "fixture", "could not write the ?? lines set");
+restore:
+   group_names = NULL;
+   group_label = NULL;
+   string_list_free(group);
+   manual_content_scan_reset_settings();
+   use_db(db_dir);
+}
+
+static void unmatched_lines_lane(const char *root, const char *pl_dir,
+      const char *db_dir)
+{
+   unmatched_lines_run(root, db_dir, false);
+   unmatched_lines_run(root, db_dir, true);
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl_dir,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+}
+
+#ifdef HAVE_SMBCLIENT
+/* The number of times @s is in @log. */
+static unsigned smb_log_count(const char *log, const char *s)
+{
+   unsigned n = 0;
+
+   while ((log = strstr(log, s)))
+   {
+      n++;
+      log += strlen(s);
+   }
+   return n;
+}
+
+/* A refresh-all whose first smb:// folder fails stats the share root:
+ * when that fails too, later smb:// folders, --scan paths and refreshes
+ * in the run fail without a stat, and local playlists still run.  When
+ * the root answers, the run goes on as before.  With no share set, the
+ * URL names it, so a dead one leaves the others to run and each is
+ * checked once, until a root answers; with one set, all are down. */
+static void smb_down_lane(const char *root, const char *pl_dir,
+      uint32_t crc_a, uint32_t sz_a, bool threaded)
+{
+   static const char *smb_names[] = { "b_one", "d_two", "e_three" };
+   static const char *smb_dirs[]  = { "smb://host/share/one",
+      "smb://host/share/two", "smb://host/share/three" };
+   static const char *share_names[] = { "a_games", "a_old", "b_dead" };
+   static const char *share_dirs[]  = { "smb://host/games/nes",
+      "smb://host/old/early", "smb://host/old/md" };
+   static const char *const up_root[] = { "smb://host/share/", NULL };
+   static const char *const shares_up[] = { "smb://host/games/",
+      "smb://host/games/nes", "smb://host/old/early", NULL };
+   static const char *mix_dirs[] = { "smb://host/aa/1", "smb://host/bb/2",
+      "smb://host/aa/3", "smb://host/bb/4", "smb://host/aa/5",
+      "smb://host/bb/6" };
+   static const char *const bb_root[] = { "smb://host/bb/",
+      "smb://host/aa/3", NULL };
+   static char         pl[512], live_pl[512], two_pl[512], mix_pl[512];
+   static char         a[512], log[512];
+   static char         out[1024], err[1024], p[1024], stale[1024];
+   static char         want[1536], detail[640];
+   char                what[128];
+   const char         *q = threaded ? "(threaded)" : "(regular)";
+   task_dbscan_item_t *items;
+   unsigned            i;
+   bool                ran;
+
+   sprintf(pl,      "%s/smb_pl",      root);
+   sprintf(live_pl, "%s/smb_live_pl", root);
+   sprintf(two_pl,  "%s/smb_two_pl",  root);
+   sprintf(mix_pl,  "%s/smb_mix_pl",  root);
+   sprintf(a,       "%s/smb_a",       root);
+   sprintf(out,     "%s/smb_out.txt", root);
+   sprintf(err,     "%s/smb_err.txt", root);
+   sprintf(stale,   "%s/00_gone.bin", a);
+   path_mkdir(pl);
+   path_mkdir(live_pl);
+   path_mkdir(two_pl);
+   path_mkdir(mix_pl);
+   path_mkdir(a);
+   delete_playlists(pl);
+   delete_playlists(live_pl);
+   delete_playlists(two_pl);
+   delete_playlists(mix_pl);
+   sprintf(p, "%s/01_alpha.bin", a);
+   if (!write_content(p, crc_a, sz_a))
+      goto fixture;
+   sprintf(p, "%s/a_local.lpl", pl);
+   if (!refresh_write(p, a, NULL, stale))
+      goto fixture;
+   sprintf(p, "%s/c_local.lpl", pl);
+   if (!refresh_write(p, a, NULL, stale))
+      goto fixture;
+   for (i = 0; i < 3; i++)
+   {
+      sprintf(p, "%s/%s.lpl", pl, smb_names[i]);
+      if (!refresh_write(p, smb_dirs[i], NULL, stale))
+         goto fixture;
+      sprintf(p, "%s/%s.lpl", live_pl, smb_names[i]);
+      if (i < 2 && !refresh_write(p, smb_dirs[i], NULL, stale))
+         goto fixture;
+      sprintf(p, "%s/%s.lpl", two_pl, share_names[i]);
+      if (!refresh_write(p, share_dirs[i], NULL, stale))
+         goto fixture;
+   }
+   for (i = 0; i < 6; i++)
+   {
+      sprintf(p, "%s/m_%u.lpl", mix_pl, i + 1);
+      if (!refresh_write(p, mix_dirs[i], NULL, stale))
+         goto fixture;
+   }
+   use_queue(threaded);
+   smb_stat_log = log;
+
+   /* A dead server: a refresh-all, then a --scan and a refresh on it. */
+   if (!(items = (task_dbscan_item_t*)calloc(3, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   chain_item(&items[1], "smb://host/share/x", NULL);
+   refresh_item(&items[2], TASK_DBSCAN_ITEM_REFRESH, "b_one");
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   *log = '\0';
+   retro_atomic_store_release_int(&smb_stat_count, 0);
+   ran = refresh_run(items, 3, out, err, true);
+   sprintf(what, "smb down %s: a dead server, two stats", q);
+   snprintf(detail, sizeof(detail), "%d stats: %s",
+         retro_atomic_load_acquire_int(&smb_stat_count), log);
+   check(   ran && retro_atomic_load_acquire_int(&smb_stat_count) == 2
+         && string_is_equal(log, "smb://host/share/one smb://host/share/ "),
+         what, detail);
+   sprintf(what, "smb down %s: the items", q);
+   snprintf(detail, sizeof(detail),
+         "%u items: ran %u, added %u, failed %u, skipped %u", chain_seen,
+         chain_totals.ran, chain_totals.added, chain_totals.failed,
+         chain_totals.skipped);
+   check(   chain_seen == 7
+         && chain_saw(0, "a_local", TASK_DBSCAN_RAN,     1)
+         && chain_saw(1, "b_one",   TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(2, "c_local", TASK_DBSCAN_RAN,     1)
+         && chain_saw(3, "d_two",   TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(4, "e_three", TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(5, "smb://host/share/x", TASK_DBSCAN_FAILED, -1)
+         && chain_saw(6, "b_one",   TASK_DBSCAN_SKIPPED, -1)
+         && chain_totals.ran == 2 && chain_totals.added == 2
+         && chain_totals.failed == 1 && chain_totals.skipped == 4,
+         what, detail);
+   sprintf(what, "smb down %s: the lines", q);
+   check(   file_contains(err,
+               "b_one: skipped: content folder not found "
+               "(smb://host/share/one)")
+         && file_contains(err,
+               "d_two: skipped: content folder not found "
+               "(smb://host/share/two)")
+         && file_contains(err,
+               "e_three: skipped: content folder not found "
+               "(smb://host/share/three)")
+         && file_contains(err, "smb://host/share/x: not found")
+         && file_contains(out, "a_local: 1 added")
+         && file_contains(out, "c_local: 1 added"), what, err);
+   sprintf(what, "smb down %s: local playlists refreshed", q);
+   sprintf(want, "%s/01_alpha.bin", a);
+   sprintf(p, "%s/a_local.lpl", pl);
+   ran = file_contains(p, want) && !file_contains(p, stale);
+   sprintf(p, "%s/c_local.lpl", pl);
+   check(ran && file_contains(p, want) && !file_contains(p, stale),
+         what, p);
+
+   /* The root answers: the folders are missing, the server is not. */
+   if (!(items = (task_dbscan_item_t*)calloc(2, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   chain_item(&items[1], "smb://host/share/x", NULL);
+   strlcpy(config_get_ptr()->paths.directory_playlist, live_pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   *log           = '\0';
+   smb_stat_valid = up_root;
+   ran            = refresh_run(items, 2, out, err, true);
+   sprintf(what, "smb up %s: the root stat once, the rest as before", q);
+   snprintf(detail, sizeof(detail), "%u items: %s", chain_seen, log);
+   check(   ran && chain_seen == 3
+         && chain_saw(0, "b_one", TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(1, "d_two", TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(2, "smb://host/share/x", TASK_DBSCAN_FAILED, -1)
+         && string_is_equal(log,
+               "smb://host/share/one smb://host/share/ "
+               "smb://host/share/two smb://host/share/x "), what, detail);
+
+   /* Two shares, no share set: "old" dies after a_games and a_old
+    * loaded. */
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   strlcpy(config_get_ptr()->paths.directory_playlist, two_pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   *log           = '\0';
+   smb_stat_valid = shares_up;
+   ran            = refresh_run(items, 1, out, err, true);
+   sprintf(what, "smb shares %s: a dead share, the other runs", q);
+   snprintf(detail, sizeof(detail), "%u items: %s %d | %s %d | %s %d: %s",
+         chain_seen, chain_names[0], chain_outcomes[0], chain_names[1],
+         chain_outcomes[1], chain_names[2], chain_outcomes[2], log);
+   /* Its scan starts, then fails: the stub lists no folder. */
+   check(   ran && chain_seen == 3
+         && chain_saw(0, "a_games", TASK_DBSCAN_FAILED, 0)
+         && smb_log_count(log, "smb://host/games/nes ") > 1
+         && !file_contains(err, "a_games: skipped"), what, detail);
+   sprintf(what, "smb shares %s: loaded before, skipped at its run", q);
+   check(   ran
+         && chain_saw(1, "a_old",  TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(2, "b_dead", TASK_DBSCAN_SKIPPED, -1)
+         && smb_log_count(log, "smb://host/old/early ") == 1
+         && smb_log_count(log, "smb://host/old/ ") == 1
+         && file_contains(err,
+               "a_old: skipped: content folder not found "
+               "(smb://host/old/early)"), what, detail);
+
+   /* The same with a share set: it is every path's. */
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   strlcpy(config_get_ptr()->arrays.smb_client_share, "games",
+         sizeof(config_get_ptr()->arrays.smb_client_share));
+   *log = '\0';
+   ran  = refresh_run(items, 1, out, err, true);
+   config_get_ptr()->arrays.smb_client_share[0] = '\0';
+   sprintf(what, "smb shares %s: a share set, all down", q);
+   snprintf(detail, sizeof(detail), "%u items: %s", chain_seen, log);
+   check(   ran && chain_seen == 3
+         && chain_saw(0, "a_games", TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(1, "a_old",   TASK_DBSCAN_SKIPPED, -1)
+         && chain_saw(2, "b_dead",  TASK_DBSCAN_SKIPPED, -1)
+         && smb_log_count(log, "smb://host/games/nes ") == 1, what,
+         detail);
+
+   /* Two dead shares in turn, no share set: two stats each. */
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   strlcpy(config_get_ptr()->paths.directory_playlist, mix_pl,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+   *log           = '\0';
+   smb_stat_valid = NULL;
+   ran            = refresh_run(items, 1, out, err, true);
+   sprintf(what, "smb shares %s: two dead, two stats each", q);
+   snprintf(detail, sizeof(detail), "%u items, skipped %u: %s",
+         chain_seen, chain_totals.skipped, log);
+   check(   ran && chain_seen == 6 && chain_totals.skipped == 6
+         && string_is_equal(log, "smb://host/aa/1 smb://host/aa/ "
+               "smb://host/bb/2 smb://host/bb/ "), what, detail);
+
+   /* bb's root answers after aa's failed, as a waking NAS does: aa is
+    * checked again, and aa/3 now answers. */
+   if (!(items = (task_dbscan_item_t*)calloc(1, sizeof(*items))))
+      goto fixture;
+   refresh_item(&items[0], TASK_DBSCAN_ITEM_REFRESH_ALL, NULL);
+   *log           = '\0';
+   smb_stat_valid = bb_root;
+   ran            = refresh_run(items, 1, out, err, true);
+   sprintf(what, "smb shares %s: one answers, the dead one is checked again",
+         q);
+   snprintf(detail, sizeof(detail), "%u items: %s", chain_seen, log);
+   check(   ran && chain_seen == 6
+         && chain_saw(2, "m_3", TASK_DBSCAN_FAILED,  0)
+         && chain_saw(4, "m_5", TASK_DBSCAN_SKIPPED, -1)
+         && smb_log_count(log, "smb://host/aa/ ") == 1
+         && smb_log_count(log, "smb://host/bb/ ") == 1
+         && smb_log_count(log, "smb://host/aa/3 ") > 1
+         && smb_log_count(log, "smb://host/aa/5 ") == 1
+         && smb_log_count(log, "smb://host/bb/4 ") == 1
+         && smb_log_count(log, "smb://host/bb/6 ") == 1, what, detail);
+   goto restore;
+
+fixture:
+   check(0, "fixture", "could not write the smb lane");
+restore:
+   smb_stat_log   = NULL;
+   smb_stat_valid = NULL;
+   config_get_ptr()->arrays.smb_client_share[0] = '\0';
+   manual_content_scan_reset_settings();
+   strlcpy(config_get_ptr()->paths.directory_playlist, pl_dir,
+         sizeof(config_get_ptr()->paths.directory_playlist));
+}
+#endif
+
 int main(int argc, char **argv)
 {
    const char *root = (argc > 1) ? argv[1] : "/tmp";
+#ifndef _WIN32
+   static char root_real[512];
+#endif
    char db_dir[512], core_dir[512], info_dir[512];
    char in_dir[512], pl_dir[512], p[1024];
    bool cache_supported = false;
@@ -10337,6 +14752,13 @@ int main(int argc, char **argv)
    window_open_hook = scan_tick_open;
    crc_init();
    verbosity_disable();
+#ifndef _WIN32
+   /* Playlists save paths with their symlinks resolved */
+   path_mkdir(root);
+   strlcpy(root_real, root, sizeof(root_real));
+   if (path_resolve_realpath(root_real, sizeof(root_real), true))
+      root = root_real;
+#endif
 
    printf("scanner end-to-end test (dir: %s)\n\n", root);
 
@@ -10429,7 +14851,8 @@ int main(int argc, char **argv)
             "display_name = \"Scan Test\"\n"
             "corename = \"ScanTest\"\n"
             "supported_extensions = \"bin|cue|gdi|m3u|zip\"\n"
-            "database = \"Test Alpha|Test Beta|Test Disc|Test Zip\"\n");
+            "database = \"Test Alpha|Test Beta|Test Disc|Test Zip|"
+            "Test Dot.Com|Tiger - Game.com\"\n");
       fclose(f);
    }
    sprintf(p, "%s/test_libretro.so", core_dir);
@@ -10477,6 +14900,76 @@ int main(int argc, char **argv)
    }
    sprintf(p, "%s/ctr_libretro.so", core_dir);
    { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
+   sprintf(p, "%s/gcn_libretro.info", info_dir);
+   {
+      FILE *f = fopen(p, "w");
+      if (!f)
+      { check(0, "fixture", "could not write core info"); return 1; }
+      fprintf(f,
+            "display_name = \"GameCube Test\"\n"
+            "corename = \"GcnTest\"\n"
+            "supported_extensions = \"ciso\"\n"
+            "database = \"Test GameCube|Test Wii\"\n");
+      fclose(f);
+   }
+   sprintf(p, "%s/gcn_libretro.so", core_dir);
+   { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
+   sprintf(p, "%s/xbox_libretro.info", info_dir);
+   {
+      FILE *f = fopen(p, "w");
+      if (!f)
+      { check(0, "fixture", "could not write core info"); return 1; }
+      fprintf(f,
+            "display_name = \"Xbox Test\"\n"
+            "corename = \"XboxTest\"\n"
+            "supported_extensions = \"iso|xiso\"\n"
+            "database = \"Test Xbox\"\n");
+      fclose(f);
+   }
+   sprintf(p, "%s/xbox_libretro.so", core_dir);
+   { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
+   sprintf(p, "%s/x360_libretro.info", info_dir);
+   {
+      FILE *f = fopen(p, "w");
+      if (!f)
+      { check(0, "fixture", "could not write core info"); return 1; }
+      fprintf(f,
+            "display_name = \"Xbox 360 Test\"\n"
+            "corename = \"X360Test\"\n"
+            "supported_extensions = \"iso|xex|xcp|zar\"\n"
+            "database = \"Test Xbox 360\"\n");
+      fclose(f);
+   }
+   sprintf(p, "%s/x360_libretro.so", core_dir);
+   { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
+   sprintf(p, "%s/wiiu_libretro.info", info_dir);
+   {
+      FILE *f = fopen(p, "w");
+      if (!f)
+      { check(0, "fixture", "could not write core info"); return 1; }
+      fprintf(f,
+            "display_name = \"Wii U Test\"\n"
+            "corename = \"WiiUTest\"\n"
+            "supported_extensions = \"wud|wux|wua|iso\"\n"
+            "database = \"Nintendo - Wii U\"\n");
+      fclose(f);
+   }
+   sprintf(p, "%s/wiiu_libretro.so", core_dir);
+   { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
+   sprintf(p, "%s/atari_libretro.info", info_dir);
+   {
+      FILE *f = fopen(p, "w");
+      if (!f)
+      { check(0, "fixture", "could not write core info"); return 1; }
+      fprintf(f,
+            "display_name = \"Atari Test\"\n"
+            "corename = \"AtariTest\"\n"
+            "supported_extensions = \"xex\"\n"
+            "database = \"Test Atari\"\n");
+      fclose(f);
+   }
+   sprintf(p, "%s/atari_libretro.so", core_dir);
+   { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
    sprintf(p, "%s/reader_libretro.info", info_dir);
    {
       FILE *f = fopen(p, "w");
@@ -10487,7 +14980,7 @@ int main(int argc, char **argv)
             "corename = \"ReaderTest\"\n"
             "supported_extensions = \"rd|zip|cue|bin\"\n"
             "database = \"Test Reader|Test Order One|Test Order Two|Test Mix|Test Switch|"
-            "Test MF Cart|Test MF Arcade|Test FM One|Test FM Two|"
+            "Test MF Cart|Test MF Arcade|Test FM One|Test FM Two|Test FP Arcade|"
             "Test EM Cart|Test EM Arcade\"\n");
       fclose(f);
    }
@@ -10506,6 +14999,35 @@ int main(int argc, char **argv)
       fclose(f);
    }
    sprintf(p, "%s/archive_libretro.so", core_dir);
+   { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
+   sprintf(p, "%s/sevenzip_libretro.info", info_dir);
+   {
+      FILE *f = fopen(p, "w");
+      if (!f)
+      { check(0, "fixture", "could not write core info"); return 1; }
+      fprintf(f,
+            "display_name = \"7z Cart Test\"\n"
+            "corename = \"SevenZipCartTest\"\n"
+            "supported_extensions = \"rd|7z\"\n"
+            "database = \"Test 7Z Cart\"\n");
+      fclose(f);
+   }
+   sprintf(p, "%s/sevenzip_libretro.so", core_dir);
+   { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
+   /* Lutro content matches by its extension, with no database. */
+   sprintf(p, "%s/lutro_libretro.info", info_dir);
+   {
+      FILE *f = fopen(p, "w");
+      if (!f)
+      { check(0, "fixture", "could not write core info"); return 1; }
+      fprintf(f,
+            "display_name = \"Lutro Test\"\n"
+            "corename = \"LutroTest\"\n"
+            "supported_extensions = \"lutro\"\n"
+            "database = \"Lutro\"\n");
+      fclose(f);
+   }
+   sprintf(p, "%s/lutro_libretro.so", core_dir);
    { FILE *f = fopen(p, "wb"); if (f) { fputs("\177ELF", f); fclose(f); } }
    /* Cartridge cores list their ROMs' extensions, most without zip;
     * arcade cores list zip. */
@@ -11381,21 +15903,50 @@ int main(int argc, char **argv)
    }
 
    walk_lane(root, pl_dir, db_dir);
+   ciso_lane(root, pl_dir, db_dir);
+   xbox_lane(root, pl_dir, db_dir);
+   x360_lane(root, pl_dir, db_dir);
+   wiiu_lane(root, pl_dir, db_dir);
    single_lane(root, pl_dir, crc_a, sz_a);
+   dotted_names_lane(root, pl_dir, db_dir, crc_a, sz_a);
    counts_lane(root, pl_dir, crc_a, sz_a, crc_d, sz_d);
    failed_lane(root, pl_dir, db_dir, crc_a, sz_a);
    errors_lane(root, pl_dir, crc_a, sz_a);
    output_lane(root, pl_dir, db_dir);
+   cli_lines_lane(root, pl_dir);
    reset_lane(root, pl_dir);
    overrides_lane(root, pl_dir);
+   anchor_lane(root, pl_dir);
    core_lookup_lane(root);
    chain_lane(root, pl_dir, crc_a, sz_a, false);
    chain_lane(root, pl_dir, crc_a, sz_a, true);
    refresh_lane(root, pl_dir, crc_a, sz_a, false);
    refresh_lane(root, pl_dir, crc_a, sz_a, true);
+   local_kind_lane(root, pl_dir);
+   local_refresh_lane(root, pl_dir, false);
+   local_refresh_lane(root, pl_dir, true);
    fs_main_lane(root, pl_dir);
    menu_refresh_all_lane(root, pl_dir, crc_a, sz_a, false);
    menu_refresh_all_lane(root, pl_dir, crc_a, sz_a, true);
+#ifdef HAVE_SMBCLIENT
+   smb_reason_lane(root, false);
+   smb_reason_lane(root, true);
+   smb_refresh_lane(root, crc_a, sz_a, false);
+   smb_refresh_lane(root, crc_a, sz_a, true);
+   smb_kind_lane(root, false);
+   smb_kind_lane(root, true);
+#endif
+   empty_folder_lane(root, pl_dir, crc_a, sz_a, false);
+   empty_folder_lane(root, pl_dir, crc_a, sz_a, true);
+   group_scan_lane(root, pl_dir, db_dir, false);
+   group_scan_lane(root, pl_dir, db_dir, true);
+   refresh_group_lane(root, pl_dir, db_dir, false);
+   refresh_group_lane(root, pl_dir, db_dir, true);
+   unmatched_lines_lane(root, pl_dir, db_dir);
+#ifdef HAVE_SMBCLIENT
+   smb_down_lane(root, pl_dir, crc_a, sz_a, false);
+   smb_down_lane(root, pl_dir, crc_a, sz_a, true);
+#endif
    {
       char reader_db[512];
 
@@ -11457,6 +16008,20 @@ int main(int argc, char **argv)
       dual_match_lane(root, pl_dir, false);
       archives_off_lane(root, pl_dir, true);
       archives_off_lane(root, pl_dir, false);
+#ifdef HAVE_7ZIP
+      sevenzip_lane(root, pl_dir, true);
+      sevenzip_lane(root, pl_dir, false);
+#endif
+      set_fp_lane(root, pl_dir, true);
+      set_fp_lane(root, pl_dir, false);
+      fp_size_lane(root, pl_dir, true);
+      fp_size_lane(root, pl_dir, false);
+      fp_one_lane(root, pl_dir, true);
+      fp_one_lane(root, pl_dir, false);
+      fp_cart_first_lane(root, pl_dir, true);
+      fp_cart_first_lane(root, pl_dir, false);
+      fp_member_db_lane(root, pl_dir, true);
+      fp_member_db_lane(root, pl_dir, false);
       every_member_lane(root, pl_dir, true);
       every_member_lane(root, pl_dir, false);
       loose_member_lane(root, pl_dir, true);
@@ -11479,6 +16044,7 @@ int main(int argc, char **argv)
       ahead_lone_lane(root, pl_dir);
       ahead_double_lane(root, pl_dir);
       ahead_streak_lane(root, pl_dir);
+      ahead_fp_streak_lane(root, pl_dir);
       ahead_next_lane(root, pl_dir);
       ahead_hit_count_lane(root, pl_dir);
       ahead_arcade_lane(root, pl_dir);

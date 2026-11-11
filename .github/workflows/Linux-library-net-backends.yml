@@ -52,7 +52,7 @@ jobs:
     name: ${{ matrix.lane }}
     runs-on: ubuntu-latest
     env:
-      APT_PKGS: build-essential pkg-config cmake libgl1-mesa-dev libx11-dev libxext-dev libasound2-dev libsdl2-dev zlib1g-dev libfreetype6-dev python3 openssl libmbedtls-dev libbearssl-dev samba ccache
+      APT_PKGS: build-essential pkg-config cmake libgl1-mesa-dev libx11-dev libxext-dev libasound2-dev libsdl2-dev zlib1g-dev libfreetype-dev python3 openssl libmbedtls-dev libbearssl-dev samba ccache
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -170,6 +170,9 @@ jobs:
           # A refused certificate reaches the verify hook.
           make -C ../tls_retro clean
           SSL_BACKEND=$be ../tls_retro/verify_hook_test.sh
+          make -C ../tls_retro clean
+          SSL_BACKEND=$be CFLAGS='-O1 -g1 -std=gnu89 -Wall -Wextra -Werror=declaration-after-statement -fsanitize=address,undefined -fno-omit-frame-pointer' \
+             sh ../tls_retro/handshake_test.sh
           make -C ../tls_retro clean
 
       - name: Operate the libsmb2 backend (SMB VFS against a local smbd)

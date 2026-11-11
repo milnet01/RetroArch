@@ -184,6 +184,7 @@ struct runloop
    rarch_timer_t shader_delay_timer;            /* int64_t alignment */
 #endif
    retro_time_t core_runtime_last;
+   retro_time_t core_runtime_credit;
    retro_time_t core_runtime_usec;
    retro_time_t core_run_time;
    /* GPU device-loss recovery: when the driver may next be rebuilt,
@@ -642,6 +643,24 @@ static INLINE bool runloop_pace_sample_usable(retro_time_t delta_us)
    return delta_us > 0 && delta_us < 250000;
 }
 
+/* A core running faster than real time must count only real time.
+ * Up to four frames of wall time bank in @credit, so frames that come
+ * unevenly but keep up - two at a time under audio sync - count in full. */
+static INLINE retro_time_t runloop_core_runtime_step(retro_time_t frame,
+      retro_time_t since, retro_time_t *credit)
+{
+   retro_time_t cap = 4 * frame;
+   retro_time_t tick;
+   if (since < 0)
+      since = 0;
+   *credit += since;
+   if (*credit > cap)
+      *credit = cap;
+   tick     = (frame < *credit) ? frame : *credit;
+   *credit -= tick;
+   return tick;
+}
+
 /* The swap interval 'Auto' derives for a display/content pair: the
  * number of display frames one content frame is held for. Meaningful
  * only as the whole multiple the display rate actually is of the
@@ -1012,6 +1031,10 @@ bool runloop_core_preload_ready(void);
 void runloop_core_preload_cancel(void);
 
 #ifdef HAVE_DYNAMIC
+/* dylib_load() for a core; on Android only from the app's own folders.
+ * @quiet: a worker's open, whose refusal the main thread's open logs */
+dylib_t runloop_core_dylib_load(const char *path, bool quiet);
+
 /* Frees the records libretro_get_system_info() keeps of the cores it
  * has asked; the next question reads them back from disk. */
 void runloop_core_probe_cache_free(void);

@@ -115,12 +115,13 @@ static void exact(unsigned w, unsigned h, unsigned cap, int pix10)
          for (c = 0; c < (pix10 ? 3u : 4u); c++)
             expected[y * dw + x] |= (sums[c] / n) << (c * (pix10 ? 10 : 8));
       }
-   budget = 1;
+   /* An exact box reduction is made in the image's own buffer: no
+    * allocation at all, so none is allowed. */
+   budget = 0;
    assert(image_texture_scale(&img, 0, cap));
-   assert(calls == 1 && source_frees == 1);
+   assert(calls == 0 && source_frees == 0 && !live);
    assert(img.width == dw && img.height == dh);
    assert(img.supports_rgba && img.pix10 == (pix10 != 0));
-   assert(img.pixels == buffers[0].ptr && live == (size_t)dw * dh * 4);
    assert(!memcmp(img.pixels, expected, (size_t)dw * dh * 4));
    image_free(img.pixels);
    assert(!live);
@@ -130,26 +131,26 @@ static void exact(unsigned w, unsigned h, unsigned cap, int pix10)
 static void failures(void)
 {
    struct texture_image img;
-   init(&img, 16, 8, 0);
+   /* A reduction that needs the sinc stage: its buffer comes first, and
+    * the box stage, which works in place, only runs once that and the
+    * filter are in hand - so a failure leaves the image untouched. */
+   init(&img, 39, 29, 0);
    budget = 0;
-   assert(!image_texture_scale(&img, 0, 8));
+   assert(!image_texture_scale(&img, 0, 16));
    assert(!source_frees && img.pixels == source_pixels);
-   assert(img.width == 16 && img.height == 8 && !live);
+   assert(img.width == 39 && img.height == 29 && !live);
    budget = -1;
-   assert(image_texture_scale(&img, 0, 8));
+   calls = 0;
+   assert(image_texture_scale(&img, 0, 16));
+   assert(img.width == 16 && img.height == 11 && calls == 1);
    assert(source_frees == 1);
    image_free(img.pixels);
    assert(!live);
    init(&img, 19, 13, 0);
    assert(!image_texture_scale(&img, 0, 8));
-   assert(img.width == 19 && img.height == 13 && calls == 2);
+   assert(img.width == 19 && img.height == 13 && calls == 1);
    assert(!source_frees && !live);
    image_free(img.pixels);
-   init(&img, 39, 29, 0);
-   assert(image_texture_scale(&img, 0, 16));
-   assert(img.width == 16 && img.height == 11 && calls == 2);
-   image_free(img.pixels);
-   assert(!live);
 }
 
 static void benchmark(int pix10)
@@ -178,14 +179,13 @@ static void upscale(unsigned factor, int pix10)
    struct texture_image img;
    uint32_t *expected;
    unsigned x, y, dw = 7 * factor, dh = 3 * factor;
-   unsigned step = 65536 / factor;
    init(&img, 7, 3, pix10);
    expected = (uint32_t*)malloc((size_t)dw * dh * 4);
    assert(expected);
+   /* every pixel repeated factor times each way */
    for (y = 0; y < dh; y++)
       for (x = 0; x < dw; x++)
-         expected[(size_t)y * dw + x] = img.pixels[
-            (size_t)((y * step) >> 16) * 7 + ((x * step) >> 16)];
+         expected[(size_t)y * dw + x] = img.pixels[(size_t)(y / factor) * 7 + x / factor];
    assert(image_texture_scale(&img, 3 * factor, 0));
    assert(img.width == dw && img.height == dh);
    assert(img.pix10 == (pix10 != 0) && img.supports_rgba);
@@ -256,7 +256,7 @@ static void large_box(unsigned factor, int pix10, uint32_t pixel)
    assert(image_texture_scale(&img, 0, 1));
    assert(img.width == 1 && img.height == 1);
    assert(img.pixels[0] == expected);
-   assert(source_frees == 1 && calls == 1);
+   assert(source_frees == 0 && calls == 0);
    image_free(img.pixels);
    assert(!live);
 }

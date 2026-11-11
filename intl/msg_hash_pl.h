@@ -2420,6 +2420,8 @@ static const struct
    char s_9eb59c3e[12];
    char s_34b2592a[12];
    char s_c7a27b20[13];
+   char s_d65a7d95[4];
+   char s_d6611158[5];
    char s_317b17ed[11];
    char s_94c8d15f[11];
    char s_de16b5d2[9];
@@ -3341,9 +3343,7 @@ static const struct
 #ifdef HAVE_NFSCLIENT
    char s_0dc9bb2c[63];
    char s_1536325c[256];
-   char s_ad621411[48];
    char s_f6ec26c1[52];
-   char s_4f7fb41f[46];
    char s_3487ce71[34];
 #endif
 #if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
@@ -7166,6 +7166,8 @@ static const struct
    "Wy\305\202\304\205czony",
    "Wy\305\202\304\205czony",
    "Automatyczny",
+   "Oba",
+   "Brak",
    "180 stopni",
    "270 stopni",
    "Normalna",
@@ -8590,9 +8592,7 @@ static const struct
    "werze dzia\305\202a r\303\263wnie\305\274 dla NFS w wersji 4, gdzie serwer mo\305\274e wy\305"
    "\233wietla\304\207 j\304\205 pod kr\303\263tsz\304\205 nazw\304\205. Pozostaw puste, aby poda"
    "\304\207 eksport w adresie jako nfs://serwer/eksport/\305\233cie\305\274ka.",
-   "Port us\305\202ugi MOUNT. 0 prosi portmapper serwera.",
    "Po\305\202\304\205czenia, kt\303\263re pozostan\304\205 otwarte do serwera.",
-   "Port us\305\202ugi NFS. 0 prosi portmapper serwera.",
    "Adres IP serwera lub nazwa hosta.",
 #endif
 #if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
@@ -10225,7 +10225,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_pl_blob_check[
-      (sizeof(msg_hash_pl_blob) == (199706u
+      (sizeof(msg_hash_pl_blob) == (199715u
 #ifdef ANDROID
        + 385u
 #endif
@@ -10598,9 +10598,7 @@ typedef char msg_hash_pl_blob_check[
 #ifdef HAVE_NFSCLIENT
        + 63u
        + 256u
-       + 48u
        + 52u
-       + 46u
        + 34u
 #endif
 #if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)
@@ -13148,6 +13146,8 @@ static const msg_hash_id_t msg_hash_pl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM_OFF,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_OFF,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_REFRESH_AUTO,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_BOTH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_NONE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED_ROTATED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_NORMAL,
@@ -14066,9 +14066,7 @@ static const msg_hash_id_t msg_hash_pl_ids[] =
 #ifdef HAVE_NFSCLIENT
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_BROWSE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_EXPORT,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_MOUNT_PORT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_NUM_CONTEXTS,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_PORT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NFS_CLIENT_SERVER,
 #endif
 #if defined(HAVE_SMBCLIENT) || defined(HAVE_NFSCLIENT)

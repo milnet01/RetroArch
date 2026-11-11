@@ -33,7 +33,7 @@ jobs:
     name: retroarch --mcp-stdio driving a core
     runs-on: ubuntu-latest
     env:
-      APT_PKGS: build-essential pkg-config zlib1g-dev libfreetype6-dev python3 ccache
+      APT_PKGS: build-essential pkg-config zlib1g-dev libfreetype-dev python3 ccache
     timeout-minutes: 40
 
     steps:
@@ -82,6 +82,9 @@ jobs:
           gcc -O1 -shared -fPIC -DHARNESS_NO_MAP -Ilibretro-common/include \
             -o samples/network/command_frames/harness_core_nomap.so \
             samples/network/command_frames/harness_core.c
+
+      - name: Command-line command errors and delivery
+        run: python3 samples/network/command_frames/cli_e2e.py ./retroarch
 
       - name: MCP over stdin and stdout, end to end
         shell: bash

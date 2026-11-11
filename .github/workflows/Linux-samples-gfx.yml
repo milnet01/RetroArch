@@ -32,6 +32,64 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  vaapi-hevc-parameters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        cc: [gcc, clang]
+    env:
+      APT_PKGS: build-essential clang libva-dev libdrm-dev libvulkan-dev mesa-vulkan-drivers vulkan-validationlayers ffmpeg gcc-mingw-w64-x86-64 wine64
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apt cache key
+        id: apt
+        run: sh .github/workflows/scripts/apt-cache-key.sh "$APT_PKGS"
+
+      - name: Restore apt cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.apt-cache
+          key: ${{ steps.apt.outputs.key }}
+          restore-keys: ${{ steps.apt.outputs.prefix }}
+
+      - name: Install dependencies
+        timeout-minutes: 15
+        run: sh .github/workflows/scripts/apt-install.sh $APT_PKGS
+
+      - name: Save apt cache
+        if: env.APT_CACHE_SAVE == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.apt-cache
+          key: ${{ steps.apt.outputs.key }}
+
+      - name: Strict C89 HEVC buffer ABI and cold session ownership
+        run: |
+          make -C samples/gfx/vaapi_hevc clean check CC=${{ matrix.cc }} SANITIZER=address,undefined
+          make -C libretro-common/samples/formats/h265 rh265_slice_info_test CC=${{ matrix.cc }} SANITIZER=address,undefined
+          libretro-common/samples/formats/h265/rh265_slice_info_test
+      - name: Vulkan H264 encoder parameter contracts
+        run: make -C samples/gfx/vulkan_encode_h264 check CC=${{ matrix.cc }} SANITIZER=address,undefined
+      - name: Execute sampled-plane conversion, foreign ownership and native pixel oracle
+        run: ASAN_OPTIONS=detect_leaks=0 make -C samples/gfx/vaapi_hevc gpu-check CC=${{ matrix.cc }} SANITIZER=address,undefined
+      - name: Opaque VA producer and renderer return publication under TSan
+        if: matrix.cc == 'gcc'
+        run: |
+          make -C samples/gfx/vaapi_hevc tsan-check CC=gcc RUNNER="setarch $(uname -m) -R"
+
+      - name: Windows ownership contracts against the same VA headers
+        if: matrix.cc == 'gcc'
+        run: |
+          set -eu
+          sdk="$RUNNER_TEMP/vaapi-sdk"
+          mkdir -p "$sdk"
+          cp -R /usr/include/va "$sdk/va"
+          . "$GITHUB_WORKSPACE/.github/workflows/scripts/wine-server.sh"
+          make -C samples/gfx/vaapi_hevc clean
+          make -j2 -C samples/gfx/vaapi_hevc check CC=x86_64-w64-mingw32-gcc OS=Windows_NT EXE=.exe VAAPI_CFLAGS="-isystem $sdk" LDFLAGS=-static RUNNER=wine
+          make -C samples/gfx/vulkan_encode_h264 check CC=x86_64-w64-mingw32-gcc EXE=.exe LDFLAGS=-static RUNNER=wine
+
   metal-frame-lease:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1066,6 +1124,22 @@ jobs:
           EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 "$T/gles_lend"
           rm -rf "$T"
 
+      - name: GLSL presets reading a view in place, pixel oracle (Mesa EGL, ASan + UBSan)
+        shell: bash
+        working-directory: samples/gfx/glsl_rect
+        run: |
+          set -eu
+          # A GLSL preset's passes reading the frame - the first, and
+          # those reading the original - rewritten to read a hardware
+          # frame's view where it lies draw byte for byte what they draw
+          # from a copy of the view, every filter and wrap taken, both
+          # row orders, GLES 3 and 2; what can't be read keeps the copy.
+          make clean
+          LIBGL_ALWAYS_SOFTWARE=1 ASAN_OPTIONS=detect_leaks=0 \
+             UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 120 make check SANITIZER=address,undefined
+          echo "[pass] glsl_rect_test, glsl_in_place_test"
+
       - name: GLES texture loan capability and ownership (ASan + UBSan)
         shell: bash
         run: |
@@ -1091,6 +1165,20 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
              timeout 60 ./gl2_pbo_readback_test
           echo "[pass] gl2_pbo_readback_test (ASan)"
+
+      - name: Build and run gl2_window_ui_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/gfx/gl2_window_ui
+        run: |
+          set -eu
+          # The menu in another window, laid out at its size, is drawn
+          # on that window's back buffer with no offscreen image; a
+          # window's views of a software frame are written straight in,
+          # not copied out of the frame.
+          make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 60 ./gl2_window_ui_test
+          echo "[pass] gl2_window_ui_test (ASan)"
 
       - name: HDR display metadata contract (ASan/UBSan)
         shell: bash
@@ -1776,7 +1864,8 @@ jobs:
           # backend.
           SDL3_VER=3.2.20
           if [ ! -f /opt/sdl3/lib/pkgconfig/sdl3.pc ]; then
-             curl -sL -o /tmp/sdl3.tar.gz \
+             curl -fsSL --retry 8 --retry-all-errors --retry-max-time 300 --connect-timeout 10 \
+                -o /tmp/sdl3.tar.gz \
                 "https://github.com/libsdl-org/SDL/releases/download/release-$SDL3_VER/SDL3-$SDL3_VER.tar.gz"
              tar -C /tmp -xzf /tmp/sdl3.tar.gz
              cmake -S "/tmp/SDL3-$SDL3_VER" -B /tmp/sdl3-build -G Ninja \
@@ -2101,6 +2190,11 @@ jobs:
           CC=x86_64-w64-mingw32-gcc RUNNER=wine python3 samples/gfx/d3d_failure_paths/lend.py
           python3 samples/gfx/d3d_failure_paths/lend_gpu.py
           python3 samples/gfx/d3d_failure_paths/sw_lend_gpu.py
+          python3 samples/gfx/d3d_failure_paths/sw_lend10_gpu.py
+          python3 samples/gfx/d3d_failure_paths/sw_lend_sdl2.py
+          python3 samples/gfx/d3d_failure_paths/sw_lend_sdl3.py
+          python3 samples/gfx/d3d_failure_paths/sw_lend_dingux.py
+          python3 samples/gfx/d3d_failure_paths/sw_lend_ctr.py
 
       - name: D3D9 HLSL failed locks (Linux and mingw + Wine)
         run: |
@@ -3020,6 +3114,25 @@ jobs:
           make clean TARGET=progress_bounds_test.exe
           echo "[pass] progress_bounds_test (ASan + UBSan, and a mingw-w64 build)"
 
+      - name: Build and run ciso_hash_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/cheevos/ciso_hash
+        run: |
+          set -eu
+          # rc_hash reads a CISO through cheevos/cheevos_ciso.c as the
+          # disc image it stands for: a GameCube disc with blocks left
+          # out of the CISO must hash the same as its ISO, and the
+          # console check must tell GameCube, Wii and not-CISO apart.
+          make clean && make SANITIZER=address,undefined
+          ciso_dir="$(mktemp -d)"
+          ASAN_OPTIONS=detect_leaks=1 timeout 60 ./ciso_hash_test "$ciso_dir"
+          rm -rf "${ciso_dir:?}"
+          make clean
+          make CC=x86_64-w64-mingw32-gcc TARGET=ciso_hash_test.exe
+          test -f ciso_hash_test.exe
+          make clean TARGET=ciso_hash_test.exe
+          echo "[pass] ciso_hash_test (ASan + UBSan, and a mingw-w64 build)"
+
       - name: Build and run psp1_gfx_contracts_test (ASan + UBSan)
         shell: bash
         working-directory: samples/gfx/psp1_gfx_contracts
@@ -3070,11 +3183,14 @@ jobs:
       - name: Vulkan synchronous readback slot
         run: python3 samples/gfx/vulkan_readback_slot/run.py
 
+      - name: Vulkan views in place from a mipmapped core image
+        run: python3 samples/gfx/vulkan_hw_level_view/run.py
+
       - name: Capture bounds, conversion failures and list allocation rollback
         shell: bash
         run: |
           set -eu
-          for sample in samples/gfx/video_frame_failure libretro-common/samples/lists/file_list_oom libretro-common/samples/gfx/scaler_point libretro-common/samples/gfx/image_scale_transfer samples/tasks/translation_reply; do
+          for sample in samples/gfx/video_frame_failure libretro-common/samples/lists/file_list_oom libretro-common/samples/lists/string_split_packed libretro-common/samples/gfx/scaler_point libretro-common/samples/gfx/image_scale_transfer samples/tasks/translation_reply; do
             make -C "$sample" clean
             make -C "$sample" check SANITIZER=address,undefined
             make -C "$sample" clean

@@ -13,7 +13,7 @@ on:
       - 'libretro-common/samples/encodings/rbzip2/**'
       - 'samples/menu/content_downloads/**'
       - 'samples/menu/dirwalk/**'
-      - 'samples/playlist/playlist_parity_test.c/**'
+      - 'samples/playlist/playlist_parity_test.c'
       - 'samples/tasks/autodetect_handoff/**'
       - 'samples/tasks/bluetooth_scan/**'
       - 'samples/tasks/bps_patch/**'
@@ -48,7 +48,7 @@ on:
       - 'samples/tasks/watchdog/**'
       - 'samples/tasks/wifi_tasks/**'
       - 'samples/playlist/**'
-      - 'samples/ui_companion_log_stub.c/**'
+      - 'samples/ui_companion_log_stub.c'
       - '.github/workflows/Linux-samples-tasks.yml'
     # ci_paths: end
   pull_request:
@@ -63,7 +63,7 @@ on:
       - 'libretro-common/samples/encodings/rbzip2/**'
       - 'samples/menu/content_downloads/**'
       - 'samples/menu/dirwalk/**'
-      - 'samples/playlist/playlist_parity_test.c/**'
+      - 'samples/playlist/playlist_parity_test.c'
       - 'samples/tasks/autodetect_handoff/**'
       - 'samples/tasks/bluetooth_scan/**'
       - 'samples/tasks/bps_patch/**'
@@ -98,7 +98,7 @@ on:
       - 'samples/tasks/watchdog/**'
       - 'samples/tasks/wifi_tasks/**'
       - 'samples/playlist/**'
-      - 'samples/ui_companion_log_stub.c/**'
+      - 'samples/ui_companion_log_stub.c'
       - '.github/workflows/Linux-samples-tasks.yml'
     # ci_paths: end
   workflow_dispatch:
@@ -1240,11 +1240,16 @@ jobs:
           make clean
           echo "[pass] scan_begin_budget_test (TSan)"
 
-      - name: Build and run database_scan_test (ASan + UBSan)
+      - name: Build and run database_index_test and database_scan_test (ASan + UBSan)
         shell: bash
         working-directory: samples/tasks/database
         run: |
           set -eu
+          # database_index_test: the scan's crc, serial and set-fingerprint
+          # index lookups, against databases the test writes itself.  It
+          # links the same objects as database_scan_test, so one build
+          # serves both.
+          #
           # End-to-end oracle for tasks/task_database.c, built from the
           # shipping translation units.  Alongside the database pairing
           # and playlist assertions it already carries, three memory
@@ -1271,8 +1276,15 @@ jobs:
           # The first and third are bounds and lifetime properties that
           # a plain build walks straight past, so this lane is sanitized
           # only and LeakSanitizer decides the teardown as well.
-          make clean SANITIZER=address,undefined && make -j$(nproc) database_scan_test SANITIZER=address,undefined
+          make clean SANITIZER=address,undefined && make -j$(nproc) database_index_test database_scan_test SANITIZER=address,undefined
+          test -x database_index_test
           test -x database_scan_test
+          index_root="$(mktemp -d)"
+          ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
+             UBSAN_OPTIONS=print_stacktrace=1 timeout 900 \
+             ./database_index_test "$index_root"
+          rm -rf "${index_root:?}"
+          echo "[pass] database_index_test (ASan)"
           scan_root="$(mktemp -d)"
           ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1 \
              UBSAN_OPTIONS=print_stacktrace=1 timeout 900 \
@@ -1327,6 +1339,22 @@ jobs:
           rm -rf "${scan_root:?}"
           make clean
           echo "[pass] database_scan_test (TSan, HAVE_THREADS=0, SCAN_READERS_MAX=0)"
+
+      - name: Build and run core_info_cache_test (ASan + UBSan)
+        shell: bash
+        working-directory: samples/tasks/database
+        run: |
+          set -eu
+          # core_info.cache: an info file added after its core was
+          # cached is read, a rewrite keeps the entries served from the
+          # cache whole, and an unchanged core set rewrites nothing.
+          make clean SANITIZER=address,undefined && make -j$(nproc) core_info_cache_test SANITIZER=address,undefined
+          root="$(mktemp -d)"
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+             timeout 120 ./core_info_cache_test "$root"
+          rm -rf "${root:?}"
+          make clean
+          echo "[pass] core_info_cache_test (ASan)"
 
       - name: Build and run pl_manager_budget_test (plain, ASan + UBSan, TSan)
         shell: bash

@@ -2110,6 +2110,8 @@ static const struct
    char s_caf61308[9];
    char s_5410e874[15];
    char s_c7a27b20[9];
+   char s_d65a7d95[13];
+   char s_d6611158[9];
    char s_317b17ed[6];
    char s_94c8d15f[6];
    char s_de16b5d2[19];
@@ -2206,6 +2208,7 @@ static const struct
    char s_8f379310[66];
    char s_6a9b757c[50];
    char s_6c52dfb1[60];
+   char s_334daaaa[15];
    char s_9119ef97[39];
 #if defined (WIIU)
 #ifdef WIIU
@@ -8957,6 +8960,8 @@ static const struct
    "\320\220\321\236\321\202\320\260",
    "\320\227\320\260\321\236\321\201\321\221\320\264\321\213",
    "\320\220\321\236\321\202\320\260",
+   "\320\220\320\261\320\276\320\264\320\262\320\260",
+   "\320\235\321\217\320\274\320\260",
    "180\302\260",
    "270\302\260",
    "\320\227\320\262\321\213\321\207\320\260\320\271\320\275\320\260\321\217",
@@ -9136,6 +9141,7 @@ static const struct
    "\320\222\320\265\321\200\321\202\321\213\320\272\320\260\320\273\321\214\320\275\320\260\321\217"
    " \321\201\321\226\320\275\321\205\321\200\320\260\320\275\321\226\320\267\320\260\321\206\321"
    "\213\321\217 (VSync)",
+   "\320\241\321\226\321\201\321\202\321\215\320\274\320\260",
    "\320\241\320\262\320\276\320\277\321\207\321\215\320\271\320\275\321\213 \320\267 \321\207\320"
    "\260\320\272\320\260\320\275\320\275\320\265\320\274",
 #if defined (WIIU)
@@ -16509,7 +16515,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_be_blob_check[
-      (sizeof(msg_hash_be_blob) == (259213u
+      (sizeof(msg_hash_be_blob) == (259250u
 #ifdef ANDROID
        + 531u
 #endif
@@ -18958,6 +18964,8 @@ static const msg_hash_id_t msg_hash_be_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_AUTO,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM_ALWAYS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_REFRESH_AUTO,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_BOTH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_NONE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED_ROTATED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_NORMAL,
@@ -19054,6 +19062,7 @@ static const msg_hash_id_t msg_hash_be_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_CUSTOM_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VI_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VSYNC,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH_SYSTEM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WAITABLE_SWAPCHAINS,
 #if defined (WIIU)
 #ifdef WIIU

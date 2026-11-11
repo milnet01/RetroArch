@@ -342,6 +342,10 @@ static enum msg_hash_enums action_ok_dl_to_enum(unsigned lbl)
          return MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_DESCRIPTION_KBD;
       case ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_SELECT_RESERVED_DEVICE:
          return MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_SELECT_RESERVED_DEVICE;
+      case ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS:
+         return MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS;
+      case ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS_ADD:
+         return MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS_ADD;
 #ifdef ANDROID
       case ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_SELECT_PHYSICAL_KEYBOARD:
          return MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_SELECT_PHYSICAL_KEYBOARD;
@@ -534,6 +538,8 @@ static enum msg_hash_enums action_ok_dl_to_enum(unsigned lbl)
          return MENU_ENUM_LABEL_DEFERRED_AUDIO_MIXER_SETTINGS_LIST;
       case ACTION_OK_DL_INPUT_RETROPAD_BINDS_LIST:
          return MENU_ENUM_LABEL_DEFERRED_INPUT_RETROPAD_BINDS_LIST;
+      case ACTION_OK_DL_INPUT_CONTROLLERS_LIST:
+         return MENU_ENUM_LABEL_DEFERRED_INPUT_CONTROLLERS_LIST;
       case ACTION_OK_DL_INPUT_HOTKEY_BINDS_LIST:
          return MENU_ENUM_LABEL_DEFERRED_INPUT_HOTKEY_BINDS_LIST;
       case ACTION_OK_DL_RECORDING_SETTINGS_LIST:
@@ -994,6 +1000,22 @@ int generic_action_ok_displaylist_push(
          info_path          = path;
          info_label         = MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_SELECT_RESERVED_DEVICE_STR;
          info.enum_idx      = MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_SELECT_RESERVED_DEVICE;
+         dl_type            = DISPLAYLIST_GENERIC;
+         break;
+      case ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS:
+         info.type          = type;
+         info.directory_ptr = idx;
+         info_path          = path;
+         info_label         = MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS_STR;
+         info.enum_idx      = MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS;
+         dl_type            = DISPLAYLIST_GENERIC;
+         break;
+      case ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS_ADD:
+         info.type          = type;
+         info.directory_ptr = idx;
+         info_path          = path;
+         info_label         = MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS_ADD_STR;
+         info.enum_idx      = MENU_ENUM_LABEL_DEFERRED_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS_ADD;
          dl_type            = DISPLAYLIST_GENERIC;
          break;
 #ifdef ANDROID
@@ -1935,6 +1957,7 @@ int generic_action_ok_displaylist_push(
 #endif
       case ACTION_OK_DL_AUDIO_MIXER_SETTINGS_LIST:
       case ACTION_OK_DL_INPUT_RETROPAD_BINDS_LIST:
+      case ACTION_OK_DL_INPUT_CONTROLLERS_LIST:
       case ACTION_OK_DL_INPUT_HOTKEY_BINDS_LIST:
       case ACTION_OK_DL_RECORDING_SETTINGS_LIST:
       case ACTION_OK_DL_PLAYLIST_SETTINGS_LIST:
@@ -2068,6 +2091,7 @@ static const ok_dl_map_t ok_dl_map[] = {
    { MENU_ENUM_LABEL_PLAYLIST_MANAGER_LIST, ACTION_OK_DL_PLAYLIST_MANAGER_LIST },
    { MENU_ENUM_LABEL_RECORDING_SETTINGS, ACTION_OK_DL_RECORDING_SETTINGS_LIST },
    { MENU_ENUM_LABEL_INPUT_RETROPAD_BINDS, ACTION_OK_DL_INPUT_RETROPAD_BINDS_LIST },
+   { MENU_ENUM_LABEL_INPUT_CONTROLLERS, ACTION_OK_DL_INPUT_CONTROLLERS_LIST },
    { MENU_ENUM_LABEL_INPUT_HOTKEY_BINDS, ACTION_OK_DL_INPUT_HOTKEY_BINDS_LIST },
    { MENU_ENUM_LABEL_ACCOUNTS_YOUTUBE, ACTION_OK_DL_ACCOUNTS_YOUTUBE_LIST },
    { MENU_ENUM_LABEL_ACCOUNTS_TWITCH, ACTION_OK_DL_ACCOUNTS_TWITCH_LIST },
@@ -2680,11 +2704,19 @@ static int generic_action_ok(const char *path,
          break;
       case ACTION_OK_LOAD_OVERRIDE_FILE:
 #ifdef HAVE_CONFIGFILE
-         flush_char = msg_hash_to_str(flush_id);
-         config_unload_override();
+         {
+            uint8_t before[MAX_USERS];
+            input_config_plays_as_players(before);
+            flush_char = msg_hash_to_str(flush_id);
+            config_unload_override();
 
-         if (!config_load_override_file(action_path))
-            return -1;
+            if (!config_load_override_file(action_path))
+            {
+               input_autoconfigure_plays_as_reread(before);
+               return -1;
+            }
+            input_autoconfigure_plays_as_reread(before);
+         }
 #endif
          break;
       case ACTION_OK_LOAD_CHEAT_FILE:
@@ -4565,12 +4597,15 @@ static int action_ok_override_unload(const char *path,
       const char *label, unsigned type, size_t idx, size_t entry_idx)
 {
 #ifdef HAVE_CONFIGFILE
+   uint8_t before[MAX_USERS];
+   input_config_plays_as_players(before);
    if (config_unload_override())
    {
       const char *_msg = msg_hash_to_str(MSG_OVERRIDES_UNLOADED_SUCCESSFULLY);
       runloop_msg_queue_push(_msg, strlen(_msg), 1, 100, true, NULL,
             MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_SUCCESS);
    }
+   input_autoconfigure_plays_as_reread(before);
 #endif
    return 0;
 }
@@ -4591,8 +4626,8 @@ static int action_ok_path_scan_directory(const char *path,
 }
 #endif
 
-/* Also called by the Apple file pickers opened from Content Location. */
-void action_ok_manual_content_scan_set_dir(const char *content_dir)
+static void action_ok_manual_content_scan_set_dir_kind(
+      const char *content_dir, enum manual_content_scan_path_kind kind)
 {
 #ifdef HAVE_COCOATOUCH
    /* For iOS, set the path using realpath because the path name
@@ -4610,13 +4645,20 @@ void action_ok_manual_content_scan_set_dir(const char *content_dir)
    filebrowser_clear_type();
 
    /* Update manual content scan settings */
-   manual_content_scan_set_menu_content_dir(content_dir);
+   manual_content_scan_set_menu_content_dir_kind(content_dir, kind);
 #ifdef HAVE_COCOATOUCH
    free(real_dir);
 #endif
 
    /* Return to 'manual content scan' menu */
    menu_entries_flush_stack(MENU_ENUM_LABEL_DEFERRED_MANUAL_CONTENT_SCAN_LIST_STR, 0);
+}
+
+/* Also called by the Apple file pickers opened from Content Location. */
+void action_ok_manual_content_scan_set_dir(const char *content_dir)
+{
+   action_ok_manual_content_scan_set_dir_kind(content_dir,
+         MANUAL_CONTENT_SCAN_PATH_UNKNOWN);
 }
 
 /* Whether Content Location's list of places or its browser, or a
@@ -4675,7 +4717,9 @@ static int action_ok_path_manual_scan_directory(const char *path,
          return 0;
    }
 
-   action_ok_manual_content_scan_set_dir(content_dir);
+   action_ok_manual_content_scan_set_dir_kind(content_dir,
+         type == FILE_TYPE_MANUAL_SCAN_DIRECTORY
+         ? MANUAL_CONTENT_SCAN_PATH_FOLDER : MANUAL_CONTENT_SCAN_PATH_FILE);
    return 0;
 }
 
@@ -6458,6 +6502,13 @@ static int action_ok_sideload_core(const char *path,
 }
 
 #ifdef HAVE_NETWORKING
+/* An Online Updater bundle (assets, autoconfig, core info, databases,
+ * overlays...) by its CB enum, for callers outside a menu entry */
+int action_ok_download_bundle(enum msg_hash_enums enum_idx)
+{
+   return action_ok_download_generic("", "", NULL, 0, 0, 0, enum_idx);
+}
+
 DEFAULT_ACTION_OK_DOWNLOAD(action_ok_core_system_files_download, MENU_ENUM_LABEL_CB_CORE_SYSTEM_FILES_DOWNLOAD)
 DEFAULT_ACTION_OK_DOWNLOAD(action_ok_core_content_thumbnails, MENU_ENUM_LABEL_CB_CORE_THUMBNAILS_DOWNLOAD)
 DEFAULT_ACTION_OK_DOWNLOAD(action_ok_download_url, MENU_ENUM_LABEL_CB_DOWNLOAD_URL)
@@ -7929,7 +7980,7 @@ static int generic_action_ok_dropdown_setting(const char *path, const char *labe
 
    switch (setting->type)
    {
-      /* Integer lists are built from the minimum (0 unless the range
+      /* Int lists are built from the minimum (0 unless the range
        * enforces one) in whole steps, so entry @idx is that value;
        * the value is taken back the same way, not from offset_by,
        * which only some settings set to their minimum. */
@@ -7949,19 +8000,8 @@ static int generic_action_ok_dropdown_setting(const char *path, const char *labe
          }
          break;
       case ST_UINT:
-         {
-            int32_t i_min  = (setting->flags & SD_FLAG_ENFORCE_MINRANGE)
-               ? (int32_t)setting->min : 0;
-            int32_t i_step = (int32_t)setting->step;
-            int32_t value;
-            if (i_step < 1)
-               i_step = 1;
-            value = i_min + (int32_t)idx * i_step;
-            if (     (setting->flags & SD_FLAG_ENFORCE_MAXRANGE)
-                  && value > (int32_t)setting->max)
-               value = (int32_t)setting->max;
-            setting_uint_set(setting, (unsigned)value);
-         }
+         /* Each entry carries its value: a list may leave values out */
+         setting_uint_set(setting, (unsigned)entry_idx);
          break;
       case ST_FLOAT:
          {
@@ -8664,6 +8704,30 @@ static int action_ok_push_dropdown_item_input_select_physical_keyboard(const cha
 
 #endif
 
+static int action_ok_push_dropdown_item_input_plays_as(const char *path,
+      const char *label, unsigned type, size_t idx, size_t entry_idx)
+{
+   unsigned row_type = string_to_unsigned(label);
+
+   if (     row_type < MENU_SETTINGS_INPUT_PLAYS_AS_BEGIN
+         || row_type > MENU_SETTINGS_INPUT_PLAYS_AS_END)
+      return -1;
+   menu_input_plays_as_change(row_type - MENU_SETTINGS_INPUT_PLAYS_AS_BEGIN,
+         (unsigned)entry_idx);
+   return action_cancel_pop_default(NULL, NULL, 0, 0);
+}
+
+static int action_ok_push_dropdown_item_input_plays_as_add(const char *path,
+      const char *label, unsigned type, size_t idx, size_t entry_idx)
+{
+   unsigned p_user = string_to_unsigned(label);
+
+   if (p_user >= MAX_USERS || entry_idx >= MAX_INPUT_DEVICES)
+      return -1;
+   menu_input_plays_as_change((unsigned)entry_idx, p_user + 1);
+   return action_cancel_pop_default(NULL, NULL, 0, 0);
+}
+
 static int action_ok_push_dropdown_item_input_description(const char *path,
       const char *label, unsigned type, size_t idx, size_t entry_idx)
 {
@@ -9139,6 +9203,29 @@ static int action_ok_input_description_dropdown_box_list(const char *path,
       label, type,
       idx, entry_idx,
       ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_DESCRIPTION);
+}
+
+static int action_ok_input_plays_as_dropdown_box_list(const char *path,
+      const char *label, unsigned type, size_t idx, size_t entry_idx)
+{
+   return generic_action_ok_displaylist_push(
+      path, NULL,
+      label, type,
+      idx, entry_idx,
+      ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS);
+}
+
+static int action_ok_input_plays_as_add_dropdown_box_list(const char *path,
+      const char *label, unsigned type, size_t idx, size_t entry_idx)
+{
+   char user_str[12];
+   /* the list reads the player's user from its path */
+   snprintf(user_str, sizeof(user_str), "%u", (unsigned)entry_idx);
+   return generic_action_ok_displaylist_push(
+      user_str, NULL,
+      label, type,
+      idx, entry_idx,
+      ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_PLAYS_AS_ADD);
 }
 
 static int action_ok_input_description_kbd_dropdown_box_list(
@@ -10262,6 +10349,7 @@ static int menu_cbs_init_bind_ok_compare_label(menu_file_list_cbs_t *cbs,
          {MENU_ENUM_LABEL_REMAP_FILE_REMOVE_GAME,              action_ok_remap_file_remove_game},
          {MENU_ENUM_LABEL_REMAP_FILE_RESET,                    action_ok_remap_file_reset},
          {MENU_ENUM_LABEL_INPUT_REMAP_FIND,                    action_ok_input_remap_find},
+         {MENU_ENUM_LABEL_INPUT_PLAYS_AS_ADD,                  action_ok_input_plays_as_add_dropdown_box_list},
          {MENU_ENUM_LABEL_REMAP_FILE_FLUSH,                    action_ok_remap_file_flush},
          {MENU_ENUM_LABEL_OVERRIDE_FILE_LOAD,                  action_ok_override_file},
          {MENU_ENUM_LABEL_OVERRIDE_FILE_SAVE_AS,               action_ok_override_file_save_as},
@@ -10482,6 +10570,11 @@ static int menu_cbs_init_bind_ok_compare_type(menu_file_list_cbs_t *cbs,
    {
       BIND_ACTION_OK(cbs, action_ok_input_description_kbd_dropdown_box_list);
    }
+   else if (   (type >= MENU_SETTINGS_INPUT_PLAYS_AS_BEGIN)
+            && (type <= MENU_SETTINGS_INPUT_PLAYS_AS_END))
+   {
+      BIND_ACTION_OK(cbs, action_ok_input_plays_as_dropdown_box_list);
+   }
    else
    {
       switch (type)
@@ -10567,6 +10660,12 @@ static int menu_cbs_init_bind_ok_compare_type(menu_file_list_cbs_t *cbs,
           case MENU_SETTING_DROPDOWN_ITEM_INPUT_SELECT_RESERVED_DEVICE:
               BIND_ACTION_OK(cbs, action_ok_push_dropdown_item_input_select_reserved_device);
               break;
+         case MENU_SETTING_DROPDOWN_ITEM_INPUT_PLAYS_AS:
+            BIND_ACTION_OK(cbs, action_ok_push_dropdown_item_input_plays_as);
+            break;
+         case MENU_SETTING_DROPDOWN_ITEM_INPUT_PLAYS_AS_ADD:
+            BIND_ACTION_OK(cbs, action_ok_push_dropdown_item_input_plays_as_add);
+            break;
 #ifdef ANDROID
           case MENU_SETTING_DROPDOWN_ITEM_INPUT_SELECT_PHYSICAL_KEYBOARD:
               BIND_ACTION_OK(cbs, action_ok_push_dropdown_item_input_select_physical_keyboard);

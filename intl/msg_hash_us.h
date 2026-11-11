@@ -7903,8 +7903,12 @@ MSG_HASH(
    "Hidden"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_WINDOWS_ENABLE_ANDROID,
+   "Game Screens on Other Displays"
+   )
+MSG_HASH(
    MENU_ENUM_SUBLABEL_VIDEO_WINDOWS_ENABLE_ANDROID,
-   "Show secondary screens on another display."
+   "Let game screens and the menu use other displays. Off keeps everything in one window."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_MODE,
@@ -7920,7 +7924,39 @@ MSG_HASH(
    )
 MSG_HASH(
    MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MONITOR,
-   "Where this screen goes when it is Separate. Auto picks a second display. The display RetroArch is on keeps the screen attached."
+   "Where this screen goes when it has a window of its own. Auto picks a second display. The display RetroArch is on keeps the screen attached."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_DISPLAY,
+   "Game Screen %u Display"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_DISPLAY,
+   "The display this game screen appears on. Auto picks one; Off leaves it out."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_MENU_DISPLAY,
+   "Menu Display"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_MENU_DISPLAY,
+   "The display the menu appears on. Auto uses Game Screen 1's Auto choice."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_MENU_FOLLOWS_SCREEN,
+   "Game Screen %u"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_DISPLAY,
+   "Display: %s"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_NOTIFICATIONS_WITH_GAME,
+   "With the Game"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_NOTIFICATIONS_WITH_MENU,
+   "With the Menu"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS_COMBINED,
@@ -8021,6 +8057,58 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_EDIT_PAUSE_ON,
    "Pause"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_BOTH,
+   "Both"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_LEFT,
+   "Left"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_RIGHT,
+   "Right"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_NONE,
+   "None"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_TRIGGER,
+   "Trigger"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_GRIP,
+   "Grip"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_STICK,
+   "Stick Click"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_BUMPER,
+   "Bumper"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_A,
+   "A"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_B,
+   "B"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_X,
+   "X"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_Y,
+   "Y"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_BUTTON_MISSING,
+   "%s (not on this controller)"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_PLACEMENT_FIXED,
@@ -12788,6 +12876,50 @@ MSG_HASH(
    "Device Reservation Type"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_INPUT_PLAYS_AS_AUTO_PLAYER,
+   "Auto (%u)"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_INPUT_PLAYS_AS_ADD,
+   "Add Controller"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_INPUT_PLAYS_AS_ADD_ITEM,
+   "%s (Player %u)"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_INPUT_PLAYS_AS_BINDS,
+   "%s (Port %u Controls)"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_PLAYER,
+   "Player %u"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_SHARING,
+   "Player %u, shared · binds in Port %u Controls"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_NO_PORT,
+   "Not playing: more controllers than Max Users"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_ABOVE_MAX_USERS,
+   "Above Max Users: plays as Auto (Player %u)"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_GONE,
+   "Not connected"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_THIS_PORT,
+   "This port"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_SHARED_BINDS,
+   "Shared · binds in Port %u Controls"
+   )
+MSG_HASH(
    MENU_ENUM_SUBLABEL_INPUT_DEVICE_RESERVATION_TYPE,
    "Preferred: if specified device is present, it will be allocated for this player. Reserved: no other controller will be allocated for this player."
    )
@@ -12798,6 +12930,10 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_SUBLABEL_INPUT_REMAP_PORT,
    "Specifies which core port will receive input from frontend controller port %u. 'None' sends its input to no core port."
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_REMAP_PORT_SHARING,
+   "Shares Player %u (core port %u)"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_INPUT_BIND_ALL,
@@ -26290,6 +26426,10 @@ MSG_HASH(
    "Back"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_BASIC_MENU_CONTROLS_CANCEL,
+   "Cancel"
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_BASIC_MENU_CONTROLS_OK,
    "OK"
    )
@@ -32652,6 +32792,30 @@ MSG_HASH(
    "Playlists refreshed: %u, skipped: %u, failed: %u"
    )
 MSG_HASH(
+   MSG_SCAN_SMB_NO_SERVER,
+   "SMB server address not configured"
+   )
+MSG_HASH(
+   MSG_SCAN_SMB_SHARE_DIFFERS,
+   "share differs from the SMB share setting"
+   )
+MSG_HASH(
+   MSG_SCAN_SMB_CANNOT_RESOLVE,
+   "cannot resolve the SMB server name"
+   )
+MSG_HASH(
+   MSG_SCAN_SMB_CANNOT_CONNECT,
+   "cannot connect to the SMB server"
+   )
+MSG_HASH(
+   MSG_SCAN_SMB_LOGIN_FAILED,
+   "SMB login failed"
+   )
+MSG_HASH(
+   MSG_SCAN_SMB_NO_SHARE,
+   "SMB share not found or access denied"
+   )
+MSG_HASH(
    MSG_ADDED_TO_FAVORITES,
    "Added to favorites"
    )
@@ -33421,7 +33585,7 @@ MSG_HASH(
    )
 MSG_HASH( /* %u is the other port on the same controller */
    MSG_INPUT_DEVICE_INDEX_SHARED,
-   "shared with Port %u"
+   "used by Port %u"
    )
 MSG_HASH(
    MSG_INPUT_DS3_ASKING,
@@ -33756,6 +33920,10 @@ MSG_HASH(
    "Press again to reset..."
    )
 MSG_HASH(
+   MSG_FIRST_RUN_DOWNLOAD_PROMPT,
+   "Some of RetroArch's downloadable files (menu assets, controller profiles, core info, databases) are missing.\n\nDownload them now? This needs an internet connection.\n\nThey can be updated later from the Online Updater."
+   )
+MSG_HASH(
    MSG_TO,
    "to"
    )
@@ -33838,6 +34006,18 @@ MSG_HASH(
 MSG_HASH(
    MSG_DEVICE_AND_KEYBOARD_ASSIGNED_TO_CORE_PORT_NR,
    "%s and keyboard assigned to core port %u"
+   )
+MSG_HASH(
+   MSG_INPUT_PLAYS_AS_FULL,
+   "Controller list full: set a disconnected controller with a player and no own hotkeys to Auto"
+   )
+MSG_HASH(
+   MSG_INPUT_PLAYS_AS_OWN_BIND,
+   " · %s: %s"
+   )
+MSG_HASH(
+   MSG_INPUT_BIND_LISTENING_PLAYER,
+   "Listening to Player %u's controllers"
    )
 MSG_HASH(
    MSG_DEVICE_DISCONNECTED_FROM_PORT_NR,
@@ -34354,6 +34534,10 @@ MSG_HASH(
 MSG_HASH(
    MSG_VULKAN_CUSTOM_DRIVER_SAFE_MODE,
    "Started with the system Vulkan driver."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_UNTRUSTED,
+   "Custom Vulkan driver was not picked in the menu or has changed. Pick it again to use it."
    )
 MSG_HASH(
    MSG_RESAMPLER_QUALITY_LOWEST,

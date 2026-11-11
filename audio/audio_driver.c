@@ -886,6 +886,8 @@ static void audio_driver_extra_resample(audio_driver_state_t *audio_st,
    size_t f, out_frames = 0;
    if (!audio_st->extra.pending)
       return;
+   audio_st->extra.read_f = audio_st->extra.out_f;
+   audio_st->extra.read_i = audio_st->extra.out_i;
    if (input_frames > audio_st->extra.in_frames)
       input_frames = audio_st->extra.in_frames;
    /* Keep the extra histories fresh while the front pair bypasses SRC.
@@ -921,14 +923,14 @@ static void audio_driver_extra_resample(audio_driver_state_t *audio_st,
          if (audio_st->extra.is_float)
             convert_float_to_s16(audio_st->extra.out_i, audio_st->extra.in_f, samples);
          else
-            memcpy(audio_st->extra.out_i, audio_st->extra.in_i, samples * sizeof(int16_t));
+            audio_st->extra.read_i = audio_st->extra.in_i;
       }
       else
       {
          if (!audio_st->extra.is_float)
             convert_s16_to_float(audio_st->extra.out_f, audio_st->extra.in_i, samples, 1.0f);
          else
-            memcpy(audio_st->extra.out_f, audio_st->extra.in_f, samples * sizeof(float));
+            audio_st->extra.read_f = audio_st->extra.in_f;
       }
       audio_st->extra.out_frames = n;
       audio_st->extra.pending    = false;
@@ -1284,7 +1286,7 @@ static void audio_driver_core_stream_reset(audio_driver_state_t *audio_st)
    audio_st->last_out[0]              = 0.0f;
    audio_st->last_out[1]              = 0.0f;
    audio_st->fade_in_frames           = 0;
-   audio_st->fade_in_pending          = false;
+   retro_atomic_store_release_int(&audio_st->fade_in_pending, 0);
    audio_st->pause_mute_frames        = 0;
    audio_st->pause_hist_pos           = 0;
    audio_st->pause_hist_fill          = 0;
@@ -2328,8 +2330,9 @@ void audio_driver_update_drc_threshold(audio_driver_state_t *audio_st)
  * flush of a fast-forward seeds the averages at the configured fast-forward
  * ratio and returns its multiplier, and the measured speed takes over from
  * there; audio_driver_ff_mult_reset() arms that seed again once
- * fast-forward is released, so the idle time between two fast-forwards
- * is never read as one enormous flush interval.
+ * fast-forward is released and at every pause, resume or jump fade, and
+ * an interval past the average's window seeds it too, so idle time is
+ * never read as one enormous flush interval.
  *
  * With the threaded pipeline the flush runs on the audio thread, whose
  * cadence is set by the device draining, not by the core: a flush
@@ -2469,6 +2472,55 @@ static INLINE size_t audio_driver_input_bound(double ratio, size_t output_frames
 #define AUDIO_OUTPUT_BOUND_CHECK(produced, bound) do {} while (0)
 #endif
 
+/* The fast-forward measurement (last_flush_time and the two averages)
+ * belongs to the one thread that takes it: the submitter on the inline
+ * pipeline, the main thread's frame end on the threaded one and for a
+ * callback core. That thread resets it outright; any other - the main
+ * thread's frame end, pause and stop inline, a callback core's audio
+ * thread, a producer submitting from a core's thread of its own - asks,
+ * and the measuring thread carries the reset out before it next
+ * measures. The ask is one flag, stored only when not already up, so an
+ * idle frame costs one load. */
+static INLINE void audio_driver_ff_mult_reset(audio_driver_state_t *audio_st)
+{
+   audio_st->last_flush_time = 0;
+}
+
+static INLINE void audio_driver_ff_mult_invalidate(audio_driver_state_t *audio_st)
+{
+#ifdef HAVE_THREADS
+   /* What the producer counted towards the next measurement goes too,
+    * taken by what is there: it may be adding beside this. */
+   size_t counted = retro_atomic_load_acquire_size(&audio_st->pipe_ff_frames);
+   if (counted)
+      retro_atomic_fetch_sub_size(&audio_st->pipe_ff_frames, counted);
+#endif
+   if (!retro_atomic_load_relaxed_int(&audio_st->ff_reset_req))
+      retro_atomic_store_release_int(&audio_st->ff_reset_req, 1);
+}
+
+/* A flush outside fast-forward. Inline it runs on the thread that
+ * measures, which resets outright - and the inline transport, whose
+ * render flushes with fast-forward off, puts its source stamp back over
+ * that reset afterwards. A callback core flushes on the audio thread,
+ * which only asks. */
+static INLINE void audio_driver_flush_ff_release(audio_driver_state_t *audio_st)
+{
+   if (audio_st->callback.callback)
+      audio_driver_ff_mult_invalidate(audio_st);
+   else
+      audio_driver_ff_mult_reset(audio_st);
+}
+
+/* fetch-and with zero takes the flag: exchange is not on every backend
+ * of retro_atomic.h (see audio_driver_take_reinit_request()). */
+static INLINE void audio_driver_ff_mult_sync(audio_driver_state_t *audio_st)
+{
+   if (     retro_atomic_load_acquire_int(&audio_st->ff_reset_req)
+         && retro_atomic_fetch_and_int(&audio_st->ff_reset_req, 0))
+      audio_driver_ff_mult_reset(audio_st);
+}
+
 static double audio_driver_fastforward_ratio_mult(
       audio_driver_state_t *audio_st, size_t input_frames)
 {
@@ -2478,7 +2530,13 @@ static double audio_driver_fastforward_ratio_mult(
    const double expected_flush_delta =
          (input_frames / audio_st->input * 1000000);
 
-   if (audio_st->last_flush_time > 0)
+   audio_driver_ff_mult_sync(audio_st);
+
+   /* An interval past the average's whole window at 1x is a stall,
+    * not a speed: seed again, as after a pause. */
+   if (     audio_st->last_flush_time > 0
+         && flush_time - audio_st->last_flush_time
+            <= audio_st->avg_expected_delta * AUDIO_FF_EXP_AVG_SAMPLES)
    {
       const retro_time_t n      = AUDIO_FF_EXP_AVG_SAMPLES;
       audio_st->avg_flush_delta = audio_st->avg_flush_delta * (n - 1) / n +
@@ -2517,17 +2575,12 @@ static double audio_driver_fastforward_ratio_mult(
 static double audio_driver_inline_ff_mult(audio_driver_state_t *audio_st,
       size_t input_frames)
 {
-   bool seed   = !audio_st->last_flush_time;
-   double mult = audio_driver_fastforward_ratio_mult(audio_st, input_frames);
+   bool seed;
+   double mult;
+   audio_driver_ff_mult_sync(audio_st);
+   seed = !audio_st->last_flush_time;
+   mult = audio_driver_fastforward_ratio_mult(audio_st, input_frames);
    return seed ? 1.0 : mult;
-}
-
-static INLINE void audio_driver_ff_mult_reset(audio_driver_state_t *audio_st)
-{
-   audio_st->last_flush_time = 0;
-#ifdef HAVE_THREADS
-   audio_st->pipe_ff_frames = 0;
-#endif
 }
 
 #ifdef HAVE_THREADS
@@ -2560,13 +2613,16 @@ static void audio_driver_ff_frame_end(audio_driver_state_t *audio_st)
 #ifdef HAVE_THREADS
    if (audio_st->pipe_threaded)
    {
-      size_t frames = audio_st->pipe_ff_frames;
+      /* Taken by what was there, not stored to zero: the submitter
+       * may add beside this, from a thread of its own. */
+      size_t frames = retro_atomic_load_acquire_size(&audio_st->pipe_ff_frames);
       if (audio_st->pipe_transport_follow)
          audio_st->pipe_transport_follow |= AUDIO_TRANSPORT_UPDATE;
       if (frames)
       {
-         double mult = audio_driver_fastforward_ratio_mult(audio_st, frames);
-         audio_st->pipe_ff_frames = 0;
+         double mult;
+         retro_atomic_fetch_sub_size(&audio_st->pipe_ff_frames, frames);
+         mult = audio_driver_fastforward_ratio_mult(audio_st, frames);
          if (audio_driver_pipe_ff_waits(audio_st))
             mult = MIN(AUDIO_MAX_RATIO, MAX(AUDIO_MIN_RATIO,
                      mult / audio_driver_pipe_ff_trim(audio_st)));
@@ -2576,14 +2632,15 @@ static void audio_driver_ff_frame_end(audio_driver_state_t *audio_st)
       }
    }
 #endif
-   /* Keep intervals across batched audio, but exclude released/paused gaps. */
-   if (audio_st->last_flush_time)
+   /* Keep intervals across batched audio, but exclude released/paused
+    * gaps. Inline the submitter measures, perhaps on a thread of its
+    * own, so this only asks. */
    {
       int snap = retro_atomic_load_acquire_int(&audio_st->runloop_snapshot);
       if (!(snap & AUDIO_SNAP_FASTMOTION) || (snap & AUDIO_SNAP_PAUSED)
             || ((snap & AUDIO_SNAP_MENU_ALIVE) && (snap & AUDIO_SNAP_MENU_PAUSES)
                && (snap & AUDIO_SNAP_ALLOW_PAUSE)))
-         audio_driver_ff_mult_reset(audio_st);
+         audio_driver_ff_mult_invalidate(audio_st);
    }
 }
 
@@ -2603,9 +2660,9 @@ static void audio_driver_ff_frame_end(audio_driver_state_t *audio_st)
  * Runs only when the snapshot carries the fastmotion bit, which
  * publish withholds for callback cores unless the person opted in
  * (audio_fastforward_callback), so the off state costs one load. The
- * reset stores race the audio thread's own idle reset at fast-forward
- * boundaries; both only ever store zeros and unity there, so the
- * worst case is one stale EMA sample that the next frame corrects. */
+ * measurement is this thread's: the audio thread's idle reset at a
+ * fast-forward boundary only asks for it (audio_driver_ff_mult_invalidate()),
+ * and the next measurement here carries it out. */
 static void audio_driver_ff_callback_frame_end(audio_driver_state_t *audio_st)
 {
    int snap = retro_atomic_load_acquire_int(&audio_st->runloop_snapshot);
@@ -2625,10 +2682,16 @@ static void audio_driver_ff_callback_frame_end(audio_driver_state_t *audio_st)
             (int)(audio_driver_fastforward_ratio_mult(audio_st, frames)
                * 65536.0));
    }
-   else if (audio_st->last_flush_time)
+   else
    {
-      audio_driver_ff_mult_reset(audio_st);
-      retro_atomic_store_release_int(&audio_st->pipe_ff_mult_q16, 65536);
+      /* This thread measures: it resets, taking the audio thread's ask
+       * with it, and publishes unity once on the way out. */
+      if (audio_st->last_flush_time)
+      {
+         audio_driver_ff_mult_sync(audio_st);
+         audio_driver_ff_mult_reset(audio_st);
+         retro_atomic_store_release_int(&audio_st->pipe_ff_mult_q16, 65536);
+      }
    }
 }
 
@@ -2900,7 +2963,7 @@ static void audio_driver_extra_merge_layout_f32(audio_driver_state_t *audio_st,
    }
    for (f = 0; f < frames; f++)
    {
-      const float *e = audio_st->extra.out_f + (first + f) * ch;
+      const float *e = audio_st->extra.read_f + (first + f) * ch;
       float *d = dev + f * och;
       for (k = 0; k < n; k++)
       {
@@ -2956,7 +3019,7 @@ static void audio_driver_extra_merge_s16(audio_driver_state_t *audio_st,
    }
    for (f = 0; f < frames; f++)
    {
-      const int16_t *e = audio_st->extra.out_i + (first + f) * ch;
+      const int16_t *e = audio_st->extra.read_i + (first + f) * ch;
       int16_t *d = dev + f * och;
       for (k = 0; k < n; k++)
       {
@@ -3169,8 +3232,11 @@ static ssize_t audio_driver_write_frames(audio_driver_state_t *audio_st,
       if (audio_st->extra.out_frames >= frames && audio_st->extra.channels)
       {
          if (audio_st->extra.res_int16)
-            convert_s16_to_float(audio_st->extra.out_f, audio_st->extra.out_i,
+         {
+            convert_s16_to_float(audio_st->extra.out_f, audio_st->extra.read_i,
                   frames * audio_st->extra.channels, 1.0f);
+            audio_st->extra.read_f = audio_st->extra.out_f;
+         }
          audio_driver_extra_merge_layout_f32(audio_st, audio_st->virt_buf,
                0, frames, AUDIO_LAYOUT_5POINT1, 6);
          audio_st->extra.out_frames = 0;
@@ -3213,7 +3279,10 @@ static ssize_t audio_driver_write_frames(audio_driver_state_t *audio_st,
       ssize_t w;
       /* extras resampled as float behind an int16 front: narrow */
       if (u.merge && !audio_st->extra.res_int16)
-         convert_float_to_s16(audio_st->extra.out_i, audio_st->extra.out_f, frames * audio_st->extra.channels);
+      {
+         convert_float_to_s16(audio_st->extra.out_i, audio_st->extra.read_f, frames * audio_st->extra.channels);
+         audio_st->extra.read_i = audio_st->extra.out_i;
+      }
       w = audio_driver_stage_write(audio_st, audio, audio_stage_upmix_s16,
             &u, frames, audio_st->out_channels * sizeof(int16_t),
             (uint8_t*)audio_st->upmix_i16, wait_room);
@@ -3222,7 +3291,10 @@ static ssize_t audio_driver_write_frames(audio_driver_state_t *audio_st,
       return w;
    }
    if (u.merge && audio_st->extra.res_int16)
-      convert_s16_to_float(audio_st->extra.out_f, audio_st->extra.out_i, frames * audio_st->extra.channels, 1.0f);
+   {
+      convert_s16_to_float(audio_st->extra.out_f, audio_st->extra.read_i, frames * audio_st->extra.channels, 1.0f);
+      audio_st->extra.read_f = audio_st->extra.out_f;
+   }
    {
       ssize_t w;
       if (!stereo_is_float)
@@ -3691,6 +3763,26 @@ static INLINE void audio_driver_flush_offered(audio_driver_state_t *audio_st,
       audio_st->sink_accepted += (uint64_t)w / fb;
 }
 
+/* The s16 path's master gain, a deterministic Q16 multiply: round half
+ * away from zero on the shift, saturate (see audio_driver_flush()). @src
+ * may be @dst. */
+static void audio_driver_gain_s16(int16_t *dst, const int16_t *src,
+      unsigned total, float gain)
+{
+   int32_t  gain_q16 = (int32_t)(gain * 65536.0f + 0.5f);
+   unsigned k;
+   for (k = 0; k < total; k++)
+   {
+      int64_t p = (int64_t)src[k] * gain_q16;
+      int64_t v = (p >= 0)
+            ?  ((  p + 0x8000) >> 16)
+            : -(((-p + 0x8000) >> 16));
+      if      (v >  32767) v =  32767;
+      else if (v < -32768) v = -32768;
+      dst[k] = (int16_t)v;
+   }
+}
+
 static void audio_driver_flush(audio_driver_state_t *audio_st,
       float slowmotion_ratio,
       const void *data, size_t samples, bool is_float,
@@ -3795,7 +3887,7 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
       /* Driver-side SRC needs the same speed multiplier as software SRC.
        * In the threaded path this reads the producer's cadence estimate. */
       if (!is_fastforward && !audio_st->pipe_threaded)
-         audio_driver_ff_mult_reset(audio_st);
+         audio_driver_flush_ff_release(audio_st);
       if (is_fastforward && ff_speedup)
          rate_adjust *= audio_driver_ff_mult(audio_st, frames);
 
@@ -3882,8 +3974,8 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
       {
          const char *rs_ident =
                (audio_st->resampler && audio_st->resampler->short_ident)
-                     ? audio_st->resampler->short_ident : "resampler";
-         RARCH_LOG("[Audio] %s resampler active path: %s\n",
+                     ? audio_st->resampler->short_ident : "null";
+         RARCH_LOG("[Audio] Resampler \"%s\" path: \"%s\".\n",
                rs_ident,
                use_i16 ? "integer s16 (no float round-trip)" : "float");
          audio_i16_path_logged = (int)use_i16;
@@ -3897,6 +3989,12 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
          unsigned rs_frames   = (unsigned)(samples >> 1);
          double   i16_ratio;
          unsigned out_frames;
+         /* The master gain already applied on the way into the output
+          * scratch (see the unity branch). */
+         bool gained          = false;
+#ifdef HAVE_AUDIOMIXER
+         const int16_t *mix_over = NULL;
+#endif
          bool     synth_on    = midi_driver_synth_active()
                && audio_st->synth_buf && audio_st->input_data_int16;
          /* Writable view of the input for the synth sum and the DSP
@@ -3916,27 +4014,24 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
           * is added unscaled; the output stage applies the master volume gain
           * to the combined signal, matching the float path's (game+synth)*gain
           * ordering. */
-         if (synth_on)
+         /* The sum is written straight from the game audio into the
+          * writable view, one pass; a synth that rendered nothing
+          * leaves the game audio where it is, uncopied. */
+         if (synth_on && midi_driver_render_audio(audio_st->synth_buf,
+                  rs_frames, (unsigned)audio_st->input))
          {
+            const int16_t *game = (const int16_t*)rs_in;
+            size_t s;
             if (!work)
-            {
-               memcpy(audio_st->input_data_int16, data,
-                     samples * sizeof(int16_t));
                work = audio_st->input_data_int16;
-            }
-            if (midi_driver_render_audio(audio_st->synth_buf, rs_frames,
-                     (unsigned)audio_st->input))
+            for (s = 0; s < samples; s++)
             {
-               size_t s;
-               for (s = 0; s < samples; s++)
-               {
-                  int32_t v  = (int32_t)work[s]
-                            + audio_float_to_s16_sat(
-                                 audio_st->synth_buf[s]);
-                  if      (v >  32767) v =  32767;
-                  else if (v < -32768) v = -32768;
-                  work[s] = (int16_t)v;
-               }
+               int32_t v  = (int32_t)game[s]
+                         + audio_float_to_s16_sat(
+                              audio_st->synth_buf[s]);
+               if      (v >  32767) v =  32767;
+               else if (v < -32768) v = -32768;
+               work[s] = (int16_t)v;
             }
             rs_in = work;
          }
@@ -3982,7 +4077,7 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
             audio_st->src_ratio_curr = audio_st->src_ratio_orig
                   * audio_driver_sink_bias(audio_st);
          if (!is_fastforward && !audio_st->pipe_threaded)
-            audio_driver_ff_mult_reset(audio_st);
+            audio_driver_flush_ff_release(audio_st);
          i16_ratio = audio_driver_effective_ratio(audio_st, is_slowmotion,
                slowmotion_ratio,
                (is_fastforward && ff_speedup)
@@ -4025,6 +4120,19 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
             }
             if (aflags & AUDIO_FLAG_USE_FLOAT)
                res_src = rs_in;
+            else if (audio_volume_gain != 1.0f)
+            {
+               /* The gain carries the audio across: one pass, not a
+                * copy and then the gain over it. */
+               audio_driver_gain_s16(audio_st->output_samples_int16, rs_in,
+                     rs_frames * 2, audio_volume_gain);
+               gained = true;
+            }
+#ifdef HAVE_AUDIOMIXER
+            /* Summed with the voices straight into the scratch, below */
+            else if (aflags & AUDIO_FLAG_MIXER_ACTIVE)
+               mix_over = rs_in;
+#endif
             else
                memcpy(audio_st->output_samples_int16, rs_in,
                      (size_t)rs_frames * 2 * sizeof(int16_t));
@@ -4132,23 +4240,10 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
              * No overflow risk: the largest |p| is 32768 * gain_q16,
              * and gain_q16 tops out at 260904 (+12 dB), so |p| stays
              * under 2^33. */
-            if (audio_volume_gain != 1.0f)
-            {
-               int32_t  gain_q16 = (int32_t)(audio_volume_gain * 65536.0f + 0.5f);
-               unsigned k;
-               unsigned total    = out_frames * 2;
-               int16_t *ob       = audio_st->output_samples_int16;
-               for (k = 0; k < total; k++)
-               {
-                  int64_t p = (int64_t)ob[k] * gain_q16;
-                  int64_t v = (p >= 0)
-                        ?  ((  p + 0x8000) >> 16)
-                        : -(((-p + 0x8000) >> 16));
-                  if      (v >  32767) v =  32767;
-                  else if (v < -32768) v = -32768;
-                  ob[k] = (int16_t)v;
-               }
-            }
+            if (audio_volume_gain != 1.0f && !gained)
+               audio_driver_gain_s16(audio_st->output_samples_int16,
+                     audio_st->output_samples_int16, out_frames * 2,
+                     audio_volume_gain);
 #ifdef HAVE_AUDIOMIXER
             /* Sum the mixer voices onto the int16 game audio, in the integer
              * domain.  Voices played on the s16 path (the common case here,
@@ -4172,8 +4267,12 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
                   mixer_gain                       = audio_st->mixer_volume_gain;
                }
 
-               audio_mixer_mix_s16(ob, out_frames,
-                     GAIN_TO_Q16(mixer_gain), override);
+               if (mix_over)
+                  audio_mixer_mix_s16_over(ob, mix_over, out_frames,
+                        GAIN_TO_Q16(mixer_gain), override);
+               else
+                  audio_mixer_mix_s16(ob, out_frames,
+                        GAIN_TO_Q16(mixer_gain), override);
                if (audio_mixer_has_float_voices())
                   audio_mixer_fold_float_voices_into_s16(ob,
                         audio_st->output_samples_buf, out_frames,
@@ -4231,7 +4330,11 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
     * resampler reads data_in scalar-wise or with unaligned loads, and so
     * does the bypass clamp. */
    {
-      bool synth_on   = midi_driver_synth_active() && audio_st->synth_buf;
+      /* Rendered first, so a synth that has nothing this batch costs
+       * the game audio no copy. */
+      bool synth_on   = midi_driver_synth_active() && audio_st->synth_buf
+            && midi_driver_render_audio(audio_st->synth_buf, samples >> 1,
+                  (unsigned)audio_st->input);
       bool copy_input = !is_float
             || (audio_volume_gain != 1.0f)
             || synth_on
@@ -4258,32 +4361,31 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
          src_data.data_in            = (const float*)data;
       else
       {
+         /* Mix in-process MIDI synth output (e.g. fmsynth) into the float
+          * input before resampling, so it shares the core's resampler, gain
+          * and output path; audio_st->synth_buf is allocated to the same
+          * size as input_data. A float core's sum is written in the same
+          * pass that brings its audio in: each sample as the copy, then
+          * the add, left it. */
          if (is_float)
          {
             const float *fin = (const float*)data;
-            if (audio_volume_gain == 1.0f)
+            size_t s;
+            if (synth_on)
+               for (s = 0; s < samples; s++)
+                  audio_st->input_data[s] = (float)(fin[s] * audio_volume_gain)
+                        + audio_st->synth_buf[s] * audio_volume_gain;
+            else if (audio_volume_gain == 1.0f)
                memcpy(audio_st->input_data, fin, samples * sizeof(float));
             else
-            {
-               size_t s;
                for (s = 0; s < samples; s++)
                   audio_st->input_data[s] = fin[s] * audio_volume_gain;
-            }
          }
          else
+         {
             convert_s16_to_float(audio_st->input_data,
                   (const int16_t*)data, samples, audio_volume_gain);
-
-         /* Mix in-process MIDI synth output (e.g. fmsynth) into the float
-          * input before resampling, so it shares the core's resampler, gain
-          * and output path. No-op unless a render-capable MIDI driver is
-          * active and sounding.  audio_st->synth_buf is allocated to the
-          * same size as input_data. */
-         if (synth_on)
-         {
-            size_t frames = samples >> 1;
-            if (midi_driver_render_audio(audio_st->synth_buf, frames,
-                     (unsigned)audio_st->input))
+            if (synth_on)
             {
                size_t s;
                for (s = 0; s < samples; s++)
@@ -4348,20 +4450,6 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
          double adjust            = audio_driver_compute_rate_adjust(audio_st, samples);
          audio_st->src_ratio_curr = audio_st->src_ratio_orig * adjust;
          audio_st->drc_pending    = false;
-
-#if 0
-         if (verbosity_is_enabled())
-         {
-            RARCH_LOG_OUTPUT("[Audio] Audio buffer is %u%% full\n",
-                  (unsigned)(100 - (audio_st->free_samples_buf[
-                     (audio_st->free_samples_count - 1)
-                     & (AUDIO_BUFFER_FREE_SAMPLES_COUNT - 1)] * 100) /
-                     audio_st->buffer_size));
-            RARCH_LOG_OUTPUT("[Audio] New rate: %lf, Orig rate: %lf\n",
-                  audio_st->src_ratio_curr,
-                  audio_st->src_ratio_orig);
-         }
-#endif
       }
    }
 
@@ -4369,7 +4457,7 @@ static void audio_driver_flush(audio_driver_state_t *audio_st,
       audio_st->src_ratio_curr = audio_st->src_ratio_orig
             * audio_driver_sink_bias(audio_st);
    if (!is_fastforward && !audio_st->pipe_threaded)
-      audio_driver_ff_mult_reset(audio_st);
+      audio_driver_flush_ff_release(audio_st);
    src_data.ratio           = audio_driver_effective_ratio(audio_st,
          is_slowmotion, slowmotion_ratio,
          (is_fastforward && ff_speedup)
@@ -4819,14 +4907,19 @@ static bool audio_driver_inline_process(audio_driver_state_t *audio_st,
    size_t left = frames;
    size_t frame;
    const uint8_t *source = (const uint8_t*)data;
-   retro_time_t old_time = audio_st->last_flush_time;
-   retro_time_t old_delta = audio_st->avg_flush_delta, source_time;
-   double old_expected = audio_st->avg_expected_delta;
+   retro_time_t old_time, old_delta, source_time;
+   double old_expected;
    double duration = slowmotion ? slowmotion_ratio : 1.0;
    uint64_t bits;
    uint32_t tempo, cutoff;
    bool supported, follow;
    if (!t) return false;
+   /* An asked reset first, so a restore below cannot bring back what it
+    * cleared. */
+   audio_driver_ff_mult_sync(audio_st);
+   old_time     = audio_st->last_flush_time;
+   old_delta    = audio_st->avg_flush_delta;
+   old_expected = audio_st->avg_expected_delta;
    follow = audio_driver_ff_follows(audio_st, (snap & AUDIO_SNAP_FF_SPEEDUP) != 0);
    frame = t->channels * (floating ? sizeof(float) : sizeof(int16_t));
    supported = floating == t->floating && !audio_st->extra.pending
@@ -4842,9 +4935,15 @@ static bool audio_driver_inline_process(audio_driver_state_t *audio_st,
       && duration >= 1.0 / 32.0 && duration <= 4.0;
    if (!supported)
    {
-      audio_st->last_flush_time = old_time;
-      audio_st->avg_flush_delta = old_delta;
-      audio_st->avg_expected_delta = old_expected;
+      /* Restored only for a Speedup fallback, which may measure this
+       * interval again; otherwise every later flush would measure from
+       * the old stamp. */
+      if (snap & AUDIO_SNAP_FF_SPEEDUP)
+      {
+         audio_st->last_flush_time = old_time;
+         audio_st->avg_flush_delta = old_delta;
+         audio_st->avg_expected_delta = old_expected;
+      }
       if (!t->bypassed)
       {
          bool pending = audio_st->extra.pending;
@@ -5222,6 +5321,9 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
       retro_atomic_int_init(&audio_driver_st.pipe_stalled, 0);
       retro_atomic_store_release_int(&audio_driver_st.pipe_ff_mult_q16, 65536);
       audio_driver_ff_mult_reset(&audio_driver_st);
+      retro_atomic_int_init(&audio_driver_st.ff_reset_req, 0);
+      retro_atomic_size_init(&audio_driver_st.pipe_ff_frames, 0);
+      audio_driver_st.pipe_ff_held = false;
       retro_atomic_int_init(&audio_driver_st.pipe_data_gen, 0);
       retro_atomic_int_init(&audio_driver_st.pipe_wake, 0);
       if (     !retro_eventcount_init(&audio_driver_st.pipe_space)
@@ -5242,7 +5344,7 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
       AUDIO_FLAGS_SET(&audio_driver_st, AUDIO_FLAG_PIPELINE_THREADED);
       audio_driver_st.pipe_threaded       = true;
       retro_atomic_int_init(&audio_driver_st.pipe_consumer_gone, 0);
-      RARCH_LOG("[Audio] Threaded pipeline: ring holds %u frames of %s core audio.\n",
+      RARCH_LOG("[Audio] Threaded pipeline: Ring holds %u frames of %s core audio.\n",
             (unsigned)(audio_driver_st.pipe_ring.capacity / audio_driver_st.pipe_frame_bytes),
             audio_driver_st.pipe_float ? "float" : "int16");
    }
@@ -5389,7 +5491,7 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
       {
          audio_driver_st.virtualize   = true;
          audio_driver_st.upmix_frames = frames;
-         RARCH_LOG("[Audio] Headphone virtual surround: the stereo mix goes through a virtual 5.1 to two ears.\n");
+         RARCH_LOG("[Audio] Headphone virtual surround: The stereo mix goes through a virtual 5.1 to two ears.\n");
       }
       else
       {
@@ -5438,7 +5540,7 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
    if (!audio_driver_resampler_realloc(&audio_driver_st,
             settings->bools.audio_resampler_hq_oversampling))
    {
-      RARCH_ERR("Failed to initialize resampler \"%s\".\n",
+      RARCH_ERR("[Audio] Failed to initialize resampler: \"%s\".\n",
             audio_driver_st.resampler_ident);
       AUDIO_FLAGS_CLEAR(&audio_driver_st, AUDIO_FLAG_ACTIVE);
    }
@@ -5484,7 +5586,7 @@ bool audio_driver_init_internal(void *settings_data, bool audio_cb_inited)
       audio_driver_st.resampler_int16_reset   = rs.reset;
       audio_driver_st.resampler_int16_sibling = rs.sibling;
       if (audio_driver_st.resampler_int16_process)
-         RARCH_LOG("[Audio] %s resampler: integer s16 path %s.\n",
+         RARCH_LOG("[Audio] Resampler \"%s\": integer s16 path %s.\n",
                rs_ident,
                audio_driver_st.resampler_data_int16
                      ? "available" : "unavailable");
@@ -6253,7 +6355,7 @@ static void audio_driver_requests_apply(audio_driver_state_t *audio_st,
             /* Without the threaded pipeline the ramp's arming is the
              * submitter's, as is the rest of a pause and a resume. */
             if (!audio_st->pipe_threaded)
-               audio_st->fade_in_pending = false;
+               retro_atomic_store_release_int(&audio_st->fade_in_pending, 0);
             audio_driver_pause_tail(audio_st, audio_st->current_audio,
                   write_tail);
             break;
@@ -6262,7 +6364,7 @@ static void audio_driver_requests_apply(audio_driver_state_t *audio_st,
                bool topup = retro_atomic_load_acquire_int(
                      &audio_st->pipe_resume_topup) != 0;
                if (!audio_st->pipe_threaded && topup)
-                  audio_st->fade_in_pending = true;
+                  retro_atomic_store_release_int(&audio_st->fade_in_pending, 1);
                audio_driver_resume_reset(audio_st, topup);
             }
             break;
@@ -6419,6 +6521,10 @@ void audio_driver_pause_fade(bool paused)
    const audio_driver_t *audio    = audio_st->current_audio;
    bool was_silenced;
 
+   /* The paused interval is not a flush interval. Asked of whichever
+    * thread measures (see audio_driver_ff_mult_invalidate()). */
+   audio_driver_ff_mult_invalidate(audio_st);
+
    if (     !audio
          || !audio->write
          || !audio_st->context_audio_data
@@ -6460,9 +6566,9 @@ void audio_driver_pause_fade(bool paused)
        * inside the menu it paused), and ramping audio that never
        * stopped is a dip in the middle of it. */
       if (paused)
-         audio_st->fade_in_pending = false;
+         retro_atomic_store_release_int(&audio_st->fade_in_pending, 0);
       else if (was_silenced)
-         audio_st->fade_in_pending = true;
+         retro_atomic_store_release_int(&audio_st->fade_in_pending, 1);
       audio_driver_request_post(audio_st,
             paused ? &audio_st->pipe_tail_seq : &audio_st->pipe_resume_seq);
       audio_driver_pipeline_signal(audio_st);
@@ -6474,7 +6580,7 @@ void audio_driver_pause_fade(bool paused)
 #else
    if (paused)
    {
-      audio_st->fade_in_pending = false;
+      retro_atomic_store_release_int(&audio_st->fade_in_pending, 0);
       audio_driver_pause_tail(audio_st, audio, true);
    }
    else
@@ -6482,7 +6588,7 @@ void audio_driver_pause_fade(bool paused)
       /* Ramp the first frames of whatever comes back, in audio_driver_flush;
        * only when the stream was actually taken down. */
       if (was_silenced)
-         audio_st->fade_in_pending = true;
+         retro_atomic_store_release_int(&audio_st->fade_in_pending, 1);
       audio_driver_resume_reset(audio_st, was_silenced);
    }
 #endif
@@ -6546,15 +6652,21 @@ static bool audio_driver_ff_drain(audio_driver_state_t *audio_st,
    return false;
 }
 
+/* Takes the resume ramp owed, if one is: armed on the main thread,
+ * taken on the thread that submits, by fetch-and with zero (exchange is
+ * not on every retro_atomic.h backend). */
+static INLINE bool audio_driver_fade_take(audio_driver_state_t *audio_st)
+{
+   return retro_atomic_load_acquire_int(&audio_st->fade_in_pending)
+      && retro_atomic_fetch_and_int(&audio_st->fade_in_pending, 0);
+}
+
 /* Arms the resume ramp owed since the last resume. Under the state lock,
  * on the flush that carries the core's first audio. */
 static void audio_driver_arm_resume(audio_driver_state_t *audio_st)
 {
-   if (audio_st->fade_in_pending)
-   {
+   if (audio_driver_fade_take(audio_st))
       audio_st->fade_in_frames  = AUDIO_PAUSE_TAIL_FRAMES;
-      audio_st->fade_in_pending = false;
-   }
 }
 
 void audio_driver_pipeline_wake(void)
@@ -7084,19 +7196,25 @@ static void audio_driver_submit_width(audio_driver_state_t *audio_st,
                 & AUDIO_SNAP_FF_SPEEDUP) != 0))
       {
          /* The first frame of a hold publishes the seed, so the tempo
-          * lands with this frame's source rather than a frame later. */
-         if (!audio_st->last_flush_time && !audio_st->pipe_ff_frames)
+          * lands with this frame's source rather than a frame later.
+          * Known from this thread's own state: the measurement is the
+          * main thread's. */
+         if (!audio_st->pipe_ff_held)
          {
             double ratio = audio_driver_snapshot_ffratio(audio_st);
+            audio_st->pipe_ff_held = true;
             if (ratio > 1.0)
                retro_atomic_store_release_int(&audio_st->pipe_ff_mult_q16,
                      (int)(65536.0 / ratio));
          }
-         audio_st->pipe_ff_frames = frames > SIZE_MAX - audio_st->pipe_ff_frames
-            ? SIZE_MAX : audio_st->pipe_ff_frames + frames;
+         retro_atomic_fetch_add_size(&audio_st->pipe_ff_frames, frames);
       }
       else
-         audio_driver_ff_mult_reset(audio_st);
+      {
+         /* Out of the hold: the measurement is asked to start again. */
+         audio_st->pipe_ff_held = false;
+         audio_driver_ff_mult_invalidate(audio_st);
+      }
       if (len && (audio_st->pipe_transport_follow & AUDIO_TRANSPORT_UPDATE)
             && !audio_driver_transport_update_runloop(audio_st))
          len = 0;
@@ -7108,11 +7226,10 @@ static void audio_driver_submit_width(audio_driver_state_t *audio_st,
 
       /* The resume ramp belongs to the core's first audio, not to
        * whatever the consumer flushes next: mark where that starts. */
-      if (from_core && audio_st->fade_in_pending)
+      if (from_core && audio_driver_fade_take(audio_st))
       {
          audio_driver_pipe_fade_publish(audio_st, true,
                retro_atomic_load_relaxed_size(&audio_st->pipe_ring.head));
-         audio_st->fade_in_pending = false;
       }
 
       /* Where the producer stops short of a full ring; see
@@ -9781,6 +9898,11 @@ static bool audio_driver_mixer_add_stream_internal(
             handle = audio_mixer_load_ac3(buf, params->bufsize);
    #endif
             break;
+         case AUDIO_MIXER_TYPE_WMA:
+   #ifdef HAVE_RWMA
+            handle = audio_mixer_load_wma(buf, params->bufsize);
+   #endif
+            break;
          case AUDIO_MIXER_TYPE_LPCM:
    #ifdef HAVE_RLPCM
             handle = audio_mixer_load_lpcm(buf, params->bufsize);
@@ -10458,7 +10580,7 @@ bool audio_driver_callback(void)
 
    /* This callback owns inline source timing; the main frame must not reset it. */
    if (core_paused || !(snap & AUDIO_SNAP_FASTMOTION))
-      audio_driver_ff_mult_reset(&audio_driver_st);
+      audio_driver_ff_mult_invalidate(&audio_driver_st);
 
    if (!core_paused)
    {
@@ -10519,8 +10641,12 @@ bool audio_driver_start(bool is_shutdown)
       goto error;
    }
 
-   RARCH_DBG("[Audio] Started audio driver \"%s\" (is_shutdown=%s)\n",
-         audio_driver_get_ident(), is_shutdown ? "true" : "false");
+   if (!is_shutdown)
+      RARCH_DBG("[Audio] Started audio driver: \"%s\".\n",
+            audio_driver_get_ident());
+   else
+      RARCH_DBG("[Audio] Shutdown audio driver: \"%s\".\n",
+            audio_driver_get_ident());
 
    return true;
 
@@ -11528,7 +11654,7 @@ bool audio_driver_stop(void)
    if (stopped)
    {
       /* The stopped interval is not part of the source cadence. */
-      audio_driver_ff_mult_reset(audio_st);
+      audio_driver_ff_mult_invalidate(audio_st);
 #ifdef HAVE_THREADS
       retro_atomic_store_release_int(&audio_st->pipe_ff_mult_q16, 65536);
 #endif
@@ -11566,7 +11692,7 @@ bool audio_driver_stop(void)
          }
       }
       AUDIO_FLAGS_CLEAR(audio_st, AUDIO_FLAG_STARTED);
-      RARCH_DBG("[Audio] Stopped audio driver \"%s\".\n",
+      RARCH_DBG("[Audio] Stopped audio driver: \"%s\".\n",
             audio_driver_get_ident());
    }
 
@@ -12324,7 +12450,7 @@ static bool mic_driver_open_mic_internal(retro_microphone_t* microphone)
    microphone->resampler_int16_process = NULL;
    microphone->resampler_int16_free    = NULL;
    if (fabs(microphone->orig_ratio - 1.0f) < 1e-8)
-      RARCH_LOG("[Microphone] Resample path: none (rates match)\n");
+      RARCH_LOG("[Microphone] Resampler path: none (rates match).\n");
    else
    {
       const retro_resampler_t *backend =
@@ -12352,10 +12478,10 @@ static bool mic_driver_open_mic_internal(retro_microphone_t* microphone)
                mic_st->resampler_quality,
                microphone->orig_ratio))
       {
-         RARCH_ERR("[Microphone] Failed to initialize resampler \"%s\".\n", mic_st->resampler_ident);
+         RARCH_ERR("[Microphone] Failed to initialize resampler: \"%s\".\n", mic_st->resampler_ident);
          goto error;
       }
-      RARCH_LOG("[Microphone] Resample path: %s\n",
+      RARCH_LOG("[Microphone] Resampler path: \"%s\".\n",
             microphone->resampler_data_int16
                   ? "integer s16 (no float round-trip)" : "float");
    }
@@ -12382,7 +12508,7 @@ static bool mic_driver_open_mic_internal(retro_microphone_t* microphone)
       if (     retro_eventcount_init(&microphone->capture_park)
             && (microphone->capture_thread = sthread_create(
                   microphone_driver_capture_thread, mic_st)))
-         RARCH_LOG("[Microphone] Threaded capture: the worker owns the read"
+         RARCH_LOG("[Microphone] Threaded capture: The worker owns the read"
                " and the resampler.\n");
       else
       {
@@ -12584,12 +12710,45 @@ static size_t microphone_driver_flush(
 #endif
    size_t bytes_to_read = MIN(mic_st->input_frames_length, num_frames * sample_size);
    size_t frames_to_enqueue;
-   int bytes_read       = mic_st->driver->read(
+   int bytes_read;
+
+   /* 16-bit at the requested rate has nothing to change: the device
+    * reads straight into the ring. With no room, the read below still
+    * drains it. */
+   if (     sample_size == sizeof(int16_t)
+         && fabs((double)microphone->effective_params.rate
+            / (double)microphone->actual_params.rate - 1.0) < 1e-8)
+   {
+      void  *span = NULL;
+      size_t want = retro_spsc_write_begin(&microphone->outgoing_samples, &span);
+      size_t room = microphone_outgoing_room(microphone);
+      if (want > room)
+         want = room;
+      if (want > num_frames * sizeof(int16_t))
+         want = num_frames * sizeof(int16_t);
+      want &= ~(size_t)1;
+      if (want && span)
+      {
+         bytes_read = mic_st->driver->read(mic_st->driver_context,
+               microphone->microphone_context, span, want);
+         if (bytes_read < 0)
+            bytes_read = 0;
+         if ((size_t)bytes_read > want)
+            bytes_read = (int)want;
+         bytes_read &= ~1;
+         retro_spsc_write_end(&microphone->outgoing_samples,
+               (size_t)bytes_read);
+         return (size_t)bytes_read / sizeof(int16_t);
+      }
+      retro_spsc_write_end(&microphone->outgoing_samples, 0);
+   }
+
+   /* First, get the most recent mic data */
+   bytes_read = mic_st->driver->read(
          mic_st->driver_context,
          microphone->microphone_context,
          mic_st->input_frames,
          bytes_to_read);
-   /* First, get the most recent mic data */
 
    if (bytes_read <= 0)
       return 0;

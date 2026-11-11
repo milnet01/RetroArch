@@ -2146,6 +2146,7 @@ static const struct
    char s_9eb59c3e[4];
    char s_34b2592a[4];
    char s_c7a27b20[12];
+   char s_d6611158[5];
    char s_317b17ed[6];
    char s_94c8d15f[6];
    char s_de16b5d2[8];
@@ -2235,6 +2236,7 @@ static const struct
    char s_8f379310[39];
    char s_6a9b757c[28];
    char s_6c52dfb1[33];
+   char s_334daaaa[8];
 #if defined (WIIU)
 #ifdef WIIU
    char s_afb881f7[61];
@@ -6322,6 +6324,7 @@ static const struct
    "UIT",
    "UIT",
    "Automatisch",
+   "Geen",
    "180\302\272",
    "270\302\272",
    "Normaal",
@@ -6411,6 +6414,7 @@ static const struct
    "Aangepaste Beeldverhouding (Y-positie)",
    "VI Scherm Breedte Instellen",
    "Verticale synchronisatie (Vsync)",
+   "Systeem",
 #if defined (WIIU)
 #ifdef WIIU
    "Optimaliseren voor Wii U GamePad (Opnieuw opstarten vereist)",
@@ -8648,7 +8652,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_nl_blob_check[
-      (sizeof(msg_hash_nl_blob) == (172415u
+      (sizeof(msg_hash_nl_blob) == (172428u
 #ifdef ANDROID
        + 375u
 #endif
@@ -11227,6 +11231,7 @@ static const msg_hash_id_t msg_hash_nl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_BEAM_OFF,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_LASER_OFF,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_REFRESH_AUTO,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_TOUCH_HANDS_NONE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_FLIPPED_ROTATED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_ORIENTATION_NORMAL,
@@ -11316,6 +11321,7 @@ static const msg_hash_id_t msg_hash_nl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_CUSTOM_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VI_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VSYNC,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH_SYSTEM,
 #if defined (WIIU)
 #ifdef WIIU
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WIIU_PREFER_DRC,

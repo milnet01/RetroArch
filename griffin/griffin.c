@@ -234,6 +234,7 @@ ACHIEVEMENTS
 #include "../cheevos/cheevos_client.c"
 #include "../cheevos/cheevos_menu.c"
 #include "../cheevos/cheevos_badge.c"
+#include "../cheevos/cheevos_ciso.c"
 
 #if defined(HAVE_CHEEVOS_RVZ) && defined(HAVE_RZSTD)
 #include "../libretro-common/formats/rvz/rvz.c"
@@ -581,6 +582,9 @@ VIDEO IMAGE
 #ifdef HAVE_RTGA
 #include "../libretro-common/formats/tga/rtga.c"
 #endif
+#ifdef HAVE_RGIF
+#include "../libretro-common/formats/gif/rgif.c"
+#endif
 
 #ifdef HAVE_IMAGEVIEWER
 #include "../cores/libretro-imageviewer/image_core.c"
@@ -775,6 +779,13 @@ VIDEO DRIVER
 #include "../gfx/drivers/d3d12.c"
 #endif
 
+#ifdef HAVE_MF_AUDIO
+#include "../record/record_mf_audio.c"
+#if defined(HAVE_D3D12) && defined(HAVE_RTMP) && defined(HAVE_RFLV)
+#include "../record/record_stream_d3d12.c"
+#endif
+#endif
+
 #if defined(HAVE_D3D10)
 #include "../gfx/drivers/d3d10.c"
 #endif
@@ -904,6 +915,7 @@ FONTS
 
 #include "../gfx/font_driver.c"
 
+#include "../libretro-common/gfx/font/rtt.c"
 #include "../gfx/drivers_font_renderer/stb.c"
 
 #if defined(HAVE_FREETYPE)
@@ -1786,6 +1798,7 @@ NETPLAY
 #include "../network/netplay/netplay_room_parse.c"
 #include "../libretro-common/net/net_compat.c"
 #include "../libretro-common/net/net_socket.c"
+#include "../libretro-common/net/net_resolve.c"
 #include "../libretro-common/net/net_http.c"
 #ifdef HAVE_RTMP
 #include "../libretro-common/net/net_rtmp_chunk.c"
@@ -1797,6 +1810,7 @@ NETPLAY
 #include "../libretro-common/net/net_rtmp_reply.c"
 #include "../libretro-common/net/net_rtmp_session.c"
 #include "../libretro-common/net/net_rtmp_socket.c"
+#include "../libretro-common/net/net_rtmp_client.c"
 #endif
 #ifdef HAVE_IFINFO
 #include "../libretro-common/net/net_ifinfo.c"
@@ -1850,6 +1864,12 @@ DATA RUNLOOP
 #include "../tasks/task_database.c"
 #ifdef HAVE_LIBRETRODB
 #include "../tasks/task_database_cue.c"
+#include "../libretro-common/formats/xdvdfs/xdvdfs.c"
+#include "../libretro-common/formats/zar/zar.c"
+#include "../libretro-common/formats/wux/wux.c"
+#endif
+#if defined(HAVE_LIBRETRODB) || defined(HAVE_CHEEVOS)
+#include "../libretro-common/formats/ciso/ciso.c"
 #endif
 #if defined(HAVE_NETWORKING) && defined(HAVE_MENU)
 #include "../tasks/task_core_updater.c"

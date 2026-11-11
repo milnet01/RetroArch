@@ -82,6 +82,11 @@ typedef struct rh264_video_color
 /* SPS VUI color; unspecified CICP values are 2. Failure clears out. */
 int rh264_video_get_color(const rh264_video *v, rh264_video_color_t *out);
 
+/* The frame rate the SPS's VUI timing gives, time_scale over twice
+ * num_units_in_tick, reduced by two where it divides: 0, or -1 when the
+ * stream has no timing (or no SPS yet). */
+int rh264_video_framerate(const rh264_video *v, unsigned *num, unsigned *den);
+
 /* Create a decoder. Returns NULL on allocation failure. */
 rh264_video *rh264_video_open(void);
 
@@ -103,6 +108,13 @@ int rh264_video_set_extradata(rh264_video *v, const uint8_t *avcc, size_t len);
  * and negative on malformed input or an unsupported (high-profile) stream. */
 /* 2 on hardware backpressure: retry with the same live data and length. */
 int rh264_video_decode(rh264_video *v, const uint8_t *data, size_t len);
+
+/* A caller's value for the picture the next rh264_video_decode opens,
+ * given back with that picture by rh264_video_tag once it is handed out:
+ * with B pictures the output is not the input's order. A field pair
+ * keeps its first field's. 0 until set. */
+void rh264_video_set_tag(rh264_video *v, uint64_t tag);
+uint64_t rh264_video_tag(const rh264_video *v);
 
 /* Hand out the next pending picture in display order without feeding more
  * data, for end of stream. Returns 0 when a picture became available through
