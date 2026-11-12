@@ -22,7 +22,8 @@
 #   steps (checkout, cache) and the steps that install packages with sudo —
 #   this host's packages stand in for the runner's. A default run also leaves
 #   out the wall-clock steps in TIMING_STEPS unless the push changes a file
-#   their test builds, and runs them after waiting for a quiet machine. The
+#   their test builds, and runs them after waiting for a quiet machine. Every
+#   run leaves out the steps in HOST_SKIP_STEPS, each with its reason. The
 #   steps get ccache, as the workflows' "Enable ccache" step gives them on
 #   GitHub, from a cache of their own under the trees' directory (below). A
 #   job using a workflow feature the runner does not honour (a template
@@ -240,7 +241,9 @@ ACT_RUN_IMAGE=""
 #   whose `ccache -M` would set this machine's real cache size; both named on
 #   stdout. WF_MATRIX=<key>=<value> picks one value of a job's matrix.
 #   WF_SKIP_STEPS lists step names to leave out, one per line, each named on
-#   stdout; the push gate fills it (timing_skips). A job
+#   stdout; the push gate fills it (timing_skips). WF_HOST_SKIPS lists
+#   "<step name><TAB><reason>" lines (HOST_SKIP_STEPS), left out the same
+#   way with the reason printed. A job
 #   or step using a feature this does not honour is refused with a reason,
 #   so the job fails instead of running something other than the workflow. A
 #   job with a container is refused unless its image is the one passed.
@@ -310,6 +313,11 @@ for s in j["steps"]:
         continue
     if "sudo " in s["run"]:
         print("skipped, installs packages:", name)
+        continue
+    host = dict(l.split("\t", 1) for l in
+                os.environ.get("WF_HOST_SKIPS", "").split("\n") if "\t" in l)
+    if name in host:
+        print("SKIPPED, host mismatch (" + host[name] + "):", name)
         continue
     if name in os.environ.get("WF_SKIP_STEPS", "").split("\n"):
         print("SKIPPED, wall-clock check, the push changes nothing it builds:", name)
@@ -575,6 +583,16 @@ declare -A TIMING_STEPS=(
     ["Build and run scan_begin_budget_test (plain, ASan + UBSan, TSan)"]="samples/tasks/database:Makefile"
     ["Build and run http_transfer_stress_test (ASan + UBSan, TSan)"]="samples/tasks/http:Makefile.stress"
 )
+# Host mismatches: upstream steps that compare against a host tool newer
+# here than on GitHub's runner, and fail here with nothing wrong in the
+# code under test. Every run leaves them out; GitHub CI still runs them.
+# Each name maps to its reason, and the reason names the roadmap item that
+# brings the step back.
+declare -A HOST_SKIP_STEPS=(
+    ["Sniff and fold FFmpeg's files with audio_transfer"]="FFmpeg 9's g.wma decodes 32722 frames against the source's 32193; ubuntu's FFmpeg passes (RETR-0071)"
+    ["Decode audio_transfer's ATRAC files with FFmpeg"]="FFmpeg 9 decodes at3_stereo.wav differently from ubuntu's FFmpeg, which agrees within 6e-08 (RETR-0071)"
+)
+
 QUIET_LOAD="${LOCAL_CI_QUIET_LOAD:-6}"     # one-minute load average
 QUIET_WAIT="${LOCAL_CI_QUIET_WAIT:-3600}"  # seconds, then run regardless
 
@@ -638,10 +656,12 @@ done
 # first step that fails, as a runner does.
 run_workflow_job() {
     local wf="${JOB_SOURCE[$1]%%:*}" wj="${JOB_SOURCE[$1]#*:}" w st name
-    local WF_MATRIX="${JOB_MATRIX[$1]:-}" WF_SKIP_STEPS
-    export WF_MATRIX WF_SKIP_STEPS
+    local WF_MATRIX="${JOB_MATRIX[$1]:-}" WF_SKIP_STEPS WF_HOST_SKIPS
+    export WF_MATRIX WF_SKIP_STEPS WF_HOST_SKIPS
     w="$(mktemp -d "$LOGDIR/$1.XXXX")" && export_tree "$w" && mkdir "$w.tmp" || return 1
     WF_SKIP_STEPS="$(timing_skips "$w")"
+    WF_HOST_SKIPS="$(for st in "${!HOST_SKIP_STEPS[@]}"; do
+        printf '%s\t%s\n' "$st" "${HOST_SKIP_STEPS[$st]}"; done)"
     workflow_tool steps "$w/.github/workflows/$wf" "$wj" "$w.steps" || return 1
     for st in "$w.steps"/*.sh; do
         name="$(sed -n '1s/^# //p' "$st")"
