@@ -2809,6 +2809,18 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   recorded above: unexplained); retroarch.OLD untouched. Open: the
   user's menu tests (RETR-0041, RETR-0038, RETR-0063) and the next
   weekly merge, due about 2026-11-12.
+  2026-11-12: weekly merge done. Three upstream merges on
+  local/fixes-2026-09: 29493715aa (679e334c72, 507 commits, ten conflicts
+  resolved in its body), fa92738e16 (5ab2152e6a, upstream's follow-up
+  fixes) and 5ba8a4d0fb (2a688d8f43). Gate fixes: 332224ddc1 (MPEG-2
+  step, -vf setfield=tff; upstream PR #20074) and ef89f26fe3 (two
+  FFmpeg-9 mismatch steps left out, RETR-0071, user decisions). The push
+  5eb10b1ffe..ef89f26fe3 landed with every gate job passing. Built
+  ef89f26fe3 with make -j4 and installed as retroarch (sha256
+  f8ed1eeb..., --version "Nov 12 2026"); the 2026-11-08 binary (sha256
+  9c64ebbb...) kept as retroarch.2026-11-08; retroarch.OLD and
+  retroarch.2026-11-04 untouched. Next weekly merge due about 2026-11-19.
+  Open: the user's menu tests (RETR-0041, RETR-0038, RETR-0063).
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
