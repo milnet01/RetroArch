@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=70 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=71 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -1700,6 +1700,27 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   that s3_backup's has. Recommendation: yes - three lines per file, no
   runtime effect, and it removes a fork-vs-upstream difference.
   2026-11-05)
+  2026-11-11: opened #20069 (pr/cloud-sync-test-stubs, cf99f9c395;
+  user-approved). Upstream 66376b18c5 left the five cloud-sync driver
+  tests under samples/network/ unable to link (no stub for
+  task_push_http_download_file_with_headers); the PR adds one to each.
+  Readability review ran first: one MEDIUM (webdav_reauth's sink_path
+  never cleared per request) fixed before opening; the LOW and two
+  unused-include notes need no change in this PR. Lane return:
+  docs/private/reviews/2026-11-11-findings/. Upstream fixed the same
+  five tests itself in 5ab2152e6a (2026-11-11 21:20 +0100, an hour after
+  our merge point), so #20069 is redundant; the fork dropped its own
+  2dfccb2899 (kept as branch backup/stubs-2dfccb2899) and merged
+  5ab2152e6a instead (fa92738e16). New candidates from that merge:
+  35fd631b25 (translation_reply_test still expects the old point picks;
+  fails on upstream/master) and 332224ddc1 (MPEG-2 step's "-top 1" is
+  refused by FFmpeg 9; "-vf setfield=tff" instead).
+  2026-11-12 (user-approved): closed #20069 as superseded by
+  5ab2152e6a. The translation_reply_test PR was not opened: upstream
+  fixed it the same way in 2a688d8f43. Opened #20074
+  (pr/mpeg2-setfield-tff, 53a4bbac48): the MPEG-2 step's "-top 1" is
+  refused by FFmpeg 9; "-vf setfield=tff" instead (fork 332224ddc1).
+  Readability review not run: a one-option CI change, no source code.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2944,6 +2965,28 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** Stop old copies of the local test image piling up on disk, and make rebuilding it faster.
   Kind: chore.
   Source: RETR-0069 follow-up, 2026-11-11.
+
+- 📋 [RETR-0071] **INVESTIGATE — Gapless WMA and ATRAC checks fail against FFmpeg 9; left out of the local push gate until settled.**
+  2026-11-12: upstream a2cd6efcb4 (WMA1 and WMA2 played gapless) added a
+  step to Linux-libretro-common-samples.yml, "Sniff and fold FFmpeg's
+  files with audio_transfer". Run here with FFmpeg 9.0.2 it fails:
+  "g.wma: 0 frames from the source, 32722 frames to its 32193". On
+  libretro's GitHub runner (run 43150503138, upstream 2a688d8f43) the
+  same step passes ("32149 frames, the source's timing"). Not fork code.
+  User decision 2026-11-12: leave the step out of local-CI.sh
+  (HOST_SKIP_STEPS) and report it. Open: find whether FFmpeg 9's WMA
+  encoder writes different priming or length data, and raise it with
+  libretro (issue or PR). When settled, remove the HOST_SKIP_STEPS
+  entry. The skip drops the whole step, so its MP3, AAC, FLAC, Vorbis,
+  Opus, WAV and AC3 sniff checks are not run locally either.
+  2026-11-12, user decision: a second step, "Decode audio_transfer's
+  ATRAC files with FFmpeg" (upstream ba979c1110), fails the same way
+  (FFmpeg 9 decodes at3_stereo.wav apart; libretro's runner agrees within
+  6e-08) and is left out too. Both are in local-CI.sh HOST_SKIP_STEPS on
+  local/fixes-2026-09; with both out, common-samples-formats passes.
+  **Layman:** One of libretro's new music-file checks disagrees with the newer FFmpeg on this computer, so our push check skips it for now.
+  Kind: investigate.
+  Source: user-decision-2026-11-12.
 
 ### 📝 Cold-eyes 2026-07-04
 
