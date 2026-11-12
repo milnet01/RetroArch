@@ -333,11 +333,6 @@ static void lane_scaled(const char *tag, int w, int h, unsigned fw,
    size_t   len;
    uint8_t *bmp = make_bmp(w, h, &len);
    unsigned g, b;
-   /* the point scaler takes the sample nearest each output pixel's
-    * centre, so the top-left is image row and column
-    * floor(in / (2 * out)) */
-   unsigned row = (unsigned)((((int64_t)h << 15) / fh) >> 16);
-   unsigned col = (unsigned)((((int64_t)w << 15) / fw) >> 16);
 
    start(fw, fh, RETRO_PIXEL_FORMAT_XRGB8888);
    reply(bmp, len);
@@ -347,8 +342,11 @@ static void lane_scaled(const char *tag, int w, int h, unsigned fw,
       check(g_frame_w == fw && g_frame_h == fh,
             "%s: drew %ux%u for a %ux%u frame", tag, g_frame_w, g_frame_h,
             fw, fh);
+      /* the point scaler takes the sample nearest each pixel's
+       * centre: the first is floor(in / (2 out)) */
       drawn(0, 0, &g, &b);
-      check(g == row && b == col, "%s: top-left is row %u col %u", tag, g, b);
+      check(g == (unsigned)h / (2 * fh) && b == (unsigned)w / (2 * fw),
+            "%s: top-left is row %u col %u", tag, g, b);
       drawn(0, fh - 1, &g, &b);
       check(g >= (unsigned)h / 2, "%s: bottom row is image row %u", tag, g);
    }
@@ -410,8 +408,7 @@ static void lane_png(unsigned fw, unsigned fh, enum retro_pixel_format fmt)
 {
    unsigned x, y;
    int xs = (7 << 16) / fw, ys = (5 << 16) / fh;
-   /* the sample nearest each output pixel's centre, as the point
-    * scaler picks it */
+   /* the sample nearest each pixel's centre, as the point scaler picks */
    int xp = (7 << 15) / fw;
    int yp = (5 << 15) / fh;
    g_png_width = 7;
