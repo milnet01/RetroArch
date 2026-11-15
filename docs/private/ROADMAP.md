@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=72 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=75 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -225,6 +225,34 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   **Layman:** An audio timing test fails the push check when the computer is busy, even though nothing is wrong with the code.
   Kind: test.
   Source: gate-failure-2026-11-15.
+
+- 📋 [RETR-0073] **Make ccache hit inside the gate's act containers.**
+  Measured on the 2026-11-15 gate of ff002ee15a (93 min wall): the act jobs' ccache statistics show 0% hits for libretro-common-tests (850 misses), samples-gfx (382) and samples-settings (17), and 4% for menu-harness (496 of 516). The workflows restore and save ~/.ccache through actions/cache, but the restore misses or the restored cache does not match.
+  Compile-heavy act steps that day: libretro-common unit suites 5m18s, Compile matrix 3m48s, menu-media's shipping-frontend builds (1m44s twice, 2m14s), menu-harness headless build 1m14s.
+  Fix in local-CI.sh only (the workflows are upstream files): find why the act cache misses (key, path or compiler-check differences), or give each act container a persistent ccache directory under the Scratchpad, as the native jobs already have, with CCACHE_BASEDIR and NOHASHDIR.
+  Not flaky: a ccache hit gives the same object a fresh compile would. It also lowers the gate's CPU load.
+  Check: two gate runs on the same commit; the second shows the hit rate and the wall time of each compile step.
+  **Layman:** The push check recompiles the same code from scratch in every container; reusing earlier compiles would cut the most time and use less CPU.
+  Kind: perf.
+  Source: user-request-2026-11-15.
+
+- 📋 [RETR-0074] **Re-run only the failed jobs when the gate re-checks a tree it already checked.**
+  Today's retry re-ran the whole 93-minute gate for one failed TSan job on an unchanged commit.
+  Proposal: local-CI.sh records each passing job against the tree hash, the act image tag and the job's workflow file hash. A later run on the same tree hash, image and workflow reuses those passes and runs only the rest. Any change to the tree, image or workflow re-runs everything.
+  Not flaky: a reused pass covers byte-identical inputs. It never turns a failure into a pass.
+  Waiting-on: user (this lets the gate skip jobs it already passed on the identical tree; the global rules say a skip is the hook's to take, so it needs your OK and probably claude-config's standards/local-gate.md, 2026-11-15). Recommendation: yes, limited to the identical tree hash.
+  **Layman:** After one check fails, the next push re-runs all 30-odd checks even though the code is identical; it could re-run only the one that failed.
+  Kind: perf.
+  Source: user-request-2026-11-15.
+
+- 📋 [RETR-0075] **Run the gate's compile-only act jobs two at a time, inside the same -j4 budget.**
+  The gate runs every job one after another. Its own CPU averaged about half a core over 93 minutes (2675 s CPU; container CPU is counted under podman-service).
+  Proposal: an explicit allow-list of compile-only and tree-scan act jobs (Compile-Matrix, msvc6/qnx stand-ins, Overlap-Copy, Removed-Member, Extern-C-Prototype, Ctx-Presentable, Samples-Objdir, Msg-Hash-Packed) runs in two lanes at -j2 each, so the total stays at 4 compile jobs. Every job with a timing step (TIMING_STEPS), TSan, menu-media, samples-gfx and the menu harness still runs alone on a quiet machine, so nothing timing-sensitive changes.
+  Memory: peak RSS per job was about 1.1 GB; two lanes stay well inside the free RAM.
+  Waiting-on: user (two lanes at once still keeps to -j4 in total, but more containers are up together; OK? 2026-11-15). Recommendation: yes, allow-list only, after the ccache item, which may make it unnecessary.
+  **Layman:** Some checks only compile code or scan files; two of them could run side by side without using more of the computer than now.
+  Kind: perf.
+  Source: user-request-2026-11-15.
 
 ### Spec-needed
 
