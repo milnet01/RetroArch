@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=71 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=72 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -217,6 +217,13 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   `libretro-common/formats/json/rjson.c:971-975`. Vendored.
   **Layman:** A small unsafe step in borrowed JSON-reading code; it has to be fixed in the original project, not here.
   Kind: audit-fix.
+
+- 📋 [RETR-0072] **pipeline_clocked stall case fails the gate when every attempt is a host stall.**
+  The push of ff002ee15a (2026-11-15) failed only on Linux-tsan-samples: samples/audio/pipeline_clocked's stall case printed "the host held a fixture thread off ... retrying" on all five attempts at load ~10, then FAIL. The test's own comment calls a host stall inconclusive, yet five inconclusive runs count as a failure, and the whole gate re-runs.
+  Recommendation: when every attempt was a host stall, report the case as not run (named in the output), not FAIL. Meanwhile the push job waits for 1- and 5-minute load under 5.
+  **Layman:** An audio timing test fails the push check when the computer is busy, even though nothing is wrong with the code.
+  Kind: test.
+  Source: gate-failure-2026-11-15.
 
 ### Spec-needed
 
