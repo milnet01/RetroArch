@@ -2195,6 +2195,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   with downloaded cheats, and say whether it should also match files
   like "<game> (Action Replay).cht"; recommendation: keep the exact
   match, which is the agreed design and covers most games, 2026-11-15)
+  2026-11-15: pushed and installed in RetroArch/retroarch (built from
+  ff002ee15a). The Waiting-on above still stands: try it in play.
   **Layman:** When a cheat file exists for the game you are playing, RetroArch should say so and take you straight to switching cheats on and off, instead of making you dig through long lists.
   Kind: feature.
   Source: user-request-2026-10-03.
@@ -2896,6 +2898,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   waits for load below 6 (load 19 from other sessions at 07:36), then
   runs the full gate. Next: when it lands, install the build, keeping
   the 2026-11-12 binary as retroarch.2026-11-12.
+  2026-11-15: merge aff65adc09 and ff002ee15a pushed (gate green on the
+  second run; the first failed on RETR-0072). Built with make -j4 and
+  installed as RetroArch/retroarch (sha256 81f4b34c089bf2ed...,
+  "Version: 1.22.2 Nov 15 2026"). The previous binary is kept as
+  retroarch.2026-11-12 (sha256 f8ed1eeb46719700...).
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
