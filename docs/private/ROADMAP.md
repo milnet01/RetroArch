@@ -3008,6 +3008,25 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (FFmpeg 9 decodes at3_stereo.wav apart; libretro's runner agrees within
   6e-08) and is left out too. Both are in local-CI.sh HOST_SKIP_STEPS on
   local/fixes-2026-09; with both out, common-samples-formats passes.
+  2026-11-15, both causes found (FFmpeg 6.1.1 from the local-ci-act image,
+  the runner's version, against host 9.0.2; scratch wma-0071):
+  WMA: the encoder, not the ASF muxer or rwma. Encoding the step's 0.73 s
+  sine at 8000 Hz, 6.1.1 gives the last packet a duration of 208, 9.0.2
+  a full 512. The muxer's play duration is the sum of packet durations,
+  so 9.0.2 files state the length padded to a whole block (6144 frames
+  for 5840; 32722 for 32193 at 44100), beyond the test's 2 ms limit.
+  rwma reads the header correctly. FFmpeg 9 files carry no exact end,
+  so this check cannot pass with them.
+  ATRAC: FFmpeg's ATRAC3 decoder output changed. On at3_joint and
+  at3_stereo, RetroArch matches 6.1.1 within 4.5e-08 (pass); 9.0.2
+  differs from 6.1.1 by up to 0.033, in most samples. ATRAC3plus files
+  pass on both. Which FFmpeg is right is not settled here.
+  Neither is fork code; the HOST_SKIP_STEPS entries stay.
+  Waiting-on: user (raise this with libretro? Recommendation: one
+  libretro issue giving both findings and no code, since the test's
+  answer (accept a padded WMA end, pin FFmpeg, or skip on FFmpeg 9) is
+  the test author's choice; their runners use 6.1.1, so nothing fails
+  for them yet. 2026-11-15)
   **Layman:** One of libretro's new music-file checks disagrees with the newer FFmpeg on this computer, so our push check skips it for now.
   Kind: investigate.
   Source: user-decision-2026-11-12.
