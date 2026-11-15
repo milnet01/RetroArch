@@ -282,8 +282,18 @@ These look intentional but lack a documented contract. Each was a candidate for 
 
 - ✅ Re-run cppcheck letting `menu/drivers/materialui.c` finish (expect +10-15 items in the S2 pattern). _(Bundle 62 — `9ed75a3d51`. Re-ran with `--max-configs=1 --check-level=exhaustive` per the audit-config `known_issues` workaround; the file completes in ~10 s instead of timing out at default branch-budget. Predicted +10-15 S2-pattern hits did not materialise: the 4 `nullPointer*` raw findings on the audit-branch snapshot (lines 5916, 9659, 10037, 12045) were stale cite-points whose underlying derefs had already been guarded by Bundles 54 + 55 on the fixes branch. Only 3 unrelated actionable sites on the fixes-branch snapshot — fixed in Bundle 62. Pre-existing style/tidy noise surfaced by this run (style fields, integer-division, misleading-indent, unused-includes) tracked under the new ROADMAP entries below.)_
 
-- 🚧 [RETR-S0149] **Re-run semgrep with pinned parser.**
+- ✅ [RETR-S0149] **Re-run semgrep with pinned parser.**
   332 parse errors → expect FP-rate reduction on the double-free cluster.
+  2026-11-15: re-ran semgrep 1.161.0 (p/security-audit, scope.txt
+  excludes) over local/fixes-2026-09 at ff002ee15a. 2450 files scanned,
+  74 findings, 641 files with parse errors (114 syntax, the rest partial
+  parses), so the newer parser did not cut the parse errors. double-free
+  is still the largest cluster (37). Three spot-checked
+  (mediacodec_hevc_decoder.c fail label, glsl_rect.h, shader_gl3.c error
+  label) are false positives: the rule pairs the frees on the success
+  return with the frees under the fail label. The re-run is done; it
+  found nothing new to fix. A further pass is only worth it with a
+  C-aware double-free rule.
   **Layman:** One code scanner failed to read hundreds of files; re-running it with a fixed version should remove many false alarms.
   Kind: chore.
 
