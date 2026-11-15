@@ -218,9 +218,10 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   **Layman:** A small unsafe step in borrowed JSON-reading code; it has to be fixed in the original project, not here.
   Kind: audit-fix.
 
-- 📋 [RETR-0072] **pipeline_clocked stall case fails the gate when every attempt is a host stall.**
-  The push of ff002ee15a (2026-11-15) failed only on Linux-tsan-samples: samples/audio/pipeline_clocked's stall case printed "the host held a fixture thread off ... retrying" on all five attempts at load ~10, then FAIL. The test's own comment calls a host stall inconclusive, yet five inconclusive runs count as a failure, and the whole gate re-runs.
-  Recommendation: when every attempt was a host stall, report the case as not run (named in the output), not FAIL. Meanwhile the push job waits for 1- and 5-minute load under 5.
+- 📋 [RETR-0072] **pipeline_clocked_test fails the TSan gate intermittently under host load; failing lane not yet named.**
+  The push of ff002ee15a (2026-11-15, load ~10) failed only on Linux-tsan-samples: pipeline_clocked_test exited 1. The stall case is not the cause: its log tail shows six host stalls, then "ok: the pipe primed again after the stall", and an all-stall run is already inconclusive, not a failure. The failing FAIL: line came earlier and was cut off, because tools/tsan-samples.sh prints only the last 8 lines of a non-TSan failure. A rerun under TSan at the same load passed (rc=0), so the failure is intermittent; the paced or ff-exit lanes are the candidates.
+  tools/tsan-samples.sh exists upstream, so it stays unchanged. Next: on the next failure, rerun the test from the gate's kept log directory, or run it under TSan in a loop and grep "FAIL:", to name the lane.
+  Meanwhile the push job waits until the 1- and 5-minute load are both under 5.
   **Layman:** An audio timing test fails the push check when the computer is busy, even though nothing is wrong with the code.
   Kind: test.
   Source: gate-failure-2026-11-15.
