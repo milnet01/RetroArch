@@ -1721,6 +1721,11 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (pr/mpeg2-setfield-tff, 53a4bbac48): the MPEG-2 step's "-top 1" is
   refused by FFmpeg 9; "-vf setfield=tff" instead (fork 332224ddc1).
   Readability review not run: a one-option CI change, no source code.
+  2026-11-15: #20074 merged 2026-11-13 08:12 UTC, squashed as upstream
+  1df4ab0fcf (same change as fork 332224ddc1). Open: #19992, #19993.
+  Branches pr/mpeg2-setfield-tff and pr/cloud-sync-test-stubs (local and
+  origin) are now redundant; not deleted (each is held by libretro's
+  refs/pull/N/head), left for a branch tidy.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2821,6 +2826,13 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   9c64ebbb...) kept as retroarch.2026-11-08; retroarch.OLD and
   retroarch.2026-11-04 untouched. Next weekly merge due about 2026-11-19.
   Open: the user's menu tests (RETR-0041, RETR-0038, RETR-0063).
+  2026-11-15: weekly merge done early as aff65adc09 (upstream
+  84ed6780ee, 155 commits). One conflict (task_core_updater.c, took
+  upstream's handle_drop line; reason in the merge body). make -j4
+  builds with no warnings. Push queued as cc-job push-fixes-1115: it
+  waits for load below 6 (load 19 from other sessions at 07:36), then
+  runs the full gate. Next: when it lands, install the build, keeping
+  the 2026-11-12 binary as retroarch.2026-11-12.
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
