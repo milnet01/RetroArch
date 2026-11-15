@@ -226,12 +226,22 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Kind: test.
   Source: gate-failure-2026-11-15.
 
-- 📋 [RETR-0073] **Make ccache hit inside the gate's act containers.**
+- 🚧 [RETR-0073] **Make ccache hit inside the gate's act containers.**
   Measured on the 2026-11-15 gate of ff002ee15a (93 min wall): the act jobs' ccache statistics show 0% hits for libretro-common-tests (850 misses), samples-gfx (382) and samples-settings (17), and 4% for menu-harness (496 of 516). The workflows restore and save ~/.ccache through actions/cache, but the restore misses or the restored cache does not match.
   Compile-heavy act steps that day: libretro-common unit suites 5m18s, Compile matrix 3m48s, menu-media's shipping-frontend builds (1m44s twice, 2m14s), menu-harness headless build 1m14s.
   Fix in local-CI.sh only (the workflows are upstream files): find why the act cache misses (key, path or compiler-check differences), or give each act container a persistent ccache directory under the Scratchpad, as the native jobs already have, with CCACHE_BASEDIR and NOHASHDIR.
   Not flaky: a ccache hit gives the same object a fresh compile would. It also lowers the gate's CPU load.
   Check: two gate runs on the same commit; the second shows the hit rate and the wall time of each compile step.
+  2026-11-15, 9b310c368c on local/fixes-2026-09 (push queued until load
+  is under 5). Cause: every workflow's "Save ccache" step runs only on a
+  push to master, and act's checkout is on a branch named local-ci, so
+  nothing was saved. A restored old cache also missed, because each
+  run's checkout path differs. Fix: each act container mounts one
+  persistent folder, local-ci/act-ccache, at /root/.ccache (:z for
+  SELinux), with CCACHE_MAXSIZE=8G, CCACHE_BASEDIR and CCACHE_NOHASHDIR.
+  Measured: act:Linux-samples-settings.yml second run hit 14 of 17
+  compiles (82%), against 0 of 17 before. Still to check: the next full
+  gate's per-step wall times against the 93-min run.
   **Layman:** The push check recompiles the same code from scratch in every container; reusing earlier compiles would cut the most time and use less CPU.
   Kind: perf.
   Source: user-request-2026-11-15.
