@@ -1198,6 +1198,7 @@ jobs:
           CFLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' python3 samples/gfx/threaded_video/menu_framebuffer.py
           CFLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' python3 samples/gfx/threaded_video/vulkan_menu.py
           CFLAGS='-fsanitize=thread -fno-omit-frame-pointer' python3 samples/gfx/threaded_video/menu_framebuffer.py
+          CC=x86_64-w64-mingw32-gcc RUNNER=wine python3 samples/gfx/threaded_video/menu_framebuffer.py
           CFLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' python3 samples/gfx/threaded_video/lend_refresh.py
           CFLAGS='-fsanitize=thread -fno-omit-frame-pointer' python3 samples/gfx/threaded_video/lend_refresh.py
           CC=x86_64-w64-mingw32-gcc RUNNER=wine python3 samples/gfx/threaded_video/lend_refresh.py
@@ -3093,6 +3094,11 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 timeout 60 ./badge_cache_test
           echo "[pass] badge_cache_test (ASan)"
           make clean
+          make -j$(nproc) SANITIZER=thread
+          TSAN_OPTIONS=halt_on_error=1 setarch "$(uname -m)" -R timeout 60 ./badge_cache_test
+          make clean
+          make -j$(nproc) check EXTRA_CFLAGS=-DRETRO_ATOMIC_FORCE_VOLATILE
+          make clean
 
       - name: Build and run progress_bounds_test (ASan + UBSan)
         shell: bash
@@ -3108,11 +3114,48 @@ jobs:
           # wrap would loop forever, which the timeout ends.
           make clean SANITIZER=address,undefined && make -j$(nproc) all SANITIZER=address,undefined
           ASAN_OPTIONS=detect_leaks=1 timeout 60 ./progress_bounds_test
+          ASAN_OPTIONS=detect_leaks=1 timeout 60 ./client_owner_queue_test
+          make clean
+          make -j$(nproc) SANITIZER=thread
+          TSAN_OPTIONS=halt_on_error=1 setarch "$(uname -m)" -R timeout 60 ./client_owner_queue_test
           make clean
           make CC=x86_64-w64-mingw32-gcc TARGET=progress_bounds_test.exe
           test -f progress_bounds_test.exe
+          test -f client_owner_queue_test.exe
           make clean TARGET=progress_bounds_test.exe
           echo "[pass] progress_bounds_test (ASan + UBSan, and a mingw-w64 build)"
+
+      - name: Cached frame progress and lifetime
+        shell: bash
+        working-directory: samples/gfx/cached_frame_hazard
+        run: |
+          set -eu
+          make clean
+          make -j$(nproc) check SANITIZER=address,undefined
+          make clean
+          make -j$(nproc) check TORTURE=1 SANITIZER=address,undefined
+          make clean
+          make -j$(nproc) SANITIZER=thread TORTURE=1
+          TSAN_OPTIONS=halt_on_error=1 setarch "$(uname -m)" -R timeout 60 ./cached_frame_hazard_test
+          make clean
+          make -j$(nproc) CC=x86_64-w64-mingw32-gcc TARGET=cached_frame_hazard_test.exe LDFLAGS="-static -lpthread"
+          test -f cached_frame_progress_test.exe
+          test -f cached_frame_progress_fallback_test.exe
+          make clean TARGET=cached_frame_hazard_test.exe
+
+      - name: Build and run achievements AES (shared, AES-only, scalar)
+        shell: bash
+        working-directory: samples/cheevos/aes_shim
+        run: |
+          set -eu
+          for flags in "" "-DCRYPTO_AES_ONLY" "-DCRYPTO_AES_ONLY -DAES_NO_X86 -DAES_NO_ARM"; do
+            make clean
+            make -j$(nproc) check SANITIZER=address,undefined EXTRA_CFLAGS="$flags"
+          done
+          make clean
+          make CC=x86_64-w64-mingw32-gcc TARGET=aes_shim_test.exe
+          test -f aes_shim_test.exe
+          make clean TARGET=aes_shim_test.exe
 
       - name: Build and run ciso_hash_test (ASan + UBSan)
         shell: bash

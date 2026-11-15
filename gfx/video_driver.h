@@ -190,7 +190,8 @@ enum video_driver_state_flags
    VIDEO_FLAG_FF_DECIDED                          = (1 << 25),
    /* main_flags: frames go to video_null.frame, whichever driver
     * is up (video_driver_set_stub_frame) */
-   VIDEO_FLAG_STUB_FRAME                          = (1 << 26)
+   VIDEO_FLAG_STUB_FRAME                          = (1 << 26),
+   VIDEO_FLAG_KEEP_VULKAN_SESSION                 = (1 << 27)
 };
 
 /* Driver pacing: the graphics driver releases each frame (NVIDIA
@@ -1646,6 +1647,9 @@ typedef struct video_driver
     * recording skip the BGR24 conversion. */
    bool (*read_viewport_bgrx)(void *data, uint8_t *buffer, bool is_idle,
          bool *bottom_up);
+
+   /* Software maxima may change within the initial input-scale capacity. */
+   bool max_geometry_in_place;
 } video_driver_t;
 
 #ifdef HAVE_OPENXR
@@ -1905,6 +1909,10 @@ typedef struct
     * races such a read. */
    retro_atomic_int_t crt_switching_active;
 
+   /* Initial software-frame capacity, in pixels on each axis; zero opts out. */
+   unsigned max_geometry_capacity;
+   enum retro_pixel_format max_geometry_format;
+
 #ifdef HAVE_VIDEO_FILTER
    unsigned state_scale;
    unsigned state_out_bpp;
@@ -2054,6 +2062,10 @@ typedef struct
    unsigned driver_pacing_interval_us;
    uint8_t driver_pacing_mode;
    uint8_t driver_pacing_reason;
+   /* Skip Duplicate Frames: the core frames left before the runloop
+    * stops pacing for skipped repeats, rearmed by each one skipped.
+    * Main thread. */
+   uint8_t dupe_skip_hold;
 
    bool threaded;
 
@@ -2296,8 +2308,8 @@ bool video_driver_cached_frame_info(
  * callback returns, so keep it short -- but note that ordinary
  * frame publishing is never blocked by a reader.
  *
- * If every hazard slot is busy the callback is invoked with
- * data == NULL rather than waiting.
+ * If every hazard slot is busy or retirement races the read, the
+ * callback is invoked with data == NULL rather than waiting.
  */
 void video_driver_cached_frame_read(
       void *userdata,
@@ -2395,6 +2407,15 @@ const void *video_driver_convert_xrgb2101010(
       video_driver_state_t *video_st,
       const void *data, unsigned dims,
       size_t in_pitch, size_t *out_pitch);
+
+void video_driver_convert_xrgb2101010_into(void *output,
+      const void *data, unsigned dims, size_t in_pitch, size_t out_pitch);
+
+/* True holds a driver loan and the cached-frame keeper through frame(). */
+bool video_driver_convert_frame(video_driver_state_t *video_st,
+      const video_poke_interface_t *poke, void *driver_data,
+      enum retro_pixel_format format, const void **data,
+      unsigned dims, unsigned *pitch, bool allow_lend);
 
 /**
  * config_get_video_driver_options:
@@ -2606,6 +2627,11 @@ float video_driver_get_aspect_ratio(void);
 /* The aspect ratio, as the bits of the float in an atomic word. A
  * union, not a cast through a pointer, so it stays inside what the
  * standard allows and MSVC's aliasing rules. */
+
+/* Core frames a skipped repeat keeps the runloop's dupe-skip pacing on
+ * for: long enough to span the gaps between repeats down to 1 in 8. */
+#define VIDEO_DUPE_SKIP_HOLD 8
+
 #ifdef HAVE_THREADS
 #define VIDEO_CACHE_KEEPER ((size_t)sthread_get_current_thread_id())
 #else

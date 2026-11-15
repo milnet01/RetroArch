@@ -40,6 +40,7 @@
 #include <encodings/utf.h>
 #include <lists/string_list.h>
 #include <formats/image.h>
+#include <streams/image_texture_file.h>
 #include <formats/image_yuv_blit.h>
 #include "../common/video_import_color.h"
 
@@ -13490,7 +13491,12 @@ video_driver_t video_d3d12 = {
 #else
    NULL, /* read_viewport_hdr */
 #endif
-   &d3d12_font
+   &d3d12_font,
+#ifdef HAVE_OPENXR
+   NULL, /* set_vr_content_info */
+#endif
+   NULL, /* read_viewport_bgrx */
+   true /* max_geometry_in_place */
 };
 
 gfx_display_ctx_driver_t gfx_display_ctx_d3d12 = {

@@ -2085,6 +2085,34 @@ static void runloop_video_decode_close(void *decoder)
 }
 #endif
 
+/* Whether the core's aspect hint affects the displayed viewport. */
+static bool runloop_uses_core_aspect_hint(const settings_t *settings)
+{
+   return settings->uints.video_aspect_ratio_idx == ASPECT_RATIO_CORE
+      || (     settings->uints.video_aspect_ratio_idx == ASPECT_RATIO_CONFIG
+            && settings->floats.video_aspect_ratio < 0.0f
+            && settings->bools.video_aspect_ratio_auto);
+}
+
+/* The caller handles base-size changes separately. */
+static bool runloop_aspect_hint_changes_viewport(const settings_t *settings,
+      const struct retro_game_geometry *geom,
+      const struct retro_game_geometry *next)
+{
+   bool old_provided = geom->aspect_ratio > 0.0f;
+   bool new_provided = next->aspect_ratio > 0.0f;
+   float provided;
+
+   if (!runloop_uses_core_aspect_hint(settings))
+      return false;
+   if (old_provided == new_provided)
+      return old_provided && geom->aspect_ratio != next->aspect_ratio;
+   if (!geom->base_width || !geom->base_height)
+      return true;
+   provided = old_provided ? geom->aspect_ratio : next->aspect_ratio;
+   return provided != (float)geom->base_width / geom->base_height;
+}
+
 bool runloop_environment_cb(unsigned cmd, void *data)
 {
    unsigned p;
@@ -3509,50 +3537,77 @@ bool runloop_environment_cb(unsigned cmd, void *data)
        * Used by RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO.
        **/
       {
-         const struct retro_system_av_info **info = (const struct retro_system_av_info**)&data;
+         const struct retro_system_av_info *info  = (const struct retro_system_av_info*)data;
          video_driver_state_t *video_st           = video_state_get_ptr();
          struct retro_system_av_info *av_info     = &video_st->av_info;
 
          if (data)
          {
-            int reinit_flags                      = DRIVERS_CMD_ALL;
+            int reinit_flags                      = DRIVERS_CMD_ALL
+                  & ~(DRIVER_CAMERA_MASK | DRIVER_MICROPHONE_MASK);
             settings_t *settings                  = config_get_ptr();
             recording_state_t *rec_st             = recording_state_get_ptr();
-            float refresh_rate                    = (*info)->timing.fps;
+            float refresh_rate                    = info->timing.fps;
             unsigned crt_switch_resolution        = settings->uints.crt_switch_resolution;
             bool video_fullscreen                 = settings->bools.video_fullscreen;
             bool video_frame_delay_auto           = settings->bools.video_frame_delay_auto;
             bool video_switch_refresh_rate        = false;
-            bool no_video_reinit                  = true;
-            bool fps_changed                      = false;
+            bool no_video_reinit;
+            bool fps_changed                      = info->timing.fps != av_info->timing.fps;
+            bool sample_rate_changed              = info->timing.sample_rate != av_info->timing.sample_rate;
+            bool timing_changed                   = fps_changed || sample_rate_changed;
+            bool base_size_changed                =
+                     info->geometry.base_width  != av_info->geometry.base_width
+                  || info->geometry.base_height != av_info->geometry.base_height;
+            bool max_size_changed                 =
+                     info->geometry.max_width  != av_info->geometry.max_width
+                  || info->geometry.max_height != av_info->geometry.max_height;
+            bool aspect_changed                   = info->geometry.aspect_ratio != av_info->geometry.aspect_ratio;
+            bool viewport_changed                 = base_size_changed
+                  || (aspect_changed && runloop_aspect_hint_changes_viewport(
+                           settings, &av_info->geometry, &info->geometry));
+            bool geometry_changed                 = base_size_changed || aspect_changed || max_size_changed;
+            bool max_size_fits                     = !max_size_changed;
+
+            if (     verbosity_get_log_level() == RETRO_LOG_DEBUG
+                  && verbosity_is_enabled())
+               RARCH_DBG("[Environ] SET_SYSTEM_AV_INFO: %ux%u, Aspect: %.4f, FPS: %.4f, Sample rate: %.0f Hz.\n",
+                     info->geometry.base_width, info->geometry.base_height,
+                     info->geometry.aspect_ratio, info->timing.fps,
+                     info->timing.sample_rate);
+
+            if (!geometry_changed && !timing_changed)
+               return true;
+
+            if (     max_size_changed
+                  && info->geometry.max_width && info->geometry.max_height
+                  && info->geometry.max_width  <= video_st->max_geometry_capacity
+                  && info->geometry.max_height <= video_st->max_geometry_capacity
+                  && !video_driver_is_hw_context()
+#ifdef HAVE_VIDEO_FILTER
+                  && !video_st->state_filter
+#endif
+                  && video_st->pix_fmt == video_st->max_geometry_format)
+               max_size_fits = true;
 
             /* Refresh rate switch for regular displays */
-            if (video_display_server_has_resolution_list())
+            if (fps_changed && video_display_server_has_resolution_list())
                video_switch_refresh_rate_maybe(&refresh_rate, &video_switch_refresh_rate);
 
-            /* Recalibrate frame delay target when video reinits
-             * and pause frame delay when video does not reinit */
-            if (video_frame_delay_auto)
+            /* CRT switchres depends on the base size and field rate. */
+            no_video_reinit                       = (
+                     !video_switch_refresh_rate
+                  && max_size_fits
+                  && (!crt_switch_resolution || (!fps_changed && !base_size_changed)));
+
+            /* Recalibrate only when the video workload changes. */
+            if (video_frame_delay_auto && (!no_video_reinit || viewport_changed || fps_changed))
             {
-               if (no_video_reinit && !video_switch_refresh_rate)
+               if (no_video_reinit)
                   video_st->frame_delay_pause  = true;
                else
                   video_st->frame_delay_target = 0;
             }
-
-            /* CRT switchres derives its mode from the base resolution
-             * and field rate; while those hold, the shortcut below
-             * keeps the switched mode and only the remaining drivers
-             * (audio among them) pick up the new av_info. */
-            no_video_reinit                       = (
-                     (video_switch_refresh_rate == false)
-                  && data
-                  && ((*info)->geometry.max_width  == av_info->geometry.max_width)
-                  && ((*info)->geometry.max_height == av_info->geometry.max_height)
-                  && (   (crt_switch_resolution == 0)
-                      || (   ((*info)->timing.fps           == av_info->timing.fps)
-                          && ((*info)->geometry.base_width  == av_info->geometry.base_width)
-                          && ((*info)->geometry.base_height == av_info->geometry.base_height))));
 
             /* First set new refresh rate and display rate, then after REINIT do
              * another display rate change to make sure the change stays */
@@ -3560,46 +3615,47 @@ bool runloop_environment_cb(unsigned cmd, void *data)
                   && video_display_server_set_refresh_rate(refresh_rate))
                video_monitor_set_refresh_rate(refresh_rate);
 
-            /* When not doing video reinit, we also must not do input and menu
-             * reinit, otherwise the input driver crashes and the menu gets
-             * corrupted. */
-            if (no_video_reinit)
-               reinit_flags =
-                  DRIVERS_CMD_ALL &
-                  ~(DRIVER_VIDEO_MASK | DRIVER_INPUT_MASK | DRIVER_MENU_MASK);
-            /* no need to reinit camera or microphone here */
-            reinit_flags &= ~(DRIVER_CAMERA_MASK | DRIVER_MICROPHONE_MASK);
+            if (base_size_changed)
+            {
+               av_info->geometry.base_width  = info->geometry.base_width;
+               av_info->geometry.base_height = info->geometry.base_height;
+            }
+            if (max_size_changed)
+            {
+               av_info->geometry.max_width  = info->geometry.max_width;
+               av_info->geometry.max_height = info->geometry.max_height;
+            }
+            if (aspect_changed)
+               av_info->geometry.aspect_ratio = info->geometry.aspect_ratio;
+            if (fps_changed)
+               av_info->timing.fps = info->timing.fps;
+            if (sample_rate_changed)
+               av_info->timing.sample_rate = info->timing.sample_rate;
 
-            RARCH_LOG("[Environ] SET_SYSTEM_AV_INFO: %ux%u, Aspect: %.4f, FPS: %.4f, Sample rate: %.0f Hz.\n",
-                  (*info)->geometry.base_width, (*info)->geometry.base_height,
-                  (*info)->geometry.aspect_ratio,
-                  (*info)->timing.fps,
-                  (*info)->timing.sample_rate);
-
-            fps_changed = (*info)->timing.fps != av_info->timing.fps;
-            memcpy(av_info, *info, sizeof(*av_info));
-
-            /* With video kept, only audio has anything to follow - the
-             * rate, and the timing the frame rate sets - and the
-             * running driver takes both in place; nothing starts over. */
-            if (!no_video_reinit || !driver_set_audio_input_rate())
+            /* The running audio driver takes timing changes in place. */
+            if (!no_video_reinit)
                command_event(CMD_EVENT_REINIT, &reinit_flags);
+            else if (     timing_changed
+                     && !driver_set_audio_input_rate(fps_changed)
+                     && video_st->data
+                     && !runloop_is_content_switching())
+               command_event(CMD_EVENT_AUDIO_REINIT, NULL);
 
             /* The frame limit is the frame rate times the fast-forward
              * ratio; nothing else recomputes it while the core runs. */
             if (fps_changed)
                command_event(CMD_EVENT_SET_FRAME_LIMIT, NULL);
 
-            if (no_video_reinit)
+            if (no_video_reinit && viewport_changed)
                command_event(CMD_EVENT_VIDEO_SET_ASPECT_RATIO, NULL);
 
             if (video_switch_refresh_rate)
                video_display_server_set_refresh_rate(refresh_rate);
 
-            /* Cannot continue recording with different parameters.
-             * Take the easiest route out and just restart
-             * the recording. */
-            if (rec_st->data)
+            /* Restart when recording parameters or the video driver change. */
+            if (     rec_st->data
+                  && (!no_video_reinit || viewport_changed
+                     || max_size_changed || timing_changed))
             {
                const char *_msg = msg_hash_to_str(MSG_RESTARTING_RECORDING_DUE_TO_DRIVER_REINIT);
                runloop_msg_queue_push(_msg, strlen(_msg), 2, 180, false, NULL,
@@ -3618,7 +3674,7 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
             /* Hide mouse cursor in fullscreen after
              * a RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO call. */
-            if (video_fullscreen)
+            if (video_fullscreen && !no_video_reinit)
             {
                if (     video_st->poke
                      && video_st->poke->show_mouse)
@@ -3802,42 +3858,54 @@ bool runloop_environment_cb(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_SET_GEOMETRY:
       {
          video_driver_state_t *video_st           = video_state_get_ptr();
-         struct retro_system_av_info *av_info     = &video_st->av_info;
-         struct retro_game_geometry  *geom        = (struct retro_game_geometry*)&av_info->geometry;
+         struct retro_game_geometry  *geom        = &video_st->av_info.geometry;
          const struct retro_game_geometry *in_geom= (const struct retro_game_geometry*)data;
+         bool base_size_changed;
+         bool aspect_changed;
+         bool viewport_changed;
 
-         if (!geom)
+         if (!in_geom)
             return false;
+
+         base_size_changed = geom->base_width != in_geom->base_width
+                          || geom->base_height != in_geom->base_height;
+         aspect_changed = geom->aspect_ratio != in_geom->aspect_ratio;
+         viewport_changed = base_size_changed
+               || (aspect_changed && runloop_aspect_hint_changes_viewport(
+                        settings, geom, in_geom));
+
+         if (     verbosity_get_log_level() == RETRO_LOG_DEBUG
+               && verbosity_is_enabled())
+         {
+            if (base_size_changed || aspect_changed)
+               RARCH_DBG("[Environ] SET_GEOMETRY: %ux%u, Aspect: %.3f.\n",
+                     in_geom->base_width, in_geom->base_height, in_geom->aspect_ratio);
+            else
+               RARCH_DBG("[Environ] SET_GEOMETRY.\n");
+         }
 
          /* Can potentially be called every frame,
           * don't do anything unless required. */
-         if (     (geom->base_width   != in_geom->base_width)
-               || (geom->base_height  != in_geom->base_height)
-               || (geom->aspect_ratio != in_geom->aspect_ratio))
+         if (base_size_changed || aspect_changed)
          {
-            bool video_frame_delay_auto = settings->bools.video_frame_delay_auto;
+            if (base_size_changed)
+            {
+               geom->base_width  = in_geom->base_width;
+               geom->base_height = in_geom->base_height;
+            }
+            if (aspect_changed)
+               geom->aspect_ratio = in_geom->aspect_ratio;
 
-            geom->base_width            = in_geom->base_width;
-            geom->base_height           = in_geom->base_height;
-            geom->aspect_ratio          = in_geom->aspect_ratio;
+            if (viewport_changed)
+            {
+               command_event(CMD_EVENT_VIDEO_SET_ASPECT_RATIO, NULL);
 
-            RARCH_LOG("[Environ] SET_GEOMETRY: %ux%u, Aspect: %.3f.\n",
-                  geom->base_width, geom->base_height, geom->aspect_ratio);
-
-            /* Forces recomputation of aspect ratios if
-             * using core-dependent aspect ratios. */
-            command_event(CMD_EVENT_VIDEO_SET_ASPECT_RATIO, NULL);
-
-            /* Ignore frame delay target temporarily */
-            if (video_frame_delay_auto)
-               video_st->frame_delay_pause = true;
+               if (settings->bools.video_frame_delay_auto)
+                  video_st->frame_delay_pause = true;
+            }
 
             /* TODO: Figure out what to do, if anything, with
                recording. */
-         }
-         else
-         {
-            RARCH_LOG("[Environ] SET_GEOMETRY.\n");
          }
          break;
       }
@@ -3947,7 +4015,7 @@ bool runloop_environment_cb(unsigned cmd, void *data)
 
       case RETRO_ENVIRONMENT_GET_VFS_INTERFACE:
       {
-         const uint32_t supported_vfs_version = 5;
+         const uint32_t supported_vfs_version = 6;
          static struct retro_vfs_interface vfs_iface =
          {
             /* VFS API v1 */
@@ -3981,7 +4049,10 @@ bool runloop_environment_cb(unsigned cmd, void *data)
             retro_vfs_copy_begin_impl,
             retro_vfs_copy_step_impl,
             retro_vfs_copy_close_impl,
-            retro_vfs_dirent_stat_impl
+            retro_vfs_dirent_stat_impl,
+             /* VFS API v6 */
+            retro_vfs_file_read_at_impl,
+            retro_vfs_file_write_at_impl
          };
 
          struct retro_vfs_interface_info *vfs_iface_info = (struct retro_vfs_interface_info *) data;
@@ -6313,6 +6384,9 @@ static runloop_pace_facts_t runloop_pace_gather(settings_t *settings,
    if (video_context_driver_presentable())                 f |= PACE_FACT_PRESENTABLE;
    if (runloop_st->frame_limit_minimum_time)               f |= PACE_FACT_FRAME_LIMIT;
    if (core_ran)                                           f |= PACE_FACT_CORE_RAN;
+   if (     core_ran
+         && video_st->dupe_skip_hold
+         && settings->bools.video_skip_dupe_frames)        f |= PACE_FACT_DUPE_SKIP;
    return runloop_driver_pacing_gather(settings, runloop_st, video_st, f);
 }
 
@@ -10404,7 +10478,8 @@ end:
                ? video_st->video_refresh_rate_original
                : settings->floats.video_refresh_rate);
    }
-   else if (runloop_pace_driver_fallback(pace_facts, runloop_st->pace))
+   else if (   runloop_pace_driver_fallback(pace_facts, runloop_st->pace)
+            || runloop_pace_dupe_skip_engages(pace_facts, runloop_st->pace))
    {
       runloop_st->pace         |= RUNLOOP_PACE_TIMER;
       pace_limit_min            = runloop_content_frame_time_us(

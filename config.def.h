@@ -571,6 +571,10 @@
  * times. Off: the fixed-timer pacing threaded video always had. */
 #define DEFAULT_VIDEO_THREADED_DISPLAY_PACING false
 
+/* Leave a frame the core marks as a repeat unpresented, so the display
+ * sees the content's own frame rate. Off: every repeat is presented. */
+#define DEFAULT_VIDEO_SKIP_DUPE_FRAMES false
+
 /* The Direct3D 9 drivers on a Direct3D9Ex device: a window presented
  * through the flip model, and the frame latency settings honoured.
  * Off: the discard swap effect and the runtime's own queue, as before. */
@@ -971,6 +975,8 @@
 #define DEFAULT_MENU_SHOW_SUBLABELS_CURRENT_SELECTION_ONLY false
 #define DEFAULT_MENU_SHOW_CONFIRM true
 #define DEFAULT_MENU_DYNAMIC_WALLPAPER_ENABLE true
+
+#define DEFAULT_MENU_SCROLL_QUICK true
 #define DEFAULT_MENU_SCROLL_FAST false
 #define DEFAULT_MENU_SCROLL_DELAY 256
 

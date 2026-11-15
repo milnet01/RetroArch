@@ -754,6 +754,7 @@ typedef struct settings
       bool video_threaded_display_pacing;
       bool video_d3d9ex_present;
       bool video_present_timing_from_display;
+      bool video_skip_dupe_frames;
       bool video_font_enable;
       bool video_disable_composition;
       bool video_post_filter_record;
@@ -924,6 +925,7 @@ typedef struct settings
       bool menu_linear_filter;
       bool menu_texture_mipmapping;
       bool menu_horizontal_animation;
+      bool menu_scroll_quick;
       bool menu_scroll_fast;
       bool menu_show_online_updater;
       bool menu_show_full_paths;

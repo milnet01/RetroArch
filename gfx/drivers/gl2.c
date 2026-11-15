@@ -45,6 +45,7 @@
 #include <gfx/scaler/scaler.h>
 #include <gfx/math/matrix_4x4.h>
 #include <formats/image.h>
+#include <streams/image_texture_file.h>
 #include <retro_inline.h>
 #include <retro_miscellaneous.h>
 #include <retro_math.h>
@@ -10705,7 +10706,8 @@ video_driver_t video_gl2 = {
 #ifdef HAVE_OPENXR
    gl2_set_vr_content_info,
 #endif
-   gl2_read_viewport_bgrx
+   gl2_read_viewport_bgrx,
+   true /* max_geometry_in_place */
 };
 
 gfx_display_ctx_driver_t gfx_display_ctx_gl = {

@@ -34,6 +34,7 @@
 #include <gfx/scaler/scaler.h>
 #include <gfx/video_frame.h>
 #include <formats/image.h>
+#include <streams/image_texture_file.h>
 #include <formats/image_yuv_blit.h>
 #include <retro_inline.h>
 #include <retro_miscellaneous.h>
@@ -10690,7 +10691,12 @@ video_driver_t video_metal = {
 #endif
    NULL, /* invalidate_hw_render_cache */
    metal_read_viewport_hdr,
-   &metal_raster_font
+   &metal_raster_font,
+#ifdef HAVE_OPENXR
+   NULL, /* set_vr_content_info */
+#endif
+   NULL, /* read_viewport_bgrx */
+   true /* max_geometry_in_place */
 };
 
 gfx_display_ctx_driver_t gfx_display_ctx_metal = {
