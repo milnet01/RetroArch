@@ -531,6 +531,10 @@ mkdir -p "$CI_TMP"
 CI_CCACHE="$CI_TMP/ccache"
 mkdir -p "$CI_CCACHE"
 [ -f "$CI_CCACHE/ccache.conf" ] || echo "max_size = 8G" >"$CI_CCACHE/ccache.conf"
+# ccache for the act containers, mounted at their ~/.ccache (job_act). Apart
+# from CI_CCACHE: the image's compilers are not this machine's.
+CI_ACT_CCACHE="$CI_TMP/act-ccache"
+mkdir -p "$CI_ACT_CCACHE"
 LOGDIR="$(mktemp -d "$CI_TMP/local-ci.XXXXXX")" || {
     echo "local-CI.sh: cannot create a log directory under $CI_TMP" >&2; exit 2; }
 JPAR="-j$JOBS"
@@ -875,6 +879,13 @@ act_image() {
 # again. host.containers.internal reaches the host. The URL needs the port, so
 # a free one is picked per run; the server still binds the LAN address, as
 # before.
+# -v CI_ACT_CCACHE:/root/.ccache: the workflows' "Save ccache" runs only on a
+# push to master, so through act nothing was ever saved and every compile
+# missed. The mount keeps the cache between runs and jobs. CCACHE_MAXSIZE
+# outranks the 250M the workflows' `ccache -M` writes. CCACHE_BASEDIR and
+# NOHASHDIR: each run's checkout is under a new LOGDIR, and without them its
+# path is part of every hash. :z labels the folder for containers; SELinux
+# otherwise refuses every write ("failed to write to /root/.ccache/ccache.conf").
 job_act() {
     local wf="${1%%:*}" out rc key port
     local -a only=() runner=()
@@ -894,8 +905,9 @@ job_act() {
         --cache-server-port "$port" \
         --cache-server-external-url "http://host.containers.internal:$port" \
         --env LSAN_OPTIONS=suppressions=/etc/local-ci-lsan.supp \
+        --env CCACHE_MAXSIZE=8G --env CCACHE_BASEDIR="$ACT_SRC" --env CCACHE_NOHASHDIR=1 \
         --pull=false --rm --container-daemon-socket - --concurrent-jobs 1 \
-        --container-options "--security-opt seccomp=unconfined --pids-limit 4096 --init --cap-add NET_RAW --cap-add NET_ADMIN" \
+        --container-options "--security-opt seccomp=unconfined --pids-limit 4096 --init --cap-add NET_RAW --cap-add NET_ADMIN -v $CI_ACT_CCACHE:/root/.ccache:z" \
         "${runner[@]}" "${only[@]}" ) 2>&1 | tee "$out"
     rc=${PIPESTATUS[0]}
     if [ "$rc" -eq 0 ] && ! grep -q 'Job succeeded' "$out"; then
