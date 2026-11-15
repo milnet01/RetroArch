@@ -5030,6 +5030,23 @@ static int menu_displaylist_parse_load_content_settings(
                0, 0, NULL))
             count++;
 
+#ifdef HAVE_CHEATS
+      /* Near the top, where it is seen, but below Resume, which
+       * confirming on a freshly opened Quick Menu still runs */
+      if (settings->bools.quick_menu_show_cheats)
+      {
+         char pack_path[PATH_MAX_LENGTH];
+         if (cheat_manager_get_pack_path(pack_path, sizeof(pack_path),
+                  settings->paths.path_cheat_database))
+            if (menu_entries_append(list,
+                     msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QUICK_MENU_CHEATS_FOR_CONTENT),
+                     MENU_ENUM_LABEL_QUICK_MENU_CHEATS_FOR_CONTENT_STR,
+                     MENU_ENUM_LABEL_QUICK_MENU_CHEATS_FOR_CONTENT,
+                     MENU_SETTING_ACTION, 0, 0, NULL))
+               count++;
+      }
+#endif
+
       if (     savestates_enabled
             && settings->bools.quick_menu_show_savestate_submenu)
       {

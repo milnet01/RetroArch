@@ -22,6 +22,7 @@
 - APPLE: Add jollycv, skyemu, gearlynx, amiarcadia, o2em, uzem , applewin, azahar cores to App Store builds
 - APPLE: Add Apple on-device OCR / translation to AI service
 - APPLE: Add avfoundation record driver
+- CHEATS: Quick Menu shows "Cheats for This Game" when the cheat folder holds a downloaded cheat file named after the running game; it loads that file into an empty cheat list and opens Cheats
 - COMMAND: Fix null pointer exception in COMMAND_GET_STATUS
 - COMMAND: Only allow pause when there is a core running
 - CHEEVOS: Update to rcheevos 12.3

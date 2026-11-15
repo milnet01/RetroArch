@@ -250,6 +250,12 @@ void cheat_manager_load_game_specific_cheats(const char *path_cheat_database);
 
 void cheat_manager_save_game_specific_cheats(const char *path_cheat_database);
 
+/* Writes to @s the path of the downloaded cheat file named after the
+ * running content, in the folder of one of the core's systems, and
+ * returns its length; 0 when there is none. */
+size_t cheat_manager_get_pack_path(char *s, size_t len,
+      const char *path_cheat_database);
+
 int cheat_manager_initialize_memory(rarch_setting_t *setting, size_t idx, bool wraparound);
 
 int cheat_manager_search_exact(rarch_setting_t *setting, size_t idx, bool wraparound);

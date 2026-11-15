@@ -50,6 +50,7 @@
 #include "runloop.h"
 #include "dynamic.h"
 #include "core.h"
+#include "core_info.h"
 #include "verbosity.h"
 
 /* TODO/FIXME - public global variables */
@@ -864,6 +865,40 @@ void cheat_manager_save_game_specific_cheats(const char *path_cheat_database)
       if (cheat_manager_save(cheat_file, NULL, true))
          RARCH_LOG("[Cheats] Save game-specific cheatfile: \"%s\".\n", cheat_file);
    }
+}
+
+size_t cheat_manager_get_pack_path(char *s, size_t len,
+      const char *path_cheat_database)
+{
+   size_t i;
+   core_info_t *core_info      = NULL;
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   /* name.cheatfile ends in ".cht", as the pack's files do */
+   const char *file_name       = path_basename_nocompression(
+         runloop_st->name.cheatfile);
+
+   if (     !path_cheat_database || !*path_cheat_database
+         || !file_name || !*file_name
+         || !core_info_get_current_core(&core_info)
+         || !core_info || !core_info->databases_list)
+      return 0;
+
+   /* The pack files each game under its system's database name */
+   for (i = 0; i < core_info->databases_list->size; i++)
+   {
+      const char *db_name = core_info->databases_list->elems[i].data;
+      size_t _len;
+      if (!db_name || !*db_name)
+         continue;
+      fill_pathname_join_special(s, path_cheat_database, db_name, len);
+      fill_pathname_slash(s, len);
+      _len = strlcat(s, file_name, len);
+      if (_len < len && path_is_valid(s))
+         return _len;
+   }
+
+   *s = '\0';
+   return 0;
 }
 
 void cheat_manager_state_free(void)

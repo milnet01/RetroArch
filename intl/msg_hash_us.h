@@ -25254,6 +25254,14 @@ MSG_HASH(
    "Set up cheat codes."
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_QUICK_MENU_CHEATS_FOR_CONTENT,
+   "Cheats for This Game"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_QUICK_MENU_CHEATS_FOR_CONTENT,
+   "Open the cheats of the downloaded cheat file named after this game, loading it if no cheats are loaded yet."
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_DISK_OPTIONS,
    "Disc Control"
    )

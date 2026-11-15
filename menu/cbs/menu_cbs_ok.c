@@ -8816,6 +8816,30 @@ static int action_ok_push_default(const char *path,
          ACTION_OK_DL_PUSH_DEFAULT);
 }
 
+#ifdef HAVE_CHEATS
+static int action_ok_cheats_for_content(const char *path,
+      const char *label, unsigned type, size_t idx, size_t entry_idx)
+{
+   char pack_path[PATH_MAX_LENGTH];
+   settings_t *settings = config_get_ptr();
+
+   /* Cheats already loaded may be the player's own, kept with the
+    * game; the pack's file would replace them, so it loads only
+    * into an empty list */
+   if (     !cheat_manager_get_size()
+         && cheat_manager_get_pack_path(pack_path, sizeof(pack_path),
+               settings->paths.path_cheat_database))
+   {
+      cheat_manager_state_free();
+      if (!cheat_manager_load(pack_path, false))
+         RARCH_WARN("[Cheats] Could not load \"%s\".\n", pack_path);
+   }
+
+   return action_ok_push_default(path,
+         MENU_ENUM_LABEL_CORE_CHEAT_OPTIONS_STR, type, idx, entry_idx);
+}
+#endif
+
 static int action_ok_start_core(const char *path,
       const char *label, unsigned type, size_t idx, size_t entry_idx)
 {
@@ -10305,6 +10329,9 @@ static int menu_cbs_init_bind_ok_compare_label(menu_file_list_cbs_t *cbs,
 #endif
          {MENU_ENUM_LABEL_SHADER_OPTIONS,                      action_ok_push_default},
          {MENU_ENUM_LABEL_CORE_CHEAT_OPTIONS,                  action_ok_push_default},
+#ifdef HAVE_CHEATS
+         {MENU_ENUM_LABEL_QUICK_MENU_CHEATS_FOR_CONTENT,       action_ok_cheats_for_content},
+#endif
          {MENU_ENUM_LABEL_CORE_INPUT_REMAPPING_OPTIONS,        action_ok_push_default},
          {MENU_ENUM_LABEL_DISC_INFORMATION,                    action_ok_push_default},
          {MENU_ENUM_LABEL_SYSTEM_INFORMATION,                  action_ok_push_default},

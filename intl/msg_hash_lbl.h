@@ -472,6 +472,10 @@ MSG_HASH(
    "core_cheat_options"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_QUICK_MENU_CHEATS_FOR_CONTENT,
+   "quick_menu_cheats_for_content"
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_CORE_COUNTERS,
    "core_counters"
    )

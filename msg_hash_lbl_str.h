@@ -138,6 +138,7 @@ extern const struct msg_hash_us_lbl_blob_s msg_hash_us_lbl_blob;
 #define MENU_ENUM_LABEL_CONTENT_ACTIONS_STR (msg_hash_us_lbl_blob.m_MENU_ENUM_LABEL_CONTENT_ACTIONS)
 #define MENU_ENUM_LABEL_BROWSE_URL_LIST_STR (msg_hash_us_lbl_blob.m_MENU_ENUM_LABEL_BROWSE_URL_LIST)
 #define MENU_ENUM_LABEL_CORE_CHEAT_OPTIONS_STR (msg_hash_us_lbl_blob.m_MENU_ENUM_LABEL_CORE_CHEAT_OPTIONS)
+#define MENU_ENUM_LABEL_QUICK_MENU_CHEATS_FOR_CONTENT_STR (msg_hash_us_lbl_blob.m_MENU_ENUM_LABEL_QUICK_MENU_CHEATS_FOR_CONTENT)
 #define MENU_ENUM_LABEL_CORE_COUNTERS_STR (msg_hash_us_lbl_blob.m_MENU_ENUM_LABEL_CORE_COUNTERS)
 #define MENU_ENUM_LABEL_CORE_INFORMATION_STR (msg_hash_us_lbl_blob.m_MENU_ENUM_LABEL_CORE_INFORMATION)
 #define MENU_ENUM_LABEL_CORE_CREATE_BACKUP_STR (msg_hash_us_lbl_blob.m_MENU_ENUM_LABEL_CORE_CREATE_BACKUP)
@@ -1918,6 +1919,7 @@ extern const struct msg_hash_us_lbl_blob_s msg_hash_us_lbl_blob;
 #define MENU_ENUM_LABEL_CONTENT_ACTIONS_STR "content_actions"
 #define MENU_ENUM_LABEL_BROWSE_URL_LIST_STR "browse_url_list"
 #define MENU_ENUM_LABEL_CORE_CHEAT_OPTIONS_STR "core_cheat_options"
+#define MENU_ENUM_LABEL_QUICK_MENU_CHEATS_FOR_CONTENT_STR "quick_menu_cheats_for_content"
 #define MENU_ENUM_LABEL_CORE_COUNTERS_STR "core_counters"
 #define MENU_ENUM_LABEL_CORE_INFORMATION_STR "core_information"
 #define MENU_ENUM_LABEL_CORE_CREATE_BACKUP_STR "core_create_backup"
