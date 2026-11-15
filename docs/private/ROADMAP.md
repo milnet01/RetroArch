@@ -2117,7 +2117,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: feature.
   Source: user-request-2026-10-02.
 
-- 📋 [RETR-0026] **FEATURE — Cheats: offer the exact-match cheat file for the running game and open it directly.**
+- 🚧 [RETR-0026] **FEATURE — Cheats: offer the exact-match cheat file for the running game and open it directly.**
   User request 2026-10-03. Today the user must download cheats from the
   Online Updater, start the game, open the Quick Menu, open Cheats, pick
   the system from a long list, then the game from a longer one, before
@@ -2132,6 +2132,23 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   the way the cheat packs are named (user deferred to me): the cheat
   file's name equals the game's name, looked up in the cheat folder for
   the running system.
+  2026-11-15: built as ff002ee15a on local/fixes-2026-09 (push queued
+  with the weekly merge in cc-job push-fixes-1115). Quick Menu shows
+  "Cheats for This Game" below Close Content when
+  <cheat folder>/<core database name>/<game>.cht exists; it loads that
+  file into an empty cheat list and opens Cheats. It is not first in the
+  list, as agreed, but below Resume, so confirming on a freshly opened
+  Quick Menu still resumes. With cheats already loaded (your own, kept
+  per game) it only opens Cheats, so your on/off choices are never
+  replaced. 243 of 306 games in /mnt/Games/ROMS/snes have such a file.
+  Checked headless with snes9x: entry shown for ActRaiser (USA), 116
+  cheats loaded, choices kept; no entry for Addams Family Values (USA).
+  Next: install with the weekly build; then the upstream PR the item
+  asks for.
+  Waiting-on: user (try Quick Menu > Cheats for This Game in a game
+  with downloaded cheats, and say whether it should also match files
+  like "<game> (Action Replay).cht"; recommendation: keep the exact
+  match, which is the agreed design and covers most games, 2026-11-15)
   **Layman:** When a cheat file exists for the game you are playing, RetroArch should say so and take you straight to switching cheats on and off, instead of making you dig through long lists.
   Kind: feature.
   Source: user-request-2026-10-03.
