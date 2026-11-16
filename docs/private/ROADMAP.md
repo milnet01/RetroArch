@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=75 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=76 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -226,7 +226,7 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Kind: test.
   Source: gate-failure-2026-11-15.
 
-- 🚧 [RETR-0073] **Make ccache hit inside the gate's act containers.**
+- ✅ [RETR-0073] **Make ccache hit inside the gate's act containers.**
   Measured on the 2026-11-15 gate of ff002ee15a (93 min wall): the act jobs' ccache statistics show 0% hits for libretro-common-tests (850 misses), samples-gfx (382) and samples-settings (17), and 4% for menu-harness (496 of 516). The workflows restore and save ~/.ccache through actions/cache, but the restore misses or the restored cache does not match.
   Compile-heavy act steps that day: libretro-common unit suites 5m18s, Compile matrix 3m48s, menu-media's shipping-frontend builds (1m44s twice, 2m14s), menu-harness headless build 1m14s.
   Fix in local-CI.sh only (the workflows are upstream files): find why the act cache misses (key, path or compiler-check differences), or give each act container a persistent ccache directory under the Scratchpad, as the native jobs already have, with CCACHE_BASEDIR and NOHASHDIR.
@@ -242,6 +242,26 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Measured: act:Linux-samples-settings.yml second run hit 14 of 17
   compiles (82%), against 0 of 17 before. Still to check: the next full
   gate's per-step wall times against the 93-min run.
+  2026-11-16, measured. The push gate of 9b310c368c (passed, pushed)
+  selected no compile-heavy act job, since only local-CI.sh changed. So
+  the seven compile-heavy workflows ran twice by name on 9b310c368c
+  (cold cache, then warm), with a scratch copy of local-CI.sh that keeps
+  its logs. Compile steps, 2026-11-15 / cold / warm:
+  - menu-harness "Build RetroArch headless": 1m14s / 1m34s / 8s
+    (516 of 516 hits).
+  - menu-media "Build shipping frontend" x3: 5m46s / 6m56s / 4m32s.
+  - libretro-common "Build and run the unit test suites": 5m19s /
+    6m06s / 4m04s. Its 195-object part hits 98%; its 850-object coverage
+    build still hits 0% (RETR-0076).
+  - samples-gfx: most jobs 100% on the warm run; samples-gfx-display
+    80 of 382 (21%), cause not found.
+  - Compile matrix: 3m48s / 4m49s / 4m00s; prints no ccache statistics.
+  Whole runs: cold 2h29m, warm 1h25m, both naming every samples-gfx job
+  (the gate selects a few). The warm run saves about 6 min of compile
+  steps per gate that selects these jobs. Both runs failed samples-gfx
+  in jobs the gate does not select: the vulkan-upscaler lavapipe leak
+  known from RETR-0061, and D3D11/D3D12 hw-ring cases under Wine. No
+  compile step failed.
   **Layman:** The push check recompiles the same code from scratch in every container; reusing earlier compiles would cut the most time and use less CPU.
   Kind: perf.
   Source: user-request-2026-11-15.
@@ -263,6 +283,25 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   **Layman:** Some checks only compile code or scan files; two of them could run side by side without using more of the computer than now.
   Kind: perf.
   Source: user-request-2026-11-15.
+
+- 📋 [RETR-0076] **Make the gate's coverage builds hit the act ccache.**
+  Linux-libretro-common-tests builds 850 objects with
+  -ftest-coverage -fprofile-arcs (libretro-common/Makefile.test,
+  COVERAGE_CFLAGS). ccache 4.14 hashes the working directory for
+  -ftest-coverage regardless of CCACHE_NOHASHDIR (man ccache, sloppiness
+  gcno_cwd), and each gate checks out under a new LOGDIR, so every
+  compile misses. sloppiness=gcno_cwd would make it hit but leave .gcno
+  files naming an old checkout, which may break the job's lcov step.
+  Likelier fix: check the act source out at a fixed path per lane. Also
+  look at samples-gfx-display (80 of 382 hits on a warm run, cause not
+  found).
+  Check: two runs of act:Linux-libretro-common-tests.yml on one commit;
+  the second shows over 90% hits and lcov still passes.
+  **Layman:** The biggest unit-test build in the push check still recompiles from scratch every time, because the cache treats each run's folder as different.
+  Kind: perf.
+  Source: retr-0073-measurement-2026-11-16.
+  Lanes: local-CI.sh.
+  Splits-from: RETR-0073.
 
 ### Spec-needed
 
