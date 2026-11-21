@@ -43,7 +43,9 @@
 #   Jobs run one at a time. Inside a job, make runs $LOCAL_CI_JOBS jobs at
 #   once (default 4, to bound RAM on this machine): `nproc` and `getconf
 #   _NPROCESSORS_ONLN` report that number to every step, native, container
-#   or act, so a workflow's `make -j$(nproc)` keeps to it.
+#   or act, so a workflow's `make -j$(nproc)` keeps to it. The exception is
+#   LANE_WORKFLOWS, compile-only act jobs: $LOCAL_CI_LANES of them (default
+#   2) run at once, each told its share of that number.
 #
 #   Build trees and logs go under $LOCAL_CI_TMPDIR, else the git config
 #   ants.localci.tmpdir, else ~/.cache/local-ci; on disk, since /tmp is tmpfs
@@ -547,8 +549,9 @@ JPAR="-j$JOBS"
 # step, so a step's `make -j$(nproc)` keeps to this machine's limit.
 CPU_SHIM="$LOGDIR/cpu-shim"
 mkdir -p "$CPU_SHIM"
-printf '#!/bin/sh\necho %s\n' "$JOBS" >"$CPU_SHIM/nproc"
-printf '#!/bin/sh\ncase "$1" in _NPROCESSORS_ONLN|_NPROCESSORS_CONF) echo %s ;;\n*) exec /usr/bin/getconf "$@" ;; esac\n' \
+# LOCAL_CI_NPROC, when set, gives a lane its share instead (LANE_WORKFLOWS).
+printf '#!/bin/sh\necho "${LOCAL_CI_NPROC:-%s}"\n' "$JOBS" >"$CPU_SHIM/nproc"
+printf '#!/bin/sh\ncase "$1" in _NPROCESSORS_ONLN|_NPROCESSORS_CONF) echo "${LOCAL_CI_NPROC:-%s}" ;;\n*) exec /usr/bin/getconf "$@" ;; esac\n' \
     "$JOBS" >"$CPU_SHIM/getconf"
 chmod +x "$CPU_SHIM/nproc" "$CPU_SHIM/getconf"
 
@@ -778,14 +781,20 @@ job_headless_i686() {
 # act:<workflow>  (ubuntu-latest, the real workflow file through act)
 #   act needs a Docker API socket and a git checkout. A podman service is
 #   started for the run and stopped on exit; the checkout is a depth-2 fetch
-#   of ARCHIVE_REF under $LOGDIR, made once and reused by every act job, deep
+#   of ARCHIVE_REF at $CI_TMP/act-src, made once and reused by every act job, deep
 #   enough for Removed-Member-Check's HEAD^. It holds its own objects: a clone sharing this
 #   repository's has none inside the container. It is on a branch, not detached:
 #   act copies files and no empty directories, so with no ref in .git/refs the
 #   job's copy lacks that directory and git says "Not a git repository" there.
 #   Jobs inside one workflow run one at a time, to bound RAM; the legs of one
 #   job's matrix do not, as act ignores --concurrent-jobs for them.
+#   The checkout's path is the same every run: act copies it into the job at
+#   that path, and ccache hashes the directory of a -ftest-coverage compile
+#   whatever CCACHE_NOHASHDIR says, so a new path per run missed on every
+#   coverage object (RETR-0076). A lock keeps it to one run at a time; a
+#   second run at once takes a path under its own $LOGDIR instead.
 ACT_SRC=""
+ACT_DIR=""
 ACT_SOCK=""
 ACT_PID=""
 #   A failed setup is not retried: a second try would meet the first's
@@ -803,26 +812,34 @@ act_setup_once() {
     ACT_SOCK="$LOGDIR/podman.sock"
     podman system service --time=0 "unix://$ACT_SOCK" >"$LOGDIR/podman-service.log" 2>&1 &
     ACT_PID=$!
+    ACT_DIR="$LOGDIR/act-src"
+    exec {ACT_LOCK}>"$CI_TMP/act-src.lock"
+    if flock -n "$ACT_LOCK"; then
+        ACT_DIR="$CI_TMP/act-src"
+        rm -rf "$ACT_DIR"                  # a killed run's leftover
+    else
+        echo "another run holds $CI_TMP/act-src; checking out under $LOGDIR (cold ccache for coverage builds)"
+    fi
     # The clone and the socket go too, so a kept log directory holds logs only.
-    trap '[ -n "$ACT_PID" ] && kill "$ACT_PID" 2>/dev/null; rm -rf "$LOGDIR/act-src" "$ACT_SOCK"' EXIT
+    trap '[ -n "$ACT_PID" ] && kill "$ACT_PID" 2>/dev/null; rm -rf "$ACT_DIR" "$ACT_SOCK"' EXIT
     local _; for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$ACT_SOCK" ] && break; sleep 1; done
     [ -S "$ACT_SOCK" ] || { echo "podman service did not start"; return 1; }
-    git init -q "$LOGDIR/act-src" \
-      && git -C "$LOGDIR/act-src" fetch -q \
+    git init -q "$ACT_DIR" \
+      && git -C "$ACT_DIR" fetch -q \
            --upload-pack 'git -c uploadpack.allowAnySHA1InWant=true upload-pack' \
            --depth 2 \
            "file://$ROOT" "$(git -C "$ROOT" rev-parse "$ARCHIVE_REF")" \
-      && git -C "$LOGDIR/act-src" checkout -q -b local-ci FETCH_HEAD \
+      && git -C "$ACT_DIR" checkout -q -b local-ci FETCH_HEAD \
       || return 1
     act_image || return 1
-    ACT_SRC="$LOGDIR/act-src"
+    ACT_SRC="$ACT_DIR"
 }
 
 # act_image : set ACT_RUN_IMAGE, building it from ACT_IMAGE (see
 # ACT_RUN_IMAGE for why) when it is missing or --pull asked for a fresh base.
 act_image() {
     local pkgs p keep=""
-    pkgs="$(python3 -I "$LOGDIR/act-src/tools/ci_local.py" apt-pkgs)" \
+    pkgs="$(python3 -I "$ACT_DIR/tools/ci_local.py" apt-pkgs)" \
         || { echo "tools/ci_local.py apt-pkgs failed at this ref"; return 1; }
     for p in $pkgs; do
         case " $ACT_IMAGE_LEAVE_OUT " in *" $p "*) ;; *) keep="$keep $p" ;; esac
@@ -910,6 +927,7 @@ job_act() {
         --cache-server-external-url "http://host.containers.internal:$port" \
         --env LSAN_OPTIONS=suppressions=/etc/local-ci-lsan.supp \
         --env CCACHE_MAXSIZE=8G --env CCACHE_BASEDIR="$ACT_SRC" --env CCACHE_NOHASHDIR=1 \
+        ${ACT_NPROC:+--env LOCAL_CI_NPROC="$ACT_NPROC"} \
         --pull=false --rm --container-daemon-socket - --concurrent-jobs 1 \
         --container-options "--security-opt seccomp=unconfined --pids-limit 4096 --init --cap-add NET_RAW --cap-add NET_ADMIN -v $CI_ACT_CCACHE:/root/.ccache:z" \
         "${runner[@]}" "${only[@]}" ) 2>&1 | tee "$out"
@@ -947,6 +965,28 @@ for r in "${CHANGED_RESULTS[@]}"; do
     [ "${r%% *}" = FAIL ] && overall=1
 done
 
+# Compile-only and tree-scan act workflows: no timing step, no runtime test,
+# no Wine. When a run selects two or more, they run first, LANES at once,
+# each lane's steps told JOBS/LANES CPUs (LOCAL_CI_NPROC), so the machine
+# still runs JOBS compiles in all (RETR-0075). Every other job runs alone.
+LANE_WORKFLOWS=(Compile-Matrix.yml Linux-qnx-standin.yml Overlap-Copy-Check.yml
+    Removed-Member-Check.yml Extern-C-Prototype-Check.yml Ctx-Presentable-Check.yml
+    Samples-Objdir-Check.yml Msg-Hash-Packed-Check.yml Win-Macro-Names-Check.yml)
+LANES="${LOCAL_CI_LANES:-2}"
+
+# report <job> <rc> <log> : print a job's verdict and add it to RESULTS.
+report() {
+    if [ "$2" -eq 0 ]; then
+        echo "PASS"; RESULTS+=("PASS  $1")
+    else
+        echo "FAIL  (see $3)"; RESULTS+=("FAIL  $1 -> $3")
+        echo "   --- last 20 log lines ---"
+        tail -n 20 "$3" | sed 's/^/   /'
+        overall=1
+    fi
+}
+
+declare -a SERIAL=() LANED=()
 for job in "${SELECTED[@]}"; do
     fn="${DISPATCH[$job]:-}"; arg=""
     [ "${job#act:}" != "$job" ] && { fn=job_act; arg="${job#act:}"; }
@@ -965,6 +1005,46 @@ for job in "${SELECTED[@]}"; do
             continue 2
         done
     fi
+    for a in "${LANE_WORKFLOWS[@]}"; do
+        [ "$a" = "${arg%%:*}" ] && { LANED+=("$job"); continue 2; }
+    done
+    SERIAL+=("$job")
+done
+if [ "${#LANED[@]}" -lt 2 ] || [ "$LANES" -lt 2 ]; then
+    SERIAL=("${LANED[@]}" "${SERIAL[@]}"); LANED=()
+fi
+
+if [ "${#LANED[@]}" -gt 0 ]; then
+    # Set up act here, not in a lane: its EXIT trap stops the podman
+    # service, and a lane's subshell would fire it when the lane ends.
+    act_setup >"$LOGDIR/act-setup.log" 2>&1 \
+        || echo "!! act setup failed — see $LOGDIR/act-setup.log"
+    echo ">> ${#LANED[@]} compile-only act jobs, $LANES at a time ..."
+    lane_pids=()
+    for ((l = 0; l < LANES; l++)); do
+        ( ACT_NPROC=$((JOBS / LANES)); [ "$ACT_NPROC" -ge 1 ] || ACT_NPROC=1
+          for ((i = l; i < ${#LANED[@]}; i += LANES)); do
+              job="${LANED[$i]}"; arg="${job#act:}"
+              # Outside an if, for the reason the serial loop gives.
+              job_act "$arg" >"$LOGDIR/$arg.log" 2>&1
+              echo $? >"$LOGDIR/$arg.rc"
+          done ) &
+        lane_pids+=($!)
+    done
+    # The lanes only: a bare wait would also wait on act_setup's podman
+    # service, which runs until the script exits.
+    wait "${lane_pids[@]}"
+    for job in "${LANED[@]}"; do
+        arg="${job#act:}"
+        printf '>> %-14s ... ' "$job"
+        report "$job" "$(cat "$LOGDIR/$arg.rc" 2>/dev/null || echo 1)" "$LOGDIR/$arg.log"
+        rm -f "$LOGDIR/$arg.rc"
+    done
+fi
+
+for job in "${SERIAL[@]}"; do
+    fn="${DISPATCH[$job]:-}"; arg=""
+    [ "${job#act:}" != "$job" ] && { fn=job_act; arg="${job#act:}"; }
     log="$LOGDIR/${arg:-$job}.log"
     printf '>> %-14s ... ' "$job"
     # Called outside an if: inside one, bash ignores set -e in the job and
@@ -972,14 +1052,7 @@ for job in "${SELECTED[@]}"; do
     # and only its last command could fail it.
     "$fn" "${arg:-$job}" >"$log" 2>&1
     rc=$?
-    if [ "$rc" -eq 0 ]; then
-        echo "PASS"; RESULTS+=("PASS  $job")
-    else
-        echo "FAIL  (see $log)"; RESULTS+=("FAIL  $job -> $log")
-        echo "   --- last 20 log lines ---"
-        tail -n 20 "$log" | sed 's/^/   /'
-        overall=1
-    fi
+    report "$job" "$rc" "$log"
 done
 
 echo
