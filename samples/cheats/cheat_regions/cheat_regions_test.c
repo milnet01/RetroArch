@@ -12,6 +12,7 @@
 #include "cheat_manager.h"
 #include "runloop.h"
 #include "core.h"
+#include "core_info.h"
 #include "msg_hash.h"
 #include "verbosity.h"
 
@@ -51,6 +52,9 @@ size_t fill_pathname_join(char *o, const char *d, const char *p, size_t n)
 const char *path_basename_nocompression(const char *p) { return p; }
 bool path_is_valid(const char *p) { (void)p; return false; }
 bool path_mkdir(const char *p) { (void)p; return false; }
+/* No core is loaded: cheat_manager_get_pack_path() finds no pack */
+bool core_info_get_current_core(core_info_t **c) { *c = NULL; return false; }
+size_t fill_pathname_slash(char *s, size_t n) { (void)s; (void)n; return 0; }
 
 void RARCH_LOG(const char *fmt, ...) { (void)fmt; }
 
