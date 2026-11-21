@@ -121,6 +121,8 @@ GITHUB_ONLY=(
     "CI macOS VideoToolbox (MacOS-videotoolbox-encode.yml)"
     "CI macOS VideoToolbox HEVC (MacOS-videotoolbox-hevc.yml)"
     "Actions cache upkeep (Prune-caches.yml)"
+    "CI macOS core signatures (MacOS-core-signatures.yml)"
+    "CI Switch 2/libounce (Switch2-libounce.yml)"
 )
 
 # Every runnable Linux job, in CI-cost order (native first, containers last).
@@ -182,6 +184,8 @@ ACT_WORKFLOWS=(
     Linux-qnx-standin.yml Linux-tsan-samples.yml Linux-vulkan-resize.yml
     Linux-wayland-input.yml Linux-webm-player.yml Samples-Objdir-Check.yml
     Windows-wine-input.yml Windows-wine-menu.yml Windows-wine-views.yml
+    Linux-core-signatures.yml Linux-glcore-glsl.yml Linux-shader-validation.yml
+    mdns.yml Savestate-lifetime.yml Win-Macro-Names-Check.yml
 )
 # Most act jobs a default run adds for unpushed commits, Windows-wine-* never
 # among them (see the selection loop). A common source can
