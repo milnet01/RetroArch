@@ -281,7 +281,7 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Kind: perf.
   Source: user-request-2026-11-15.
 
-- 📋 [RETR-0075] **Run the gate's compile-only act jobs two at a time, inside the same -j4 budget.**
+- ✅ [RETR-0075] **Run the gate's compile-only act jobs two at a time, inside the same -j4 budget.**
   The gate runs every job one after another. Its own CPU averaged about half a core over 93 minutes (2675 s CPU; container CPU is counted under podman-service).
   Proposal: an explicit allow-list of compile-only and tree-scan act jobs (Compile-Matrix, msvc6/qnx stand-ins, Overlap-Copy, Removed-Member, Extern-C-Prototype, Ctx-Presentable, Samples-Objdir, Msg-Hash-Packed) runs in two lanes at -j2 each, so the total stays at 4 compile jobs. Every job with a timing step (TIMING_STEPS), TSan, menu-media, samples-gfx and the menu harness still runs alone on a quiet machine, so nothing timing-sensitive changes.
   Memory: peak RSS per job was about 1.1 GB; two lanes stay well inside the free RAM.
@@ -291,11 +291,21 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   (7ded07d8c7..b59b2186b9) lands. That push's gate added the full 20
   changed-file act jobs, run one after another; the merge is the case
   this item targets.
+  Shipped 2026-11-21 in 982799c8cf (local/fixes-2026-09, pushed).
+  LANE_WORKFLOWS: Compile-Matrix, Linux-qnx-standin, Overlap-Copy,
+  Removed-Member, Extern-C-Prototype, Ctx-Presentable, Samples-Objdir,
+  Msg-Hash-Packed, Win-Macro-Names. Linux-msvc6-standin left out: it
+  runs programs under Wine, so it is not compile-only. Each lane's steps
+  get LOCAL_CI_NPROC=2 (a throwaway act step printed NPROC=2 GETCONF=2;
+  4/4 without it). The first test found a hang: a bare wait also waited
+  on act's podman service; the lanes are now waited on by pid. The push
+  gate for 982799c8cf ran 8 lane jobs two at a time, all passing; 23
+  jobs in 37m40s. No like-for-like baseline, so no speed-up figure.
   **Layman:** Some checks only compile code or scan files; two of them could run side by side without using more of the computer than now.
   Kind: perf.
   Source: user-request-2026-11-15.
 
-- 📋 [RETR-0076] **Make the gate's coverage builds hit the act ccache.**
+- ✅ [RETR-0076] **Make the gate's coverage builds hit the act ccache.**
   Linux-libretro-common-tests builds 850 objects with
   -ftest-coverage -fprofile-arcs (libretro-common/Makefile.test,
   COVERAGE_CFLAGS). ccache 4.14 hashes the working directory for
@@ -308,6 +318,16 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   found).
   Check: two runs of act:Linux-libretro-common-tests.yml on one commit;
   the second shows over 90% hits and lcov still passes.
+  Shipped 2026-11-21 in 982799c8cf. Cause confirmed: act copies the
+  checkout into the job at its host path, which was under each run's
+  LOGDIR. The checkout now sits at a fixed path under the gate's tmpdir,
+  held by a flock; a second run at once falls back to its LOGDIR and
+  says so. Check: Linux-libretro-common-tests twice on one tree, both
+  passing (lcov included); the second run's own ccache counters (the
+  workflow zeroes them) read 191 hits and 4 misses, 98%, 638 s. The
+  850-object figure above was wrong: ccache sees about 195 compiles a
+  run. samples-gfx-display's low hit rate was not looked at; file it if
+  it shows again.
   **Layman:** The biggest unit-test build in the push check still recompiles from scratch every time, because the cache treats each run's folder as different.
   Kind: perf.
   Source: retr-0073-measurement-2026-11-16.
