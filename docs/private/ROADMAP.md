@@ -271,6 +271,12 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Proposal: local-CI.sh records each passing job against the tree hash, the act image tag and the job's workflow file hash. A later run on the same tree hash, image and workflow reuses those passes and runs only the rest. Any change to the tree, image or workflow re-runs everything.
   Not flaky: a reused pass covers byte-identical inputs. It never turns a failure into a pass.
   Waiting-on: user (this lets the gate skip jobs it already passed on the identical tree; the global rules say a skip is the hook's to take, so it needs your OK and probably claude-config's standards/local-gate.md, 2026-11-15). Recommendation: yes, limited to the identical tree hash.
+  Decided 2026-11-21: the user deferred to the recommendation ("On all
+  technical questions I defer to you"); build it, identical tree hash
+  only. It would not have helped on 2026-11-21: each of three gate runs
+  followed a fix, so the tree changed each time. Tell claude-config
+  before building (a skip is the hook's to take,
+  standards/local-gate.md).
   **Layman:** After one check fails, the next push re-runs all 30-odd checks even though the code is identical; it could re-run only the one that failed.
   Kind: perf.
   Source: user-request-2026-11-15.
@@ -280,6 +286,11 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Proposal: an explicit allow-list of compile-only and tree-scan act jobs (Compile-Matrix, msvc6/qnx stand-ins, Overlap-Copy, Removed-Member, Extern-C-Prototype, Ctx-Presentable, Samples-Objdir, Msg-Hash-Packed) runs in two lanes at -j2 each, so the total stays at 4 compile jobs. Every job with a timing step (TIMING_STEPS), TSan, menu-media, samples-gfx and the menu harness still runs alone on a quiet machine, so nothing timing-sensitive changes.
   Memory: peak RSS per job was about 1.1 GB; two lanes stay well inside the free RAM.
   Waiting-on: user (two lanes at once still keeps to -j4 in total, but more containers are up together; OK? 2026-11-15). Recommendation: yes, allow-list only, after the ccache item, which may make it unnecessary.
+  Decided 2026-11-21: the user approved ("if you can speed it up, then
+  please do so"). Build after the weekly-merge push
+  (7ded07d8c7..b59b2186b9) lands. That push's gate added the full 20
+  changed-file act jobs, run one after another; the merge is the case
+  this item targets.
   **Layman:** Some checks only compile code or scan files; two of them could run side by side without using more of the computer than now.
   Kind: perf.
   Source: user-request-2026-11-15.
