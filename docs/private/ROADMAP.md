@@ -2963,6 +2963,18 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   installed as RetroArch/retroarch (sha256 81f4b34c089bf2ed...,
   "Version: 1.22.2 Nov 15 2026"). The previous binary is kept as
   retroarch.2026-11-12 (sha256 f8ed1eeb46719700...).
+  2026-11-21 weekly merge: upstream 360044e27e merged as 7ded07d8c7; six
+  conflicts resolved (qb/config.libs.sh, runahead.c,
+  input/bsv/bsvmovie.c, menu/drivers materialui/ozone/xmb; commit body
+  lists each). The gate failed twice before passing: 9e89dd8caf
+  (upstream strftime_am_pm_test failed under LC_TIME=en_ZA.UTF-8, a
+  24-hour locale), d67fe897e2 (eight new upstream workflows classified),
+  b59b2186b9 (cheat samples lacked stubs for two calls ff002ee15a
+  added). Pushed 9b310c368c..b59b2186b9, 24/24 jobs PASS. Installed
+  RetroArch/retroarch from 7ded07d8c7 (sha256 d4a26c2f34...); previous
+  binary kept as retroarch.2026-11-15. Build note: three stale obj-unix
+  .d files named sources upstream moved and had to be deleted. Candidate
+  upstream PR: the strftime test fix (needs the user).
   **Layman:** Our version of RetroArch becomes the one the menu starts, kept up to date with libretro every week.
   Kind: chore.
   Source: user-decision-2026-11-04.
