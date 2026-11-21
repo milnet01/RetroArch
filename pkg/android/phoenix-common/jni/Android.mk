@@ -17,6 +17,11 @@ HAVE_SAF := 1
 # but sockets; the NFSv3/v4 client and its nfs:// backend likewise.
 HAVE_CRYPTO   := 1
 HAVE_KEYCHAIN := 1
+HAVE_CORE_SIGNATURES := 1
+# ndk-build HAVE_CORE_LOAD_CHECK=0 to load cores without the check
+HAVE_CORE_LOAD_CHECK := 1
+# ndk-build HAVE_CORE_SIGNING_TEST_KEY=1 for test builds only
+HAVE_CORE_SIGNING_TEST_KEY := 0
 HAVE_RETROSSL := 1
 HAVE_RETROSMB := 1
 HAVE_RETRONFS := 1
@@ -97,6 +102,15 @@ ifeq ($(HAVE_CRYPTO),1)
    ifeq ($(HAVE_RETROSMB),1)
       DEFINES += -DHAVE_SMBCLIENT -DHAVE_RETROSMB
    endif
+   ifeq ($(HAVE_CORE_SIGNATURES),1)
+      DEFINES += -DHAVE_CORE_SIGNATURES
+      ifeq ($(HAVE_CORE_LOAD_CHECK),1)
+         DEFINES += -DHAVE_CORE_LOAD_CHECK
+      endif
+      ifeq ($(HAVE_CORE_SIGNING_TEST_KEY),1)
+         DEFINES += -DHAVE_CORE_SIGNING_TEST_KEY
+      endif
+   endif
 endif
 
 ifeq ($(HAVE_MODELINE),1)
@@ -133,7 +147,6 @@ DEFINES += -DRARCH_MOBILE \
 	   -DANDROID \
 	   -DHAVE_DYNAMIC \
 	   -DHAVE_OPENGL \
-	   -DHAVE_OVERLAY \
 	   -DHAVE_OPENGLES \
 	   -DGLSL_DEBUG \
 	   -DHAVE_DYLIB \
@@ -203,6 +216,10 @@ DEFINES += -DRARCH_MOBILE \
 	   -DHAVE_CORE_INFO_CACHE \
 	   -DHAVE_SSL
 
+ifneq ($(META_QUEST_BUILD),1)
+   DEFINES += -DHAVE_OVERLAY
+endif
+
 ifeq ($(HAVE_RETROSSL),1)
    DEFINES += -DHAVE_RETROSSL
 endif
@@ -257,6 +274,15 @@ endif
 
 ifeq ($(HAVE_VULKAN_CUSTOM_DRIVER),1)
 DEFINES += -DHAVE_VULKAN_CUSTOM_DRIVER
+endif
+
+# Play Store builds take their cores through Play; Quest passes
+# PLAY_STORE_BUILD=1 too but uses the buildbot. Mirrors
+# play_feature_delivery_enabled().
+ifeq ($(PLAY_STORE_BUILD),1)
+   ifneq ($(META_QUEST_BUILD),1)
+      DEFINES += -DANDROID_PLAY_DELIVERY
+   endif
 endif
 
 LOCAL_CFLAGS   += -Wall -std=gnu99 -pthread -Wno-unused-function -fno-stack-protector -funroll-loops $(DEFINES)

@@ -6,11 +6,20 @@
 #include <retro_spsc.h>
 #include <retro_atomic.h>
 #include <formats/rac3.h>
+#if defined(HAVE_MF_AUDIO) && defined(HAVE_RTMP) && defined(HAVE_RFLV)
+#define RECORD_VULKAN_OUTPUT_STREAM
+#include "record_stream_vulkan.h"
+#endif
+
 
 struct record_gpu_output_vulkan
 {
    retro_spsc_t audio;
-   uint64_t audio_pts;
+   uint64_t audio_pts, audio_frames, audio_limit;
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   record_stream_gpu_t *stream;
+   record_stream_wait_t stream_wait;
+#endif
    record_gpu_worker_vulkan_t *worker;
    record_mux_mp4_t *mux;
    record_file_posix_t *file;
@@ -18,10 +27,23 @@ struct record_gpu_output_vulkan
    float *pcm;
    uint8_t *packet;
    size_t frame_bytes, fifo_bytes;
-   unsigned rate, channels, staged;
+   unsigned rate, channels, staged, timescale;
    retro_atomic_int_t audio_closed, failed;
-   bool writing, video_end, audio_end, audio_turn, ended;
+   bool writing, video_end, audio_end, audio_turn, ended, audio_follow_video;
 };
+
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+static int record_vulkan_stream_result(int result)
+{
+   switch (result)
+   {
+      case RECORD_GPU_OUTPUT_BUSY: return RECORD_VULKAN_OUTPUT_BUSY;
+      case RECORD_GPU_OUTPUT_PROGRESS: return RECORD_VULKAN_OUTPUT_PROGRESS;
+      case RECORD_GPU_OUTPUT_END: return RECORD_VULKAN_OUTPUT_END;
+      default: return RECORD_VULKAN_OUTPUT_ERROR;
+   }
+}
+#endif
 
 static int record_gpu_output_vulkan_fail(record_gpu_output_vulkan_t *p,
                                   enum record_gpu_output_vulkan_error error)
@@ -51,6 +73,10 @@ record_gpu_output_vulkan_new(record_gpu_worker_vulkan_t *worker,
    if (!worker || !config || !path || !*path || config->video.ac3_header ||
        config->video.ac3_header_size)
       return NULL;
+#ifndef RECORD_VULKAN_OUTPUT_STREAM
+   if (config->stream_client)
+      return NULL;
+#endif
    p = (record_gpu_output_vulkan_t *)calloc(1, sizeof(*p));
    if (!p)
       return NULL;
@@ -58,6 +84,35 @@ record_gpu_output_vulkan_new(record_gpu_worker_vulkan_t *worker,
    retro_atomic_int_init(&p->failed, 0);
    p->worker = worker;
    p->rate = config->audio_rate;
+   p->timescale = config->video.timescale;
+   p->audio_follow_video = config->audio_follow_video;
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (config->stream_client)
+   {
+      record_gpu_output_config_t stream_config;
+      memset(&stream_config, 0, sizeof(stream_config));
+      stream_config.video = config->video;
+      stream_config.stream_color.primaries = config->video.color_primaries;
+      stream_config.stream_color.transfer = config->video.transfer_characteristics;
+      stream_config.stream_color.matrix = config->video.matrix_coefficients;
+      stream_config.stream_color.range = (config->video.color_primaries
+            || config->video.transfer_characteristics || config->video.matrix_coefficients
+            || config->video.full_range) ? (config->video.full_range ? 2 : 1) : 0;
+      stream_config.stream_color.max_cll = config->video.max_cll;
+      stream_config.stream_color.max_fall = config->video.max_fall;
+      stream_config.stream_color.mastering = config->video.mastering;
+      stream_config.audio_rate = config->audio_rate;
+      stream_config.audio_kbps = config->audio_kbps;
+      stream_config.audio_layout = config->audio_layout;
+      stream_config.audio_fifo_frames = config->audio_fifo_frames;
+      stream_config.stream_audio_follow_video = config->audio_follow_video;
+      p->stream = record_stream_vulkan_new(worker, &stream_config, config->stream_client);
+      if (!p->stream)
+         goto error;
+      p->stream_wait.network.fd = -1;
+      return p;
+   }
+#endif
    mux = config->video;
    if (p->rate)
    {
@@ -112,6 +167,10 @@ int record_gpu_output_vulkan_audio(record_gpu_output_vulkan_t *p,
                                    const int16_t *samples, size_t frames)
 {
    size_t bytes, space, used;
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p && p->stream)
+      return record_vulkan_stream_result(record_stream_gpu_audio(p->stream, samples, frames));
+#endif
    if (!p || !p->rate || !samples || !frames ||
        frames > p->fifo_bytes / p->frame_bytes ||
        retro_atomic_load_acquire_int(&p->audio_closed) ||
@@ -132,6 +191,10 @@ bool record_gpu_output_vulkan_audio_finish(record_gpu_output_vulkan_t *p)
    if (!p)
       return false;
    retro_atomic_store_release_int(&p->audio_closed, 1);
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p->stream)
+      return record_stream_gpu_audio_finish(p->stream);
+#endif
    return true;
 }
 
@@ -146,6 +209,20 @@ static int record_gpu_output_vulkan_audio_step(record_gpu_output_vulkan_t *p)
    frames = bytes / p->frame_bytes;
    if (frames > 1536 - p->staged)
       frames = 1536 - p->staged;
+   if (p->audio_follow_video)
+   {
+      uint64_t available;
+      if (p->audio_limit < p->audio_frames)
+         return record_gpu_output_vulkan_fail(p, RECORD_VULKAN_OUTPUT_ERROR_AUDIO);
+      available = p->audio_limit - p->audio_frames;
+      if (frames > available)
+         frames = (size_t)available;
+      /* Producer closure alone cannot flush a partial block: more submitted
+       * pictures may still be queued on the GPU and extend the audio limit. */
+      closed = closed && p->video_end;
+   }
+   if (frames > (uint64_t)-1 - p->audio_frames)
+      return record_gpu_output_vulkan_fail(p, RECORD_VULKAN_OUTPUT_ERROR_AUDIO);
    if (frames)
    {
       size_t converted = 0;
@@ -173,6 +250,7 @@ static int record_gpu_output_vulkan_audio_step(record_gpu_output_vulkan_t *p)
       if (converted != bytes)
          return record_gpu_output_vulkan_fail(p, RECORD_VULKAN_OUTPUT_ERROR_AUDIO);
       p->staged += (unsigned)frames;
+      p->audio_frames += frames;
    }
    if (p->staged < 1536 && !closed)
    {
@@ -209,6 +287,10 @@ int record_gpu_output_vulkan_step(record_gpu_output_vulkan_t *p)
    int result;
    if (!p)
       return RECORD_VULKAN_OUTPUT_ERROR;
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p->stream)
+      return record_vulkan_stream_result(record_stream_gpu_step(p->stream, 0, &p->stream_wait));
+#endif
    if (p->writing)
    {
       result = record_file_posix_step(p->file);
@@ -256,10 +338,25 @@ int record_gpu_output_vulkan_step(record_gpu_output_vulkan_t *p)
       if (result == RECORD_GPU_VULKAN_PACKET)
       {
          int mux_result = RECORD_MP4_ERROR;
-         if (packet.duration && packet.duration <= 0xffffffffu)
+         if (packet.duration && packet.duration <= 0xffffffffu
+               && packet.timestamp <= (uint64_t)-1 - packet.duration)
+         {
+            uint64_t end = packet.timestamp + packet.duration;
+            if (p->audio_follow_video && p->rate)
+            {
+               uint64_t whole = end / p->timescale;
+               uint64_t part = (end % p->timescale) * p->rate / p->timescale;
+               if (whole > ((uint64_t)-1 - part) / p->rate)
+               {
+                  record_gpu_worker_vulkan_release(p->worker);
+                  return record_gpu_output_vulkan_fail(p, RECORD_VULKAN_OUTPUT_ERROR_AUDIO);
+               }
+               p->audio_limit = whole * p->rate + part;
+            }
             mux_result = record_mux_mp4_push(
                 p->mux, 1, packet.data, packet.size, packet.timestamp,
                 (uint32_t)packet.duration, packet.keyframe);
+         }
          if (!record_gpu_worker_vulkan_release(p->worker))
             return record_gpu_output_vulkan_fail(p, RECORD_VULKAN_OUTPUT_ERROR_VIDEO);
          if (mux_result != RECORD_MP4_OK)
@@ -278,10 +375,23 @@ int record_gpu_output_vulkan_step(record_gpu_output_vulkan_t *p)
    return record_gpu_output_vulkan_audio_step(p);
 }
 
+uint64_t record_gpu_output_vulkan_audio_frames(const record_gpu_output_vulkan_t *p)
+{
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p && p->stream)
+      return record_stream_gpu_audio_frames(p->stream);
+#endif
+   return p ? p->audio_frames : 0;
+}
+
 bool record_gpu_output_vulkan_retry_needed(const record_gpu_output_vulkan_t *p)
 {
    if (!p)
       return false;
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p->stream)
+      return p->stream_wait.encoder_retry || p->stream_wait.network.again;
+#endif
    if (p->writing)
       return true;
    return !p->ended && !p->video_end && !retro_atomic_load_acquire_int(&p->failed) &&
@@ -290,6 +400,13 @@ bool record_gpu_output_vulkan_retry_needed(const record_gpu_output_vulkan_t *p)
 
 bool record_gpu_output_vulkan_abort(record_gpu_output_vulkan_t *p)
 {
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p && p->stream)
+   {
+      record_stream_gpu_abort(p->stream);
+      return true;
+   }
+#endif
    if (!p || p->ended)
       return false;
    record_gpu_output_vulkan_fail(p, RECORD_VULKAN_OUTPUT_ERROR_ABORTED);
@@ -299,6 +416,19 @@ bool record_gpu_output_vulkan_abort(record_gpu_output_vulkan_t *p)
 enum record_gpu_output_vulkan_error
 record_gpu_output_vulkan_error(const record_gpu_output_vulkan_t *p)
 {
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p && p->stream)
+      switch (record_stream_gpu_error(p->stream))
+      {
+         case RECORD_GPU_OUTPUT_ERROR_NONE: return RECORD_VULKAN_OUTPUT_ERROR_NONE;
+         case RECORD_GPU_OUTPUT_ERROR_VIDEO: return RECORD_VULKAN_OUTPUT_ERROR_VIDEO;
+         case RECORD_GPU_OUTPUT_ERROR_AUDIO: return RECORD_VULKAN_OUTPUT_ERROR_AUDIO;
+         case RECORD_GPU_OUTPUT_ERROR_MUX: return RECORD_VULKAN_OUTPUT_ERROR_MUX;
+         case RECORD_GPU_OUTPUT_ERROR_FILE: return RECORD_VULKAN_OUTPUT_ERROR_FILE;
+         case RECORD_GPU_OUTPUT_ERROR_ABORTED: return RECORD_VULKAN_OUTPUT_ERROR_ABORTED;
+         default: return RECORD_VULKAN_OUTPUT_ERROR_NETWORK;
+      }
+#endif
    return p ? (enum record_gpu_output_vulkan_error)retro_atomic_load_acquire_int(
                   &p->failed)
             : RECORD_VULKAN_OUTPUT_ERROR_VIDEO;
@@ -306,6 +436,10 @@ record_gpu_output_vulkan_error(const record_gpu_output_vulkan_t *p)
 
 int record_gpu_output_vulkan_file_error(const record_gpu_output_vulkan_t *p)
 {
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p && p->stream)
+      return 0;
+#endif
    return record_file_posix_error(p ? p->file : NULL);
 }
 
@@ -313,6 +447,17 @@ bool record_gpu_output_vulkan_free(record_gpu_output_vulkan_t *p)
 {
    if (!p)
       return true;
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p->stream)
+   {
+      if (!retro_atomic_load_acquire_int(&p->audio_closed)
+            || !record_stream_gpu_free(p->stream))
+         return false;
+      p->stream = NULL;
+      record_gpu_output_vulkan_destroy(p);
+      return true;
+   }
+#endif
    if (!retro_atomic_load_acquire_int(&p->audio_closed) || p->writing ||
        (!p->ended && !retro_atomic_load_acquire_int(&p->failed)))
       return false;
@@ -320,4 +465,25 @@ bool record_gpu_output_vulkan_free(record_gpu_output_vulkan_t *p)
       return false;
    record_gpu_output_vulkan_destroy(p);
    return true;
+}
+
+bool record_gpu_output_vulkan_network(const record_gpu_output_vulkan_t *p,
+      int *fd, bool *read, bool *write)
+{
+   if (!fd || !read || !write)
+      return false;
+   *fd = -1;
+   *read = *write = false;
+#ifdef RECORD_VULKAN_OUTPUT_STREAM
+   if (p && p->stream && p->stream_wait.network.fd >= 0)
+   {
+      *fd = p->stream_wait.network.fd;
+      *read = p->stream_wait.network.read;
+      *write = p->stream_wait.network.write;
+      return true;
+   }
+#else
+   (void)p;
+#endif
+   return false;
 }

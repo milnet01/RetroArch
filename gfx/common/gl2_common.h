@@ -34,6 +34,18 @@
 
 #include "../video_driver.h"
 #include "gl_common.h"
+#if defined(HAVE_SHADERPIPELINE) && defined(HAVE_GLSL)
+#include "../drivers_shader/shader_glsl.h"
+#endif
+/* The menu effects: made from GLSL, or from Cg where the build has no
+ * GLSL or an effect's GLSL will not build */
+#if defined(HAVE_SHADERPIPELINE) && defined(HAVE_CG) && !defined(HAVE_OPENGLES)
+#define GL2_EFFECT_CG
+#include "../drivers_shader/shader_gl_cg.h"
+#endif
+#if defined(HAVE_SHADERPIPELINE) && (defined(HAVE_GLSL) || defined(GL2_EFFECT_CG))
+#define GL2_EFFECTS
+#endif
 
 /* A software core's frames sampled where it writes them, on KMS */
 #if defined(HAVE_KMS) && defined(HAVE_EGL) && !defined(HAVE_PSGL)
@@ -86,8 +98,6 @@ struct gl2_views_prog
 struct gl2_window
 {
    video_window_native_t native;
-   /* As last drawn and published */
-   video_views_layout_t  layout;
    /* Anaglyph and interlaced draw both eyes into it first */
    struct gl2_views_fbo  canvas;
    video_views_target_t  canvas_target;
@@ -149,6 +159,9 @@ enum gl2_flags
 
 struct gl2
 {
+   struct gl_media_shader *media_shader;
+   uint64_t media_shader_frame;
+   bool media_shader_enabled;
    /* gfx_display meshes kept on the GPU, by mesh id: vertices, and
     * indices where the mesh has them. GL retires a deleted buffer once
     * nothing in flight reads it, so the one drawn longest ago simply
@@ -161,6 +174,24 @@ struct gl2
       uint32_t id;
    } meshes[8];
    uint64_t mesh_draws;
+#ifdef GL2_EFFECTS
+   /* The menu effects' programs, as installed: GLSL, or Cg when cg */
+   struct gl2_effect
+   {
+#ifdef HAVE_GLSL
+      gl_glsl_effect_t glsl;
+#endif
+#ifdef GL2_EFFECT_CG
+      gl_cg_effect_t cg;
+#endif
+      unsigned flags;
+      bool is_cg;
+   } effects[16];
+   unsigned effect_count;
+#endif
+#ifdef HAVE_GL_MENU_BLOOM
+   gl_menu_bloom_t *menu_bloom;
+#endif
    const shader_backend_t *shader;
    void *shader_data;
    void *renderchain_data;
@@ -265,6 +296,11 @@ struct gl2
 #endif
 #ifdef HAVE_GL_PLANAR
    gl_planar_t planar;
+   /* A movie frame shown in the core frame's place: converted from
+    * the media core's planes, drawn until a core frame comes */
+   GLuint movie_texture;
+   unsigned movie_dims;
+   bool movie_pending;  /* a frame imported since the last draw */
 #endif
    bool pbo_readback_valid[4];
    /* At init: textures take half floats (TEXTURE_GPU_FORMAT_RGBA16F) */

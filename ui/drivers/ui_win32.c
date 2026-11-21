@@ -247,7 +247,7 @@ void ui_window_win32_set_droppable(void *data, bool droppable)
 static bool ui_window_win32_focused(void *data)
 {
    ui_window_win32_t *window = (ui_window_win32_t*)data;
-   return (GetForegroundWindow() == window->hwnd);
+   return (win32_foreground_window() == window->hwnd);
 }
 
 static ui_window_t ui_window_win32 = {
@@ -649,6 +649,10 @@ bool win32_load_content_from_gui(const char *szFilename)
    /* poll list of current cores */
    core_info_list_t *core_info_list = NULL;
 
+#ifdef HAVE_CORE_LOAD_CHECK
+   if (task_content_warning_waits(szFilename))
+      return false;
+#endif
    core_info_get_list(&core_info_list);
 
    if (core_info_list)
@@ -1026,6 +1030,10 @@ LRESULT win32_menu_loop(HWND owner, WPARAM wparam)
                free(title_wide);
             if (title_cp)
                free(title_cp);
+#ifdef HAVE_CORE_LOAD_CHECK
+            if (task_content_warning_waits(win32_file))
+               break;
+#endif
             content_info.argc        = 0;
             content_info.argv        = NULL;
             content_info.args        = NULL;
@@ -1047,6 +1055,10 @@ LRESULT win32_menu_loop(HWND owner, WPARAM wparam)
                    | MENU_ST_FLAG_PREVENT_POPULATE;
 #endif
             }
+#ifdef HAVE_CORE_LOAD_CHECK
+            else
+               task_content_park_core_load(win32_file);
+#endif
 #endif
          }
          break;

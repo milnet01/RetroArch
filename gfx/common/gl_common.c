@@ -58,6 +58,565 @@ void gl_finish(void)
    glFinish();
 }
 
+#ifdef HAVE_GL_MENU_BLOOM
+/* Desktop OpenGL against a macOS SDK before 10.12 names the
+ * framebuffer objects with the EXT suffix only */
+#if defined(__MACH__) && !defined(HAVE_OPENGLES) \
+   && defined(MAC_OS_X_VERSION_MAX_ALLOWED) \
+   && (MAC_OS_X_VERSION_MAX_ALLOWED < 101200)
+#define GL_MENU_BLOOM_FRAMEBUFFER              GL_FRAMEBUFFER_EXT
+#define GL_MENU_BLOOM_FRAMEBUFFER_BINDING      GL_FRAMEBUFFER_BINDING_EXT
+#define GL_MENU_BLOOM_FRAMEBUFFER_COMPLETE     GL_FRAMEBUFFER_COMPLETE_EXT
+#define GL_MENU_BLOOM_COLOR_ATTACHMENT0        GL_COLOR_ATTACHMENT0_EXT
+#define GL_MENU_BLOOM_READ_FRAMEBUFFER         GL_READ_FRAMEBUFFER_EXT
+#define GL_MENU_BLOOM_READ_FRAMEBUFFER_BINDING GL_READ_FRAMEBUFFER_BINDING_EXT
+#define GL_MENU_BLOOM_DRAW_FRAMEBUFFER         GL_DRAW_FRAMEBUFFER_EXT
+#define GL_MENU_BLUR_BLIT                      glBlitFramebufferEXT
+#else
+#define GL_MENU_BLOOM_FRAMEBUFFER              GL_FRAMEBUFFER
+#define GL_MENU_BLOOM_FRAMEBUFFER_BINDING      GL_FRAMEBUFFER_BINDING
+#define GL_MENU_BLOOM_FRAMEBUFFER_COMPLETE     GL_FRAMEBUFFER_COMPLETE
+#define GL_MENU_BLOOM_COLOR_ATTACHMENT0        GL_COLOR_ATTACHMENT0
+#define GL_MENU_BLOOM_READ_FRAMEBUFFER         GL_READ_FRAMEBUFFER
+#define GL_MENU_BLOOM_READ_FRAMEBUFFER_BINDING GL_READ_FRAMEBUFFER_BINDING
+#define GL_MENU_BLOOM_DRAW_FRAMEBUFFER         GL_DRAW_FRAMEBUFFER
+/* GLES 2 has no framebuffer blit: the backdrop blur is GLES 3 and up */
+#if !defined(HAVE_OPENGLES) || defined(HAVE_OPENGLES3)
+#define GL_MENU_BLUR_BLIT                      glBlitFramebuffer
+#endif
+#endif
+#include "menu_bloom.h"
+#include <gfx/gl_capabilities.h>
+
+#ifndef GL_RGBA16F
+#define GL_RGBA16F 0x881A
+#endif
+#ifndef GL_HALF_FLOAT
+#define GL_HALF_FLOAT 0x140B
+#endif
+#ifndef GL_HALF_FLOAT_OES
+#define GL_HALF_FLOAT_OES 0x8D61
+#endif
+
+struct gl_menu_bloom
+{
+   menu_bloom_pass_t plan[MENU_BLOOM_PASSES];
+   GLuint tex[2];
+   GLuint fbo[2];
+   GLuint prog;
+   GLuint vbo;
+   GLint source;
+   GLint step;
+   GLint threshold;
+   GLint gain;
+   /* Inline only: the target the menu draws into, put back after */
+   GLint target;
+   GLint read_target;
+   GLint viewport[4];
+   unsigned dims;
+   unsigned passes;
+   /* The backdrop blur: its two small images and the copy
+    * (MENU_BLUR_COPY) */
+   GLuint blur_tex[3];
+   GLuint blur_fbo[3];
+   unsigned blur_dims;
+   bool floating;
+   bool failed;
+   bool core;
+   bool defer;
+   bool blur_floating;
+   bool blur_failed;
+   bool blur_checked;
+};
+
+static GLuint gl_menu_bloom_shader(GLenum type, const char *prefix,
+      const char *body)
+{
+   const GLchar *src[2];
+   GLint ok = 0;
+   GLuint shader = glCreateShader(type);
+   src[0] = prefix;
+   src[1] = body;
+   glShaderSource(shader, 2, src, NULL);
+   glCompileShader(shader);
+   glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+   if (!ok)
+   {
+      glDeleteShader(shader);
+      return 0;
+   }
+   return shader;
+}
+
+static bool gl_menu_bloom_program(gl_menu_bloom_t *b, bool core, bool es)
+{
+   static const char vertex[] =
+      "IN vec2 Position; OUT vec2 uv;"
+      "void main(){uv=Position*0.5+0.5;gl_Position=vec4(Position,0.,1.);}";
+   static const char fragment[] =
+      "IN vec2 uv;uniform sampler2D Source;uniform vec2 Step;"
+      "uniform float Threshold;uniform float Gain;"
+      "vec3 light(vec2 p){return max(TEX(Source,p).rgb-Threshold,0.);}"
+      "void main(){vec3 c=light(uv);if(dot(Step,Step)>0.){c*=.227027;"
+      "c+=(light(uv+Step*1.384615)+light(uv-Step*1.384615))*.316216;"
+      "c+=(light(uv+Step*3.230769)+light(uv-Step*3.230769))*.0702703;}"
+      "COLOR=vec4(c*Gain,0.);}";
+   static const GLfloat quad[8] = {-1,-1, 1,-1, -1,1, 1,1};
+   const char *vp = core ? (es
+      ? "#version 300 es\n#define IN in\n#define OUT out\n"
+      : "#version 150\n#define IN in\n#define OUT out\n")
+      : "#define IN attribute\n#define OUT varying\n";
+   const char *fp = core ? (es
+      ? "#version 300 es\nprecision mediump float;\n#define IN in\n#define TEX texture\n#define COLOR FragColor\nout vec4 FragColor;\n"
+      : "#version 150\n#define IN in\n#define TEX texture\n#define COLOR FragColor\nout vec4 FragColor;\n")
+      : (es
+      ? "precision mediump float;\n#define IN varying\n#define TEX texture2D\n#define COLOR gl_FragColor\n"
+      : "#define IN varying\n#define TEX texture2D\n#define COLOR gl_FragColor\n");
+   GLuint vs = gl_menu_bloom_shader(GL_VERTEX_SHADER, vp, vertex);
+   GLuint fs = gl_menu_bloom_shader(GL_FRAGMENT_SHADER, fp, fragment);
+   GLint ok  = 0;
+   if (vs && fs)
+   {
+      b->prog = glCreateProgram();
+      glAttachShader(b->prog, vs);
+      glAttachShader(b->prog, fs);
+      glBindAttribLocation(b->prog, 0, "Position");
+      glLinkProgram(b->prog);
+      glGetProgramiv(b->prog, GL_LINK_STATUS, &ok);
+   }
+   if (vs)
+      glDeleteShader(vs);
+   if (fs)
+      glDeleteShader(fs);
+   if (!ok)
+      return false;
+   b->source    = glGetUniformLocation(b->prog, "Source");
+   b->step      = glGetUniformLocation(b->prog, "Step");
+   b->threshold = glGetUniformLocation(b->prog, "Threshold");
+   b->gain      = glGetUniformLocation(b->prog, "Gain");
+   glGenBuffers(1, &b->vbo);
+   glBindBuffer(GL_ARRAY_BUFFER, b->vbo);
+   glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+   return b->vbo != 0;
+}
+
+void gl_menu_bloom_free(gl_menu_bloom_t **bloom)
+{
+   gl_menu_bloom_t *b = *bloom;
+   if (!b)
+      return;
+   glDeleteTextures(2, b->tex);
+   glDeleteFramebuffers(2, b->fbo);
+   glDeleteTextures(3, b->blur_tex);
+   glDeleteFramebuffers(3, b->blur_fbo);
+   if (b->vbo)
+      glDeleteBuffers(1, &b->vbo);
+   if (b->prog)
+      glDeleteProgram(b->prog);
+   free(b);
+   *bloom = NULL;
+}
+
+/* The drivers bind their own program, textures and buffers for each
+ * draw. Deferred, the frame has drawn nothing yet: only the default
+ * framebuffer and the viewport carry over to it. */
+static void gl_menu_bloom_restore(gl_menu_bloom_t *b)
+{
+   if (b->defer)
+      glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, 0);
+   else
+   {
+      glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, b->target);
+#ifndef HAVE_OPENGLES2
+      if (b->core)
+         glBindFramebuffer(GL_MENU_BLOOM_READ_FRAMEBUFFER, b->read_target);
+#endif
+   }
+   glViewport(b->viewport[0], b->viewport[1],
+         b->viewport[2], b->viewport[3]);
+   glBindBuffer(GL_ARRAY_BUFFER, 0);
+   glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+/* One image the passes draw into and read, @w x @h, attached to @fbo;
+ * false when the framebuffer is not complete */
+static bool gl_menu_bloom_image(GLuint tex, GLuint fbo,
+      unsigned w, unsigned h, bool floating, bool es, bool es3)
+{
+   glBindTexture(GL_TEXTURE_2D, tex);
+   glTexImage2D(GL_TEXTURE_2D, 0,
+         floating && (!es || es3) ? GL_RGBA16F : GL_RGBA,
+         w, h, 0, GL_RGBA, floating
+            ? (es && !es3 ? GL_HALF_FLOAT_OES : GL_HALF_FLOAT)
+            : GL_UNSIGNED_BYTE, NULL);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+   glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, fbo);
+   glFramebufferTexture2D(GL_MENU_BLOOM_FRAMEBUFFER,
+         GL_MENU_BLOOM_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+   return glCheckFramebufferStatus(GL_MENU_BLOOM_FRAMEBUFFER)
+      == GL_MENU_BLOOM_FRAMEBUFFER_COMPLETE;
+}
+
+/* Whether the images can be half float */
+static bool gl_menu_bloom_float_ok(bool es, bool es3)
+{
+   return es
+      ? (es3 ? gl_query_extension("EXT_color_buffer_float")
+            || gl_query_extension("EXT_color_buffer_half_float")
+         : gl_query_extension("EXT_color_buffer_half_float")
+            && gl_query_extension("OES_texture_half_float_linear"))
+      : gl_check_capability(GL_CAPS_FP_FBO);
+}
+
+static bool gl_menu_bloom_targets(gl_menu_bloom_t *b, unsigned small_dims,
+      bool es)
+{
+   unsigned i, attempt;
+   unsigned w = VIDEO_SCALE_W(small_dims);
+   unsigned h = VIDEO_SCALE_H(small_dims);
+   glDeleteTextures(2, b->tex);
+   glDeleteFramebuffers(2, b->fbo);
+   glGenTextures(2, b->tex);
+   glGenFramebuffers(2, b->fbo);
+   for (attempt = 0; attempt < 2; attempt++)
+   {
+      bool es3 = es && gl_check_capability(GL_CAPS_GLES3_SUPPORTED);
+      bool floating = attempt == 0 && gl_menu_bloom_float_ok(es, es3);
+      for (i = 0; i < 2; i++)
+         if (!gl_menu_bloom_image(b->tex[i], b->fbo[i], w, h,
+                  floating, es, es3))
+            break;
+      if (i == 2)
+      {
+         b->dims     = small_dims;
+         b->floating = floating;
+         b->passes   = menu_bloom_plan(b->plan, small_dims, floating);
+         return true;
+      }
+   }
+   return false;
+}
+
+unsigned gl_menu_bloom_begin(gl_menu_bloom_t **bloom,
+      unsigned dims, bool core, bool es, bool defer)
+{
+   static const GLfloat clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+   gl_menu_bloom_t *b = *bloom;
+   unsigned small_dims;
+   if (!VIDEO_SCALE_W(dims) || !VIDEO_SCALE_H(dims))
+      return 0;
+#ifndef HAVE_OPENGLES
+   if (!glCreateShader || !glGenFramebuffers)
+      return 0;
+#endif
+   if (!b && !(b = *bloom = (gl_menu_bloom_t*)calloc(1, sizeof(*b))))
+      return 0;
+   if (b->failed)
+      return 0;
+   small_dims    = menu_bloom_dims(dims);
+   b->core  = core;
+   b->defer = defer;
+   glGetIntegerv(GL_VIEWPORT, b->viewport);
+   if (!defer)
+   {
+      glGetIntegerv(GL_MENU_BLOOM_FRAMEBUFFER_BINDING, &b->target);
+#ifndef HAVE_OPENGLES2
+      if (core)
+         glGetIntegerv(GL_MENU_BLOOM_READ_FRAMEBUFFER_BINDING, &b->read_target);
+#endif
+   }
+   glActiveTexture(GL_TEXTURE0);
+   glDisable(GL_SCISSOR_TEST);
+   if (     (!b->prog && !gl_menu_bloom_program(b, core, es))
+         || (small_dims != b->dims && !gl_menu_bloom_targets(b, small_dims, es)))
+   {
+      b->failed = true;
+      gl_menu_bloom_restore(b);
+      return 0;
+   }
+   /* Two composites cannot be split from the blurs */
+   if (defer && !b->floating)
+   {
+      gl_menu_bloom_restore(b);
+      return 0;
+   }
+   glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, b->fbo[0]);
+   glViewport(0, 0, VIDEO_SCALE_W(small_dims), VIDEO_SCALE_H(small_dims));
+#ifndef HAVE_OPENGLES2
+   if (core)
+      glClearBufferfv(GL_COLOR, 0, clear);
+   else
+#endif
+   {
+      glClearColor(clear[0], clear[1], clear[2], clear[3]);
+      glClear(GL_COLOR_BUFFER_BIT);
+   }
+   return small_dims;
+}
+
+/* The passes from first to last: drawn with attribute 0 from the quad
+ * buffer, left disabled as the drivers leave their attributes between
+ * draws. Output passes go to the saved target, or with into_bound to
+ * the framebuffer bound now; deferred, they wait for the composite. */
+static void gl_menu_bloom_passes(gl_menu_bloom_t *b, unsigned dims,
+      unsigned first, unsigned last, bool into_bound)
+{
+   unsigned i;
+   glUseProgram(b->prog);
+   glUniform1i(b->source, 0);
+   glActiveTexture(GL_TEXTURE0);
+#ifndef HAVE_OPENGLES2
+   if (b->core
+#ifndef HAVE_OPENGLES
+         && glBindSampler
+#endif
+      )
+      glBindSampler(0, 0);
+#endif
+   glBindBuffer(GL_ARRAY_BUFFER, b->vbo);
+   glEnableVertexAttribArray(0);
+   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+   for (i = first; i < last; i++)
+   {
+      const menu_bloom_pass_t *pass = &b->plan[i];
+      if (pass->dst == MENU_BLOOM_OUTPUT)
+      {
+         if (b->defer && !into_bound)
+            continue;
+         if (!into_bound)
+            glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, b->target);
+         glViewport(0, 0, VIDEO_SCALE_W(dims), VIDEO_SCALE_H(dims));
+      }
+      else
+      {
+         glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, b->fbo[pass->dst]);
+         glViewport(0, 0, VIDEO_SCALE_W(b->dims), VIDEO_SCALE_H(b->dims));
+      }
+      glBindTexture(GL_TEXTURE_2D, b->tex[pass->src]);
+      glUniform2f(b->step, pass->params[0], pass->params[1]);
+      glUniform1f(b->threshold, pass->params[2]);
+      glUniform1f(b->gain, pass->params[3]);
+      if (pass->add)
+      {
+         glEnable(GL_BLEND);
+         glBlendFunc(GL_ONE, GL_ONE);
+      }
+      else
+         glDisable(GL_BLEND);
+      glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+   }
+   glDisableVertexAttribArray(0);
+   /* Not left bound: a GLSL program wins over the Cg backend's ARB
+    * programs, which gl2 binds without touching this */
+   glUseProgram(0);
+}
+
+void gl_menu_bloom_end(gl_menu_bloom_t *b, unsigned dims, bool defer)
+{
+   (void)defer;
+   gl_menu_bloom_passes(b, dims, 0, b->passes, false);
+   if (b->defer)
+      glDisable(GL_BLEND);
+   gl_menu_bloom_restore(b);
+}
+
+/* Deferred plans are float: one output pass, the last */
+void gl_menu_bloom_composite(gl_menu_bloom_t *b, unsigned dims)
+{
+   if (!b || !b->passes)
+      return;
+   gl_menu_bloom_passes(b, dims, b->passes - 1, b->passes, true);
+   glBindBuffer(GL_ARRAY_BUFFER, 0);
+   glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+#ifdef GL_MENU_BLUR_BLIT
+/* Whether the context blits between framebuffers: GL 3 and GLES 3,
+ * or a desktop context with the extensions */
+static bool gl_menu_blur_supported(bool core, bool es)
+{
+   const char *ver;
+   if (es)
+      return gl_check_capability(GL_CAPS_GLES3_SUPPORTED);
+   if (core)
+      return true;
+#if !defined(__MACH__)
+   if (!glBlitFramebuffer)
+      return false;
+#endif
+   ver = (const char*)glGetString(GL_VERSION);
+   return (ver && ver[0] >= '3' && ver[0] <= '9')
+      || gl_query_extension("ARB_framebuffer_object")
+      || gl_query_extension("EXT_framebuffer_blit");
+}
+
+/* The two small images and the copy, as the glow makes its own */
+static bool gl_menu_blur_targets(gl_menu_bloom_t *b, unsigned small_dims,
+      bool es)
+{
+   unsigned i, attempt;
+   unsigned copy_dims = MENU_BLUR_COPY_DIMS(small_dims);
+   glDeleteTextures(3, b->blur_tex);
+   glDeleteFramebuffers(3, b->blur_fbo);
+   glGenTextures(3, b->blur_tex);
+   glGenFramebuffers(3, b->blur_fbo);
+   for (attempt = 0; attempt < 2; attempt++)
+   {
+      bool es3      = es && gl_check_capability(GL_CAPS_GLES3_SUPPORTED);
+      bool floating = attempt == 0 && gl_menu_bloom_float_ok(es, es3);
+      for (i = 0; i < 3; i++)
+      {
+         unsigned d = i == MENU_BLUR_COPY ? copy_dims : small_dims;
+         if (!gl_menu_bloom_image(b->blur_tex[i], b->blur_fbo[i],
+                  VIDEO_SCALE_W(d), VIDEO_SCALE_H(d), floating, es, es3))
+            break;
+      }
+      if (i == 3)
+      {
+         b->blur_dims     = small_dims;
+         b->blur_floating = floating;
+         return true;
+      }
+   }
+   return false;
+}
+
+bool gl_menu_blur(gl_menu_bloom_t **bloom, unsigned video_dims,
+      int x, int y, unsigned dims, float alpha, float dim,
+      bool core, bool es)
+{
+   menu_bloom_pass_t plan[MENU_BLUR_PASSES];
+   gl_menu_bloom_t *b = *bloom;
+   GLint target, read_target = 0, viewport[4];
+   GLint scissor_box[4] = { 0, 0, 0, 0 };
+   GLboolean scissor;
+   unsigned i, blur_size, copy_dims;
+   int vh = (int)VIDEO_SCALE_H(video_dims);
+   int x0 = x < 0 ? 0 : x;
+   int y0 = y < 0 ? 0 : y;
+   int x1 = x + (int)VIDEO_SCALE_W(dims);
+   int y1 = y + (int)VIDEO_SCALE_H(dims);
+   float c;
+   if (x1 > (int)VIDEO_SCALE_W(video_dims))
+      x1 = (int)VIDEO_SCALE_W(video_dims);
+   if (y1 > vh)
+      y1 = vh;
+   if (x1 - x0 < 8 || y1 - y0 < 8)
+      return false;
+#ifndef HAVE_OPENGLES
+   if (!glCreateShader || !glGenFramebuffers)
+      return false;
+#endif
+   if (!b && !(b = *bloom = (gl_menu_bloom_t*)calloc(1, sizeof(*b))))
+      return false;
+   if (b->blur_failed)
+      return false;
+   if (!b->blur_checked)
+   {
+      b->blur_checked = true;
+      if (!gl_menu_blur_supported(core, es))
+      {
+         b->blur_failed = true;
+         return false;
+      }
+   }
+   blur_size     = menu_blur_dims(VIDEO_SCALE_PACK(x1 - x0, y1 - y0));
+   copy_dims = MENU_BLUR_COPY_DIMS(blur_size);
+
+   glGetIntegerv(GL_MENU_BLOOM_FRAMEBUFFER_BINDING, &target);
+#ifndef HAVE_OPENGLES2
+   if (core)
+      glGetIntegerv(GL_MENU_BLOOM_READ_FRAMEBUFFER_BINDING, &read_target);
+#endif
+   glGetIntegerv(GL_VIEWPORT, viewport);
+   if ((scissor = glIsEnabled(GL_SCISSOR_TEST)))
+      glGetIntegerv(GL_SCISSOR_BOX, scissor_box);
+   glDisable(GL_SCISSOR_TEST);
+   glActiveTexture(GL_TEXTURE0);
+   b->core = core;
+   if (     (!b->prog && !gl_menu_bloom_program(b, core, es))
+         || (blur_size != b->blur_dims && !gl_menu_blur_targets(b, blur_size, es)))
+   {
+      b->blur_failed = true;
+      glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, target);
+      goto restore;
+   }
+
+   /* What is drawn so far, halved into the copy; GL's rows run up */
+   glBindFramebuffer(GL_MENU_BLOOM_READ_FRAMEBUFFER, target);
+   glBindFramebuffer(GL_MENU_BLOOM_DRAW_FRAMEBUFFER,
+         b->blur_fbo[MENU_BLUR_COPY]);
+   GL_MENU_BLUR_BLIT(x0, vh - y1, x1, vh - y0,
+         0, 0, VIDEO_SCALE_W(copy_dims), VIDEO_SCALE_H(copy_dims),
+         GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+   glUseProgram(b->prog);
+   glUniform1i(b->source, 0);
+#ifndef HAVE_OPENGLES2
+   if (core
+#ifndef HAVE_OPENGLES
+         && glBindSampler
+#endif
+      )
+      glBindSampler(0, 0);
+#endif
+   glBindBuffer(GL_ARRAY_BUFFER, b->vbo);
+   glEnableVertexAttribArray(0);
+   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+   glDisable(GL_BLEND);
+   glViewport(0, 0, VIDEO_SCALE_W(blur_size), VIDEO_SCALE_H(blur_size));
+   menu_blur_plan(plan, blur_size);
+   for (i = 0; i < MENU_BLUR_PASSES; i++)
+   {
+      glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, b->blur_fbo[plan[i].dst]);
+      glBindTexture(GL_TEXTURE_2D, b->blur_tex[plan[i].src]);
+      glUniform2f(b->step, plan[i].params[0], plan[i].params[1]);
+      glUniform1f(b->threshold, plan[i].params[2]);
+      glUniform1f(b->gain, plan[i].params[3]);
+      glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+   }
+
+   /* Back over the rect: the gain darkens the blurred image and the
+    * blend constants fade it in and darken what it is faded over -
+    * blurred * (1 - dim) * alpha + drawn * (1 - alpha) * (1 - dim) */
+   glBindFramebuffer(GL_MENU_BLOOM_FRAMEBUFFER, target);
+   glViewport(x0, vh - y1, x1 - x0, y1 - y0);
+   glBindTexture(GL_TEXTURE_2D, b->blur_tex[0]);
+   glUniform2f(b->step, 0.0f, 0.0f);
+   glUniform1f(b->gain, 1.0f - dim);
+   c = 1.0f - (1.0f - alpha) * (1.0f - dim);
+   glEnable(GL_BLEND);
+   glBlendColor(c, c, c, alpha);
+   glBlendFuncSeparate(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_COLOR,
+         GL_ZERO, GL_ONE);
+   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+   glDisable(GL_BLEND);
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   glDisableVertexAttribArray(0);
+   glUseProgram(0);
+
+restore:
+#ifndef HAVE_OPENGLES2
+   if (core)
+      glBindFramebuffer(GL_MENU_BLOOM_READ_FRAMEBUFFER, read_target);
+#endif
+   glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+   if (scissor)
+   {
+      glEnable(GL_SCISSOR_TEST);
+      glScissor(scissor_box[0], scissor_box[1],
+            scissor_box[2], scissor_box[3]);
+   }
+   glBindBuffer(GL_ARRAY_BUFFER, 0);
+   glBindTexture(GL_TEXTURE_2D, 0);
+   return !b->blur_failed;
+}
+#endif
+#endif
+
 #ifdef HAVE_GL_FRAME_MEM
 #include <gfx/gl_capabilities.h>
 

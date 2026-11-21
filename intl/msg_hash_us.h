@@ -1080,6 +1080,26 @@ MSG_HASH(
    MENU_ENUM_LABEL_VALUE_LOAD_ARCHIVE,
    "Load Archive"
    )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_WARNING,
+   "Security Warning"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_WARNING_CANCEL,
+   "Cancel"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_WARNING_INSTALL_TRUST,
+   "Install and Trust"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_WARNING_LOAD_ONCE,
+   "Load Once"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_WARNING_ALWAYS_TRUST,
+   "Always Trust This Core"
+   )
 
 /* Main Menu > Load Content > Playlists */
 
@@ -1459,6 +1479,42 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_SUBLABEL_CORE_LOCK,
    "Prevent modification of the currently installed core. May be used to avoid unwanted updates when content requires a specific core version (e.g. Arcade ROM sets) or the core's own save state format changes."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_SIGNATURE_CHECK,
+   "Check Core Signatures"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_CORE_SIGNATURE_CHECK,
+   "Warn before running a core that libretro didn't sign or that has changed since."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_TRUST,
+   "Core Trust"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_CORE_TRUST,
+   "RetroArch checks this core the next time it loads."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_TRUST_TRUSTED,
+   "Trusted by you"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_CORE_TRUST_TRUSTED,
+   "Loads without a Security Warning: you chose Always Trust or Install and Trust for it, or it was installed when signature checks started. Select to stop trusting it."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_TRUST_SIGNED,
+   "Signed by libretro"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_CORE_TRUST_SIGNED,
+   "Loads without a Security Warning because libretro signed it."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_TRUST_UNCHECKED,
+   "Not checked yet"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CORE_SET_STANDALONE_EXEMPT,
@@ -7671,8 +7727,16 @@ MSG_HASH(
    "System"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH_USE_SYSTEM,
+   "<Use System Driver>"
+   )
+MSG_HASH(
    MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_CRASHED,
    "Crashed last run, using System"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_NOT_USED,
+   "Not used: %s"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_VULKAN_DRIVER_PATH_SAFE_MODE,
@@ -7682,6 +7746,26 @@ MSG_HASH(
    MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_SAFE_MODE,
    "%s is used again at the next normal start"
    )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_FROM,
+   "From %s"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_ICD,
+   "Use another Vulkan driver: pick its .json, from share/vulkan/icd.d.\nOnly use drivers from a source you trust. Applies the next time Vulkan starts.\nStart: system driver. One run without it: --vulkan-driver=system"
+   )
+#if defined(_WIN32)
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_ICD_WINDOWS,
+   "Use another Vulkan driver: pick its .json, usually beside its .dll.\nOnly use drivers from a source you trust. Applies the next time Vulkan starts.\nStart: system driver. One run without it: --vulkan-driver=system"
+   )
+#endif
+#if defined(__APPLE__)
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_ICD_MACOS,
+   "Use another Vulkan driver: pick its .json, from Homebrew's etc/vulkan/icd.d, a MoltenVK release or the Vulkan SDK.\nOnly use drivers from a source you trust. Applies the next time Vulkan starts.\nStart: system driver. One run without it: open -a RetroArch --args --vulkan-driver=system"
+   )
+#endif
 /* GENERATED REGION: HDR toggle group, stereo 3D & screens group and headset group (see settings_def_video_hdr_toggles.h, settings_def_video_stereo.h and settings_def_video_headset.h). */
 #define SETTINGS_DEF_STRINGS_PASS
 #define S_BOOL(f, T, n, d, sd, df, c, us, sub) \
@@ -7895,16 +7979,8 @@ MSG_HASH(
    "Horizontal"
    )
 MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_ATTACHED,
-   "Attached"
-   )
-MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_SEPARATE,
    "Separate"
-   )
-MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_HIDDEN,
-   "Hidden"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_WINDOWS_ENABLE_ANDROID,
@@ -7915,20 +7991,36 @@ MSG_HASH(
    "Let game screens and the menu use other displays. Off keeps everything in one window."
    )
 MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_MODE,
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_SETTINGS,
    "Screen %u"
    )
 MSG_HASH(
-   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MODE,
-   "Attached keeps this screen with the others. Separate puts it on a window or display of its own. Hidden leaves it out."
+   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_SETTINGS,
+   "Where this game screen appears, and its window's size and position."
    )
 MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_MONITOR,
-   "Screen %u Display"
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_DISPLAY,
+   "Display"
    )
 MSG_HASH(
-   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MONITOR,
-   "Where this screen goes when it has a window of its own. Auto picks a second display. The display RetroArch is on keeps the screen attached."
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_FULLSCREEN,
+   "Fullscreen"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_WIDTH,
+   "Window Width"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_HEIGHT,
+   "Window Height"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_X,
+   "Window X"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_Y,
+   "Window Y"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_DISPLAY,
@@ -7937,6 +8029,50 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_SUBLABEL_VIDEO_SCREEN_DISPLAY,
    "The display this game screen appears on. Auto picks one; Off leaves it out."
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_DISPLAY_DESKTOP,
+   "Where this game screen appears: in the main window, in a window of its own on a monitor, or nowhere. Auto keeps Game Screen 1 in the main window and gives the others a window on another monitor."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_FULLSCREEN,
+   "Game Screen %u Fullscreen"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_FULLSCREEN,
+   "Fill the monitor with this game screen's window."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_X,
+   "Game Screen %u Window X"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_X,
+   "Where this game screen's window starts from the left of the desktop, in pixels."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_Y,
+   "Game Screen %u Window Y"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_Y,
+   "Where this game screen's window starts from the top of the desktop, in pixels."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_WIDTH,
+   "Game Screen %u Window Width"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_WIDTH,
+   "The width of this game screen's window. Auto sizes it."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_HEIGHT,
+   "Game Screen %u Window Height"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_HEIGHT,
+   "The height of this game screen's window. Auto sizes it."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_MENU_DISPLAY,
@@ -7955,12 +8091,20 @@ MSG_HASH(
    "Display: %s"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_MAIN,
+   "Main Window"
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_NOTIFICATIONS_WITH_GAME,
    "With the Game"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_NOTIFICATIONS_WITH_MENU,
    "With the Menu"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_BLANK_UNUSED_GAMES,
+   "During Games"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_OPENXR_CONTROLLERS_COMBINED,
@@ -12677,6 +12821,14 @@ MSG_HASH(
    MENU_ENUM_SUBLABEL_INPUT_META_UI_COMPANION_TOGGLE,
    "Opens the companion WIMP (Windows, Icons, Menus, Pointer) desktop user interface."
    )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_INPUT_META_BLANK_UNUSED_TOGGLE,
+   "Blank Unused Screens (Toggle)"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_META_BLANK_UNUSED_TOGGLE,
+   "Blank or show the built-in screens RetroArch isn't using, for the running game only. The Blank Unused Screens setting stays as it is."
+   )
 
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_INPUT_META_VRR_RUNLOOP_TOGGLE,
@@ -12884,6 +13036,10 @@ MSG_HASH(
    "Auto (%u)"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_INPUT_PAD_PRESSED,
+   "Pressed"
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_INPUT_PLAYS_AS_ADD,
    "Add Controller"
    )
@@ -12922,6 +13078,14 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_SHARED_BINDS,
    "Shared · binds in Port %u Controls"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PAD_FIND,
+   "Press a button on a controller to find it."
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_ADD,
+   "Pick a connected controller to play as Player %u. It moves here from the player it plays now."
    )
 MSG_HASH(
    MENU_ENUM_SUBLABEL_INPUT_DEVICE_RESERVATION_TYPE,
@@ -15070,7 +15234,15 @@ MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us) \
 MSG_HASH(MENU_ENUM_SUBLABEL_##T, sub)
 #define S_FLOAT_NS(f, T, n, d, rnd, sd, df, c, mn, mx, st, ok, rp, us) \
 MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
+#define S_STRING(f, T, n, d, sd, c, ok, rp, sta, sel, lf, rt, ui, us, sub) \
+MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us) \
+MSG_HASH(MENU_ENUM_SUBLABEL_##T, sub)
+#define S_DIR(f, T, n, d, el, sd, c, sta, us, sub) \
+MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us) \
+MSG_HASH(MENU_ENUM_SUBLABEL_##T, sub)
 #include "../settings/settings_def_recording_video.h"
+#undef S_STRING
+#undef S_DIR
 #undef S_BOOL
 #undef S_BOOL_NS
 #undef S_UINT
@@ -18362,7 +18534,7 @@ MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
 #undef SETTINGS_DEF_STRINGS_PASS
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_MENU_SHOW_QUIT_RETROARCH,
-   "Show 'Quit RetroArch'"
+   "Show 'Quit'"
    )
 /* GENERATED REGION: restart visibility setting (see settings_def_menu_show_restart.h). */
 #define SETTINGS_DEF_STRINGS_PASS
@@ -23661,7 +23833,14 @@ MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us) \
 MSG_HASH(MENU_ENUM_SUBLABEL_##T, sub)
 #define S_FLOAT_NS(f, T, n, d, rnd, sd, df, c, mn, mx, st, ok, rp, us) \
 MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
+#define S_STRING(f, T, n, d, sd, c, ok, rp, sta, sel, lf, rt, ui, us, sub) \
+MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us) \
+MSG_HASH(MENU_ENUM_SUBLABEL_##T, sub)
+#define S_STRING_NS(f, T, n, d, sd, c, ok, rp, sta, sel, lf, rt, ui, us) \
+MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
 #include "../settings/settings_def_privacy_camera.h"
+#undef S_STRING
+#undef S_STRING_NS
 #undef S_BOOL
 #undef S_BOOL_NS
 #undef S_UINT
@@ -27627,6 +27806,14 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_TIMEDATE_HM_AMPM,
    "HH:MM (AM/PM)"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_TIMEDATE_MODE_AUTOMATIC,
+   "Automatic"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_TIMEDATE_MODE_MANUAL,
+   "Manual"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_TIMEDATE_AGO,
@@ -31640,10 +31827,6 @@ MSG_HASH(
    "Error"
    )
 MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_QT_NETWORK_ERROR,
-   "Network Error"
-   )
-MSG_HASH(
    MENU_ENUM_LABEL_VALUE_QT_RESTART_TO_TAKE_EFFECT,
    "Please restart the program for the changes to take effect."
    )
@@ -31786,10 +31969,6 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_QT_COULD_NOT_DELETE_FILE,
    "Could not delete file."
-   )
-MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_QT_COULD_NOT_RENAME_FILE,
-   "Could not rename file."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_QT_GATHERING_LIST_OF_FILES,
@@ -31978,18 +32157,6 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS,
    "Download All Thumbnails"
-   )
-MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS_ENTIRE_SYSTEM,
-   "Entire System"
-   )
-MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS_THIS_PLAYLIST,
-   "This Playlist"
-   )
-MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_PACK_DOWNLOADED_SUCCESSFULLY,
-   "Thumbnails downloaded successfully."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_PLAYLIST_THUMBNAIL_PROGRESS,
@@ -33364,6 +33531,18 @@ MSG_HASH(
    "Game Focus off"
    )
 MSG_HASH(
+   MSG_BLANK_UNUSED_SCREENS_ON,
+   "Blank Unused Screens on"
+   )
+MSG_HASH(
+   MSG_BLANK_UNUSED_SCREENS_OFF,
+   "Blank Unused Screens off"
+   )
+MSG_HASH(
+   MSG_BLANK_UNUSED_SCREENS_NONE,
+   "No unused screen to blank"
+   )
+MSG_HASH(
    MSG_HW_RENDERED_MUST_USE_POSTSHADED_RECORDING,
    "Libretro core is hardware rendered. Must use post-shaded recording as well."
    )
@@ -33680,6 +33859,10 @@ MSG_HASH(
    "Set Buttons"
    )
 MSG_HASH(
+   MSG_INPUT_PAD_PRESS_TO_FIND,
+   "Press to Find"
+   )
+MSG_HASH(
    MSG_INPUT_COMBO_CHOOSE_ACTION,
    "Choose Action"
    )
@@ -33940,6 +34123,114 @@ MSG_HASH(
    "Some of RetroArch's downloadable files (menu assets, controller profiles, core info, databases) are missing.\n\nDownload them now? This needs an internet connection.\n\nThey can be updated later from the Online Updater."
    )
 MSG_HASH(
+   MSG_CORE_SIGNING_TEST_KEY,
+   "This build trusts a test signing key: cores anyone can sign will run. Not for everyday use."
+   )
+MSG_HASH(
+   MSG_CORE_TRUST_SEEDED,
+   "RetroArch now checks core signatures. Your cores stay trusted; Update Installed Cores gets signed ones."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_UNSIGNED,
+   "This core isn't signed by libretro."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_MODIFIED,
+   "This core has been changed since libretro signed it."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_OLDER,
+   "This is an older version of the core than one you've used before. Older versions can have security problems."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_UNKNOWN_KEY,
+   "This core is signed with a key RetroArch doesn't know."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_ERROR,
+   "RetroArch couldn't read this core to check it."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_FULL_ACCESS,
+   "Cores are programs with full access to your device and files. Only continue if you built this core yourself or got it from someone you trust."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_TURN_OFF,
+   "You can turn these checks off in Settings > Core > Check Core Signatures."
+   )
+MSG_HASH(
+   MSG_CORE_SIGNATURE_DOWNLOAD_FAILED,
+   "Core download failed the signature check and was not installed."
+   )
+MSG_HASH(
+   MSG_CORE_SIGNATURE_DOWNLOAD_OLDER,
+   "Core download is older than one already used; installed core kept."
+   )
+MSG_HASH(
+   MSG_CORE_SIGNATURE_CHECK_OFF_CONFIRM,
+   "Turning this off lets RetroArch run cores that may have been tampered with, including ones downloaded by the Online Updater. Only do this if you build or install cores yourself and understand the risk."
+   )
+MSG_HASH(
+   MSG_CORE_TRUST_READ_ONLY,
+   "This can't be changed now: RetroArch couldn't read its list of trusted cores."
+   )
+MSG_HASH(
+   MSG_CORE_LOAD_REFUSED_NO_MENU,
+   "Core not loaded: RetroArch couldn't confirm it is safe. To trust it, start RetroArch with a menu, load the core and choose Always Trust."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_ANSWER_FIRST,
+   "Answer the Security Warning first."
+   )
+MSG_HASH(
+   MSG_CORE_LOAD_TRUST_LIST_FULL,
+   "Core loaded this time only: the trusted cores list is full, so RetroArch couldn't remember it."
+   )
+MSG_HASH(
+   MSG_CORE_LOAD_REFUSED_LOAD_CORE,
+   "Core not loaded: %s isn't trusted. To trust it, load it from Load Core and choose Always Trust."
+   )
+MSG_HASH(
+   MSG_CORE_LOAD_REFUSED_SEED_PENDING,
+   "Core not loaded: RetroArch is still checking the installed cores. Try again in a moment."
+   )
+MSG_HASH(
+   MSG_CORE_TRUST_FORGOTTEN,
+   "Core no longer trusted: RetroArch checks it the next time it loads."
+   )
+MSG_HASH(
+   MSG_CORE_LOAD_TRUST_CANT_SAVE,
+   "Core trusted for this session only: RetroArch can't save its trusted cores list."
+   )
+MSG_HASH(
+   MSG_CORE_TRUST_SAVE_FAILED,
+   "RetroArch couldn't save its trusted cores list: changes to trusted cores this session won't be kept."
+   )
+MSG_HASH(
+   MSG_CORE_TRUST_FORGOTTEN_CANT_SAVE,
+   "Core no longer trusted for this session only: RetroArch can't save its trusted cores list."
+   )
+MSG_HASH(
+   MSG_CORE_TRUST_NEWER,
+   "This can't be changed now: a newer version of RetroArch saved its list of trusted cores."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_STORE_UNREADABLE,
+   "RetroArch couldn't read its trusted cores list, so cores you trusted before will ask again."
+   )
+MSG_HASH(
+   MSG_CORE_WARNING_STORE_NEWER,
+   "A newer version of RetroArch saved its trusted cores list, so cores you trusted before will ask again."
+   )
+MSG_HASH(
+   MSG_CORE_INSTALL_TRUST_LIST_FULL,
+   "Core installed, but the trusted cores list is full, so RetroArch will ask again when the core loads."
+   )
+MSG_HASH(
+   MSG_CORE_INSTALL_TRUST_CANT_SAVE,
+   "Core installed and trusted for this session only: RetroArch can't save its trusted cores list."
+   )
+MSG_HASH(
    MSG_TO,
    "to"
    )
@@ -34176,6 +34467,18 @@ MSG_HASH(
    "Game remap file loaded."
    )
 MSG_HASH(
+   MSG_CAMERA_PREVIEW_DISALLOWED,
+   "Camera access is off. Turn on Allow Camera to see the preview."
+   )
+MSG_HASH(
+   MSG_CAMERA_PREVIEW_FAILED,
+   "The camera could not be opened."
+   )
+MSG_HASH(
+   MSG_CAMERA_PREVIEW_CORE_IDLE,
+   "The running core holds the camera but has not started it."
+   )
+MSG_HASH(
    MSG_DIRECTORY_REMAP_FILE_LOADED,
    "Content directory remap file loaded."
    )
@@ -34218,6 +34521,10 @@ MSG_HASH(
 MSG_HASH(
    MSG_RUNAHEAD_FAILED_TO_LOAD_STATE,
    "Failed to load state. Run-Ahead has been disabled."
+   )
+MSG_HASH(
+   MSG_RUNAHEAD_CORE_RESET,
+   "Run-Ahead could not restore the core's state. The core was reset and Run-Ahead has been disabled."
    )
 MSG_HASH(
    MSG_RUNAHEAD_FAILED_TO_CREATE_SECONDARY_INSTANCE,
@@ -34536,12 +34843,8 @@ MSG_HASH(
    "Custom Vulkan driver crashed before and is off for this core. Pick it again to retry."
    )
 MSG_HASH(
-   MSG_VULKAN_CUSTOM_DRIVER_INVALID,
-   "Custom Vulkan driver package is not usable. Using the system driver."
-   )
-MSG_HASH(
    MSG_VULKAN_CUSTOM_DRIVER_UNSUPPORTED,
-   "Custom Vulkan drivers need an Adreno GPU and Android 9. Using the system driver."
+   "Custom Vulkan drivers need Android 9 or newer. Using the system driver."
    )
 MSG_HASH(
    MSG_VULKAN_CUSTOM_DRIVER_RESTART,
@@ -34554,6 +34857,66 @@ MSG_HASH(
 MSG_HASH(
    MSG_VULKAN_CUSTOM_DRIVER_UNTRUSTED,
    "Custom Vulkan driver was not picked in the menu or has changed. Pick it again to use it."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_INVALID_ICD,
+   "Custom Vulkan driver .json is not usable. Using the system driver."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_UNSUPPORTED_LOADER,
+   "Custom Vulkan drivers need Vulkan loader 1.3.235 or newer. Using the system driver."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_XR_UNSUPPORTED,
+   "The headset runtime can't use the custom Vulkan driver. Using the system driver."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_MISSING_FEATURES,
+   "Custom Vulkan driver lacks features RetroArch needs. Using the system driver."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_QUARANTINED,
+   "macOS quarantined the custom Vulkan driver; the log says how to clear it. Using the system driver."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_SDL3_UNSUPPORTED,
+   "The SDL3 context driver can't use a custom Vulkan driver on macOS. Using the system driver."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_NOT_USED,
+   "Custom Vulkan driver not used: %s. Using the system driver."
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_WHY_PACKAGE,
+   "bad package (%s)"
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_WHY_LIBRARY,
+   "library did not load (%s)"
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_WHY_NO_GPU,
+   "it found no GPU it supports"
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_WHY_NO_GPU_ADRENO,
+   "it found no GPU it supports (this device has an Adreno GPU)"
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_WHY_NO_GPU_MALI,
+   "it found no GPU it supports (this device has a Mali GPU)"
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_WHY_LOADER,
+   "the system Vulkan loader did not use it"
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_WHY_START,
+   "it failed to start (%s)"
+   )
+MSG_HASH(
+   MSG_VULKAN_CUSTOM_DRIVER_WHY_FAILED,
+   "it failed to start"
    )
 MSG_HASH(
    MSG_RESAMPLER_QUALITY_LOWEST,
@@ -39954,3 +40317,67 @@ MSG_HASH(MENU_ENUM_LABEL_VALUE_##T, us)
 #undef S_UINT_AT_EX_H
 #undef S_UINT_AT_EX_NS_H
 #undef SETTINGS_DEF_STRINGS_PASS
+
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_CORE_FIRMWARE_NOTIFICATION_ENABLE,
+   "Missing Firmware Notifications"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_CORE_FIRMWARE_NOTIFICATION_ENABLE,
+   "Show a dialog when launching a core with missing required firmware. Offer to download firmware when its core info file provides a URL."
+   )
+MSG_HASH(
+   MSG_CORE_FIRMWARE_MISSING,
+   "Required firmware is missing:"
+   )
+MSG_HASH(
+   MSG_CORE_FIRMWARE_DOWNLOAD_PROMPT,
+   "Selecting OK will download and install the firmware indicated with \"This is firmware is available for download.\".\nAny other missing firmware must be provided as per your local laws.\n\nSelect Cancel to continue without downloading.\n\nNote: These notifications can be disabled in Settings->Core->Missing Firmware Notifications."
+   )
+MSG_HASH(
+   MSG_CORE_FIRMWARE_CONTINUE_PROMPT,
+   "Select OK to launch without this firmware, or Cancel to abort core launch.\n\nNote: These notifications can be disabled in Settings->Core->Missing Firmware Notifications."
+   )
+MSG_HASH(
+   MSG_CORE_FIRMWARE_DOWNLOAD_FAILED,
+   "Required firmware could not be installed."
+   )
+
+MSG_HASH(
+   MSG_CORE_FIRMWARE_DOWNLOAD_AVAILABLE,
+   "This firmware is available for download."
+   )
+MSG_HASH(
+   MSG_CORE_FIRMWARE_SUPPLY_MANUALLY,
+   "This firmware must be supplied manually."
+   )
+
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_PYROWAVE_DEVICES,
+   "PyroWave Devices"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_PYROWAVE_SEND,
+   "Send to"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_PYROWAVE_ACCEPT,
+   "Accept Incoming PyroWave Stream"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_PYROWAVE_DECLINE,
+   "Decline Incoming PyroWave Stream"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_PYROWAVE_STOP,
+   "Stop PyroWave Streaming"
+   )
+MSG_HASH(
+   MSG_PYROWAVE_INCOMING,
+   "Incoming PyroWave stream request. Open Settings > Recording to accept or decline."
+   )
+
+MSG_HASH(
+   MSG_PYROWAVE_SHADERS_MISSING,
+   "PyroWave shaders are missing. Set the PyroWave Shader Directory in Settings > Recording."
+   )

@@ -6,10 +6,12 @@
 #include <string.h>
 #include <stdint.h>
 #include <libretro.h>
+#include <retro_atomic.h>
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <pthread.h>
+#include <sched.h>
 #endif
 
 /* The thread the library was opened on (constructor) and the one
@@ -110,6 +112,18 @@ static const struct retro_system_content_info_override overrides[] = {
 };
 #endif
 
+#ifdef HARNESS_CORE_SUBSYSTEM
+/* One subsystem, named by the build: the frontend's tables tell which
+ * core declared them */
+static const struct retro_subsystem_rom_info harness_sub_roms[] = {
+   { "Harness ROM", "bin", true, false, true, NULL, 0 }
+};
+static const struct retro_subsystem_info harness_subsystems[] = {
+   { "Harness Subsystem", HARNESS_CORE_SUBSYSTEM, harness_sub_roms, 1, 1 },
+   { NULL, NULL, NULL, 0, 0 }
+};
+#endif
+
 void retro_set_environment(retro_environment_t cb)
 {
    bool no_content = true;
@@ -126,6 +140,9 @@ void retro_set_environment(retro_environment_t cb)
    }
 #ifndef HARNESS_CORE_NO_HW
    cb(RETRO_ENVIRONMENT_SET_CONTENT_INFO_OVERRIDE, (void*)overrides);
+#endif
+#ifdef HARNESS_CORE_SUBSYSTEM
+   cb(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, (void*)harness_subsystems);
 #endif
 }
 void retro_set_video_refresh(retro_video_refresh_t cb) { video_cb = cb; }
@@ -192,9 +209,32 @@ static unsigned char state_loaded   = 0;
 RETRO_API void harness_core_set_state_mark(unsigned mark)
 { state_mark = (unsigned char)mark; state_loaded = 0; }
 RETRO_API unsigned harness_core_state_loaded(void) { return state_loaded; }
+/* While held, a serialize off the frame-loop thread - a background
+ * save on a task worker - stays inside the core until released, so a
+ * lane can keep a save in flight for as many frames as it needs,
+ * whatever the machine's speed. Never on the frame-loop thread, which
+ * the release has to come from. */
+static retro_atomic_int_t serialize_hold;
+static retro_atomic_int_t serialize_held;
+RETRO_API void harness_core_hold_serialize(unsigned on)
+{ retro_atomic_store_release_int(&serialize_hold, on ? 1 : 0); }
+RETRO_API unsigned harness_core_serialize_held(void)
+{ return (unsigned)retro_atomic_load_acquire_int(&serialize_held); }
 size_t retro_serialize_size(void) { state_calls++; return STATE_SIZE; }
 bool retro_serialize(void *data, size_t size)
 {
+   if (     retro_atomic_load_acquire_int(&serialize_hold)
+         && harness_self_tid() != harness_init_tid)
+   {
+      retro_atomic_store_release_int(&serialize_held, 1);
+      while (retro_atomic_load_acquire_int(&serialize_hold))
+#ifdef _WIN32
+         SwitchToThread();
+#else
+         sched_yield();
+#endif
+      retro_atomic_store_release_int(&serialize_held, 0);
+   }
    state_calls++;
    if (size < STATE_SIZE)
       return false;

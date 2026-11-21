@@ -18,6 +18,21 @@ def run(args):
     subprocess.run(list(map(str, args)), check=True)
 
 
+def inline_includes(path):
+    """The source with its quoted includes in place, as the Metal library
+    is built from a copy that is not next to the headers it names."""
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines(keepends=True):
+        name = line.strip()
+        if name.startswith('#include "') and name.endswith('"'):
+            target = (path.parent / name[len('#include "'):-1]).resolve()
+            if target.is_file():
+                out.append(inline_includes(target))
+                continue
+        out.append(line)
+    return "".join(out)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mock", action="store_true")
@@ -42,9 +57,10 @@ def main():
         section = section.replace('#include "../common/metal_frame.h"', '#include "' + (ROOT / "gfx/common/metal_frame.h").as_posix() + '"')
         driver_header = (ROOT / "gfx/video_driver.h").read_text(encoding="utf-8")
         carrier = driver_header.split("typedef struct video_frame_import\n", 1)[1].split("} video_frame_import_t;", 1)[0]
-        preamble = '#include <formats/video_hw_frame.h>\n#include <formats/image_yuv_blit.h>\n#include <defines/cocoa_defines.h>\n#include <string.h>\n#include <assert.h>\n'
+        preamble = '#include <formats/image.h>\n#include <formats/video_hw_frame.h>\n#include <formats/image_yuv_blit.h>\n#include <defines/cocoa_defines.h>\n#include <string.h>\n#include <assert.h>\n'
         preamble += 'enum video_texture_update' + driver_header.split('enum video_texture_update', 1)[1].split('};', 1)[0] + '};\n'
         preamble += 'typedef struct video_frame_import\n' + carrier + '} video_frame_import_t;\n'
+        preamble += '#define VIDEO_FRAME_IMPORT_IS_CPU' + driver_header.split('#define VIDEO_FRAME_IMPORT_IS_CPU', 1)[1].split('\n', 1)[0] + '\n'
         fixture = HERE / ("mock.m" if args.mock else "native.m")
         text = fixture.read_text(encoding="utf-8").replace("/* SHIPPING_LEASE */", preamble + section)
         if args.native:
@@ -108,7 +124,7 @@ def main():
         if args.native:
             # Compile the actual stock MSL and render through its movie entry.
             header = (ROOT / "gfx/drivers/metal.h").read_text(encoding="utf-8")
-            stock = (ROOT / "gfx/drivers/metal_shaders/Shaders.metal").read_text(encoding="utf-8")
+            stock = inline_includes(ROOT / "gfx/drivers/metal_shaders/Shaders.metal")
             stock = stock.replace('#import "../metal.h"', header)
             stock_file = tmp / "stock.metal"
             stock_file.write_text(stock, encoding="utf-8")

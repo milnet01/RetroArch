@@ -105,13 +105,87 @@ enum gfx_display_driver_type
    GFX_VIDEO_DRIVER_SWITCH,
    GFX_VIDEO_DRIVER_RSX,
    GFX_VIDEO_DRIVER_SDL2,
-   GFX_VIDEO_DRIVER_SDL3
+   GFX_VIDEO_DRIVER_SDL3,
+   GFX_VIDEO_DRIVER_DEKO3D
 };
 
 typedef struct gfx_display_ctx_draw gfx_display_ctx_draw_t;
 struct gfx_display_mesh;
 
 typedef struct gfx_display gfx_display_t;
+
+/* Effects: the programs a menu installs to draw its backgrounds with.
+ * The menu owns what an effect is - its sources in every shading
+ * language a driver may take, its geometry, its blend and the inputs
+ * it reads - and the driver makes one program of it, which it draws
+ * the effect with from then on. */
+enum gfx_display_effect_flags
+{
+   /* Draws the positions of a mesh made with GFX_MESH_FLAG_POSITIONS;
+    * without it, the full-screen quad */
+   GFX_EFFECT_MESH         = (1 << 0),
+   /* Adds: ONE, ONE */
+   GFX_EFFECT_BLEND_ADD    = (1 << 1),
+   /* Lights what is under it: DST_COLOR, ONE. With neither, the
+    * effect blends by its alpha. */
+   GFX_EFFECT_BLEND_SCREEN = (1 << 2),
+   /* Reads the ribbon's 50 vec4s (gfx_display_ribbon_data), and may be
+    * drawn into the glow. A mesh effect without it reads the time,
+    * a y flip and the alpha. */
+   GFX_EFFECT_RIBBON       = (1 << 3),
+   /* A quad effect shading by its pixel's position, which it takes
+    * bottom-up */
+   GFX_EFFECT_YFLIP        = (1 << 4)
+};
+
+typedef struct gfx_display_effect_desc
+{
+   unsigned flags;                    /* enum gfx_display_effect_flags */
+   /* GLSL: [0] with attribute/varying, for a legacy context; [1] with
+    * in/out, for a core or GLES 3 one. Vertex inputs VertexCoord,
+    * TexCoord and Color; uniforms time, Ribbon, OutputSize and
+    * MVPMatrix, those it reads. */
+   const char *glsl_vertex[2];
+   const char *glsl_fragment[2];
+   /* SPIR-V, for Vulkan and GL core */
+   const uint32_t *spirv_vertex;
+   const uint32_t *spirv_fragment;
+   size_t spirv_vertex_size;
+   size_t spirv_fragment_size;
+   /* HLSL: shader model 3 with main_vertex and main_fragment, for
+    * D3D9; a native program identifier with VSMain and PSMain, for D3D10 to 12 */
+   const char *hlsl_sm3;
+   const char *d3d_program;
+   /* Cg for GL, with main_vertex and main_fragment: what gl2 draws
+    * with where it has no GLSL */
+   const char *cg_gl;
+   /* Metal: functions of the stock library, the fragment one
+    * specialised by these float function constants */
+   const char *metal_vertex;
+   const char *metal_fragment;
+   const char *const *metal_constant_names;
+   const float *metal_constants;
+   unsigned metal_constant_count;
+   /* Wii U: the GX2 shader group */
+   const void *gx2;
+   /* DKSH from uam (deko3d_shaders/menu_effects_dksh.h), for deko3d
+    * and the Switch driver's 3D engine */
+   const uint8_t *dksh_vertex;
+   const uint8_t *dksh_fragment;
+   size_t dksh_vertex_size;
+   size_t dksh_fragment_size;
+   /* SM 8.6 from NAK (deko3d_shaders/menu_effects_sm86.h): each
+    * program's 128-byte header then its code, and its registers, for
+    * the Switch 2 driver's 3D engine */
+   const uint32_t *sm86_vertex;
+   const uint32_t *sm86_fragment;
+   size_t sm86_vertex_size;
+   size_t sm86_fragment_size;
+   unsigned sm86_vertex_gprs;
+   unsigned sm86_fragment_gprs;
+} gfx_display_effect_desc_t;
+
+typedef struct gfx_display_effect gfx_display_effect_t;
 
 typedef struct gfx_display_ctx_driver
 {
@@ -157,6 +231,33 @@ typedef struct gfx_display_ctx_driver
    bool (*mesh_draw)(void *data, unsigned video_dims,
          const struct gfx_display_mesh *mesh, const float *mvp,
          uintptr_t texture, const float *tint);
+   /* The glow: begin binds a cleared small target for the ribbon and
+    * returns its dims, zero declining; a successful begin is ended. End
+    * runs the passes after it, all of them, or with defer only the ones
+    * into the small images, for bloom_composite to add onto the target
+    * later in the frame. A driver with bloom_composite calls
+    * gfx_display_bloom_prepass before the pass that draws the menu, so
+    * no pass is split; it declines a deferred begin it cannot split. */
+   unsigned (*bloom_begin)(void *data, unsigned video_dims, bool defer);
+   void (*bloom_end)(void *data, unsigned video_dims, bool defer);
+   void (*bloom_composite)(void *data, unsigned video_dims);
+   /* Optional. Makes the driver's program for an effect, NULL where it
+    * cannot draw it. Called on the drawing thread; the program is the
+    * driver's, freed with it. Draws of the effect come to
+    * draw_pipeline and draw with draw->effect set to it. */
+   void *(*effect_install)(void *data,
+         const gfx_display_effect_desc_t *desc);
+   /* Samples the borrowed viewer texture through an independent shader
+    * chain. False leaves the ordinary texture draw as its fallback. */
+   bool (*media_shader_draw)(void *data, uintptr_t texture,
+         unsigned source_dims, unsigned video_dims, unsigned pos, unsigned dims);
+   /* Optional. Blurs what is already drawn under the rect at @x, @y
+    * (top-left origin) of @dims, at @alpha over the original, then
+    * darkens the rect by @dim as a black quad of that alpha would:
+    * mix(drawn, blurred, alpha) * (1 - dim). False where it cannot,
+    * drawing nothing. */
+   bool (*blur_rect)(void *data, unsigned video_dims,
+         int x, int y, unsigned dims, float alpha, float dim);
 } gfx_display_ctx_driver_t;
 
 struct gfx_display_ctx_draw
@@ -181,6 +282,8 @@ struct gfx_display_ctx_draw
     * each driver on its way out. */
    unsigned pos;
    unsigned pipeline_id;
+   /* An effect's program, as effect_install made it; else NULL */
+   void *effect;
    float rotation;
    float scale_factor;
 };
@@ -189,12 +292,6 @@ typedef struct gfx_display_ctx_coord_draw
 {
    const float *ptr;
 } gfx_display_ctx_coord_draw_t;
-
-typedef struct gfx_display_ctx_datetime
-{
-   unsigned time_mode;
-   unsigned date_separator;
-} gfx_display_ctx_datetime_t;
 
 typedef struct gfx_display_ctx_powerstate
 {
@@ -285,13 +382,26 @@ struct gfx_display
 
    uint8_t flags;
 
-   /* The menu effects' clock, in the step every driver used to keep
-    * for itself: 0.01 an effect drawn, wrapped at 65536. Read by the
-    * driver while it draws an effect, advanced once it has. */
+   struct menu_ribbon *ribbon;
+   retro_time_t effect_start_time;
+   /* Elapsed seconds scaled by 0.6, shared by every effect pass. */
    float     effect_time;
    /* The mesh an effect is being drawn over, for the driver's pipeline
     * code to draw from; NULL outside that draw. */
    const struct gfx_display_mesh *effect_mesh;
+   /* How many of its vertices the effect draws, from the first */
+   unsigned effect_vertices;
+   /* The ribbon the next prepass draws the glow of, its alpha, whether
+    * a frame asked for it, whether this frame's is ready to composite
+    * and whether the prepass already moved the ribbon on this frame */
+   const struct gfx_display_mesh *bloom_mesh;
+   void *bloom_effect;
+   unsigned bloom_vertices;
+   unsigned bloom_dims;
+   float bloom_alpha;
+   bool bloom_wanted;
+   bool bloom_ready;
+   bool ribbon_fresh;
 
    /* What the batch did during the menu frame being drawn, counted
     * where it happens on the drawing thread and published as a whole
@@ -389,13 +499,7 @@ enum gfx_display_mesh_program
 {
    GFX_MESH_PROGRAM_TEXTURED = 0,  /* texture times vertex colour */
    GFX_MESH_PROGRAM_COLORED,       /* vertex colour */
-   GFX_MESH_PROGRAM_BLEND,         /* the driver's stock blend */
-   GFX_MESH_PROGRAM_RIBBON,        /* the effects: the mesh animated */
-   GFX_MESH_PROGRAM_RIBBON_SIMPLE, /* by time in the vertex stage */
-   GFX_MESH_PROGRAM_SNOW_SIMPLE,   /* the effects: shaded per pixel */
-   GFX_MESH_PROGRAM_SNOW,          /* over the full-screen quad */
-   GFX_MESH_PROGRAM_BOKEH,
-   GFX_MESH_PROGRAM_SNOWFLAKE,
+   GFX_MESH_PROGRAM_EFFECT,        /* gfx_display_mesh_draw_t's effect */
    GFX_MESH_PROGRAM_LAST
 };
 
@@ -421,9 +525,11 @@ typedef struct gfx_display_mesh_vertex
    uint8_t  rgba[4];
 } gfx_display_mesh_vertex_t;
 
+#define GFX_DISPLAY_MESH_ALIGN 64
+
 typedef struct gfx_display_mesh_desc
 {
-   const gfx_display_mesh_vertex_t *vertices;
+   const gfx_display_mesh_vertex_t *vertices; /* NULL: zeroed, filled by owner */
    const uint16_t *indices;        /* NULL: drawn in vertex order */
    unsigned vertex_count;
    unsigned index_count;
@@ -443,7 +549,8 @@ struct gfx_display_mesh
    unsigned index_count;
    enum gfx_display_mesh_topology topology;
    uint32_t id;
-   /* x,y of each vertex, for GFX_MESH_FLAG_POSITIONS; else NULL */
+   /* x,y of each vertex, for GFX_MESH_FLAG_POSITIONS; else NULL.
+    * GFX_DISPLAY_MESH_ALIGN aligned, so a GPU can read it in place. */
    float *positions;
 };
 typedef struct gfx_display_mesh gfx_display_mesh_t;
@@ -457,7 +564,17 @@ typedef struct gfx_display_mesh_draw
     * programs (corner 0), and what the effects draw with */
    float *color;
    uintptr_t texture;
+   /* EFFECT: the frame's video_frame_info_t::frame_time, which the
+    * effect animates by */
+   retro_time_t time;
    enum gfx_display_mesh_program program;
+   /* EFFECT: which; NULL draws nothing */
+   const gfx_display_effect_t *effect;
+   /* An effect with GFX_EFFECT_RIBBON: also draw its glow, where the
+    * driver has one */
+   bool bloom;
+   /* Effects: the first this many vertices; 0 draws them all */
+   unsigned vertex_count;
 } gfx_display_mesh_draw_t;
 
 gfx_display_mesh_t *gfx_display_mesh_create(const gfx_display_mesh_desc_t *desc);
@@ -470,6 +587,28 @@ const gfx_display_mesh_t *gfx_display_mesh_fullscreen(void);
  * positions as coordinates, for drivers that stream them; NULL when
  * the mesh keeps none. Drawing thread only. */
 struct video_coords *gfx_display_effect_coords(gfx_display_t *p_disp);
+/* Borrowed until the next effect draw, on the drawing thread.
+ * gfx_display_ribbon_data is GFX_DISPLAY_RIBBON_BYTES long: 50 vec4s. */
+#define GFX_DISPLAY_RIBBON_BYTES (50 * 4 * sizeof(float))
+/* The ribbon mesh ends with its dust: six strip vertices a speck */
+#define GFX_DISPLAY_RIBBON_STAR_VERTICES (48 * 6)
+const float *gfx_display_ribbon_ubo(gfx_display_t *p_disp, float yflip);
+const float *gfx_display_ribbon_data(gfx_display_t *p_disp);
+void gfx_display_ribbon_vertex(const float *data, const float *p,
+      float *position, float *lighting);
+/* Installs an effect, returning its handle, or NULL when no more fit.
+ * @desc and what it points to stay as they are for as long as the
+ * process runs; installing the same @desc again returns the same
+ * handle. The drivers make their programs of every installed effect
+ * on the drawing thread, before the first effect draw after the
+ * install or after a video driver comes up. */
+gfx_display_effect_t *gfx_display_effect_install(
+      const gfx_display_effect_desc_t *desc);
+/* The video driver is gone, and the programs it made with it */
+void gfx_display_effects_lost(void);
+/* For a driver with bloom_composite: the glow's small passes for this
+ * frame, outside the pass the menu is drawn in. Drawing thread. */
+void gfx_display_bloom_prepass(void *userdata, retro_time_t now);
 void gfx_display_mesh_draw(gfx_display_t *p_disp, void *userdata,
       unsigned video_dims, const gfx_display_mesh_t *mesh,
       const gfx_display_mesh_draw_t *draw);
@@ -491,6 +630,10 @@ void gfx_display_blend_begin(gfx_display_ctx_driver_t *dispctx,
 void gfx_display_blend_end(gfx_display_ctx_driver_t *dispctx,
       void *userdata);
 
+bool gfx_display_draw_media_shader(gfx_display_ctx_driver_t *dispctx,
+      void *userdata, uintptr_t texture, unsigned source_dims,
+      unsigned video_dims, unsigned pos, unsigned dims);
+
 void gfx_display_draw(gfx_display_ctx_driver_t *dispctx,
       gfx_display_ctx_draw_t *draw, void *userdata,
       unsigned video_dims);
@@ -503,6 +646,16 @@ void gfx_display_draw_quad(
       unsigned ref_dims,
       float *color,
       uintptr_t *texture);
+
+/* What is drawn under the rect blurred, at @alpha, and darkened by
+ * @dim, where the driver can; true then, and the caller draws no dim
+ * quad of its own. */
+bool gfx_display_draw_blur(
+      gfx_display_t *p_disp,
+      void *data,
+      unsigned video_dims,
+      int x, int y, unsigned dims,
+      float alpha, float dim);
 
 /* @video_dims, @src_dims, @dst_dims and @dims: the output size, the
  * texture's size, the size to draw it at and the area it is placed in,
@@ -566,6 +719,7 @@ extern gfx_display_ctx_driver_t gfx_display_ctx_wiiu;
 extern gfx_display_ctx_driver_t gfx_display_ctx_gdi;
 extern gfx_display_ctx_driver_t gfx_display_ctx_switch;
 extern gfx_display_ctx_driver_t gfx_display_ctx_rsx;
+extern gfx_display_ctx_driver_t gfx_display_ctx_deko3d;
 extern gfx_display_ctx_driver_t gfx_display_ctx_sdl2;
 extern gfx_display_ctx_driver_t gfx_display_ctx_sdl3;
 

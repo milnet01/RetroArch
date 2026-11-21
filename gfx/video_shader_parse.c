@@ -827,6 +827,8 @@ static bool video_shader_parse_pass(config_file_t *conf,
          scale->type_x = RARCH_SCALE_VIEWPORT;
       else if (memcmp(scale_type_x, "absolute", 9) == 0)
          scale->type_x = RARCH_SCALE_ABSOLUTE;
+      else if (memcmp(scale_type_x, "original", 9) == 0)
+         scale->type_x = RARCH_SCALE_ORIGINAL;
       else
       {
          RARCH_ERR("[Shaders] Invalid attribute: \"%s\".\n", scale_type_x);
@@ -842,6 +844,8 @@ static bool video_shader_parse_pass(config_file_t *conf,
          scale->type_y = RARCH_SCALE_VIEWPORT;
       else if (!strcmp(scale_type_y, "absolute"))
          scale->type_y = RARCH_SCALE_ABSOLUTE;
+      else if (!strcmp(scale_type_y, "original"))
+         scale->type_y = RARCH_SCALE_ORIGINAL;
       else
       {
          RARCH_ERR("[Shaders] Invalid attribute: \"%s\".\n", scale_type_y);
@@ -1583,6 +1587,8 @@ static const char *video_shader_scale_type_to_str(enum gfx_scale_type type)
          return "viewport";
       case RARCH_SCALE_ABSOLUTE:
          return "absolute";
+      case RARCH_SCALE_ORIGINAL:
+         return "original";
       default:
          break;
    }
@@ -4142,14 +4148,13 @@ bool video_shader_apply_shader(
    char msg[NAME_MAX_LENGTH];
    video_driver_state_t *video_st = video_state_get_ptr();
    runloop_state_t *runloop_st    = runloop_state_get_ptr();
-   const char      *core_name     = runloop_st->system.info.library_name;
    const char      *preset_file   = NULL;
 #ifdef HAVE_MENU
    struct video_shader *shader    = menu_shader_get();
 #endif
 
-   /* Disallow loading shaders when no core is loaded */
-   if (!core_name || !*core_name)
+   /* Fullscreen media can use the live video driver without a core. */
+   if (!video_st->current_video || !video_st->data)
       return false;
 
    if (preset_path && *preset_path)

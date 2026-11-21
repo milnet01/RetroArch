@@ -342,10 +342,10 @@ typedef struct vulkan_filter_chain_create_info vulkan_filter_chain_create_info;
    {
       VkImageCopy region;
 
-      /* The destination transitions from UNDEFINED (contents discarded),
-       * so there is no data dependency on prior fragment work.
-       * TOP_OF_PIPE_BIT with srcAccessMask 0 is the correct minimal
-       * barrier — same pattern used by vulkan_framebuffer_clear(). */
+      /* Discarding contents removes the data dependency, but a recycled
+       * history image must still finish its previous shader reads before
+       * this layout transition and overwrite. Include earlier transfers
+       * too; UNDEFINED does not remove their execution dependency. */
       VULKAN_IMAGE_LAYOUT_TRANSITION_LEVELS(
             cmd,
             image,
@@ -354,7 +354,7 @@ typedef struct vulkan_filter_chain_create_info vulkan_filter_chain_create_info;
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             0,
             VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_QUEUE_FAMILY_IGNORED,
             VK_QUEUE_FAMILY_IGNORED);
@@ -800,6 +800,8 @@ struct CommonResources
    /* Frames may come inside a larger image: passes are built to read
     * them there. */
    bool frame_rect;
+   bool viewer_colour;
+   float viewer_colour_rows[12];
    bool frame_linear;
 #ifdef VULKAN_ROLLING_SCANLINE_SIMULATION
    bool simulate_scanline;
@@ -842,6 +844,7 @@ struct slang_pass
     * frame_copy, they read it in a way only an image of its own
     * serves. */
    bool frame_tried;
+   bool colour_tried;
    bool frame_copy;
 
    VkPipeline pipeline;
@@ -1630,6 +1633,7 @@ static struct vulkan_filter_chain *slang_chain_new(
    chain->max_input_size_dims   = info->max_input_dims;
    chain->deferred_source_dims  = chain->max_input_size_dims;
    chain->common.frame_rect     = info->frame_rect;
+   chain->common.viewer_colour  = info->viewer_colour;
    chain->replay                = info->replay;
    if (     !slang_chain_set_swapchain_info(chain, info->swapchain)
          || !slang_chain_set_num_passes(chain, info->num_passes))
@@ -2772,6 +2776,10 @@ static bool slang_chain_compile_full_pass(struct vulkan_filter_chain *chain,
             p_info.scale_x      = pass->fbo.scale_x;
             p_info.scale_type_x = GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT;
             break;
+         case RARCH_SCALE_ORIGINAL:
+            p_info.scale_x      = pass->fbo.scale_x;
+            p_info.scale_type_x = GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL;
+            break;
       }
 
       switch (pass->fbo.type_y)
@@ -2787,6 +2795,10 @@ static bool slang_chain_compile_full_pass(struct vulkan_filter_chain *chain,
          case RARCH_SCALE_VIEWPORT:
             p_info.scale_y      = pass->fbo.scale_y;
             p_info.scale_type_y = GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT;
+            break;
+         case RARCH_SCALE_ORIGINAL:
+            p_info.scale_y      = pass->fbo.scale_y;
+            p_info.scale_type_y = GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL;
             break;
       }
    }
@@ -3123,6 +3135,7 @@ static void slang_pass_set_blob(struct slang_pass *pass,
       VkShaderStageFlags stage, struct slang_blob *blob)
 {
    pass->frame_tried = false;
+   pass->colour_tried = false;
    switch (stage)
    {
       case VK_SHADER_STAGE_VERTEX_BIT:
@@ -3860,6 +3873,31 @@ static void slang_pass_read_frame_in_place(struct slang_pass *pass)
       slang_pass_set_blob(pass, VK_SHADER_STAGE_FRAGMENT_BIT, slang_blob_adopt_words(nf, nfl));
 }
 
+static bool slang_pass_colour_in_place(struct slang_pass *pass)
+{
+#ifdef HAVE_RSLC
+   const struct video_shader *preset = pass->common->shader_preset;
+   struct slang_blob *vb = NULL, *fb = NULL;
+   enum slang_rect_result result;
+   if (pass->colour_tried) return true;
+   if (!preset) return false;
+   if (pass->pass_number >= preset->passes) return true;
+   if (!slang_compile_colour(preset->pass[pass->pass_number].source.path,
+            pass->vertex_shader, pass->num_vertex_shader,
+            pass->fragment_shader, pass->num_fragment_shader,
+            pass->pass_number == 0, NULL, &result, &vb, &fb, NULL, NULL))
+      return false;
+   if (result == SLANG_RECT_UNSUPPORTED) return false;
+   if (vb) slang_pass_set_blob(pass, VK_SHADER_STAGE_VERTEX_BIT, vb);
+   if (fb) slang_pass_set_blob(pass, VK_SHADER_STAGE_FRAGMENT_BIT, fb);
+   pass->colour_tried = true;
+   return true;
+#else
+   (void)pass;
+   return false;
+#endif
+}
+
 static bool slang_pass_build(struct slang_pass *pass)
 {
    return slang_pass_build_layout(pass) && slang_pass_init_pipeline(pass);
@@ -3901,6 +3939,8 @@ static bool slang_pass_build_layout(struct slang_pass *pass)
 
    if (pass->common->frame_rect)
       slang_pass_read_frame_in_place(pass);
+   if (pass->common->viewer_colour && !slang_pass_colour_in_place(pass))
+      return false;
 
    slang_framebuffer_delete(&pass->framebuffer);
 
@@ -4352,6 +4392,12 @@ static void slang_pass_build_semantics(struct slang_pass *pass,
 
    /* Standard inputs */
    slang_pass_build_semantic_frame_rect(pass, buffer, &original->texture);
+   slang_pass_build_semantic_vec4_values(pass, buffer,
+         SLANG_SEMANTIC_VIEWER_COLOUR0, pass->common->viewer_colour_rows);
+   slang_pass_build_semantic_vec4_values(pass, buffer,
+         SLANG_SEMANTIC_VIEWER_COLOUR1, pass->common->viewer_colour_rows + 4);
+   slang_pass_build_semantic_vec4_values(pass, buffer,
+         SLANG_SEMANTIC_VIEWER_COLOUR2, pass->common->viewer_colour_rows + 8);
    slang_pass_build_semantic_texture(pass, set, buffer, SLANG_TEXTURE_SEMANTIC_ORIGINAL, original,
          batch_image_infos, batch_writes, &batch_count);
    slang_pass_build_semantic_texture(pass, set, buffer, SLANG_TEXTURE_SEMANTIC_SOURCE, source,
@@ -5349,6 +5395,11 @@ vulkan_filter_chain_t *vulkan_filter_chain_create_from_preset(
                pass_info.scale_x      = pass->fbo.scale_x;
                pass_info.scale_type_x = GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT;
                break;
+
+            case RARCH_SCALE_ORIGINAL:
+               pass_info.scale_x      = pass->fbo.scale_x;
+               pass_info.scale_type_x = GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL;
+               break;
          }
 
          switch (pass->fbo.type_y)
@@ -5366,6 +5417,11 @@ vulkan_filter_chain_t *vulkan_filter_chain_create_from_preset(
             case RARCH_SCALE_VIEWPORT:
                pass_info.scale_y      = pass->fbo.scale_y;
                pass_info.scale_type_y = GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT;
+               break;
+
+            case RARCH_SCALE_ORIGINAL:
+               pass_info.scale_y      = pass->fbo.scale_y;
+               pass_info.scale_type_y = GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL;
                break;
          }
       }
@@ -5618,6 +5674,13 @@ void vulkan_filter_chain_set_passthrough(
       vulkan_filter_chain_t *chain, unsigned passthrough)
 {
    chain->common.passthrough = passthrough ? 1 : 0;
+}
+
+void vulkan_filter_chain_set_viewer_colour(
+      vulkan_filter_chain_t *chain, const float *rows)
+{
+   memcpy(chain->common.viewer_colour_rows, rows,
+         sizeof(chain->common.viewer_colour_rows));
 }
 
 void vulkan_filter_chain_set_source_hdr(

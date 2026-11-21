@@ -30,6 +30,10 @@
 #include <sys/wait.h>
 
 #ifdef __linux__
+#include <sys/prctl.h>
+#ifndef PR_SET_TIMERSLACK
+#define PR_SET_TIMERSLACK 29
+#endif
 #include <linux/version.h>
 #endif
 
@@ -77,6 +81,12 @@
 #include <lists/file_list.h>
 #include <file/file_path.h>
 #include <streams/file_stream.h>
+/* Configure builds for desktop systems; a device firmware's bundle can
+ * be older than the built-in one, so its makefiles leave this off. */
+#if defined(HAVE_RETROSSL) && defined(HAVE_SYSTEM_CA) && !defined(ANDROID)
+#define UNIX_SYSTEM_CA
+#include <net/net_socket_ssl.h>
+#endif
 #include <string/stdstring.h>
 #include <queues/task_queue.h>
 #include <retro_timers.h>
@@ -144,6 +154,8 @@ static char android_core_dirs[2][DIR_MAX_LENGTH];
  * Play installs move the code folder mid-session. */
 static char android_install_dir[DIR_MAX_LENGTH];
 static char android_code_prefix[NAME_MAX_LENGTH];
+/* <dataDir>/cores, whatever DATADIR says */
+static char android_cores_dir[PATH_MAX_LENGTH];
 static char android_config_path[PATH_MAX_LENGTH];
 /* Set in android_app_create on the UI thread, so the
  * permissionsResolved upcall can reach the app state before the
@@ -322,6 +334,30 @@ void android_second_display_request(unsigned ordinal, bool given_up)
          android_app->setSecondDisplay, (jint)ordinal, (jint)number);
 }
 
+void android_blank_displays_request(const int *ids, unsigned count)
+{
+   JNIEnv *env;
+   jintArray array;
+   struct android_app *android_app = (struct android_app*)g_android;
+
+   if (!android_app || !android_app->setBlankDisplays)
+      return;
+   if (!(env = jni_thread_getenv()))
+      return;
+   /* Java keeps the array, so every call makes its own */
+   if (!(array = (*env)->NewIntArray(env, (jsize)count)))
+   {
+      JNI_EXCEPTION(env);
+      return;
+   }
+   if (count)
+      (*env)->SetIntArrayRegion(env, array, 0, (jsize)count,
+            (const jint*)ids);
+   CALL_VOID_METHOD_PARAM(env, android_app->activity->clazz,
+         android_app->setBlankDisplays, array);
+   (*env)->DeleteLocalRef(env, array);
+}
+
 void android_activity_move_request(int display_id, unsigned move)
 {
    JNIEnv *env;
@@ -410,8 +446,8 @@ JNIEXPORT void JNICALL Java_com_retroarch_browser_retroactivity_SecondDisplayCon
       JNIEnv *env, jclass clazz, jint count, jobjectArray names,
       jobjectArray models)
 {
-   video_window_display_t list[VIDEO_WINDOW_DISPLAYS_MAX];
    jint i;
+   video_window_display_t *list;
    struct android_app *android_app = g_android_early;
    const android_second_shared_t *shared = android_second_shared;
 
@@ -420,6 +456,7 @@ JNIEXPORT void JNICALL Java_com_retroarch_browser_retroactivity_SecondDisplayCon
    if (count > VIDEO_WINDOW_DISPLAYS_MAX)
       count = VIDEO_WINDOW_DISPLAYS_MAX;
 
+   list = video_driver_lend_window_displays();
    for (i = 0; i < count; i++)
    {
       video_window_display_t *d = &list[i];
@@ -447,7 +484,8 @@ JNIEXPORT void JNICALL Java_com_retroarch_browser_retroactivity_SecondDisplayCon
       android_jni_string_at(env, models, i, d->model, sizeof(d->model));
    }
 
-   video_driver_publish_window_displays(list, (unsigned)count);
+   video_driver_publish_lent_window_displays(count < 0 ? 0 : (unsigned)count,
+         false);
    android_app_write_cmd(android_app, APP_CMD_SECOND_WINDOW_CHANGED);
 }
 
@@ -590,7 +628,8 @@ JNIEXPORT void JNICALL Java_com_retroarch_browser_retroactivity_SecondDisplayCon
       android_second_wake(android_app);
 }
 
-/* The memory the two sides share, once per Activity */
+/* The memory the two sides share, once per Activity; its new controller
+ * covers nothing yet */
 JNIEXPORT void JNICALL Java_com_retroarch_browser_retroactivity_SecondDisplayController_nativeShare(
       JNIEnv *env, jclass clazz, jobject buffer)
 {
@@ -598,6 +637,7 @@ JNIEXPORT void JNICALL Java_com_retroarch_browser_retroactivity_SecondDisplayCon
          >= (jlong)sizeof(android_second_shared_t))
       android_second_shared = (android_second_shared_t*)
          (*env)->GetDirectBufferAddress(env, buffer);
+   video_driver_blank_unused_resend();
 }
 
 /* Java could not start move @move, which
@@ -1551,6 +1591,10 @@ static void android_env_derive_application_info(JNIEnv *env, jobject activity)
       __android_log_print(ANDROID_LOG_INFO,
          "RetroArch", "[ENV] Core folder: \"%s\".\n", android_core_dirs[i]);
    }
+   *android_cores_dir = '\0';
+   if (*android_core_dirs[0])
+      fill_pathname_join_special(android_cores_dir, android_core_dirs[0],
+            "cores", sizeof(android_cores_dir));
    if (!android_env_derive_install_dir(env, appinfo, appinfo_class))
    {
       *android_install_dir = '\0';
@@ -1611,6 +1655,11 @@ bool android_core_path_resolve(const char *path, char *s, size_t len)
       return false;
    }
    return true;
+}
+
+const char *android_app_cores_dir(void)
+{
+   return *android_cores_dir ? android_cores_dir : NULL;
 }
 
 /* getPackageManager().getPackageInfo(getPackageName(), 0).versionCode. */
@@ -3928,6 +3977,41 @@ static void frontend_unix_deinit(void *data)
 #endif
 }
 
+#ifdef UNIX_SYSTEM_CA
+/* The system's CA bundle as the TLS trust store, read before any
+ * network task starts: the file SSL_CERT_FILE names when it is set,
+ * otherwise the first bundle with usable roots where distributions
+ * keep one. With none, the built-in bundle stays. */
+static void frontend_unix_load_system_ca(void)
+{
+   static const char *const bundles[] = {
+      "/etc/ssl/certs/ca-certificates.crt",                /* Debian, Arch, Gentoo, Alpine */
+      "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", /* Fedora, RHEL */
+      "/etc/pki/tls/certs/ca-bundle.crt",                  /* older Fedora, RHEL */
+      "/etc/ssl/ca-bundle.pem",                            /* openSUSE */
+      "/etc/ssl/cert.pem",                                 /* OpenBSD, FreeBSD */
+      "/usr/local/share/certs/ca-root-nss.crt"             /* FreeBSD ca_root_nss */
+   };
+   const char *env = getenv("SSL_CERT_FILE");
+   size_t count    = ARRAY_SIZE(bundles);
+   size_t i;
+
+   if (env && *env)
+      count = 1;
+   for (i = 0; i < count; i++)
+   {
+      const char *path = (env && *env) ? env : bundles[i];
+      void *pem        = NULL;
+      int64_t pem_len  = 0;
+      /* the read buffer is handed over, decoded where it lies */
+      if (     filestream_read_file(path, &pem, &pem_len)
+            && ssl_socket_retro_adopt_trust_pem((char*)pem,
+               (size_t)pem_len, path) > 0)
+         break;
+   }
+}
+#endif
+
 static void frontend_unix_init(void *data)
 {
 #ifdef ANDROID
@@ -4086,6 +4170,8 @@ static void frontend_unix_init(void *data)
          "setSecondDisplay", "(II)V");
    GET_METHOD_ID(env, android_app->moveToDisplay, class,
          "moveToDisplay", "(II)V");
+   GET_METHOD_ID(env, android_app->setBlankDisplays, class,
+         "setBlankDisplays", "([I)V");
 #ifdef HAVE_VULKAN_CUSTOM_DRIVER
    GET_METHOD_ID(env, android_app->addSafeStartShortcut, class,
          "addSafeStartShortcut", "()V");
@@ -4131,6 +4217,16 @@ static void frontend_unix_init(void *data)
    /* Set automatic default values per device */
    if (device_is_xperia_play(device_model))
       g_platform_android_flags       |= PLAT_ANDROID_FLAG_XPERIA_PLAY_DEVICE;
+#endif
+#if defined(__linux__) && !defined(ANDROID)
+   /* The runloop's thread, and the threads it makes after this: a timed
+    * sleep returns when it was asked to, not up to the default 50 us of
+    * timer slack later. The frame limiter spins what its sleep leaves
+    * short of the deadline, so the slack was spun every frame. */
+   prctl(PR_SET_TIMERSLACK, 1UL, 0UL, 0UL, 0UL);
+#endif
+#ifdef UNIX_SYSTEM_CA
+   frontend_unix_load_system_ca();
 #endif
 }
 
@@ -4510,6 +4606,31 @@ static bool frontend_unix_set_fork(enum frontend_fork fork_mode)
    return true;
 }
 
+#if defined(HAVE_VULKAN_CUSTOM_DRIVER) && !defined(ANDROID)
+extern char **environ;
+
+/* environ with RETROARCH_VULKAN_DRIVER=system replacing any other value */
+static char **frontend_unix_safe_start_env(void)
+{
+   static char safe[] = "RETROARCH_VULKAN_DRIVER=system";
+   static const char key[] = "RETROARCH_VULKAN_DRIVER=";
+   size_t n = 0;
+   size_t i, j;
+   char **envp;
+
+   while (environ[n])
+      n++;
+   if (!(envp = (char**)malloc((n + 2) * sizeof(*envp))))
+      return NULL;
+   for (i = 0, j = 0; i < n; i++)
+      if (strncmp(environ[i], key, sizeof(key) - 1))
+         envp[j++] = environ[i];
+   envp[j++] = safe;
+   envp[j]   = NULL;
+   return envp;
+}
+#endif
+
 static void frontend_unix_exec(const char *path, bool should_load_content)
 {
    char *newargv[]    = { NULL, NULL };
@@ -4533,7 +4654,21 @@ static void frontend_unix_exec(const char *path, bool should_load_content)
 
    strlcpy(newargv[0], path, _len);
 
+#if defined(HAVE_VULKAN_CUSTOM_DRIVER) && !defined(ANDROID)
+   /* Only argv[0] is passed on: carry safe start in the environment. */
+   if (vulkan_custom_driver_safe_mode())
+   {
+      char **envp = frontend_unix_safe_start_env();
+      if (envp)
+      {
+         execve(path, newargv, envp);
+         free(envp);
+      }
+   }
+#endif
    execv(path, newargv);
+   RARCH_ERR("Failed to exec \"%s\".\n", path);
+   free(newargv[0]);
 }
 
 static void frontend_unix_exitspawn(char *s, size_t len, char *args)

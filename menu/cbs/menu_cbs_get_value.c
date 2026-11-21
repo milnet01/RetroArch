@@ -38,6 +38,9 @@
 #ifdef HAVE_CHEATS
 #include "../../cheat_manager.h"
 #endif
+#ifdef HAVE_CORE_SIGNATURES
+#include "../../core_trust_runtime.h"
+#endif
 #include "../../performance_counters.h"
 #include "../../paths.h"
 #include "../../verbosity.h"
@@ -808,6 +811,57 @@ static size_t menu_action_setting_disp_set_label_core_set_standalone_exempt(
    return _len;
 }
 
+#ifdef HAVE_CORE_SIGNATURES
+static size_t menu_action_setting_disp_set_label_core_signature_check(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   size_t _len = strlcpy(s, msg_hash_to_str(core_trust_runtime_checks_on()
+            ? MENU_ENUM_LABEL_VALUE_ON : MENU_ENUM_LABEL_VALUE_OFF), len);
+   if (path)
+      strlcpy(s2, path, len2);
+   *w = (unsigned)_len;
+   return _len;
+}
+
+static size_t menu_action_setting_disp_set_label_core_trust(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   size_t _len;
+   enum msg_hash_enums value = MENU_ENUM_LABEL_VALUE_CORE_TRUST_UNCHECKED;
+   const char *alt           = list->list[i].alt
+         ? list->list[i].alt
+         : list->list[i].path;
+
+   if (alt)
+      strlcpy(s2, alt, len2);
+
+   switch (list->list[i].entry_idx)
+   {
+      case CORE_TRUST_STATE_TRUSTED:
+         value = MENU_ENUM_LABEL_VALUE_CORE_TRUST_TRUSTED;
+         break;
+      case CORE_TRUST_STATE_SIGNED:
+         value = MENU_ENUM_LABEL_VALUE_CORE_TRUST_SIGNED;
+         break;
+      default:
+         break;
+   }
+   _len = strlcpy(s, msg_hash_to_str(value), len);
+   *w   = (unsigned)_len;
+   return _len;
+}
+#endif
+
 static size_t menu_action_setting_disp_set_label_input_desc(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
@@ -883,6 +937,29 @@ static size_t menu_action_setting_disp_set_label_input_plays_as(
          break;
    }
    return strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_AUTO), len);
+}
+
+/* As menu_action_setting_disp_set_label_input_plays_as(), and "Pressed"
+ * while a press marks the controller */
+static size_t menu_action_setting_disp_set_label_input_plays_as_marked(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   if (MENU_PAD_MARKED(menu_state_get_ptr(),
+            type - MENU_SETTINGS_INPUT_PLAYS_AS_BEGIN))
+   {
+      *w = 19;
+      if (path && *path)
+         strlcpy(s2, path, len2);
+      return strlcpy(s,
+            msg_hash_to_str(MENU_ENUM_LABEL_VALUE_INPUT_PAD_PRESSED), len);
+   }
+   return menu_action_setting_disp_set_label_input_plays_as(list, w, type,
+         i, label, s, len, path, s2, len2);
 }
 
 static size_t menu_action_setting_disp_set_label_input_desc_kbd(
@@ -1979,6 +2056,78 @@ static size_t menu_action_setting_disp_set_label(file_list_t* list,
    return _len;
 }
 
+/* Device Index: "Pressed" while a press marks the controller it names */
+static size_t menu_action_setting_disp_set_label_input_device_index(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   /* a mark stands in for the value, which is then not made */
+   if (MENU_PAD_MARKED(menu_state_get_ptr(),
+            config_get_ptr()->uints.input_joypad_index[
+               cbs->setting->index_offset]))
+   {
+      *w = 19;
+      if (path && *path)
+         strlcpy(s2, path, len2);
+      return strlcpy(s,
+            msg_hash_to_str(MENU_ENUM_LABEL_VALUE_INPUT_PAD_PRESSED), len);
+   }
+   return menu_action_setting_disp_set_label(list,
+         w, type, i, label, s, len, path, s2, len2);
+}
+
+/* An entry of Device Index's dropdown or Add Controller: "Pressed" while
+ * a press marks its controller (entry_idx), else nothing beside its name */
+static size_t menu_action_setting_disp_set_label_input_pad_item(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   menu_action_setting_disp_set_label_no_items(list, w, type, i, label,
+         s, len, path, s2, len2);
+   if (MENU_PAD_MARKED(menu_state_get_ptr(), list->list[i].entry_idx))
+      return strlcpy(s,
+            msg_hash_to_str(MENU_ENUM_LABEL_VALUE_INPUT_PAD_PRESSED), len);
+   return 0;
+}
+
+#if defined(HAVE_VIDEO_WINDOWS) && !defined(ANDROID)
+static size_t menu_action_setting_disp_set_label_video_screen_settings(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   size_t _len               = 0;
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   rarch_setting_t *display  = NULL;
+   *w                        = 19;
+   if (cbs->setting)
+      display = menu_setting_find_enum((enum msg_hash_enums)
+            (MENU_ENUM_LABEL_VIDEO_SCREEN_DISPLAY
+             + cbs->setting->index_offset));
+   if (display && display->actions->repr)
+      _len = display->actions->repr(display, s, len);
+   else
+      *s = '\0';
+   if (path && *path)
+      strlcpy(s2, path, len2);
+   return _len;
+}
+#endif
+
 static size_t menu_action_setting_disp_set_label_setting_bool(file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
@@ -2441,6 +2590,7 @@ static int menu_cbs_init_bind_get_string_representation_compare_type(
          break;
       case FILE_TYPE_PARENT_DIRECTORY:
       case FILE_TYPE_USE_DIRECTORY:
+      case FILE_TYPE_VULKAN_DRIVER_SYSTEM:
          BIND_ACTION_GET_VALUE(cbs,
                menu_action_setting_disp_set_label_generic);
          break;
@@ -2535,6 +2685,16 @@ static int menu_cbs_init_bind_get_string_representation_compare_type(
          BIND_ACTION_GET_VALUE(cbs,
                menu_action_setting_disp_set_label_core_lock);
          break;
+#ifdef HAVE_CORE_SIGNATURES
+      case MENU_SETTING_ACTION_CORE_SIGNATURE_CHECK:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_core_signature_check);
+         break;
+      case MENU_SETTING_ACTION_CORE_TRUST:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_core_trust);
+         break;
+#endif
       case MENU_SETTING_ACTION_CORE_SET_STANDALONE_EXEMPT:
          BIND_ACTION_GET_VALUE(cbs,
                menu_action_setting_disp_set_label_core_set_standalone_exempt);
@@ -2551,6 +2711,49 @@ static int menu_cbs_init_bind_get_string_representation_compare_type(
    return 0;
 }
 
+/* The rows that name a controller read "Pressed" while a press marks
+ * it, which happens only while two connected controllers show one
+ * name: these are bound only then, as the list is made, and the list
+ * is made again when names come to be shared or part. */
+static bool menu_cbs_init_bind_get_value_pad_find(menu_file_list_cbs_t *cbs,
+      const char *label, unsigned type)
+{
+   unsigned e;
+   if (     type >= MENU_SETTINGS_INPUT_PLAYS_AS_BEGIN
+         && type <= MENU_SETTINGS_INPUT_PLAYS_AS_END)
+   {
+      BIND_ACTION_GET_VALUE(cbs,
+            menu_action_setting_disp_set_label_input_plays_as_marked);
+      return true;
+   }
+   if (type == MENU_SETTING_DROPDOWN_ITEM_INPUT_PLAYS_AS_ADD)
+   {
+      BIND_ACTION_GET_VALUE(cbs,
+            menu_action_setting_disp_set_label_input_pad_item);
+      return true;
+   }
+   /* Device Index: its rows have their setting's enum ... */
+   if (     cbs->setting
+         && cbs->setting->enum_idx >= MENU_ENUM_LABEL_INPUT_DEVICE_INDEX
+         && cbs->setting->enum_idx <= MENU_ENUM_LABEL_INPUT_DEVICE_INDEX_LAST)
+   {
+      BIND_ACTION_GET_VALUE(cbs,
+            menu_action_setting_disp_set_label_input_device_index);
+      return true;
+   }
+   /* ... and its dropdown's entries are labelled with it */
+   if (     type == MENU_SETTING_DROPDOWN_SETTING_UINT_ITEM
+         && label
+         && (e = string_to_unsigned(label)) >= MENU_ENUM_LABEL_INPUT_DEVICE_INDEX
+         && e <= MENU_ENUM_LABEL_INPUT_DEVICE_INDEX_LAST)
+   {
+      BIND_ACTION_GET_VALUE(cbs,
+            menu_action_setting_disp_set_label_input_pad_item);
+      return true;
+   }
+   return false;
+}
+
 int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
       const char *path,
       const char *label, size_t lbl_len,
@@ -2558,6 +2761,10 @@ int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
 {
    if (!cbs)
       return -1;
+
+   if (     INPUT_DEVICES_SHARE_NAME()
+         && menu_cbs_init_bind_get_value_pad_find(cbs, label, type))
+      return 0;
 
    if (cbs->enum_idx != MSG_UNKNOWN)
    {
@@ -2602,6 +2809,16 @@ int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
             break;
       }
    }
+
+#if defined(HAVE_VIDEO_WINDOWS) && !defined(ANDROID)
+   if (     cbs->enum_idx >= MENU_ENUM_LABEL_VIDEO_SCREEN_SETTINGS
+         && cbs->enum_idx <= MENU_ENUM_LABEL_VIDEO_SCREEN_SETTINGS_LAST)
+   {
+      BIND_ACTION_GET_VALUE(cbs,
+            menu_action_setting_disp_set_label_video_screen_settings);
+      return 0;
+   }
+#endif
 
    if (cbs->setting && !cbs->setting->actions->repr)
    {

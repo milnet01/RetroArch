@@ -126,7 +126,8 @@ static const char *semantic_uniform_names[] = {
    "MinNits",
    "TonemapOperator",
    "SourceHDR",
-   "Passthrough"
+   "Passthrough",
+   "RARCH_ViewerColour0", "RARCH_ViewerColour1", "RARCH_ViewerColour2"
 };
 
 #if !defined(SLANG_RSLC_ONLY)
@@ -1877,10 +1878,52 @@ static bool slang_remap_stage(const char *source,
    return true;
 }
 
-bool slang_compile_remapped(const char *shader_path,
+static bool slang_colour_binding_used(const uint32_t *words, size_t n,
+      unsigned binding)
+{
+   size_t at = 5;
+   while (at < n)
+   {
+      unsigned count = words[at] >> 16;
+      unsigned op = words[at] & 0xffffu;
+      if (!count || count > n - at) return true;
+      /* OpDecorate Binding, conservatively including other sets. */
+      if (op == 71 && count >= 4 && words[at + 2] == 33
+            && words[at + 3] == binding) return true;
+      at += count;
+   }
+   return false;
+}
+
+static bool slang_colour_place_pass(const uint32_t *vs, size_t vs_words,
+      const uint32_t *fs, size_t fs_words, struct slang_rect_place *place)
+{
+   uint32_t vend, fend;
+   unsigned set, binding;
+   if (slang_rect_place_pass(vs, vs_words, fs, fs_words, place)) return true;
+   if (slang_rect_uniform_block(vs, vs_words, &set, &binding)
+         || slang_rect_uniform_block(fs, fs_words, &set, &binding)) return false;
+   memset(place, 0, sizeof(*place));
+   vend = slang_rect_block_end(vs, vs_words, place);
+   fend = slang_rect_block_end(fs, fs_words, place);
+   if (vend == ~0u || fend == ~0u
+         || (((vend > fend ? vend : fend) + 15) & ~15u) + 48
+               <= SLANG_RECT_PUSH_LIMIT) return false;
+   for (binding = 0; binding < 64; binding++)
+      if (!slang_colour_binding_used(vs, vs_words, binding)
+            && !slang_colour_binding_used(fs, fs_words, binding))
+      {
+         place->where = SLANG_RECT_UBO;
+         place->binding = binding;
+         return true;
+      }
+   return false;
+}
+
+static bool slang_compile_remap_internal(const char *shader_path,
       const uint32_t *vs, size_t vs_words,
       const uint32_t *fs, size_t fs_words,
-      bool source, bool linear, enum slang_rect_wrap wrap,
+      bool source, bool linear, enum slang_rect_wrap wrap, bool colour,
       const struct slang_text_target *text,
       enum slang_rect_result *verdict,
       struct slang_blob **vs_out, struct slang_blob **fs_out,
@@ -1907,7 +1950,8 @@ bool slang_compile_remapped(const char *shader_path,
    if (fs_text)
       *fs_text = NULL;
    /* where the members go, as the SPIR-V rewrite would put them */
-   if (!slang_rect_place_pass(vs, vs_words, fs, fs_words, &place))
+   if (!(colour ? slang_colour_place_pass(vs, vs_words, fs, fs_words, &place)
+         : slang_rect_place_pass(vs, vs_words, fs, fs_words, &place)))
       return true;
 
    memset(&rm, 0, sizeof(rm));
@@ -1923,6 +1967,60 @@ bool slang_compile_remapped(const char *shader_path,
    rm.offset        = place.offset;
    rm.wrap          = (enum rslc_remap_wrap)wrap;
    rm.linear        = linear;
+   rm.colour        = colour;
+   if (colour)
+   {
+      static const char *const names[] = {
+         "OriginalHistory0", "OriginalHistory1", "OriginalHistory2",
+         "OriginalHistory3", "OriginalHistory4", "OriginalHistory5",
+         "OriginalHistory6", "OriginalHistory7", "OriginalHistory8",
+         "OriginalHistory9", "OriginalHistory10", "OriginalHistory11",
+         "OriginalHistory12", "OriginalHistory13", "OriginalHistory14",
+         "OriginalHistory15", "OriginalHistory16", "OriginalHistory17",
+         "OriginalHistory18", "OriginalHistory19", "OriginalHistory20",
+         "OriginalHistory21", "OriginalHistory22", "OriginalHistory23",
+         "OriginalHistory24", "OriginalHistory25", "OriginalHistory26",
+         "OriginalHistory27", "OriginalHistory28", "OriginalHistory29",
+         "OriginalHistory30", "OriginalHistory31", "OriginalHistory32",
+         "OriginalHistory33", "OriginalHistory34", "OriginalHistory35",
+         "OriginalHistory36", "OriginalHistory37", "OriginalHistory38",
+         "OriginalHistory39", "OriginalHistory40", "OriginalHistory41",
+         "OriginalHistory42", "OriginalHistory43", "OriginalHistory44",
+         "OriginalHistory45", "OriginalHistory46", "OriginalHistory47",
+         "OriginalHistory48", "OriginalHistory49", "OriginalHistory50",
+         "OriginalHistory51", "OriginalHistory52", "OriginalHistory53",
+         "OriginalHistory54", "OriginalHistory55", "OriginalHistory56",
+         "OriginalHistory57", "OriginalHistory58", "OriginalHistory59",
+         "OriginalHistory60", "OriginalHistory61", "OriginalHistory62",
+         "OriginalHistory63", "OriginalHistory64", "OriginalHistory65",
+         "OriginalHistory66", "OriginalHistory67", "OriginalHistory68",
+         "OriginalHistory69", "OriginalHistory70", "OriginalHistory71",
+         "OriginalHistory72", "OriginalHistory73", "OriginalHistory74",
+         "OriginalHistory75", "OriginalHistory76", "OriginalHistory77",
+         "OriginalHistory78", "OriginalHistory79", "OriginalHistory80",
+         "OriginalHistory81", "OriginalHistory82", "OriginalHistory83",
+         "OriginalHistory84", "OriginalHistory85", "OriginalHistory86",
+         "OriginalHistory87", "OriginalHistory88", "OriginalHistory89",
+         "OriginalHistory90", "OriginalHistory91", "OriginalHistory92",
+         "OriginalHistory93", "OriginalHistory94", "OriginalHistory95",
+         "OriginalHistory96", "OriginalHistory97", "OriginalHistory98",
+         "OriginalHistory99", "OriginalHistory100", "OriginalHistory101",
+         "OriginalHistory102", "OriginalHistory103", "OriginalHistory104",
+         "OriginalHistory105", "OriginalHistory106", "OriginalHistory107",
+         "OriginalHistory108", "OriginalHistory109", "OriginalHistory110",
+         "OriginalHistory111", "OriginalHistory112", "OriginalHistory113",
+         "OriginalHistory114", "OriginalHistory115", "OriginalHistory116",
+         "OriginalHistory117", "OriginalHistory118", "OriginalHistory119",
+         "OriginalHistory120", "OriginalHistory121", "OriginalHistory122",
+         "OriginalHistory123", "OriginalHistory124", "OriginalHistory125",
+         "OriginalHistory126", "OriginalHistory127", "Original",
+         "Source" };
+      rm.samplers = names;
+      rm.sampler_count = source ? 130 : 129;
+      rm.rect_name = "RARCH_ViewerColour0";
+      rm.clamp_name = "RARCH_ViewerColour1";
+      rm.texels_name = "RARCH_ViewerColour2";
+   }
 
    if (!shader_line_buf_init(&lines))
       return false;
@@ -1966,6 +2064,33 @@ bool slang_compile_remapped(const char *shader_path,
    shader_line_buf_free(&lines);
    return ok;
 }
+bool slang_compile_remapped(const char *shader_path,
+      const uint32_t *vs, size_t vs_words,
+      const uint32_t *fs, size_t fs_words,
+      bool source, bool linear, enum slang_rect_wrap wrap,
+      const struct slang_text_target *text,
+      enum slang_rect_result *verdict,
+      struct slang_blob **vs_out, struct slang_blob **fs_out,
+      char **vs_text, char **fs_text)
+{
+   return slang_compile_remap_internal(shader_path, vs, vs_words, fs, fs_words,
+         source, linear, wrap, false, text, verdict, vs_out, fs_out,
+         vs_text, fs_text);
+}
+
+bool slang_compile_colour(const char *shader_path,
+      const uint32_t *vs, size_t vs_words,
+      const uint32_t *fs, size_t fs_words, bool source,
+      const struct slang_text_target *text,
+      enum slang_rect_result *verdict,
+      struct slang_blob **vs_out, struct slang_blob **fs_out,
+      char **vs_text, char **fs_text)
+{
+   return slang_compile_remap_internal(shader_path, vs, vs_words, fs, fs_words,
+         source, false, SLANG_RECT_WRAP_EDGE, true, text, verdict,
+         vs_out, fs_out, vs_text, fs_text);
+}
+
 #endif
 
 /* Stages compiled detached, held here with one reference each so they

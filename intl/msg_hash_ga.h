@@ -266,7 +266,7 @@ static const struct
 #ifndef HAVE_DYNAMIC
    char s_e011fe61[43];
 #endif
-   char s_4e447c6c[34];
+   char s_4e447c6c[54];
    char s_d9a51d02[15];
    char s_12e77e8f[13];
    char s_98760b94[31];
@@ -362,7 +362,9 @@ static const struct
    char s_314539a4[23];
    char s_8fc168f0[7];
    char s_213c44cf[17];
+   char s_4f4b0d00[7];
    char s_502f623c[8];
+   char s_223dfc81[8];
    char s_b6cd2ff0[57];
    char s_40e7aacd[9];
    char s_fe2b08f2[16];
@@ -548,6 +550,7 @@ static const struct
    char s_8cefb843[15];
    char s_177845b3[16];
    char s_8fe1a777[26];
+   char s_f70695f9[44];
 #ifdef HAVE_GAME_AI
    char s_8dc1bc3e[11];
 #endif
@@ -592,6 +595,7 @@ static const struct
    char s_734d2a61[6];
    char s_a7a97316[45];
    char s_8b421107[35];
+   char s_2ddc6b1f[34];
 #ifdef HAVE_MIST
    char s_3e0f9900[16];
    char s_67b3c923[23];
@@ -605,6 +609,11 @@ static const struct
    char s_145f5880[21];
    char s_b1b9fd35[36];
    char s_0cc72b4d[33];
+   char s_d895f586[19];
+   char s_45fc8d17[54];
+   char s_9c10150b[9];
+   char s_1b848e1d[26];
+   char s_0d0d2449[22];
    char s_9af4bf52[16];
    char s_e5d096ab[13];
    char s_b3d0e60e[24];
@@ -766,6 +775,7 @@ static const struct
    char s_8cfdee2a[25];
    char s_40582c14[19];
    char s_c9afcfe6[13];
+   char s_20def9c4[31];
    char s_75d123f3[25];
    char s_b84a6df0[18];
    char s_35da9191[17];
@@ -902,6 +912,7 @@ static const struct
    char s_009a10e3[8];
    char s_7a9cbfe8[47];
    char s_22c19b64[26];
+   char s_54e9fd88[24];
    char s_58de51be[9];
    char s_cde2111a[13];
    char s_aded1e43[41];
@@ -952,6 +963,7 @@ static const struct
    char s_7febe11e[47];
    char s_da2acf5c[22];
    char s_735c53f7[13];
+   char s_eca2dcb9[48];
    char s_7841d5c4[29];
    char s_41b61e1c[23];
    char s_bacd98a3[22];
@@ -1065,6 +1077,7 @@ static const struct
    char s_800197ff[34];
    char s_93d13126[11];
    char s_7785c81e[41];
+   char s_2c3e5e41[8];
    char s_4c280c7b[23];
    char s_48da9f69[16];
    char s_870768d7[10];
@@ -1073,6 +1086,7 @@ static const struct
    char s_7e9108fa[9];
    char s_f455cf63[12];
    char s_66adee66[7];
+   char s_05d74af2[15];
    char s_ce89e465[28];
    char s_88226df7[30];
    char s_4c92f60e[24];
@@ -1339,6 +1353,7 @@ static const struct
    char s_c39e6c47[29];
    char s_ceb820ad[9];
    char s_63af41a7[33];
+   char s_a4b769ca[31];
 #ifdef HAVE_MIST
    char s_53788998[33];
 #endif
@@ -1356,9 +1371,9 @@ static const struct
    char s_dcbf8b04[28];
    char s_dcbffdfe[30];
    char s_7816d5d5[39];
-   char s_2b1f17e8[29];
+   char s_2b1f17e8[19];
    char s_36c3acc7[22];
-   char s_b4c3612a[32];
+   char s_b4c3612a[22];
    char s_f638f238[22];
    char s_f3358a59[37];
    char s_f8098721[61];
@@ -1546,6 +1561,9 @@ static const struct
    char s_4e0dc3eb[43];
    char s_17e361a4[23];
    char s_883e5f82[43];
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+   char s_66c8a76c[37];
+#endif
    char s_e738b2b9[26];
    char s_1dd231f0[32];
    char s_686b74ae[24];
@@ -1745,6 +1763,14 @@ static const struct
    char s_f70406ce[22];
    char s_66df5c89[25];
    char s_ca981b76[17];
+   char s_abf7d054[31];
+   char s_168e9ab8[38];
+   char s_17e4ac87[17];
+   char s_9ceaa254[21];
+   char s_0acff1e2[21];
+   char s_46f4826e[11];
+   char s_a141feef[30];
+   char s_46f4c26a[22];
    char s_5c3ed998[37];
    char s_26d7f366[23];
    char s_26e72a47[26];
@@ -1762,7 +1788,6 @@ static const struct
    char s_a38500d8[18];
    char s_9544161a[7];
    char s_76ac1944[40];
-   char s_ded7e809[42];
    char s_d8820ed7[46];
    char s_4c11d465[20];
    char s_50a04cd9[20];
@@ -1770,8 +1795,6 @@ static const struct
    char s_11121f30[19];
    char s_01badaa0[25];
    char s_6127cc52[30];
-   char s_9d52f73c[15];
-   char s_bc30b87a[19];
    char s_2fd5302f[40];
    char s_2dff21ec[33];
    char s_a2a28187[25];
@@ -1834,7 +1857,6 @@ static const struct
    char s_f24476fa[10];
    char s_97d90c67[9];
    char s_6d08238d[5];
-   char s_033bf99f[17];
    char s_8076aea7[16];
    char s_a00583cf[22];
    char s_e8a86d57[7];
@@ -1875,7 +1897,6 @@ static const struct
    char s_b71e6907[14];
    char s_d725639f[14];
    char s_ea5b5020[7];
-   char s_fef383d2[45];
    char s_4707850d[17];
    char s_cbddcf50[18];
    char s_9abb40fc[24];
@@ -1973,6 +1994,7 @@ static const struct
    char s_9329c64c[6];
    char s_f8883f70[11];
    char s_09ba892e[7];
+   char s_047623ff[5];
    char s_58b9d895[14];
    char s_0a2aa953[13];
    char s_ffd0dac4[8];
@@ -2365,6 +2387,8 @@ static const struct
    char s_579c3ea7[25];
    char s_cc7bf1b9[13];
    char s_b300fc03[20];
+   char s_e29ee11f[14];
+   char s_714b59b6[13];
    char s_ccf131c5[21];
    char s_e5124bba[8];
    char s_875bc33e[11];
@@ -2456,6 +2480,8 @@ static const struct
    char s_22ee45f4[42];
    char s_4577a14d[37];
    char s_4bceefff[19];
+   char s_d8aa6ca5[17];
+   char s_4db79d8b[35];
    char s_752ce8b2[43];
 #ifdef HAVE_ODROIDGO2
 #else
@@ -2527,6 +2553,7 @@ static const struct
    char s_020e2bc5[21];
    char s_59f183c8[25];
    char s_59f183c9[22];
+   char s_0187751a[20];
    char s_6b395e21[15];
    char s_00ab7f5e[35];
    char s_71747541[13];
@@ -2546,6 +2573,7 @@ static const struct
    char s_fad361a0[26];
    char s_bb929824[28];
    char s_fe2ec9bd[35];
+   char s_1cce95ec[10];
    char s_1e3a9360[40];
    char s_5943aeda[30];
    char s_60b84450[31];
@@ -2671,9 +2699,20 @@ static const struct
    char s_f387bafb[28];
    char s_2c868ae4[14];
    char s_9c535394[10];
+   char s_8fb9d92f[12];
+   char s_fcdb4d6c[15];
+   char s_34a16f69[20];
+   char s_7706edf0[23];
+   char s_0356de68[11];
+   char s_0356de69[11];
    char s_7f065006[11];
-   char s_5c12d979[14];
-   char s_32cb293c[27];
+   char s_92c235ae[14];
+   char s_85a13a6b[32];
+   char s_03660a67[37];
+   char s_9fd32b8d[48];
+   char s_df1fb594[46];
+   char s_6895740c[33];
+   char s_6895740d[33];
    char s_284873ec[26];
    char s_3220e9be[10];
    char s_3242e549[27];
@@ -2726,7 +2765,7 @@ static const struct
    char s_33da1d6d[25];
    char s_33dae115[23];
    char s_b2b1563a[9];
-   char s_fa98dce0[30];
+   char s_fa98dce0[13];
    char s_2bf7c29f[18];
    char s_48431da6[13];
    char s_21d7a1f6[10];
@@ -2767,10 +2806,15 @@ static const struct
    char s_574badd6[29];
    char s_258060bf[28];
    char s_3bbc8b05[34];
+   char s_0a06ed6d[41];
    char s_e595f6df[32];
    char s_2a5f7cd7[34];
    char s_f90edcc2[66];
    char s_ad14307a[14];
+#if defined(RARCH_MOBILE)
+   char s_774121c7[42];
+   char s_774121c8[50];
+#endif
    char s_b0fb58d3[33];
    char s_b0fb58d4[33];
    char s_92a02470[36];
@@ -2792,13 +2836,12 @@ static const struct
    char s_ebf10493[16];
    char s_d15bd14f[31];
    char s_79ea50ef[43];
-   char s_539d5393[11];
    char s_a64b3a0b[26];
    char s_83e8dc72[26];
    char s_7cf985f0[38];
    char s_cfc4e36b[16];
    char s_0f5266ce[20];
-   char s_0f97fdc1[12];
+   char s_a458159a[17];
    char s_ea2674d3[43];
    char s_ea2674d4[39];
    char s_2d8cb7ce[26];
@@ -2859,7 +2902,10 @@ static const struct
    char s_13904abd[16];
    char s_2c2fc2c9[17];
    char s_368db7bb[17];
+   char s_727f2bf0[22];
+   char s_e73542c8[19];
    char s_b8a131f0[21];
+   char s_0701b5b6[20];
    char s_550ef26d[20];
    char s_fd7a891b[21];
    char s_f9dd6e61[17];
@@ -3104,6 +3150,7 @@ static const struct
    char s_684b0cb1[30];
    char s_1d47af21[50];
    char s_6b3cfbe5[62];
+   char s_1fc320e7[214];
    char s_a64647a4[63];
    char s_67b81e63[156];
    char s_d5475a6a[188];
@@ -3124,6 +3171,7 @@ static const struct
    char s_791acb32[72];
    char s_92cf524f[26];
    char s_48e88dc4[199];
+   char s_33c09b4d[101];
    char s_3d233cd0[75];
    char s_9198f1a0[221];
    char s_dfe733cb[383];
@@ -3261,6 +3309,7 @@ static const struct
    char s_1e07f209[50];
    char s_475ff311[122];
    char s_2e4a5d12[50];
+   char s_649af136[89];
    char s_13005dc8[99];
    char s_6da9b571[295];
    char s_c2827177[148];
@@ -3277,6 +3326,7 @@ static const struct
    char s_0b56ad4c[56];
    char s_c312b1ca[42];
    char s_35c689e5[159];
+   char s_f82b9e67[194];
    char s_65b253f2[70];
    char s_0ad88e8a[77];
    char s_c09d0211[61];
@@ -3381,7 +3431,9 @@ static const struct
    char s_ece34ee9[305];
    char s_8b8a59ad[163];
    char s_f426bf8c[75];
+   char s_8a9a6eda[47];
    char s_a1003f83[85];
+   char s_91465929[107];
    char s_ba14f8e9[9];
    char s_16246941[78];
    char s_a7f838ad[11];
@@ -3389,6 +3441,7 @@ static const struct
    char s_84959c2c[61];
    char s_e0a0379c[16];
    char s_f88b978c[198];
+   char s_15883ea0[106];
    char s_47df0525[50];
    char s_03e272fc[55];
    char s_5c2cc60f[94];
@@ -3567,6 +3620,7 @@ static const struct
    char s_a6aedb35[101];
    char s_ee3a489b[52];
    char s_236bd8d5[66];
+   char s_87c7d8b8[100];
 #ifdef HAVE_MIST
    char s_40e907c6[66];
 #endif
@@ -3584,9 +3638,9 @@ static const struct
    char s_c5a76d72[61];
    char s_c5a7e06c[63];
    char s_37d36d03[72];
-   char s_eadbaf16[62];
+   char s_eadbaf16[51];
    char s_54eaf5f5[32];
-   char s_7de5d198[65];
+   char s_7de5d198[55];
    char s_3b573ee6[32];
    char s_dc1d6cc7[64];
    char s_28543dcf[80];
@@ -3726,6 +3780,9 @@ static const struct
    char s_8e5bac99[97];
    char s_28a346d2[90];
    char s_998cef30[92];
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+   char s_a1e92cda[109];
+#endif
    char s_f2c17467[91];
    char s_295af39e[117];
    char s_e50c6c1c[73];
@@ -3825,6 +3882,8 @@ static const struct
    char s_0e319bcf[45];
    char s_c11a10f0[156];
    char s_e8bf64a4[39];
+   char s_a2ced282[111];
+   char s_c21f6ed0[166];
    char s_1e8b7442[118];
    char s_bbc238b8[129];
    char s_a71a2320[82];
@@ -4153,6 +4212,7 @@ static const struct
    char s_0d6c1630[90];
    char s_07e1d73b[391];
    char s_14f1606d[275];
+   char s_eef6b839[334];
    char s_5e14cb20[160];
 #ifdef HAVE_ODROIDGO2
 #else
@@ -4174,7 +4234,6 @@ static const struct
    char s_ab839b13[152];
    char s_9c3126f6[113];
    char s_a9d0ac44[108];
-   char s_60cf8ce7[347];
    char s_bf6397c7[44];
    char s_6cf40c1b[87];
    char s_445f65a0[80];
@@ -4207,6 +4266,7 @@ static const struct
    char s_0d96ed73[41];
    char s_9f0fd076[148];
    char s_9f0fd077[145];
+   char s_caa9e588[141];
    char s_c315b54c[464];
    char s_7a2050af[50];
    char s_d2859556[53];
@@ -4223,6 +4283,7 @@ static const struct
    char s_82fab47a[30];
    char s_72e21512[263];
    char s_9f6de46b[305];
+   char s_2c7f899a[92];
    char s_26e66ece[276];
    char s_5f131848[172];
    char s_23227a3e[167];
@@ -4245,7 +4306,7 @@ static const struct
    char s_34400c7a[96];
    char s_4a09218b[50];
    char s_ee9c3e5d[131];
-   char s_dea334de[238];
+   char s_dea334de[249];
    char s_cacc1492[65];
    char s_9382c86e[373];
    char s_774bb68a[251];
@@ -4287,10 +4348,16 @@ static const struct
    char s_87ba81db[186];
    char s_58c80718[334];
    char s_14ce7a81[169];
+   char s_c94003ba[269];
    char s_dc6f9d69[50];
    char s_417085f4[57];
-   char s_1bcf70a7[185];
-   char s_fbed99aa[217];
+   char s_552c6b9c[100];
+   char s_7311b899[148];
+   char s_0eeecc15[59];
+   char s_4112463b[93];
+   char s_966f3282[92];
+   char s_2affa9fa[117];
+   char s_2affa9fb[94];
    char s_2e2ca41a[312];
    char s_f48b1fac[55];
    char s_f4ad1b37[100];
@@ -4339,7 +4406,7 @@ static const struct
    char s_d4b64f2d_1[144];
    char s_36033606[201];
    char s_5d342d82[324];
-   char s_bd0312ce[109];
+   char s_bd0312ce[84];
    char s_3ba8b64d[209];
    char s_d62ed5dc[396];
    char s_2e69508b[399];
@@ -4355,19 +4422,22 @@ static const struct
    char s_3547866d_1[116];
    char s_d73ccef3_0[500];
    char s_d73ccef3_1[66];
+   char s_f7776b9b_0[500];
+   char s_f7776b9b_1[134];
    char s_81163acd[451];
    char s_ecc9b2c5[392];
    char s_c2314d30[267];
 #if defined(RARCH_MOBILE)
+   char s_82c9e375[176];
    char s_82c9e376[145];
 #endif
+   char s_73658ec1[176];
    char s_73658ec2[145];
    char s_8010a29e[112];
    char s_81120e85[115];
    char s_9506fc7d[93];
    char s_9506fc7e[93];
    char s_47ae341f[96];
-   char s_5e122df4[282];
    char s_cc84c32d[63];
    char s_fa09f4f6[51];
    char s_48696c85[90];
@@ -4405,7 +4475,10 @@ static const struct
    char s_4059cb1a[54];
    char s_d9bcee6b[67];
    char s_934171e1[40];
+   char s_29cea8de[107];
+   char s_ed04ac36[111];
    char s_9bb1a0de[197];
+   char s_d0242624[97];
    char s_9a2d3f1b[129];
    char s_1ba1d249[121];
    char s_57dccf4f[51];
@@ -4447,6 +4520,9 @@ static const struct
    char s_6c868497[47];
    char s_ac3c4c54[40];
    char s_a7a47ea6[22];
+   char s_daf8eae7[42];
+   char s_d0552172[37];
+   char s_445fabb4[37];
    char s_09a5996c[26];
    char s_d80c36a8[238];
    char s_0d8a28d5[19];
@@ -4530,6 +4606,12 @@ static const struct
    char s_6704b41f[38];
    char s_a1aa860c[41];
    char s_e15fc32e[51];
+   char s_ac27a0f5[224];
+   char s_b678a7e7[51];
+   char s_69adb50b[59];
+   char s_82383be8[479];
+   char s_adb65fc9[45];
+   char s_c0b7091e[54];
    char s_fe3554da[98];
    char s_1c95dd25[61];
    char s_94d31e5d[32];
@@ -4538,6 +4620,10 @@ static const struct
    char s_a3940c93[20];
    char s_2fb7ea2e[34];
    char s_4b3a4173[41];
+   char s_3a594147[155];
+   char s_c4d0b550[227];
+   char s_edd11f84[130];
+   char s_23816921[159];
    char s_cd621c40[37];
    char s_a65663f9[51];
    char s_3290a333[51];
@@ -4551,14 +4637,28 @@ static const struct
    char s_fb59e491[30];
    char s_96e03bed[39];
    char s_824867fd[63];
+   char s_88b304a9[305];
+   char s_2bbbed40[91];
+   char s_85dd0c11[128];
+   char s_59617189[177];
 #ifdef HAVE_MIST
    char s_30512c09[43];
    char s_35b60281[21];
    char s_91e3840f[54];
 #endif
+   char s_fc23f5d1[121];
+   char s_0544d35e[202];
    char s_e5668863[41];
    char s_0638fe80[66];
    char s_902526ad[60];
+   char s_d06599bf[41];
+   char s_a6c36272[74];
+   char s_16b6f24c[239];
+   char s_63e47549[52];
+   char s_a774d05e[162];
+   char s_c89f366b[108];
+   char s_936703a0[67];
+   char s_9bf6e2a5[40];
    char s_e487a402[47];
    char s_3b5b6155[50];
    char s_13f7f56e[47];
@@ -4727,6 +4827,7 @@ static const struct
    char s_b43a100a[17];
    char s_b8bfcaec[230];
    char s_51df877a[32];
+   char s_0f44783d[21];
    char s_ae6be748[153];
    char s_136098cd[39];
    char s_f482576f[33];
@@ -4909,6 +5010,8 @@ static const struct
    char s_dd03b3c1[118];
    char s_6095bb1c[36];
    char s_263efdcf[35];
+   char s_0a76933b[113];
+   char s_abe248ca[110];
    char s_eebb17f1[38];
    char s_49a2e6d9[36];
    char s_d6c12228[47];
@@ -4964,6 +5067,7 @@ static const struct
    char s_594be7a3[22];
    char s_d8a50a58[114];
    char s_3112d333[82];
+   char s_3a74737d[118];
    char s_636e37aa[27];
    char s_1490e77d[51];
    char s_2f16f307[77];
@@ -5051,10 +5155,8 @@ static const struct
    char s_b7248c5d[60];
    char s_a3e7b13a[154];
    char s_966a8865[94];
-   char s_69e2b087[101];
    char s_098459c5[55];
    char s_35e09a43[44];
-   char s_a27fec29[121];
    char s_7182190e[132];
    char s_a7ae1b42[30];
 #ifdef HAVE_LAKKA
@@ -5659,7 +5761,7 @@ static const struct
 #ifndef HAVE_DYNAMIC
    "Athl\303\263d\303\241il Croi ar \303\201bhar Rith i gc\303\263na\303\255",
 #endif
-   "R\303\251iteach ar dh\303\255cheangal Android",
+   "R\303\251iteach sealadach ar fhadhb d\303\255cheangail ar Android",
    "Deilbh\303\255n Aipe",
    "S\303\263cmhainn\303\255",
    "Oscail Pain\303\251al Rialaithe ASIO",
@@ -5756,6 +5858,8 @@ static const struct
    "Aitheant\303\263ir Pac\303\241iste",
    "Taisce",
    "Ceadaigh Ceamara",
+   "Gl\303\251as",
+   "Ceamara",
    "Ceamara",
    "N\303\255 f\303\251idir \303\251achta\303\255 a ghn\303\255omhacht\303\272 leis an cro\303\255 s"
    "eo",
@@ -5943,6 +6047,7 @@ static const struct
    "Scrios an Croi",
    "Scrios C\303\272ltaca",
    "Taispe\303\241in Ainm an Chro\303\255",
+   "F\303\263gra\303\255 faoi Dochtearra\303\255 at\303\241 ar Iarraidh",
 #ifdef HAVE_GAME_AI
    "AI Cluiche",
 #endif
@@ -5989,6 +6094,7 @@ static const struct
    "Cro\303\255",
    "Eisiamh \303\263n Roghchl\303\241r 'Cro\303\255the Gan \303\201bhar'",
    "Tosaigh Cro\303\255the go hUathoibr\303\255och",
+   "Seice\303\241il S\303\255ni\303\272ch\303\241in L\303\241rnacha",
 #ifdef HAVE_MIST
    "Suite\303\241il cro\303\255",
    "D\303\255shuite\303\241il an cro\303\255",
@@ -6002,6 +6108,11 @@ static const struct
    "\303\215osl\303\263d\303\241la\303\255 Cro\303\255",
    "Socruithe Nuashonraitheora L\303\241rnach",
    "Taispe\303\241in Cro\303\255the Turgnamhacha",
+   "Rabhadh Sl\303\241nd\303\241la",
+   "Muin\303\255n a bheith agat as an gCro\303\255l\303\241r seo i gc\303\263na\303\255",
+   "Cealaigh",
+   "Suite\303\241il agus Iontaobhas",
+   "L\303\263d\303\241il Uair Amh\303\241in",
    "Ailtireacht LAP",
    "Cro\303\255the LAP",
    "Minic\303\255ocht Uasta Cro\303\255",
@@ -6167,6 +6278,7 @@ static const struct
    "De r\303\251ir Cons\303\263l eisiach",
    "De r\303\251ir Rialuithe",
    "Ag Forbr\303\263ir",
+   "Le Crua-earra\303\255 Feabhs\303\272ch\303\241in",
    "De r\303\251ir sainchead\303\272nais",
    "De r\303\251ir Gameplay",
    "De r\303\251ir Se\303\241nra",
@@ -6303,6 +6415,7 @@ static const struct
    "Ionchur",
    "Cumasaigh an t-oiri\303\272nt\303\263ir GameCube don Wii U",
    "Aiseolas/Creathadh Haptic",
+   "Rialuithe an Chluas\303\241in",
    "Coinnigh",
    "Eochracha Te",
    "Moill Cumasaithe Eochracha Te (Fr\303\241ma\303\255)",
@@ -6354,6 +6467,7 @@ static const struct
    "Roghchl\303\241r Scor\303\241naigh (Teaglaim Rialaitheora)",
    "Rialuithe Roghchl\303\241ir",
    "Seirbh\303\255s AI",
+   "Sc\303\241ile\303\241in Bh\303\241na Neamh\303\272s\303\241idte (Scor\303\241naigh)",
    "Inn\303\251acs Aicearra Roimhe Seo",
    "Inn\303\251acs Aicearra Eile",
    "Cleasanna (T\303\263glaigh)",
@@ -6467,6 +6581,7 @@ static const struct
    "Taispe\303\241in Ionchuir \303\223n gCalafort",
    "Tadha\303\255odh",
    "Taispe\303\241in C\303\272rs\303\263ir Luiche le Forleagan",
+   "Br\303\272ite",
    "Cuir Rialaitheoir leis",
    "%s (Imreoir %u)",
    "Uath (%u)",
@@ -6475,6 +6590,7 @@ static const struct
    "Go luath",
    "Go d\303\251anach",
    "Gn\303\241th",
+   "Rialaitheoir\303\255",
    "Is fearr teagmh\303\241il tosaigh",
    "Scoir (Teaglaim Rialaitheora)",
    "Athmhap\303\241lacha Ionchuir",
@@ -6743,6 +6859,7 @@ static const struct
    "Scroll\303\272 tapa le Cl\303\251 + Deas",
    "Dealramh",
    "Taispe\303\241in 'Comhad Cumra\303\255ochta'",
+   "Taispe\303\241in Dial\303\263ga Deimhnithe",
 #ifdef HAVE_MIST
    "Taispe\303\241in 'Bainistigh cro\303\255the'",
 #endif
@@ -6760,9 +6877,9 @@ static const struct
    "Taispe\303\241in 'L\303\263d\303\241il Cro\303\255'",
    "Taispe\303\241in 'Luchtaigh Diosca'",
    "Taispe\303\241in 'Nuashonraitheoir Ar L\303\255ne'",
-   "Taispe\303\241in 'Scoir RetroArch'",
+   "Taispe\303\241in 'Scoir'",
    "Taispe\303\241in 'Atosaigh'",
-   "Taispe\303\241in 'Atosaigh RetroArch'",
+   "Taispe\303\241in 'Atosaigh'",
    "Taispe\303\241in 'M\303\272chadh'",
    "Taispe\303\241in Fo-lip\303\251id an Roghchl\303\241ir",
    "Taispe\303\241in Fo-Lip\303\251id Roghchl\303\241ir don Roghn\303\272 Reatha amh\303\241in",
@@ -6953,6 +7070,9 @@ static const struct
    "F\303\263gra\303\255 Teipe Ionchuir (Uathchumra\303\255ocht)",
    "F\303\263gra\303\255 C\303\263d Aicearra",
    "F\303\263gra\303\255 Luchtaithe S\303\241raithe Cumra\303\255ochta",
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+   "F\303\263gra\303\255 Eochrach S\303\255nithe T\303\241st\303\241la",
+#endif
    "F\303\263gra\303\255 Rialaithe Diosca",
    "F\303\263gra\303\255 Luasgh\303\251araithe Fr\303\241ma",
    "F\303\263gra\303\255 Breise Netplay",
@@ -7154,6 +7274,14 @@ static const struct
    "I l\303\241thair, Roghnach:",
    "I l\303\241thair, Riachtanach:",
    "Pr\303\255obh\303\241ideacht",
+   "Glac le Sruth PyroWave Isteach",
+   "Di\303\272ltaigh do Shruth PyroWave Isteach",
+   "Feist\303\255 PyroWave",
+   "Ainm Gl\303\251is PyroWave",
+   "Aimsi\303\272 LAN PyroWave",
+   "Seol chuig",
+   "Eolaire Sc\303\241th\303\263ir\303\255 PyroWave",
+   "Stop Sruth\303\272 PyroWave",
    "Ag cur comhad leis an seinmliosta...",
    "Cuir Iontr\303\241il Leis...",
    "Cuir Comhad(anna) leis...",
@@ -7171,7 +7299,6 @@ static const struct
    "<Fiafraigh d\303\255om>",
    "Leagan",
    "N\303\255orbh fh\303\251idir an comhad a scriosadh.",
-   "N\303\255orbh fh\303\251idir an comhad a athainmni\303\272.",
    "Earr\303\241id ag nuashonr\303\272 iontr\303\241il seinmliosta.",
    "Sc\303\241thad\303\263ir reatha",
    "T\303\251ama Saincheaptha",
@@ -7179,8 +7306,6 @@ static const struct
    "Scrios Seinmliosta",
    "N\303\241 taispe\303\241in seo ar\303\255s",
    "\303\215osl\303\263d\303\241il Gach Mionsamhail",
-   "C\303\263ras Ioml\303\241n",
-   "An Seinmliosta seo",
    "T\303\241 \303\255osl\303\263d\303\241il ar si\303\272l cheana f\303\251in.",
    "D'\303\251irigh leis: %1 Theip air: %2",
    "\303\215osl\303\263d\303\241il mionsamhail",
@@ -7243,7 +7368,6 @@ static const struct
    "Bog S\303\255os",
    "Bog Suas",
    "Ainm",
-   "Earr\303\241id L\303\255onra",
    "Seinmliosta Nua",
    "Iontr\303\241il Seinmliosta",
    "Cro\303\255:",
@@ -7294,7 +7418,6 @@ static const struct
    "Seinmliosta\303\255",
    "Eala\303\255n Bosca",
    "L\303\263g\303\263",
-   "\303\215osl\303\263d\303\241ladh na mionsamhlacha go rath\303\272il.",
    "Seat sc\303\241ile\303\241in",
    "Sc\303\241ile\303\241n Teidil",
    "Theip ar an nuashonr\303\272.",
@@ -7393,6 +7516,7 @@ static const struct
    "Sc\303\263r",
    "Sraitheach",
    "Socr\303\272",
+   "Clib",
    "R\303\241t\303\241il TGDB",
    "Feithicleach",
    "Amhairc",
@@ -7792,6 +7916,8 @@ static const struct
    "MM-LL-BBBB UU:NN (AM/PM)",
    "MM-LL UU::NN",
    "MM-LL UU:NN (AM/PM)",
+   "Uathoibr\303\255och",
+   "L\303\241mhleabhar",
    "St\303\255l D\303\241ta agus Ama",
    "BBBB-MM",
    "BBBB-MM-LL",
@@ -7883,6 +8009,8 @@ static const struct
    "I M\303\263d L\303\241nsc\303\241ile\303\241in Fuinneoige Amh\303\241in",
    "Ions\303\241 Fr\303\241ma Dubh - Fr\303\241ma\303\255 Dorcha",
    "Ions\303\241 Fr\303\241ma Dubh",
+   "Le linn Cluich\303\255",
+   "Sc\303\241ile\303\241in Fholmha Neamh\303\272s\303\241idte",
    "R\303\263-scanadh Bearrtha (Atos\303\272 ag teast\303\241il)",
 #ifdef HAVE_ODROIDGO2
 #else
@@ -7956,6 +8084,7 @@ static const struct
    "M\303\263d L\303\241nsc\303\241ile\303\241in",
    "Leithead L\303\241nsc\303\241ile\303\241in",
    "Airde L\303\241nsc\303\241ile\303\241in",
+   "Sc\303\241ile\303\241in Cluiche",
    "F\303\255se\303\241n G\303\241ma",
    "Taca\303\255ocht Dh\303\255reach SPIR-V (Leid)",
    "Inn\303\251acs GPU",
@@ -7975,6 +8104,7 @@ static const struct
    "Seol Luminance an Fhr\303\241ma",
    "Leagan Amach Fo-phicteil\303\255n",
    "\303\232s\303\241id an Buaicphointe Taispe\303\241na",
+   "Cluas\303\241in",
    "D\303\255ch\303\263d\303\272 f\303\255se\303\241in tr\303\255 chrua-earra\303\255",
    "Imeall an Sc\303\241ile\303\241in Bun (%)",
    "Imill Chl\303\251 an Sc\303\241ile\303\241in (%)",
@@ -8100,9 +8230,20 @@ static const struct
    "Leagan Amach an Sc\303\241ile\303\241in",
    "Cothrom\303\241nach",
    "Ingearach",
+   "Taispe\303\241int",
+   "L\303\241nsc\303\241ile\303\241n",
+   "Airde na Fuinneoige",
+   "Leithead na Fuinneoige",
+   "Fuinneog X",
+   "Fuinneog Y",
    "Sc\303\241ile\303\241n",
    "Sc\303\241ile\303\241n %u",
-   "Sc\303\241ile\303\241n %u Taispe\303\241ntas",
+   "Athch\303\263irigh Sc\303\241ile\303\241n Windows",
+   "Sc\303\241ile\303\241n Cluiche %u L\303\241nsc\303\241ile\303\241n",
+   "Airde na Fuinneoige %u ar an Sc\303\241ile\303\241n Cluiche",
+   "Leithead na Fuinneoige Sc\303\241ile\303\241in Cluiche %u",
+   "Sc\303\241ile\303\241n Cluiche %u Fuinneog X",
+   "Sc\303\241ile\303\241n Cluiche %u Fuinneog Y",
    "Cuir Sc\303\241ile\303\241in in Eagar",
    "Tuinairde",
    "Athshocraigh an Sc\303\241ile\303\241n",
@@ -8155,7 +8296,7 @@ static const struct
    "Taobh le Taobh (Ioml\303\241n)",
    "Taobh le Taobh (Leath)",
    "Barr-Bun",
-   "Steir\303\251\303\263-3D agus Sc\303\241ile\303\241in",
+   "3D Steir\303\251\303\263",
    "Malartaigh s\303\272ile",
    "Saincheaptha",
    "\303\201iti\303\272il",
@@ -8196,11 +8337,16 @@ static const struct
    "G\303\251ire an Uas-sc\303\241laithe Ama",
    "P\303\255bl\303\255ne F\303\255se Sn\303\241ithithe",
    "Luas Taispe\303\241na F\303\255se Sn\303\241ithithe",
+   "Rial\303\241il Taispe\303\241na ar Imeachta\303\255 VBlank",
    "Athr\303\241 Fr\303\241ma F\303\255se Sn\303\241ithithe",
    "Ardaigh Tosa\303\255ocht Sn\303\241ithe F\303\255se",
    "Bain \303\272s\303\241id as Maol\303\241in Arg\303\263int\303\255 Miotail (Atos\303\272 ag teast"
    "\303\241il)",
    "D\303\255-caocha\303\255l",
+#if defined(RARCH_MOBILE)
+   "Claonadh Ancaire an Amhairc X (Portr\303\241id)",
+   "Claonadh Ancaire an Amhaircphoint\303\255 Y (Portr\303\241id)",
+#endif
    "Claonadh Ancaire Radharcphoirt X",
    "Claonadh Ancaire Radharcphoirt Y",
    "C\303\263imheas Gn\303\251 Saincheaptha (Airde)",
@@ -8222,13 +8368,12 @@ static const struct
    "M\303\263d Fuinneoige",
    "Fuinneoga Sc\303\241ile\303\241in ar Leith",
    "Sc\303\241ile\303\241in Cluiche ar Thaispe\303\241ntais Eile",
-   "Ceangailte",
    "Airde Uasta na Fuinneoige",
    "Uasleithead na Fuinneoige",
    "\303\232s\303\241id M\303\251id Fuinneoige Saincheaptha",
    "Taispe\303\241int: %s",
    "Airde na Fuinneoige",
-   "Faoi cheilt",
+   "Pr\303\255omhfhuinneog",
    "Frith\303\241ireamh Cothrom\303\241nach an Sc\303\241ile\303\241in",
    "Frith\303\241ireamh Ingearach an Sc\303\241ile\303\241in",
    "Teimhneacht na Fuinneoige",
@@ -8289,7 +8434,10 @@ static const struct
    "Bh\303\255oma gr\303\251ine",
    "Faoin bhFarraige",
    "Dearg Bolc\303\241nach",
+   "\303\211ifeacht Phlaisteach",
+   "Lonraigh an Rib\303\255n",
    "P\303\255bl\303\255ne Sc\303\241th\303\263ra",
+   "C\303\241ithn\303\255n\303\255 Rib\303\255n",
    "\303\211ifeachta\303\255 Sc\303\241th",
    "Deilbh\303\255n\303\255 Athraigh",
    "T\303\251ama Deilbh\303\255n",
@@ -8774,6 +8922,10 @@ static const struct
    "Bain an cro\303\255 seo den diosca.",
    "Bain comhad as liosta na gc\303\272ltaca cartlannaithe.",
    "Taispe\303\241in ainm an chro\303\255 reatha taobh istigh den roghchl\303\241r.",
+   "Taispe\303\241in dial\303\263g nuair a sheoltar cro\303\255leac\303\241n a bhfuil dochtearra\303"
+   "\255 riachtanach in easnamh air. Cuir an rogha ar f\303\241il an dochtearra\303\255 a \303\255os"
+   "l\303\263d\303\241il m\303\241 bh\303\255onn URL ar f\303\241il i gcomhad eolais an chro\303\255"
+   "leac\303\241in.",
    "F\303\251ach ar fhaisn\303\251is a bhaineann leis an bhfeidhmchl\303\241r/cro\303\255.",
    "Coime\303\241d taisce \303\241iti\303\272il lean\303\272nach de cro\303\255 fhaisn\303\251is sui"
    "te\303\241ilte. Laghda\303\255onn s\303\251 go m\303\263r amanna l\303\263d\303\241la ar ard\303"
@@ -8811,6 +8963,8 @@ static const struct
    "Cosc a chur ar an cro\303\255 seo a bheith \303\241 thaispe\303\241int sa chluais\303\255n/roghc"
    "hl\303\241r 'Cro\303\255the Gan \303\201bhar'. N\303\255 bhaineann s\303\251 seo ach amh\303\241"
    "in nuair a bh\303\255onn an modh taispe\303\241na socraithe go 'Saincheaptha'.",
+   "Tabhair rabhadh sula rithfear cro\303\255 n\303\241r sh\303\255nigh libretro, n\303\263 cro\303"
+   "\255 a th\303\241inig athr\303\272 air \303\263 shin.",
    "Mol cro\303\255leac\303\241in at\303\241 ar f\303\241il fi\303\272 nuair a luchta\303\255tear cr"
    "o\303\255 de l\303\241imh.",
    "Cruthaigh c\303\272ltaca go huathoibr\303\255och d'aon cro\303\255the suite\303\241ilte agus nua"
@@ -9100,6 +9254,8 @@ static const struct
    "\241naithe f\303\255se tiom\303\241na\303\255 ionchuir difri\303\272il. (Atos\303\272 ag teast"
    "\303\241il)",
    "Athraigh socruithe aiseolais haptic agus creatha.",
+   "Leagan amach, pointeoir l\303\251asair agus socruithe tadhaill do rialt\303\263ir\303\255 an chi"
+   "nnfheiste.",
    "Athraigh socruithe agus sannadh do theochracha, amhail an roghchl\303\241r a athr\303\272 le lin"
    "n an chluiche.",
    "Cuir moill leis sna fr\303\241ma\303\255 sula gcuirtear bac ar ionchur gn\303\241th tar \303\251"
@@ -9151,6 +9307,10 @@ static const struct
    "Gabhann s\303\251 \303\255omh\303\241 den \303\241bhar reatha chun aon t\303\251acs ar an sc\303"
    "\241ile\303\241n a aistri\303\272 agus/n\303\263 a l\303\251amh os ard. N\303\255 m\303\263r 'Se"
    "irbh\303\255s AI' a chumas\303\272 agus a chumr\303\272.",
+   "Folmhaigh n\303\263 taispe\303\241in na sc\303\241ile\303\241in ionsuite nach bhfuil \303\241 n-"
+   "\303\272s\303\241id ag RetroArch, don chluiche reatha amh\303\241in. Fanann an socr\303\272 'Sc"
+   "\303\241ile\303\241in Neamh\303\272s\303\241idte a Fh\303\241g\303\241il B\303\241n' mar at\303"
+   "\241 s\303\251.",
    "Laghda\303\255onn s\303\251 an t-inn\303\251acs aicearra at\303\241 roghnaithe faoi l\303\241tha"
    "ir.",
    "M\303\251ada\303\255onn s\303\251 an t-inn\303\251acs meabhlaireachta at\303\241 roghnaithe faoi"
@@ -9376,8 +9536,11 @@ static const struct
    ".",
    "Taispe\303\241in c\303\272rs\303\263ir na luiche agus forleagan ar an sc\303\241ile\303\241n in "
    "\303\272s\303\241id.",
+   "Br\303\272igh cnaipe ar rialt\303\263ir chun \303\251 a aimsi\303\272.",
    "Os cionn an Uuimhir Uasta \303\232s\303\241ideoir\303\255: imr\303\255onn s\303\251 mar Uathoibr"
    "\303\255och (Imreoir %u)",
+   "Roghnaigh rialt\303\263ir ceangailte le himirt mar Imreoir %u. Bogann s\303\251 anseo \303\263n "
+   "imreoir at\303\241 \303\241 imirt anois.",
    "Gan nasc",
    "Gan a bheith ag imirt: n\303\255os m\303\263 rialt\303\263ir\303\255 n\303\241 an l\303\255on ua"
    "sta \303\272s\303\241ideoir\303\255",
@@ -9388,6 +9551,8 @@ static const struct
    "B\303\255onn tionchar aige ar an gcaoi a nd\303\251antar pobalbhreith ionchuir i RetroArch. M"
    "\303\241 shocra\303\255tear \303\251 go 'Luath' n\303\263 'D\303\251anach', is f\303\251idir go "
    "mbeidh moill n\303\255os l\303\272 ann, ag brath ar do chumra\303\255ocht.",
+   "Cuir rialt\303\263ir leis an imreoir seo, n\303\263 roghnaigh c\303\251n t-imreoir a riala\303"
+   "\255onn gach ceann d\303\241 rialt\303\263ir\303\255.",
    "Teaglaim cnaip\303\255 rialt\303\263ra chun RetroArch a scor.",
    "St\303\263r\303\241iltear athmhap\303\241lacha ionchuir san eolaire seo.",
    "S\303\241raigh na ceangail ionchuir leis na ceangail athmhap\303\241ilte at\303\241 socraithe do"
@@ -9803,6 +9968,8 @@ static const struct
    "\255 mh\303\255reanna nach socruithe iad.",
    "Athraigh socruithe cuma sc\303\241ile\303\241in an roghchl\303\241ir.",
    "Taispe\303\241in an rogha 'Comhad Cumra\303\255ochta' sa Phr\303\255omh-Roghchl\303\241r.",
+   "Iarr deimhni\303\272 sula scoirfidh t\303\272, sula nd\303\251anfaidh t\303\272 athshocr\303\272"
+   ", n\303\263 sula nd\303\272nfaidh t\303\272 \303\241bhar.",
 #ifdef HAVE_MIST
    "Taispe\303\241in an rogha 'Bainistigh cro\303\255the' sa Phr\303\255omh-Roghchl\303\241r.",
 #endif
@@ -9823,9 +9990,9 @@ static const struct
    "Taispe\303\241in an rogha 'L\303\263d\303\241il Cro\303\255' sa Phr\303\255omh-Roghchl\303\241r.",
    "Taispe\303\241in an rogha 'Luchtaigh Diosca' sa Phr\303\255omh-Roghchl\303\241r.",
    "Taispe\303\241in an rogha 'Nuashonraitheoir Ar L\303\255ne' sa Phr\303\255omh-Roghchl\303\241r.",
-   "Taispe\303\241in an rogha 'Scoir RetroArch' sa Phr\303\255omh-Roghchl\303\241r.",
+   "Taispe\303\241in an rogha 'Scoir' sa Phr\303\255omhroghchl\303\241r.",
    "Taispe\303\241in an rogha 'Atosaigh'.",
-   "Taispe\303\241in an rogha 'Atosaigh RetroArch' sa Phr\303\255omh-Roghchl\303\241r.",
+   "Taispe\303\241in an rogha 'Atosaigh' sa Phr\303\255omh-Roghchl\303\241r.",
    "Taispe\303\241in an rogha 'M\303\272chadh'.",
    "Taispe\303\241in faisn\303\251is bhreise le haghaidh m\303\255reanna roghchl\303\241ir.",
    "N\303\241 taispe\303\241in ach folip\303\251ad don iontr\303\241il roghchl\303\241ir aibhsithe f"
@@ -10122,6 +10289,10 @@ static const struct
    "rra\303\255 i bhfeidhm.",
    "Taispe\303\241in teachtaireacht ar an sc\303\241ile\303\241n agus comhaid s\303\241raithe cumra"
    "\303\255ochta \303\241 l\303\263d\303\241il.",
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+   "Taispe\303\241in an meabhr\303\272ch\303\241n go bhfuil muin\303\255n ag an leagan t\303\263g"
+   "\303\241la seo as eochair sh\303\255ni\303\272ch\303\241in t\303\241st\303\241la.",
+#endif
    "Taispe\303\241in teachtaireacht ar an sc\303\241ile\303\241n agus diosca\303\255 \303\241 gcur i"
    "steach agus \303\241 nd\303\255birt.",
    "Taispe\303\241in t\303\241scaire ar an sc\303\241ile\303\241n nuair a bh\303\255onn mearghluaise"
@@ -10341,6 +10512,11 @@ static const struct
    "il crith m\303\241 sh\303\241ra\303\255tear l\303\255on na bhfr\303\241ma\303\255 moille at\303"
    "\241 inmhe\303\241nach don chluiche.",
    "Athraigh socruithe pr\303\255obh\303\241ideachais.",
+   "An t-ainm a thaispe\303\241ntar do ghl\303\251asanna RetroArch eile. F\303\241g folamh \303\251 "
+   "chun ainm an r\303\255omhaire seo a \303\272s\303\241id.",
+   "Aimsigh glacad\303\263ir\303\255 RetroArch in aice l\303\241imhe agus ceadaigh iarratais ar shru"
+   "th\303\272 ar an l\303\255onra seo. Teasta\303\255onn do chead\303\272 le haghaidh sruthanna a t"
+   "hagann isteach.",
    "L\303\251ir\303\255onn an chuid is m\303\263 d'iontr\303\241lacha an t-amharc Uile Seinmliosta"
    "\303\255 i m\303\263d greille. L\303\251ir\303\255onn 0 gach iontr\303\241il.",
    "L\303\251ir\303\255onn formh\303\263r na n-iontr\303\241lacha a l\303\251ir\303\255onn an t-amha"
@@ -10894,6 +11070,12 @@ static const struct
    "in // Cuir fr\303\241ma(\303\255) dubha idir fr\303\241ma\303\255. Is f\303\251idir doil\303\251"
    "ire gluaisne a laghd\303\272 go m\303\263r tr\303\255 scanadh CRT a aithris, ach ar chostas gile"
    ".",
+   "Cl\303\272daigh sc\303\241ile\303\241in ionsuite nach bhfuil \303\241 n-\303\272s\303\241id ag R"
+   "etroArch le dath dubh. N\303\255 mh\303\272chtar an sc\303\241ile\303\241n, mar sin n\303\255 sh"
+   "\303\241bh\303\241lann s\303\251 fuinneamh ach amh\303\241in ar phain\303\251il OLED. N\303\255 "
+   "dh\303\251antar difear do thaispe\303\241ntais sheachtracha, agus n\303\255 f\303\251idir pr\303"
+   "\255omhsc\303\241ile\303\241n Android a chl\303\272dach. Teasta\303\255onn Android 12 n\303\263 "
+   "n\303\255os d\303\251ana\303\255.",
    "Gearr c\303\272pla picteil\303\255n timpeall imill na h\303\255omh\303\241 a fh\303\241gtar b"
    "\303\241n de ghn\303\241th ag forbr\303\263ir\303\255 agus a mb\303\255onn picteil\303\255n\303"
    "\255 neamhioml\303\241na iontu uaireanta freisin.",
@@ -10934,12 +11116,6 @@ static const struct
    "'upscalers/dlss' laistigh d'eolaire RetroArch.",
    "Lig don mh\303\272nla an craiceann a aimsi\303\272 \303\251 f\303\251in, agus \303\251 a ch\303"
    "\263ire\303\241il ar leith \303\263n gcuid eile den fhr\303\241ma.",
-   "Rith samhail Rindre\303\241la N\303\251ar\303\272il DLSS 5 ar an bhfr\303\241ma at\303\241 m\303"
-   "\251adaithe i sc\303\241la. D\303\251anann s\303\251 an soilsi\303\272 agus na h\303\241bhair a "
-   "athoibri\303\272, ag baint \303\272s\303\241ide as an doimhneacht agus an ghluaiseacht a shol"
-   "\303\241thra\303\255onn an cro\303\255-inneall; caitheann s\303\251 c\303\272pla milleasoicind i"
-   "n aghaidh an fhr\303\241ma. Tagann an \303\251ifeacht i bhfeidhm ar an gc\303\251ad fhr\303\241m"
-   "a eile.",
    "Neart forioml\303\241n an mh\303\272nla, i gc\303\251atad\303\241n.",
    "An d\303\251ine a oibr\303\255onn an tsamhail mionsonra\303\255 agus strucht\303\272r dromchla, "
    "i gc\303\251atad\303\241n.",
@@ -11044,6 +11220,9 @@ static const struct
    "Socraigh an m\303\251id airde saincheaptha don mhodh l\303\241nsc\303\241ile\303\241in neamhfhui"
    "nneogach. M\303\241 fh\303\241gtar gan \303\251 socraithe, \303\272s\303\241idfear taifeach an d"
    "eisce.",
+   "Socraigh sc\303\241ile\303\241in na gcro\303\255leac\303\241n a bhfuil n\303\255os m\303\263 n"
+   "\303\241 ceann amh\303\241in acu, agus roghnaigh an \303\241it a mbeidh gach ceann acu le feice"
+   "\303\241il.",
    "Tabhair sc\303\241thl\303\241in chuig an tiom\303\241na\303\255 grafaic\303\255 mar SPIR-V in io"
    "nad iad a thras-thioms\303\272 chuig GLSL ar dt\303\272s, rud a fh\303\251adann amanna l\303\263"
    "d\303\241la r\303\251amhshocraithe sc\303\241thl\303\241in a ghiorr\303\272. N\303\255l anseo ac"
@@ -11104,6 +11283,8 @@ static const struct
    " a ins\303\255tear do na cro\303\255leac\303\241in agus an rud a iompra\303\255onn na meiteashon"
    "ra\303\255 HDR a sheoltar chuig an taispe\303\241int. As, \303\272s\303\241idtear Buaic-Gile mar"
    " at\303\241 socraithe.",
+   "Taispe\303\241in \303\241bhar i gcluas\303\241n OpenXR, agus cuir a sc\303\241ile\303\241in agus"
+   " a roghchl\303\241r ina n-\303\241it.",
    "D\303\251an r\303\251amhamhairc f\303\255se a dh\303\255ch\303\263d\303\272 ar an GPU nuair is f"
    "\303\251idir leis an tiom\303\241na\303\255 f\303\255se \303\251 sin a dh\303\251anamh (H.264 le"
    " Vulkan), rud a fh\303\241gann an CPU saor; m\303\241 roghna\303\255tear 'Off', d\303\251antar i"
@@ -11155,8 +11336,8 @@ static const struct
    "chl\303\241r ar thaispe\303\241ntas eile seachas an ceann a bhfuil an cluiche air.",
    "An chuma at\303\241 ar rialt\303\263ir\303\255 na gcluas\303\241n. Le ch\303\251ile, is gamepad "
    "amh\303\241in iad an d\303\241 cheann. Ar leithligh, is gamepad f\303\251in gach l\303\241mh. Im"
-   "r\303\255onn gach l\303\241mh mar an t-imreoir at\303\241 socraithe d\303\263 thuas, imreoir 1 m"
-   "ura socra\303\255tear a mhalairt.",
+   "r\303\255onn gach l\303\241mh mar an imreoir at\303\241 socraithe d\303\263 sna Rialaitheoir\303"
+   "\255, imreoir 1 mura socra\303\255tear a mhalairt.",
    "An fad os do chomhair a thaispe\303\241nann an headset na sc\303\241ile\303\241in.",
    "F\303\241gann s\303\251 seo bearna idir sc\303\241ile\303\241in a thagann le ch\303\251ile imeal"
    "l ar imeall, taobh le taobh, ag c\303\272inne, n\303\263 at\303\241 ceangailte le hins\303\255 a"
@@ -11314,15 +11495,26 @@ static const struct
    "An taispe\303\241int a bhfuil sc\303\241ile\303\241n an chluiche seo le feice\303\241il uirthi. "
    "Roghna\303\255onn an c\303\263ras ceann go huathoibr\303\255och; m\303\241 roghna\303\255tear As"
    ", n\303\255 roghna\303\255tear aon cheann.",
+   "\303\201it a dtaispe\303\241ntar an sc\303\241ile\303\241n cluiche seo: sa phr\303\255omhfhuinne"
+   "og, i bhfuinneog d\303\241 chuid f\303\251in ar mhonat\303\263ir, n\303\263 in \303\241it ar bit"
+   "h. Leis an rogha Uath, coinn\303\255tear Sc\303\241ile\303\241n Cluiche 1 sa phr\303\255omhfhuin"
+   "neog agus cuirtear na cinn eile i bhfuinneog ar mhonat\303\263ir eile.",
    "Conas sc\303\241ile\303\241in c\303\263ras ilsc\303\241ile\303\241in a shocr\303\272.",
    "Roghnaigh an sc\303\241ile\303\241n ar sn\303\241mh chun \303\251 a choigeart\303\272.",
-   "Coinn\303\255onn 'Ceangailte' an sc\303\241ile\303\241n seo in \303\251ineacht leis na cinn eile"
-   ". Cuireann 'Ar leithligh' \303\251 ar fhuinneog n\303\263 ar thaispe\303\241int d\303\241 chuid "
-   "f\303\251in. F\303\241gann 'Faoi cheilt' ar l\303\241r \303\251.",
-   "C\303\241 dt\303\251ann an sc\303\241ile\303\241n seo nuair a bh\303\255onn a fhuinneog f\303"
-   "\251in aige? Roghna\303\255tear an dara taispe\303\241int go huathoibr\303\255och. Fanann an sc"
-   "\303\241ile\303\241n ceangailte leis an taispe\303\241int a bhfuil RetroArch \303\241 thaispe"
-   "\303\241int uirthi.",
+   "An \303\241it a dtaispe\303\241ntar an sc\303\241ile\303\241n cluiche seo, chomh maith le m\303"
+   "\251id agus su\303\255omh a fhuinneoige.",
+   "Athoscail fuinneoga sc\303\241ile\303\241in a d\303\272nadh \303\263na mbarra teidil \342\200"
+   "\224 ag an m\303\251id agus sa su\303\255omh a s\303\241bh\303\241ladh d\303\263ibh \342\200\224"
+   " nuair a atos\303\263idh an cluiche.",
+   "L\303\255on an monat\303\263ir le fuinneog sc\303\241ile\303\241n an chluiche seo.",
+   "Airde na fuinneoige do sc\303\241ile\303\241n an chluiche seo. D\303\251antar \303\255 a mh\303"
+   "\251ad\303\272 go huathoibr\303\255och.",
+   "Leithead fhuinneog sc\303\241ile\303\241n an chluiche seo. D\303\251antar \303\255 a athmh\303"
+   "\251ad\303\272 go huathoibr\303\255och.",
+   "An pointe \303\263nar thosa\303\255onn fuinneog sc\303\241ile\303\241n an chluiche seo ar thaobh"
+   " na l\303\241imhe cl\303\251 den deasc, i bpicteil\303\255n\303\255.",
+   "An \303\241it a dtosa\303\255onn fuinneog sc\303\241ile\303\241n an chluiche seo \303\263 bharr "
+   "an deisce, i bpicteil\303\255n\303\255.",
    "D\303\272n an roghchl\303\241r agus bog sc\303\241ile\303\241in agus roghchl\303\241r na gcluas"
    "\303\241n leis na rialt\303\263ir\303\255: greama\303\255onn an greim, claonann an truicear, ath"
    "ra\303\255onn an bata achar agus m\303\251id, casann agus claonann bata na l\303\241imhe saora, "
@@ -11442,8 +11634,8 @@ static const struct
    "\241 an modh *Side by Side (Full)* oiri\303\272nach d\342\200\231aipeanna f\303\251achana le hag"
    "haidh cluas\303\241n agus do bhreathn\303\272 tras-sh\303\272ileach; t\303\241 na modhanna *Side"
    " by Side (Half)* agus *Top-Bottom* oiri\303\272nach do theilif\303\255se\303\241in 3D.",
-   "Athraigh an chaoi a dtaispe\303\241ntar steir\303\251\303\263-3D agus sc\303\241ile\303\241in io"
-   "lracha \303\263 chro\303\255leac\303\241in a thaca\303\255onn leo.",
+   "Athraigh an chaoi a dtaispe\303\241ntar 3D steir\303\251\303\263 \303\263 chro\303\255leac\303"
+   "\241in a thaca\303\255onn leis.",
    "Malartaigh na h\303\255omh\303\241nna don ts\303\272il chl\303\251 agus don ts\303\272il dheas. "
    "Bain \303\272s\303\241id as seo le haghaidh f\303\251achana tras-sh\303\272ileach, n\303\263 nua"
    "ir a bh\303\255onn na s\303\272ile n\303\263 na sraitheanna ar taispe\303\241int in ord contr"
@@ -11513,6 +11705,16 @@ static const struct
    " scaoileann an tiom\303\241na\303\255 gach fr\303\241ma, agus n\303\255 choinn\303\255onn an gre"
    "im ach \303\251 ar athnuac",
    "han an taispe\303\241na. As: luasa\303\255onn an lasc ama, mar a bh\303\255 roimhe.",
+   "Le Luas\303\272 Taispe\303\241na F\303\255se Sn\303\241ithithe, V-Sync m\303\272chta agus l\303"
+   "\241nsc\303\241ile\303\241in, scaoil gach fr\303\241ma cro\303\255 ar imeachta\303\255 vblank an"
+   " taispe\303\241ntais f\303\251in in ionad lasc ama. Baineann s\303\251 seo nuair a bh\303\255onn"
+   " na himeachta\303\255 sin ag an bhfreastala\303\255 taispe\303\241na (Windows, KMS, X11, Wayland"
+   ") agus nuair a bh\303\255onn deora i l\303\241thair ag an tiom\303\241na\303\255 f\303\255se sea"
+   "chas fanacht (Direct3D 11/12, Vulkan; OpenGL tr\303\255 DXGI, ar KMS, n\303\263 thar an gcomhdh"
+   "\303\251anamh); luasa\303\255onn an lasc ama in \303\241it eile, agus cib\303\251 \303\241it a s"
+   "topann na ",
+   "himeachta\303\255 n\303\263 nach gcoinn\303\255onn siad r\303\241ta seasta. Fanann an l\303\255n"
+   "e deora ansin ag airde amh\303\241in. As: an lasc ama, mar a bh\303\255 roimhe.",
    "Le F\303\255se\303\241n Sn\303\241ithithe, coinnigh an fr\303\241ma deireanach \303\241 chur i l"
    "\303\241thair ag r\303\241ta athnuachana an taispe\303\241ntais agus an cro\303\255 ag titim ar "
    "gc\303\272l, seachas an fr\303\241ma roimhe sin a fh\303\241g\303\241il ar an sc\303\241ile\303"
@@ -11532,9 +11734,15 @@ static const struct
    "\251 seo roinnt sc\303\241thaitheoir\303\255 a bhriseadh, go h\303\241irithe ar sheanleaganacha "
    "crua-earra\303\255 n\303\263 OS.",
 #if defined(RARCH_MOBILE)
+   "Su\303\255omh cothrom\303\241nach an \303\241bhair nuair a bh\303\255onn an radharc-fhuinneog n"
+   "\303\255os leithne n\303\241 leithead an \303\241bhair. Seasann 0.0 don taobh cl\303\251, 0.5 do"
+   "n l\303\241r, agus 1.0 don taobh deas.",
    "Su\303\255omh ingearach an \303\241bhair nuair a bh\303\255onn an radharcphoirt n\303\255os aird"
    "e n\303\241 airde an \303\241bhair. Is \303\251 0.0 an barr, 0.5 an l\303\241r, agus 1.0 an bun.",
 #endif
+   "Su\303\255omh cothrom\303\241nach an \303\241bhair nuair a bh\303\255onn an radharc-fhuinneog n"
+   "\303\255os leithne n\303\241 leithead an \303\241bhair. Seasann 0.0 don taobh cl\303\251, 0.5 do"
+   "n l\303\241r, agus 1.0 don taobh deas.",
    "Su\303\255omh ingearach an \303\241bhair nuair a bh\303\255onn an radharcphoirt n\303\255os aird"
    "e n\303\241 airde an \303\241bhair. Is \303\251 0.0 an barr, 0.5 an l\303\241r, agus 1.0 an bun.",
    "Airde radhairc saincheaptha a \303\272s\303\241idtear m\303\241 t\303\241 an C\303\263imheas Gn"
@@ -11547,11 +11755,6 @@ static const struct
    "radhairc a shaini\303\272.",
    "Sioncr\303\263naigh f\303\255se\303\241n aschuir an ch\303\241rta grafaic\303\255 le r\303\241ta"
    " athnuachana an sc\303\241ile\303\241in. Molta.",
-   "\303\232s\303\241id pac\303\241iste tiom\303\241na\303\255 Vulkan (.zip) in \303\241it thiom\303"
-   "\241na\303\255 an ch\303\263rais. Ritheann an tiom\303\241na\303\255 laistigh de RetroArch: n"
-   "\303\241 h\303\272s\303\241id ach pac\303\241ist\303\255 \303\263 fhoinse a bhfuil muin\303\255n"
-   " agat as. Tiocfaidh s\303\251 i bhfeidhm an ch\303\251ad uair eile a thos\303\263idh Vulkan. T"
-   "\303\272s: tiom\303\241na\303\255 an ch\303\263rais.",
    "Thuairte\303\241il s\303\251 ar an rith deireanach, ag \303\272s\303\241id an Ch\303\263rais",
    "\303\232s\303\241idtear %s ar\303\255s ag an gc\303\251ad t\303\272s gn\303\241th eile",
    "Sioncr\303\263naigh an LAP agus an GPU go crua. Laghda\303\255onn s\303\251 moill ar chostas fei"
@@ -11625,9 +11828,15 @@ static const struct
    "Roghnaigh leagan amach difri\303\272il don chomh\303\251adan XMB.",
    "Taispe\303\241in an cluais\303\255n Socruithe ina bhfuil socruithe an chl\303\241ir.",
    "Roghnaigh t\303\251ama dath c\303\272lra difri\303\272il.",
+   "Cuir sc\303\241th\303\272 plaisteach tr\303\251shoilseach agus buaicphoint\303\255 i bhfeidhm ar"
+   " dheilbh\303\255n\303\255 agus ar th\303\251acs XMB.",
+   "Cuir lonradh bog le sc\303\241th\303\263ir an roghchl\303\241ir Rib\303\255n. B\303\255onn tionc"
+   "har di\303\272ltach aige seo ar an bhfeidhm\303\255ocht.",
    "Roghnaigh \303\251ifeacht ch\303\272lra beoite. F\303\251adfaidh s\303\251 a bheith dian ar GPU "
    "ag brath ar an \303\251ifeacht. Mura bhfuil an fheidhm\303\255ocht s\303\241s\303\272il, m\303"
    "\272ch \303\251 seo n\303\263 t\303\251igh ar ais go h\303\251ifeacht n\303\255os simpl\303\255.",
+   "Tarraing c\303\241ithn\303\255n\303\255 solais at\303\241 ag imeacht le sruth thar sc\303\241tha"
+   "itheoir an roghchl\303\241ir Rib\303\255n.",
    "Tarraing sc\303\241thanna titime le haghaidh deilbh\303\255n\303\255, mionsamhlacha agus litreac"
    "ha. Beidh tionchar beag aige seo ar fheidhm\303\255ocht.",
    "Bain \303\272s\303\241id as deilbh\303\255n\303\255 in ionad t\303\251acs AR/AS chun iontr\303"
@@ -11675,6 +11884,9 @@ static const struct
    "N\303\255orbh fh\303\251idir an t-uathsh\303\241bh\303\241il a thos\303\272.",
    "S\303\241bh\303\241il uathoibr\303\255och an st\303\241it chuig",
    "C\303\272ltaca den chro\303\255: ",
+   "Gan sc\303\241ile\303\241n neamh\303\272s\303\241idte le cur b\303\241n",
+   "Sc\303\241ile\303\241in bh\303\241na neamh\303\272s\303\241idte as",
+   "Sc\303\241ile\303\241in bh\303\241na neamh\303\272s\303\241idte ar",
    "Bloc\303\241il Forscr\303\255obh SRAM",
    "\303\232s\303\241ideann cuibheoir Bluetooth an r\303\255omhaire seo tiom\303\241na\303\255 cine"
    "\303\241lach de chuid Windows, a theipeann air go minic gl\303\251asanna a aimsi\303\272. Suite"
@@ -11781,6 +11993,22 @@ static const struct
    "N\303\255 thaca\303\255onn Croi le Rial\303\272 Diosca.",
    "N\303\255 thaca\303\255onn Core le st\303\241it s\303\241bh\303\241la.",
    "N\303\255 thaca\303\255onn Core le s\303\241bh\303\241il st\303\241it a cheal\303\272.",
+   "Roghnaigh OK chun t\303\272s a chur leis gan an dochtearra\303\255 seo, n\303\263 Cealaigh chun "
+   "an pr\303\263iseas a stopadh.\n\nN\303\263ta: Is f\303\251idir na f\303\263gra\303\255 seo a dh"
+   "\303\255chumas\303\272 faoi Socruithe -> Cro\303\255 -> F\303\263gra\303\255 faoi Dochtearra\303"
+   "\255 at\303\241 ar Iarraidh.",
+   "T\303\241 an dochtearra\303\255 seo ar f\303\241il le h\303\255osl\303\263d\303\241il.",
+   "N\303\255orbh fh\303\251idir an dochtearra\303\255 riachtanach a shuite\303\241il.",
+   "M\303\241 roghna\303\255onn t\303\272 OK, \303\255osl\303\263d\303\241lfar agus suite\303\241lfa"
+   "r an dochtearra\303\255 a bhfuil an n\303\263ta \"T\303\241 an dochtearra\303\255 seo ar f\303"
+   "\241il le h\303\255osl\303\263d\303\241il\" ag gabh\303\241il leis.\nN\303\255 m\303\263r aon do"
+   "chtearra\303\255 eile at\303\241 ar iarraidh a shol\303\241thar de r\303\251ir na ndl\303\255the"
+   " \303\241iti\303\272la at\303\241 i bhfeidhm i do cheantar.\n\nRoghnaigh Cealaigh chun lean\303"
+   "\272int ar aghaidh gan aon rud a \303\255osl\303\263d\303\241il.\n\nN\303\263ta: Is f\303\251idi"
+   "r na f\303\263gra\303\255 seo a dh\303\255chumas\303\272 faoi Socruithe -> Cro\303\255 -> F\303"
+   "\263gra\303\255 faoi dochtearra\303\255 at\303\241 ar Iarraidh.",
+   "T\303\241 an dochtearra\303\255 riachtanach ar iarraidh:",
+   "Caithfear an dochtearra\303\255 seo a shol\303\241thar de l\303\241imh.",
    "N\303\255 f\303\251idir scr\303\255obh chuig an eolaire cro\303\255-fhaisn\303\251ise - d\303"
    "\255chumas\303\263far taisce cro\303\255-fhaisn\303\251ise",
    "T\303\241 an comhad l\303\241rnach roghnaithe suite\303\241ilte cheana f\303\251in: ",
@@ -11790,6 +12018,19 @@ static const struct
    "Cro\303\255 suite\303\241ilte: ",
    "Theip ar an gcro\303\255 a shuite\303\241il: ",
    "Theip ar an liosta cro\303\255 a aisghabh\303\241il!",
+   "N\303\255or luchta\303\255odh an cro\303\255: n\303\255l muin\303\255n as %s. Chun muin\303\255n"
+   " a chur ann, luchtaigh \303\251 tr\303\255 'Luchtaigh Cro\303\255' agus roghnaigh 'Cuir Muin\303"
+   "\255n ann i gC\303\263na\303\255'.",
+   "N\303\255or luchta\303\255odh an cro\303\255: N\303\255orbh fh\303\251idir le RetroArch a dheimh"
+   "ni\303\272 go bhfuil s\303\251 s\303\241bh\303\241ilte. Chun muin\303\255n a bheith agat as, seo"
+   "l RetroArch le roghchl\303\241r, luchtaigh an cro\303\255 agus roghnaigh 'B\303\255odh muin\303"
+   "\255n agat i gc\303\263na\303\255'.",
+   "N\303\255l an cro\303\255 luchtaithe: T\303\241 RetroArch f\303\263s ag seice\303\241il na gcro"
+   "\303\255the at\303\241 suite\303\241ilte. Bain triail as ar\303\255s i gceann n\303\263im\303"
+   "\251id.",
+   "N\303\255or luchta\303\255odh an cro\303\255 ach don uair seo amh\303\241in: t\303\241 an liosta"
+   " de chro\303\255the iontaofa l\303\241n, mar sin n\303\255 raibh RetroArch in ann \303\251 a cho"
+   "inne\303\241il i gcuimhne.",
    "Theip ar an gcro\303\255l\303\241r a ghlas\303\241il: ",
    "Crutha\303\255odh comhad roghanna l\303\241rnacha go rath\303\272il.",
    "Baineadh an comhad roghanna l\303\241rnacha go rath\303\272il.",
@@ -11805,14 +12046,49 @@ static const struct
    "Theip ar athch\303\263iri\303\272 cro\303\255: ",
    "Comhad cro\303\255 neamhbhail\303\255 roghnaithe: ",
    "Theip ar an gcro\303\255 a bhaint den liosta 'Cro\303\255the Gan \303\201bhar': ",
+   "Tr\303\255 \303\251 seo a mh\303\272chadh, tugtar deis do RetroArch cro\303\255leac\303\241in a "
+   "rith a bhf\303\251adfadh cur isteach orthu, lena n-\303\241ir\303\255tear cinn a d\342\200\231"
+   "\303\255osl\303\263d\303\241il an Nuashonraitheoir Ar L\303\255ne. N\303\241 d\303\251an \303"
+   "\251 seo ach amh\303\241in m\303\241 th\303\263gann t\303\272 n\303\263 m\303\241 shuite\303\241"
+   "lann t\303\272 cro\303\255leac\303\241in t\303\272 f\303\251in agus m\303\241 thuigeann t\303"
+   "\272 an riosca.",
+   "Theip ar an \303\255osl\303\263d\303\241il l\303\241rnach an seice\303\241il s\303\255nithe a ri"
+   "th, agus n\303\255or suite\303\241ladh \303\255.",
+   "T\303\241 an \303\255osl\303\263d\303\241il l\303\241rnach n\303\255os sine n\303\241 an ceann a"
+   "t\303\241 in \303\272s\303\241id cheana; coinn\303\255odh an cro\303\255-chomhph\303\241irt at"
+   "\303\241 suite\303\241ilte.",
+   "T\303\241 muin\303\255n ag an leagan seo as eochair sh\303\255nithe t\303\241st\303\241la: rithf"
+   "ear comhph\303\241irteanna l\303\241rnacha ar f\303\251idir le haon duine iad a sh\303\255ni\303"
+   "\272. N\303\255 le haghaidh \303\272s\303\241ide laeth\303\272la \303\251.",
 #ifdef HAVE_MIST
    "T\303\241 an cro\303\255 \303\241 \303\255osl\303\263d\303\241il faoi l\303\241thair",
    "Cro\303\255 a shuite\303\241il: ",
    "D\303\255shuite\303\241lfar an cro\303\255 nuair a scoirfear RetroArch.",
 #endif
+   "N\303\255 f\303\251idir \303\251 seo a athr\303\272 anois: n\303\255orbh fh\303\251idir le Retro"
+   "Arch a liosta de chro\303\255-chomhph\303\241irteanna iontaofa a l\303\251amh.",
+   "D\303\251anann RetroArch seice\303\241il anois ar sh\303\255ni\303\272ch\303\241in na gcro\303"
+   "\255leac\303\241n. Fanann muin\303\255n agat as do chro\303\255leac\303\241in; faightear cinn at"
+   "\303\241 s\303\255nithe tr\303\255d an rogha chun cro\303\255leac\303\241in suite\303\241ilte a "
+   "nuashonr\303\272.",
    "Theip ar an gcro\303\255l\303\241r a dh\303\255ghlas\303\241il: ",
    "Theip ar chro\303\255l\303\241r a chur leis an liosta 'Cro\303\255the Gan \303\201bhar': ",
    "Nuashonr\303\272 cro\303\255 d\303\255chumasaithe - t\303\241 an cro\303\255 faoi ghlas: ",
+   "Freagair an rabhadh sl\303\241nd\303\241la ar dt\303\272s.",
+   "N\303\255orbh fh\303\251idir le RetroArch an cro\303\255 seo a l\303\251amh chun \303\251 a shei"
+   "ce\303\241il.",
+   "Is cl\303\241ir iad cro\303\255leac\303\241in a bhfuil rochtain ioml\303\241n acu ar do ghl\303"
+   "\251as agus ar do chomhaid. N\303\241 lean ar aghaidh ach amh\303\241in m\303\241 chruthaigh t"
+   "\303\272 an chro\303\255-chomhph\303\241irt seo t\303\272 f\303\251in, n\303\263 m\303\241 fuair"
+   " t\303\272 \303\255 \303\263 dhuine a bhfuil muin\303\255n agat as.",
+   "T\303\241 an cro\303\255 seo athraithe \303\263 sh\303\255nigh libretro \303\251.",
+   "Is leagan den chro\303\255l\303\241r \303\251 seo at\303\241 n\303\255os sine n\303\241 an ceann"
+   " a d\342\200\231\303\272s\303\241id t\303\272 roimhe seo. D\342\200\231fh\303\251adfadh fadhbann"
+   "a sl\303\241nd\303\241la a bheith ag leaganacha n\303\255os sine.",
+   "Is f\303\251idir leat na seice\303\241lacha seo a mh\303\272chadh faoi Socruithe > Cro\303\255 >"
+   " Seice\303\241il S\303\255ni\303\272ch\303\241in an Chro\303\255.",
+   "T\303\241 an cro\303\255 seo s\303\255nithe le heochair nach n-aithn\303\255onn RetroArch.",
+   "N\303\255l an cro\303\255 seo s\303\255nithe ag libretro.",
    "N\303\255orbh fh\303\251idir aon tiom\303\241na\303\255 eile a aimsi\303\272",
    "N\303\255orbh fh\303\251idir c\303\263ras comhoiri\303\272nach a aimsi\303\272.",
    "N\303\255orbh fh\303\251idir rian sonra\303\255 bail\303\255 a aimsi\303\272",
@@ -12016,6 +12292,7 @@ static const struct
    "\303\251 mar \"s\303\255os 2, s\303\255os+deas 2, a 4\". Cuirtear i ngn\303\255omh \303\251 le t"
    "eaglaim. Start: cuir deireadh leis.",
    "Ainm Comhaid S\303\241raithe Ionchuir",
+   "Br\303\272igh chun Aimsigh",
    "Liosta rialt\303\263ir\303\255 l\303\241n: socraigh rialt\303\263ir at\303\241 d\303\255cheangai"
    "lte \342\200\224 a bhfuil imreoir sannta d\303\263 ach nach bhfuil a aicearra\303\255 f\303\251i"
    "n aige \342\200\224 go dt\303\255 Uath",
@@ -12245,6 +12522,10 @@ static const struct
    " Smaoinigh ar fhreastala\303\255 athsheachadta a \303\272s\303\241id.",
    "C\303\272ltaca\303\255 at\303\241 as d\303\241ta a bhaint: ",
    "Map\303\241il Calafoirt Netplay Rath\303\272il",
+   "Iarratas ar shruth PyroWave ag teacht isteach. Oscail Socruithe > Taifeadadh chun glacadh leis n"
+   "\303\263 di\303\272lt\303\272 d\303\263.",
+   "T\303\241 sc\303\241th\303\263ir\303\255 PyroWave ar iarraidh. Socraigh an Eolaire Sc\303\241th"
+   "\303\263ir\303\255 PyroWave faoi Socruithe > Taifeadadh.",
    "\303\211acht Neamhchoitianta D\303\255ghlas\303\241ilte",
    "Ag l\303\251amh an ch\303\251ad rian sonra\303\255...",
    "St\303\241das St\303\263r\303\241la Inmhe\303\241naigh: L\303\251ite Amh\303\241in",
@@ -12310,6 +12591,8 @@ static const struct
    "gcro\303\255l\303\241r seo don staid s\303\241bh\303\241la.",
    "T\303\241 Run-Ahead d\303\255chumasaithe mar n\303\255 thaca\303\255onn an cro\303\255 seo le st"
    "\303\241it s\303\241bh\303\241la.",
+   "N\303\255orbh fh\303\251idir le Run-Ahead staid an chro\303\255 a athch\303\263iri\303\272. Aths"
+   "hocra\303\255odh an cro\303\255 agus d\303\255chumasa\303\255odh Run-Ahead.",
    "D\303\255chumasa\303\255odh Run-Ahead.",
    "Cumasa\303\255odh Run-Ahead. Fr\303\241ma\303\255 moille bainte: %u.",
    "Cumasa\303\255odh Run-Ahead le h\303\201iseamh T\303\241naisteach. Fr\303\241ma\303\255 moille b"
@@ -12411,12 +12694,8 @@ static const struct
    "ile a bhaint as.",
    "Theip ar th\303\272s\303\272 an tiom\303\241na\303\255 Vulkan saincheaptha. \303\201 \303\272s"
    "\303\241id anois: tiom\303\241na\303\255 an ch\303\263rais.",
-   "N\303\255 f\303\251idir an pac\303\241iste tiom\303\241na\303\255 Vulkan saincheaptha a \303\272"
-   "s\303\241id. \303\201 \303\272s\303\241id an tiom\303\241na\303\255 c\303\263rais.",
    "Atosaigh RetroArch chun an tiom\303\241na\303\255 Vulkan a athr\303\272.",
    "Thosaigh leis an tiom\303\241na\303\255 Vulkan c\303\263rais.",
-   "Teasta\303\255onn GPU Adreno agus Android 9 \303\263 thiom\303\241naithe saincheaptha Vulkan. Ag"
-   " baint \303\272s\303\241ide as tiom\303\241na\303\255 an ch\303\263rais.",
    "N\303\255or roghna\303\255odh an tiom\303\241na\303\255 saincheaptha Vulkan sa roghchl\303\241r,"
    " n\303\263 t\303\241 athr\303\272 tagtha air. Roghnaigh ar\303\255s \303\251 chun \303\251 a "
    "\303\272s\303\241id.",
@@ -12433,7 +12712,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_ga_blob_check[
-      (sizeof(msg_hash_ga_blob) == (274601u
+      (sizeof(msg_hash_ga_blob) == (282000u
 #ifdef ANDROID
        + 390u
 #endif
@@ -12584,6 +12863,9 @@ typedef char msg_hash_ga_blob_check[
        + 17u
        + 11u
 #endif
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+       + 37u
+#endif
 #ifdef HAVE_QT
        + 773u
 #endif
@@ -12703,6 +12985,10 @@ typedef char msg_hash_ga_blob_check[
 #endif
 #if defined(HAVE_RSLC) && defined(HAVE_GLSLANG)
        + 31u
+#endif
+#if defined(RARCH_MOBILE)
+       + 42u
+       + 50u
 #endif
 #if defined (WIIU)
 #ifdef WIIU
@@ -12846,6 +13132,9 @@ typedef char msg_hash_ga_blob_check[
        + 61u
        + 285u
 #endif
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+       + 109u
+#endif
 #ifdef HAVE_GAME_AI
        + 34u
 #endif
@@ -12970,6 +13259,7 @@ typedef char msg_hash_ga_blob_check[
        + 196u
 #endif
 #if defined(RARCH_MOBILE)
+       + 176u
        + 145u
 #endif
 #if defined (WIIU)
@@ -13346,7 +13636,9 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_BUNDLE_IDENTIFIER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CACHE_DIRECTORY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CAMERA_ALLOW,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CAMERA_DEVICE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CAMERA_DRIVER,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CAMERA_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CANNOT_ACTIVATE_ACHIEVEMENTS_WITH_THIS_CORE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CHEAT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CHEAT_ADDRESS,
@@ -13532,6 +13824,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_DELETE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_DELETE_BACKUP_LIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_ENABLE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_FIRMWARE_NOTIFICATION_ENABLE,
 #ifdef HAVE_GAME_AI
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_GAME_AI_OPTIONS,
 #endif
@@ -13576,6 +13869,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_SET_STANDALONE_EXEMPT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_SET_SUPPORTS_NO_CONTENT_ENABLE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_SIGNATURE_CHECK,
 #ifdef HAVE_MIST
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_STEAM_INSTALL,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_STEAM_UNINSTALL,
@@ -13589,6 +13883,11 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_UPDATER_LIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_UPDATER_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_UPDATER_SHOW_EXPERIMENTAL_CORES,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_WARNING,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_WARNING_ALWAYS_TRUST,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_WARNING_CANCEL,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_WARNING_INSTALL_TRUST,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CORE_WARNING_LOAD_ONCE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CPU_ARCHITECTURE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CPU_CORES,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CPU_MANAGED_MAX_FREQ,
@@ -13750,6 +14049,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_EXPLORE_BY_CONSOLE_EXCLUSIVE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_EXPLORE_BY_CONTROLS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_EXPLORE_BY_DEVELOPER,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_EXPLORE_BY_ENHANCEMENT_HW,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_EXPLORE_BY_FRANCHISE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_EXPLORE_BY_GAMEPLAY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_EXPLORE_BY_GENRE,
@@ -13886,6 +14186,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_DRIVER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_GCA_ENABLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_HAPTIC_FEEDBACK_SETTINGS,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_HEADSET_CONTROLS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_HOLD,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_HOTKEY_BINDS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_HOTKEY_BLOCK_DELAY,
@@ -13936,6 +14237,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_MENU_ENUM_TOGGLE_GAMEPAD_COMBO,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_MENU_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_AI_SERVICE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_BLANK_UNUSED_TOGGLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_CHEAT_INDEX_MINUS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_CHEAT_INDEX_PLUS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_META_CHEAT_TOGGLE,
@@ -14049,6 +14351,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_OVERLAY_SHOW_INPUTS_PORT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_OVERLAY_SHOW_INPUTS_TOUCHED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_OVERLAY_SHOW_MOUSE_CURSOR,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_PAD_PRESSED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_PLAYS_AS_ADD,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_PLAYS_AS_ADD_ITEM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_PLAYS_AS_AUTO_PLAYER,
@@ -14057,6 +14360,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_POLL_TYPE_BEHAVIOR_EARLY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_POLL_TYPE_BEHAVIOR_LATE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_POLL_TYPE_BEHAVIOR_NORMAL,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_PORT_CONTROLLERS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_PREFER_FRONT_TOUCH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_QUIT_GAMEPAD_COMBO,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_INPUT_REMAPPING_DIRECTORY,
@@ -14323,6 +14627,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SCROLL_QUICK,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_CONFIGURATIONS,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_CONFIRM,
 #ifdef HAVE_MIST
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_CORE_MANAGER_STEAM,
 #endif
@@ -14530,6 +14835,9 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_AUTOCONFIG_FAILS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_CHEATS_APPLIED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_CONFIG_OVERRIDE_LOAD,
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_CORE_SIGNING_TEST_KEY,
+#endif
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_DISK_CONTROL,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_FAST_FORWARD,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_NOTIFICATION_SHOW_NETPLAY_EXTRA,
@@ -14729,6 +15037,14 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PRESENT_OPTIONAL,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PRESENT_REQUIRED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PRIVACY_SETTINGS,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PYROWAVE_ACCEPT,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PYROWAVE_DECLINE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PYROWAVE_DEVICES,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PYROWAVE_DEVICE_NAME,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PYROWAVE_DISCOVERY_ENABLE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PYROWAVE_SEND,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PYROWAVE_SHADER_DIRECTORY,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_PYROWAVE_STOP,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_ADDING_FILES_TO_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_ADD_ENTRY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_ADD_FILES,
@@ -14746,7 +15062,6 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_CORE_SELECTION_ASK,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_CORE_VERSION,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_COULD_NOT_DELETE_FILE,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_COULD_NOT_RENAME_FILE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_COULD_NOT_UPDATE_PLAYLIST_ENTRY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_CURRENT_SHADER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_CUSTOM_THEME,
@@ -14754,8 +15069,6 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DELETE_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DONT_SHOW_AGAIN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS_ENTIRE_SYSTEM,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS_THIS_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALREADY_IN_PROGRESS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_PLAYLIST_THUMBNAIL_PROGRESS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_THUMBNAIL,
@@ -14818,7 +15131,6 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_MOVE_DOWN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_MOVE_UP,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_NAME,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_NETWORK_ERROR,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_NEW_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_PLAYLIST_ENTRY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_PLAYLIST_ENTRY_CORE,
@@ -14858,7 +15170,6 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_TAB_PLAYLISTS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_BOXART,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_LOGO,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_PACK_DOWNLOADED_SUCCESSFULLY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_SCREENSHOT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_TITLE_SCREEN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_UPDATE_RETROARCH_FAILED,
@@ -14956,6 +15267,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_SCORE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_SERIAL,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_SETTING,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_TAGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_TGDB_RATING,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_VEHICULAR,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_VISUAL,
@@ -15348,6 +15660,8 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MDYYYY_HM_AMPM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MD_HM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MD_HM_AMPM,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MODE_AUTOMATIC,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MODE_MANUAL,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_STYLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_YM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_YMD,
@@ -15439,6 +15753,8 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_AUTOSWITCH_REFRESH_RATE_WINDOWED_FULLSCREEN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_BFI_DARK_FRAMES,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_BLACK_FRAME_INSERTION,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_BLANK_UNUSED_GAMES,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_BLANK_UNUSED_SCREENS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_CROP_OVERSCAN,
 #ifdef HAVE_ODROIDGO2
 #else
@@ -15510,6 +15826,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_FULLSCREEN_MODE_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_FULLSCREEN_X,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_FULLSCREEN_Y,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_GAME_SCREENS_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_GAMMA,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_GL_DIRECT_SPIRV,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_GPU_INDEX,
@@ -15529,6 +15846,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SEND_LUMINANCE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_SUBPIXEL_LAYOUT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_HDR_USE_DISPLAY_PEAK,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_HEADSET_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_HW_DECODE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_IOS_MARGIN_BOTTOM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_IOS_MARGIN_LEFT,
@@ -15654,9 +15972,20 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_LAYOUT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_LAYOUT_HORIZONTAL,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_LAYOUT_VERTICAL,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_DISPLAY,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_FULLSCREEN,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_HEIGHT,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_WIDTH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_X,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_SELECTED,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_MODE,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_MONITOR,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_SETTINGS,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOWS_RESTORE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_FULLSCREEN,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_HEIGHT,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_WIDTH,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_X,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_WINDOW_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_EDIT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_PITCH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_RESET,
@@ -15750,10 +16079,15 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_TEMPORAL_UPSCALER_SHARPNESS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_THREADED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_THREADED_DISPLAY_PACING,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_THREADED_PACING_VBLANK,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_THREADED_PRESENT_REPEAT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_THREAD_PRIORITY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_USE_METAL_ARG_BUFFERS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VFILTER,
+#if defined(RARCH_MOBILE)
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_BIAS_PORTRAIT_X,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_BIAS_PORTRAIT_Y,
+#endif
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_BIAS_X,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_BIAS_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_VIEWPORT_CUSTOM_HEIGHT,
@@ -15775,13 +16109,12 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOWED_MODE_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOWS_ENABLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOWS_ENABLE_ANDROID,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_ATTACHED,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_AUTO_HEIGHT_MAX,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_AUTO_WIDTH_MAX,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_CUSTOM_SIZE_ENABLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_DISPLAY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_HEIGHT,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_HIDDEN,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_MAIN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_OFFSET_X,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_OFFSET_Y,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_WINDOW_OPACITY,
@@ -15842,7 +16175,10 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_SUNBEAM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_UNDERSEA,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_VOLCANIC_RED,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_PLASTIC_EFFECT_ENABLE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_RIBBON_BLOOM_ENABLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_RIBBON_ENABLE,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_RIBBON_PARTICLES_ENABLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_SHADOWS_ENABLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_SWITCH_ICONS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_XMB_THEME,
@@ -16079,6 +16415,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_DELETE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_DELETE_BACKUP_LIST,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_ENABLE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_FIRMWARE_NOTIFICATION_ENABLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_INFORMATION,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_INFO_CACHE_ENABLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_INFO_SAVESTATE_BYPASS,
@@ -16099,6 +16436,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_RESTORE_BACKUP_LIST,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_SET_STANDALONE_EXEMPT,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_SIGNATURE_CHECK,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_SUGGEST_ALWAYS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_UPDATER_AUTO_BACKUP,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_CORE_UPDATER_AUTO_BACKUP_COMPRESS,
@@ -16235,6 +16573,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_DISABLE_SEARCH_BUTTON,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_DRIVER,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_HAPTIC_FEEDBACK_SETTINGS,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_HEADSET_CONTROLS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_HOTKEY_BINDS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_HOTKEY_BLOCK_DELAY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_HOTKEY_DEVICE_MERGE,
@@ -16250,6 +16589,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_MENU_ENUM_TOGGLE_GAMEPAD_COMBO,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_MENU_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_AI_SERVICE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_BLANK_UNUSED_TOGGLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_CHEAT_INDEX_MINUS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_CHEAT_INDEX_PLUS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_META_CHEAT_TOGGLE,
@@ -16354,7 +16694,9 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_OVERLAY_SHOW_INPUTS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_OVERLAY_SHOW_INPUTS_PORT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_OVERLAY_SHOW_MOUSE_CURSOR,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PAD_FIND,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_ABOVE_MAX_USERS,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_ADD,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_GONE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_NO_PORT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_PLAYER,
@@ -16362,6 +16704,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_SHARING,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PLAYS_AS_THIS_PORT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_POLL_TYPE_BEHAVIOR,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_PORT_CONTROLLERS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_QUIT_GAMEPAD_COMBO,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_REMAPPING_DIRECTORY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_INPUT_REMAP_BINDS_ENABLE,
@@ -16538,6 +16881,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SCROLL_QUICK,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_CONFIGURATIONS,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_CONFIRM,
 #ifdef HAVE_MIST
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_CORE_MANAGER_STEAM,
 #endif
@@ -16695,6 +17039,9 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_AUTOCONFIG_FAILS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_CHEATS_APPLIED,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_CONFIG_OVERRIDE_LOAD,
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_CORE_SIGNING_TEST_KEY,
+#endif
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_DISK_CONTROL,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_FAST_FORWARD,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_NOTIFICATION_SHOW_NETPLAY_EXTRA,
@@ -16794,6 +17141,8 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_POWER_MANAGEMENT_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_PREEMPT_FRAMES,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_PRIVACY_SETTINGS,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_PYROWAVE_DEVICE_NAME,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_PYROWAVE_DISCOVERY_ENABLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_QT_MENU_VIEW_OPTIONS_ALL_PLAYLISTS_GRID_MAX_COUNT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_QT_MENU_VIEW_OPTIONS_ALL_PLAYLISTS_LIST_MAX_COUNT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_QT_MENU_VIEW_OPTIONS_CUSTOM_THEME,
@@ -17121,6 +17470,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_AUTOSWITCH_REFRESH_RATE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_BFI_DARK_FRAMES,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_BLACK_FRAME_INSERTION,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_BLANK_UNUSED_SCREENS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_CROP_OVERSCAN,
 #ifdef HAVE_ODROIDGO2
 #else
@@ -17142,7 +17492,6 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_DISABLE_COMPOSITION,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_DLSS_DIRECTORY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_DLSS_NR_AUTO_MASK,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_DLSS_NR_ENABLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_DLSS_NR_INTENSITY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_DLSS_NR_LOCAL_STRUCTURE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_DLSS_NR_LOCAL_TONE,
@@ -17173,6 +17522,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_FULLSCREEN_MODE_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_FULLSCREEN_X,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_FULLSCREEN_Y,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_GAME_SCREENS_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_GL_DIRECT_SPIRV,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_GPU_INDEX,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_GPU_RECORD,
@@ -17188,6 +17538,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_SUBPIXEL_LAYOUT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_HDR_USE_DISPLAY_PEAK,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_HEADSET_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_HW_DECODE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_IOS_MARGIN_BOTTOM,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_IOS_MARGIN_LEFT,
@@ -17252,10 +17603,16 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCANLINE_SYNC_OFFSET,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCAN_SUBFRAMES,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_DISPLAY,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_DISPLAY_DESKTOP,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_LAYOUT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_SELECTED,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MODE,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_MONITOR,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_SETTINGS,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOWS_RESTORE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_FULLSCREEN,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_HEIGHT,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_WIDTH,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_X,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_WINDOW_Y,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_EDIT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_PITCH,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_SCREEN_XR_RESET,
@@ -17314,19 +17671,21 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_TEMPORAL_UPSCALER_SHARPNESS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_THREADED,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_THREADED_DISPLAY_PACING,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_THREADED_PACING_VBLANK,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_THREADED_PRESENT_REPEAT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_THREAD_PRIORITY,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_USE_METAL_ARG_BUFFERS,
 #if defined(RARCH_MOBILE)
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_BIAS_PORTRAIT_X,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_BIAS_PORTRAIT_Y,
 #endif
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_BIAS_X,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_BIAS_Y,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_CUSTOM_HEIGHT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_CUSTOM_WIDTH,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_CUSTOM_X,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VIEWPORT_CUSTOM_Y,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VSYNC,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_CRASHED,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_VULKAN_DRIVER_PATH_SAFE_MODE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_VIDEO_WAITABLE_SWAPCHAINS,
@@ -17363,7 +17722,10 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_LAYOUT,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_MAIN_MENU_ENABLE_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_MENU_COLOR_THEME,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_PLASTIC_EFFECT_ENABLE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_RIBBON_BLOOM_ENABLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_RIBBON_ENABLE,
+   (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_RIBBON_PARTICLES_ENABLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_SHADOWS_ENABLE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_SWITCH_ICONS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_XMB_THEME,
@@ -17405,6 +17767,9 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MSG_AUTOSAVE_FAILED,
    (msg_hash_id_t)MSG_AUTO_SAVE_STATE_TO,
    (msg_hash_id_t)MSG_BACKING_UP_CORE,
+   (msg_hash_id_t)MSG_BLANK_UNUSED_SCREENS_NONE,
+   (msg_hash_id_t)MSG_BLANK_UNUSED_SCREENS_OFF,
+   (msg_hash_id_t)MSG_BLANK_UNUSED_SCREENS_ON,
    (msg_hash_id_t)MSG_BLOCKING_SRAM_OVERWRITE,
    (msg_hash_id_t)MSG_BLUETOOTH_ADAPTER_GENERIC_DRIVER,
    (msg_hash_id_t)MSG_BLUETOOTH_PAIRED,
@@ -17488,6 +17853,12 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MSG_CORE_DOES_NOT_SUPPORT_DISK_OPTIONS,
    (msg_hash_id_t)MSG_CORE_DOES_NOT_SUPPORT_SAVESTATES,
    (msg_hash_id_t)MSG_CORE_DOES_NOT_SUPPORT_SAVESTATE_UNDO,
+   (msg_hash_id_t)MSG_CORE_FIRMWARE_CONTINUE_PROMPT,
+   (msg_hash_id_t)MSG_CORE_FIRMWARE_DOWNLOAD_AVAILABLE,
+   (msg_hash_id_t)MSG_CORE_FIRMWARE_DOWNLOAD_FAILED,
+   (msg_hash_id_t)MSG_CORE_FIRMWARE_DOWNLOAD_PROMPT,
+   (msg_hash_id_t)MSG_CORE_FIRMWARE_MISSING,
+   (msg_hash_id_t)MSG_CORE_FIRMWARE_SUPPLY_MANUALLY,
    (msg_hash_id_t)MSG_CORE_INFO_CACHE_UNSUPPORTED,
    (msg_hash_id_t)MSG_CORE_INSTALLATION_ALREADY_INSTALLED,
    (msg_hash_id_t)MSG_CORE_INSTALLATION_COMPLETE,
@@ -17496,6 +17867,10 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MSG_CORE_INSTALLED,
    (msg_hash_id_t)MSG_CORE_INSTALL_FAILED,
    (msg_hash_id_t)MSG_CORE_LIST_FAILED,
+   (msg_hash_id_t)MSG_CORE_LOAD_REFUSED_LOAD_CORE,
+   (msg_hash_id_t)MSG_CORE_LOAD_REFUSED_NO_MENU,
+   (msg_hash_id_t)MSG_CORE_LOAD_REFUSED_SEED_PENDING,
+   (msg_hash_id_t)MSG_CORE_LOAD_TRUST_LIST_FULL,
    (msg_hash_id_t)MSG_CORE_LOCK_FAILED,
    (msg_hash_id_t)MSG_CORE_OPTIONS_FILE_CREATED_SUCCESSFULLY,
    (msg_hash_id_t)MSG_CORE_OPTIONS_FILE_REMOVED_SUCCESSFULLY,
@@ -17509,14 +17884,28 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MSG_CORE_RESTORATION_FAILED,
    (msg_hash_id_t)MSG_CORE_RESTORATION_INVALID_CONTENT,
    (msg_hash_id_t)MSG_CORE_SET_STANDALONE_EXEMPT_FAILED,
+   (msg_hash_id_t)MSG_CORE_SIGNATURE_CHECK_OFF_CONFIRM,
+   (msg_hash_id_t)MSG_CORE_SIGNATURE_DOWNLOAD_FAILED,
+   (msg_hash_id_t)MSG_CORE_SIGNATURE_DOWNLOAD_OLDER,
+   (msg_hash_id_t)MSG_CORE_SIGNING_TEST_KEY,
 #ifdef HAVE_MIST
    (msg_hash_id_t)MSG_CORE_STEAM_CURRENTLY_DOWNLOADING,
    (msg_hash_id_t)MSG_CORE_STEAM_INSTALLING,
    (msg_hash_id_t)MSG_CORE_STEAM_UNINSTALLED,
 #endif
+   (msg_hash_id_t)MSG_CORE_TRUST_READ_ONLY,
+   (msg_hash_id_t)MSG_CORE_TRUST_SEEDED,
    (msg_hash_id_t)MSG_CORE_UNLOCK_FAILED,
    (msg_hash_id_t)MSG_CORE_UNSET_STANDALONE_EXEMPT_FAILED,
    (msg_hash_id_t)MSG_CORE_UPDATE_DISABLED,
+   (msg_hash_id_t)MSG_CORE_WARNING_ANSWER_FIRST,
+   (msg_hash_id_t)MSG_CORE_WARNING_ERROR,
+   (msg_hash_id_t)MSG_CORE_WARNING_FULL_ACCESS,
+   (msg_hash_id_t)MSG_CORE_WARNING_MODIFIED,
+   (msg_hash_id_t)MSG_CORE_WARNING_OLDER,
+   (msg_hash_id_t)MSG_CORE_WARNING_TURN_OFF,
+   (msg_hash_id_t)MSG_CORE_WARNING_UNKNOWN_KEY,
+   (msg_hash_id_t)MSG_CORE_WARNING_UNSIGNED,
    (msg_hash_id_t)MSG_COULD_NOT_FIND_ANY_NEXT_DRIVER,
    (msg_hash_id_t)MSG_COULD_NOT_FIND_COMPATIBLE_SYSTEM,
    (msg_hash_id_t)MSG_COULD_NOT_FIND_VALID_DATA_TRACK,
@@ -17685,6 +18074,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MSG_INPUT_KIOSK_MODE_PASSWORD_OK,
    (msg_hash_id_t)MSG_INPUT_MACRO_ROW_SUBLABEL,
    (msg_hash_id_t)MSG_INPUT_OVERRIDE_FILENAME,
+   (msg_hash_id_t)MSG_INPUT_PAD_PRESS_TO_FIND,
    (msg_hash_id_t)MSG_INPUT_PLAYS_AS_FULL,
    (msg_hash_id_t)MSG_INPUT_PRESET_FILENAME,
    (msg_hash_id_t)MSG_INPUT_REMAP_FILENAME,
@@ -17867,6 +18257,8 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MSG_PRIVATE_OR_SHARED_ADDRESS,
    (msg_hash_id_t)MSG_PRUNING_CORE_BACKUP_HISTORY,
    (msg_hash_id_t)MSG_PUBLIC_ADDRESS,
+   (msg_hash_id_t)MSG_PYROWAVE_INCOMING,
+   (msg_hash_id_t)MSG_PYROWAVE_SHADERS_MISSING,
    (msg_hash_id_t)MSG_RARE_ACHIEVEMENT_UNLOCKED,
    (msg_hash_id_t)MSG_READING_FIRST_DATA_TRACK,
    (msg_hash_id_t)MSG_READ_ONLY,
@@ -17922,6 +18314,7 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MSG_ROOM_PASSWORDED,
    (msg_hash_id_t)MSG_RUNAHEAD_CORE_DOES_NOT_SUPPORT_RUNAHEAD,
    (msg_hash_id_t)MSG_RUNAHEAD_CORE_DOES_NOT_SUPPORT_SAVESTATES,
+   (msg_hash_id_t)MSG_RUNAHEAD_CORE_RESET,
    (msg_hash_id_t)MSG_RUNAHEAD_DISABLED,
    (msg_hash_id_t)MSG_RUNAHEAD_ENABLED,
    (msg_hash_id_t)MSG_RUNAHEAD_ENABLED_WITH_SECOND_INSTANCE,
@@ -18009,10 +18402,8 @@ static const msg_hash_id_t msg_hash_ga_ids[] =
    (msg_hash_id_t)MSG_VRR_RUNLOOP_ENABLED,
    (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_CRASHED,
    (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_FAILED,
-   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_INVALID,
    (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_RESTART,
    (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_SAFE_MODE,
-   (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_UNSUPPORTED,
    (msg_hash_id_t)MSG_VULKAN_CUSTOM_DRIVER_UNTRUSTED,
    (msg_hash_id_t)MSG_WAITING_FOR_CLIENT,
 #ifdef HAVE_LAKKA

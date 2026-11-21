@@ -506,9 +506,6 @@ enum ozone_handle_flags
    OZONE_FLAG_EMPTY_PLAYLIST                  = (1 << 17),
    /* true = display it, false = don't */
    OZONE_FLAG_OSK_CURSOR                      = (1 << 18),
-   OZONE_FLAG_MSGBOX_STATE                    = (1 << 19),
-   OZONE_FLAG_MSGBOX_STATE_OLD                = (1 << 20),
-   OZONE_FLAG_SHOULD_DRAW_MSGBOX              = (1 << 21),
    OZONE_FLAG_WANT_THUMBNAIL_BAR              = (1 << 22),
    OZONE_FLAG_SKIP_THUMBNAIL_RESET            = (1 << 23),
    OZONE_FLAG_FULLSCREEN_THUMBNAILS_AVAILABLE = (1 << 24),
@@ -552,7 +549,6 @@ struct ozone_handle
 
    ozone_theme_t *theme;
    ozone_theme_t *default_theme;
-   char *pending_message;
    const char *pending_color_theme;
    ozone_old_entry_t *entries_old;                 /* ptr alignment */
    size_t entries_old_size;
@@ -590,6 +586,7 @@ struct ozone_handle
       ozone_footer_label_t reset_to_default;
       ozone_footer_label_t combo_left;   /* a combination row: Left chooses what it does */
       ozone_footer_label_t combo_right;  /* ... Right sets its buttons */
+      ozone_footer_label_t pad_find;     /* two controllers of one name: a press finds one */
       ozone_footer_label_t manage;
       ozone_footer_label_t metadata_override;
       ozone_footer_label_t help;
@@ -601,6 +598,7 @@ struct ozone_handle
       gfx_thumbnail_t right;  /* uintptr_t alignment */
       gfx_thumbnail_t left;   /* uintptr_t alignment */
       gfx_thumbnail_t savestate;
+      gfx_thumbnail_t camera;  /* Settings > Camera > Preview */
       float stream_delay;
       enum ozone_pending_thumbnail_type pending;
    } thumbnails;
@@ -746,6 +744,29 @@ struct ozone_handle
    char selection_entry_enumeration[NAME_MAX_LENGTH];
    char fullscreen_thumbnail_label[NAME_MAX_LENGTH];
 
+   /* The box's button labels as last measured */
+   menu_dialog_label_widths_t label_widths;
+
+   /* The message box's text as last wrapped and measured, by the
+    * thread that draws it: a box whose text and font are unchanged
+    * draws from here. len is 0 when it holds nothing. */
+   struct
+   {
+      char *lines[256];
+      size_t line_lengths[256];
+      font_data_t *font;
+      size_t len;
+      uint32_t font_generation;
+      unsigned columns;
+      unsigned wideglyph_width;
+      unsigned line_count;
+      unsigned rule_line; /* where the heading's rule goes; 0 for none */
+      int longest_width;
+      bool heading;
+      char text[MENU_LABEL_MAX_LENGTH];
+      char wrapped[MENU_LABEL_MAX_LENGTH];
+   } box_wrap;
+
    /* The menu font path the fonts are built from. ozone_render()
     * watches it alongside the scale factors and rebuilds them in
     * place when it moves. */
@@ -765,6 +786,9 @@ struct ozone_handle
    bool show_playlist_tabs;
    bool sidebar_collapsed;
    bool font_unicode;
+   /* frame() drew a message box or the keyboard last time: frame()'s
+    * own, so the main thread never writes it */
+   bool msgbox_shown;
    /* Set when a pending NEED_COMPUTE was raised by something that
     * changed entry geometry without touching the list. The compute
     * pass then keeps the view where it is, rather than re-deriving
@@ -2268,7 +2292,9 @@ static uintptr_t ozone_entries_icon_get_texture(
       case MENU_ENUM_LABEL_QUICK_MENU_SHOW_CONTROLS:
       case MENU_ENUM_LABEL_UPDATE_AUTOCONFIG_PROFILES:
       case MENU_ENUM_LABEL_INPUT_RETROPAD_BINDS:
+      case MENU_ENUM_LABEL_INPUT_PORT_CONTROLLERS:
       case MENU_ENUM_LABEL_INPUT_CONTROLLERS:
+      case MENU_ENUM_LABEL_INPUT_PLAYS_AS:
       case MENU_ENUM_LABEL_INPUT_USER_1_BINDS:
       case MENU_ENUM_LABEL_INPUT_USER_2_BINDS:
       case MENU_ENUM_LABEL_INPUT_USER_3_BINDS:
@@ -2329,6 +2355,9 @@ static uintptr_t ozone_entries_icon_get_texture(
       case MENU_ENUM_LABEL_RECORDING_SETTINGS:
       case MENU_ENUM_LABEL_DEFERRED_RECORDING_SETTINGS_LIST:
       case MENU_ENUM_LABEL_SETTINGS_SHOW_RECORDING:
+      case MENU_ENUM_LABEL_CAMERA_SETTINGS:
+      case MENU_ENUM_LABEL_DEFERRED_CAMERA_SETTINGS_LIST:
+      case MENU_ENUM_LABEL_CAMERA_PREVIEW:
             return icons_tex[OZONE_ENTRIES_ICONS_TEXTURE_RECORD];
       case MENU_ENUM_LABEL_QUICK_MENU_START_STREAMING:
       case MENU_ENUM_LABEL_QUICK_MENU_SHOW_START_STREAMING:
@@ -2367,6 +2396,8 @@ static uintptr_t ozone_entries_icon_get_texture(
       case MENU_ENUM_LABEL_REMAP_FILE_FLUSH:
       case MENU_ENUM_LABEL_QUICK_MENU_SHOW_CORE_OPTIONS_FLUSH:
             return icons_tex[OZONE_ENTRIES_ICONS_TEXTURE_FILE];
+      case MENU_ENUM_LABEL_CORE_SIGNATURE_CHECK:
+      case MENU_ENUM_LABEL_CORE_TRUST:
       case MENU_ENUM_LABEL_CORE_LOCK:
       case MENU_ENUM_LABEL_CORE_SET_STANDALONE_EXEMPT:
             return icons_tex[OZONE_ENTRIES_ICONS_TEXTURE_CORE];
@@ -2540,6 +2571,7 @@ static uintptr_t ozone_entries_icon_get_texture(
       case FILE_TYPE_DIRECTORY:
          return icons_tex[OZONE_ENTRIES_ICONS_TEXTURE_FOLDER];
       case FILE_TYPE_USE_DIRECTORY:
+      case FILE_TYPE_VULKAN_DRIVER_SYSTEM:
          return icons_tex[OZONE_ENTRIES_ICONS_TEXTURE_CHECKMARK];
       case FILE_TYPE_PLAIN:
       case FILE_TYPE_IN_CARCHIVE:
@@ -3304,6 +3336,7 @@ static void ozone_draw_icon(
    draw.matrix_data     = mymat;
    draw.texture         = texture;
    draw.pipeline_id     = 0;
+   draw.effect          = NULL;
 
    if (VIDEO_SCALE_H(draw.dims) > 0 && VIDEO_SCALE_W(draw.dims) > 0)
    {
@@ -6979,7 +7012,7 @@ static void ozone_draw_thumbnail_bar(
    {
       gfx_thumbnail_t *preview = ozone->thumbnails.right.status == GFX_THUMBNAIL_STATUS_AVAILABLE
          ? &ozone->thumbnails.right : &ozone->thumbnails.left;
-      gfx_thumbnail_draw(userdata, video_dims, preview,
+      gfx_thumbnail_draw_shader(userdata, video_dims, preview,
             (float)thumbnail_x_position,
             (float)(ozone->dimensions.header_height + ozone->dimensions.sidebar_gradient_height),
             VIDEO_SCALE_PACK(thumbnail_width, sidebar_height),
@@ -7532,7 +7565,8 @@ OZONE_NOINLINE static void ozone_draw_backdrop(
       void *userdata,
       void *disp_data,
       unsigned video_dims,
-      float alpha)
+      float alpha,
+      bool blur)
 {
    /* Stack-local scratch — avoids data race with threaded
     * video backends reading a previous frame's color data */
@@ -7542,6 +7576,14 @@ OZONE_NOINLINE static void ozone_draw_backdrop(
       0.00, 0.00, 0.00, 0.75,
       0.00, 0.00, 0.00, 0.75,
    };
+
+   /* Blurred, the dim is lighter and the driver lays it on with the
+    * blur, so the screen is not drawn over twice. The blur is whole by
+    * the time the dim reaches its usual 0.75. */
+   if (blur && gfx_display_draw_blur((gfx_display_t*)disp_data,
+            userdata, video_dims, 0, 0, video_dims,
+            alpha / 0.75f, alpha * 0.6f))
+      return;
 
    gfx_display_set_alpha(ozone_backdrop, alpha);
 
@@ -7588,9 +7630,11 @@ OZONE_NOINLINE static void ozone_draw_osk(
    unsigned bottom_end            = video_height / 2;
    unsigned y_offset              = 0;
    bool draw_placeholder          = !str || !*str;
-   bool text_selected             = input_driver_keyboard_line_selected();
+   unsigned kb_state              = input_driver_keyboard_line_state();
+   bool text_selected             = (kb_state & INPUT_KEYBOARD_LINE_SELECTED) != 0;
    float selection_color[16];
    unsigned cursor_line           = 0;
+   size_t cursor_col              = 0;
    int cursor_x                   = -2;
    retro_time_t current_time      = menu_driver_get_current_time();
    const char *line               = NULL;
@@ -7658,8 +7702,7 @@ OZONE_NOINLINE static void ozone_draw_osk(
          ozone->theme->entries_border,
          NULL);
 
-   /* Backdrop */
-   /* TODO: Remove the backdrop if blur shader is available */
+   /* Backdrop, over what ozone_draw_backdrop blurred where it could */
    gfx_display_draw_quad(
          p_disp,
          userdata,
@@ -7717,7 +7760,9 @@ OZONE_NOINLINE static void ozone_draw_osk(
    {
       char cursor_src[2048];
       char cursor_message[2048];
+      const char *nl;
       size_t ptr = line_cursor;
+      size_t wrapped_len;
 
       if (ptr >= sizeof(cursor_src))
          ptr = sizeof(cursor_src) - 1;
@@ -7729,7 +7774,7 @@ OZONE_NOINLINE static void ozone_draw_osk(
        * variant), so stage the source separately */
       memcpy(cursor_src, line_text, ptr);
       cursor_src[ptr] = '\0';
-      (ozone->word_wrap)(cursor_message,
+      wrapped_len = (ozone->word_wrap)(cursor_message,
             sizeof(cursor_message),
             cursor_src,
             ptr,
@@ -7737,10 +7782,16 @@ OZONE_NOINLINE static void ozone_draw_osk(
             ozone->fonts.entries_label.wideglyph_width,
             0);
 
-      cursor_line = string_count_occurrences_single_character(cursor_message, '\n');
-      line        = strrchr(cursor_message, '\n');
-      line        = line ? line + 1 : cursor_message;
-      cursor_x    = font_driver_get_message_width(ozone->fonts.entries_label.font, line, strlen(line), 1.0f);
+      /* The caret's line and column in one walk of the wrap */
+      line = cursor_message;
+      while ((nl = (const char*)memchr(line, '\n',
+                  wrapped_len - (size_t)(line - cursor_message))))
+      {
+         cursor_line++;
+         line = nl + 1;
+      }
+      cursor_col  = wrapped_len - (size_t)(line - cursor_message);
+      cursor_x    = font_driver_get_message_width(ozone->fonts.entries_label.font, line, cursor_col, 1.0f);
    }
 
    (ozone->word_wrap)(message,
@@ -7804,9 +7855,14 @@ OZONE_NOINLINE static void ozone_draw_osk(
             1.0f,
             false);
 
-      /* Cursor/caret */
+      /* Cursor/caret: among Hebrew or Arabic, where it lands as drawn */
       if (!text_selected && (i == cursor_line)
             && (ozone->flags & OZONE_FLAG_OSK_CURSOR))
+      {
+         if (kb_state & INPUT_KEYBOARD_LINE_RTL)
+            cursor_x = font_driver_get_caret_x(
+                  ozone->fonts.entries_label.font, line_buf, _len,
+                  cursor_col, 1.0f);
          gfx_display_draw_quad(
                p_disp,
                userdata,
@@ -7825,6 +7881,7 @@ OZONE_NOINLINE static void ozone_draw_osk(
                video_dims,
                ozone->pure_white,
                NULL);
+      }
 
       if (i != list_size - 1)
          y_offset += (ozone->fonts.entries_label.line_height * 2) * scale_factor;
@@ -7876,6 +7933,62 @@ static bool ozone_osk_pointer_over_textbox(
    return false;
 }
 
+/* A confirm box's height with n lines of text and stack_h of stacked
+ * buttons; *text_h gets its height without the buttons */
+static unsigned ozone_confirm_box_h(float line_height, float scale_factor,
+      int ascender, unsigned n, int stack_h, unsigned *text_h)
+{
+   unsigned slice_margin = 50 * scale_factor;
+   unsigned h            = line_height * (n + 2) + (slice_margin / 2);
+   if (text_h)
+      *text_h            = h;
+   h                    += (line_height + ascender) * 2;
+   h                    += stack_h;
+   return h;
+}
+
+/* The heading's rule and the firmware box's path underlines, gathered
+ * into one strip ahead of the text; left is the text's left edge */
+static void ozone_draw_messagebox_rules(ozone_handle_t *ozone,
+      struct menu_state *menu_st, gfx_display_t *p_disp, void *userdata,
+      unsigned video_dims, const font_data_impl_t *font_data,
+      char **lines, unsigned line_count, unsigned rule_line, bool add_row,
+      int left, int y, int longest_width, float line_height)
+{
+   unsigned i;
+   unsigned firmware_line_state = 0;
+   uint32_t text_rgba           = COLOR_TEXT_ALPHA(ozone->theme->text_rgba,
+         (uint32_t)(ozone->animations.messagebox_alpha * 255.0f));
+
+   for (i = 0; i < line_count; i++)
+   {
+      unsigned row = (add_row && i >= rule_line) ? i + 1 : i;
+      menu_dialog_draw_path_underline(menu_st, &firmware_line_state,
+            lines[i], font_data->font, p_disp, userdata, video_dims,
+            left, y + (row * line_height) + font_data->line_ascender,
+            text_rgba);
+   }
+
+   if (rule_line)
+   {
+      float rule[16];
+      memcpy(rule, ozone->theme->header_footer_separator, sizeof(rule));
+      gfx_display_set_alpha(rule, ozone->animations.messagebox_alpha);
+      gfx_display_draw_quad(
+            p_disp,
+            userdata,
+            video_dims,
+            left,
+            y + (int)((rule_line + 0.5f) * line_height)
+               - ozone->dimensions.spacer_1px / 2,
+            VIDEO_SCALE_PACK((unsigned)longest_width,
+               ozone->dimensions.spacer_1px),
+            video_dims,
+            rule,
+            NULL);
+   }
+}
+
 OZONE_NOINLINE static void ozone_draw_messagebox(
       ozone_handle_t *ozone,
       const video_frame_info_t *video_info,
@@ -7887,9 +8000,12 @@ OZONE_NOINLINE static void ozone_draw_messagebox(
 {
    unsigned video_width  = VIDEO_SCALE_W(video_dims);
    unsigned video_height = VIDEO_SCALE_H(video_dims);
-   size_t x, y;
-   char wrapped_message[MENU_LABEL_MAX_LENGTH];
+   int x, y;
+   char wrapped_buf[MENU_LABEL_MAX_LENGTH];
+   char *wrapped_message      = wrapped_buf;
    size_t msg_len;
+   unsigned columns;
+   bool keep_wrap             = false;
    int longest_width          = 0;
    int usable_width           = 0;
    float scale_factor         = 0.0f;
@@ -7897,85 +8013,217 @@ OZONE_NOINLINE static void ozone_draw_messagebox(
    unsigned i                 = 0;
    unsigned line_count        = 0;
    unsigned y_position        = 0;
-   unsigned margin            = 0;
    unsigned width             = video_width;
    unsigned height            = video_height;
-   font_data_impl_t font_data = ozone->fonts.entries_label;
+   const font_data_impl_t *font_data = &ozone->fonts.entries_label;
    struct menu_state *menu_st = menu_state_get_ptr();
-   bool confirm_dialog        = (menu_st->dialog_st.confirm_cmd) ? true : false;
    bool landscape             = video_width >= video_height;
+   menu_dialog_buttons_t buttons;
+   int button_w[MENU_DIALOG_BUTTONS_MAX];
+   int button_x[MENU_DIALOG_BUTTONS_MAX];
+   const int *label_w          = NULL;
+   int row_y                  = 0;
+   int stack_h                = 0;
+   bool text_only             = false;
+   bool stacked               = false;
+   unsigned rule_line         = 0;
+   uint32_t text_rgba;
+   size_t wrapped_len         = 0;
+   bool add_row               = false;
+   bool heading;
    gfx_display_ctx_driver_t
          *dispctx             = p_disp->dispctx;
-   char *lines[256];
-   size_t line_lengths[256];
+   char *lines_buf[256];
+   size_t line_lengths_buf[256];
+   char **lines               = lines_buf;
+   size_t *line_lengths       = line_lengths_buf;
    char *line;
    size_t remaining;
 
-   wrapped_message[0]         = '\0';
+   wrapped_buf[0]             = '\0';
+   menu_dialog_get_buttons(menu_st, &buttons);
 
    /* Sanity check */
-   if ((!message || !*message) || !font_data.font)
+   if ((!message || !*message) || !font_data->font)
       return;
 
    msg_len                  = strlen(message);
+   heading                  = menu_st->dialog_st.heading;
    scale_factor             = ozone->last_scale_factor;
-   line_height              = font_data.line_height * 1.20f;
+   line_height              = font_data->line_height * 1.20f;
    usable_width             = (int)width - ((landscape ? 200 : 100) * scale_factor);
    if (usable_width < 1)
       usable_width = width;
 
-   /* Split message into lines */
-   remaining = (ozone->word_wrap)(
-         wrapped_message,
-         sizeof(wrapped_message),
-         message,
-         msg_len,
-         usable_width / (int)font_data.glyph_width,
-         font_data.wideglyph_width,
-         0);
+   columns                  = (unsigned)(usable_width
+         / (int)font_data->glyph_width);
 
-   line = wrapped_message;
-   while (line && *line && line_count < 256)
+   /* The box's text is wrapped and measured again only when it or the
+    * font changes */
+   if (msg_len < sizeof(ozone->box_wrap.text))
    {
-      char *next = (char*)memchr(line, '\n', remaining);
-      if (next)
+      wrapped_message = ozone->box_wrap.wrapped;
+      lines           = ozone->box_wrap.lines;
+      line_lengths    = ozone->box_wrap.line_lengths;
+      keep_wrap       = true;
+      if (     ozone->box_wrap.len             == msg_len
+            && ozone->box_wrap.font            == font_data->font
+            && ozone->box_wrap.font_generation
+               == font_data->metrics_generation
+            && ozone->box_wrap.columns         == columns
+            && ozone->box_wrap.wideglyph_width == font_data->wideglyph_width
+            && ozone->box_wrap.heading         == heading
+            && !memcmp(ozone->box_wrap.text, message, msg_len))
       {
-         *next                    = '\0';
-         line_lengths[line_count] = (size_t)(next - line);
-         remaining               -= (size_t)(next - line + 1);
-         next++;
+         line_count    = ozone->box_wrap.line_count;
+         rule_line     = ozone->box_wrap.rule_line;
+         longest_width = ozone->box_wrap.longest_width;
       }
-      else
-         line_lengths[line_count] = remaining;
-      lines[line_count++] = line;
-      line = next;
    }
 
-   if (line_count == 0)
-      return;
+   if (!line_count)
+   {
+      if (keep_wrap)
+         ozone->box_wrap.len = 0;
+      /* Split message into lines */
+      remaining = (ozone->word_wrap)(
+            wrapped_message,
+            MENU_LABEL_MAX_LENGTH,
+            message,
+            msg_len,
+            columns,
+            font_data->wideglyph_width,
+            0);
+      wrapped_len = remaining;
+
+      line = wrapped_message;
+      while (line && *line && line_count < 256)
+      {
+         char *next = (char*)memchr(line, '\n', remaining);
+         if (next)
+         {
+            *next                    = '\0';
+            line_lengths[line_count] = (size_t)(next - line);
+            remaining               -= (size_t)(next - line + 1);
+            next++;
+         }
+         else
+            line_lengths[line_count] = remaining;
+         lines[line_count++] = line;
+         line = next;
+      }
+
+      if (line_count == 0)
+         return;
+
+      if (heading)
+         rule_line = menu_dialog_rule_line(message, wrapped_message,
+               wrapped_len, line_count);
+
+      /* Find the longest line width */
+      for (i = 0; i < line_count; i++)
+      {
+         const char *msg = lines[i];
+         if (msg && *msg)
+         {
+            int msg_width = font_driver_get_message_width(font_data->font, msg, line_lengths[i], 1.0f);
+            if (msg_width > longest_width)
+               longest_width = msg_width;
+         }
+      }
+
+      if (keep_wrap)
+      {
+         memcpy(ozone->box_wrap.text, message, msg_len);
+         ozone->box_wrap.font            = font_data->font;
+         ozone->box_wrap.font_generation = font_data->metrics_generation;
+         ozone->box_wrap.columns         = columns;
+         ozone->box_wrap.wideglyph_width = font_data->wideglyph_width;
+         ozone->box_wrap.heading         = heading;
+         ozone->box_wrap.line_count      = line_count;
+         ozone->box_wrap.rule_line       = rule_line;
+         ozone->box_wrap.longest_width   = longest_width;
+         ozone->box_wrap.len             = msg_len;
+      }
+   }
 
    y_position       = height / 2;
    if (menu_input_dialog_get_display_kb())
       y_position    = height / 4;
 
    x                = width  / 2;
-   y                = y_position - (line_count * line_height) / 2;
 
-   /* Find the longest line width */
-   for (i = 0; i < line_count; i++)
+   if (buttons.count)
    {
-      const char *msg = lines[i];
-      if (msg && *msg)
+      float icon_size    = 50 * scale_factor;
+      float icon_padding = 10 * scale_factor;
+      int row_max        = (int)video_width - (int)(100 * scale_factor);
+      int row_need;
+      unsigned b;
+      label_w            = menu_dialog_label_widths(&ozone->label_widths,
+            &buttons, ozone->fonts.footer.font,
+            (float)ozone->fonts.footer.line_height);
+      for (b = 0; b < buttons.count; b++)
       {
-         int msg_width = font_driver_get_message_width(font_data.font, msg, line_lengths[i], 1.0f);
-         if (msg_width > longest_width)
-            longest_width = msg_width;
+         /* Every button keeps room for an icon */
+         button_w[b]     = label_w[b] + (int)(icon_padding * 4)
+            + (int)icon_size;
       }
+      row_need = menu_dialog_buttons_layout(button_w, buttons.count,
+            (int)(icon_padding * 4), 0, 0, NULL);
+      /* Named buttons too wide with their icons go without */
+      if (row_need > row_max && !buttons.classic)
+      {
+         text_only       = true;
+         for (b = 0; b < buttons.count; b++)
+            button_w[b]  = label_w[b] + (int)(icon_padding * 4);
+         row_need = menu_dialog_buttons_layout(button_w, buttons.count,
+               (int)(icon_padding * 4), 0, 0, NULL);
+         /* Too wide even so: one under another, with their icons */
+         if (row_need > row_max)
+         {
+            text_only    = false;
+            stacked      = true;
+            row_need     = 0;
+            for (b = 0; b < buttons.count; b++)
+            {
+               button_w[b] = label_w[b] + (int)(icon_padding * 4)
+                  + (int)icon_size;
+               if (row_need < button_w[b])
+                  row_need = button_w[b];
+            }
+            stack_h      = (int)(icon_size + icon_padding * 2)
+                  * (int)(buttons.count - 1);
+         }
+      }
+      /* Narrow font can make the box too narrow for Back & OK */
+      if (longest_width < (int)video_width / 4)
+         longest_width = video_width / 4;
+      if (longest_width < row_need)
+         longest_width = row_need;
+      /* A row wider than the screen packs from the left instead of
+       * pushing the text off it */
+      if (longest_width > row_max)
+         longest_width = row_max;
    }
 
-   /* Narrow font can make the box too narrow for Back & OK */
-   if (confirm_dialog && longest_width < (int)video_width / 4)
-      longest_width = video_width / 4;
+   /* The heading's rule, in the blank line under it or in a row added
+    * there, only while the box fits the screen with it */
+   if (rule_line)
+   {
+      bool blank = rule_line < line_count && !line_lengths[rule_line];
+      if (     buttons.count
+            && (     ozone->flags  & OZONE_FLAG_HAS_ALL_ASSETS
+                  || ozone->flags2 & OZONE_FLAG2_IGNORE_MISSING_ASSETS)
+            && ozone_confirm_box_h(line_height, scale_factor,
+                  font_data->line_ascender, line_count + !blank, stack_h,
+                  NULL) > height)
+         rule_line = 0;
+      add_row = rule_line && !blank;
+   }
+
+   y                = (int)(y_position
+         - ((line_count + add_row) * line_height) / 2);
 
    gfx_display_set_alpha(ozone->theme_dynamic.message_background, ozone->animations.messagebox_alpha);
 
@@ -7989,22 +8237,81 @@ OZONE_NOINLINE static void ozone_draw_messagebox(
        *   size, draw size and scale factor... */
       unsigned slice_margin = 50 * scale_factor;
       unsigned slice_new_w  = longest_width + (slice_margin * 2);
-      unsigned slice_new_h  = line_height * (line_count + 2) + (slice_margin / 2);
+      unsigned slice_new_h;
+      unsigned box_h        = ozone_confirm_box_h(line_height, scale_factor,
+            font_data->line_ascender, line_count + add_row, stack_h,
+            &slice_new_h);
       /* The edge of dialog-slice.png, which is square */
       unsigned slice_size   = 256;
-      int slice_x           = (int)(x - (longest_width / 2) - slice_margin);
+      int slice_x           = x - longest_width / 2 - (int)slice_margin;
       int slice_y           = y - line_height - (slice_margin / 4)
             + ((slice_new_h >= slice_size)
                   ? (16.0f * scale_factor)
                   : (16.0f * ((float)slice_new_h / (float)slice_size)));
 
-      /* Extra room for confirm buttons */
-      if (confirm_dialog)
-         slice_new_h       += (line_height + font_data.line_ascender) * 2;
-
-      width                 = slice_new_w;
-      height                = slice_new_h;
-      margin                = slice_margin;
+      /* The 70 high row sits half a margin above the box's bottom
+       * edge, which the slice draws 16 above slice_y + slice_new_h */
+      if (buttons.count)
+      {
+         int box_top;
+         int lift;
+         slice_new_h        = box_h;
+         box_top            = slice_y - (int)(16 * scale_factor);
+         /* Centred with its buttons, but not above the top */
+         lift               = box_top + (int)slice_new_h / 2
+               - (int)y_position;
+         if (lift > box_top)
+            lift            = box_top;
+         slice_y           -= lift;
+         y                 -= lift;
+         row_y              = slice_y + (int)slice_new_h - stack_h
+               - (int)((70 + 16) * scale_factor) - (int)(slice_margin / 2);
+         /* Still taller than the screen: as tall as the screen, the
+          * row at its bottom and the text stopped above the row */
+         if (slice_new_h > height)
+         {
+            unsigned all    = line_count;
+            row_y          -= (int)(slice_new_h - height);
+            slice_new_h     = height;
+            while (line_count && y + line_count * line_height > row_y)
+               line_count--;
+            /* Only whole paragraphs: back to the blank line above the
+             * cut, or the first paragraph cut short with "..." */
+            if (line_count < all && line_lengths[line_count])
+            {
+               unsigned keep = line_count;
+               while (keep && line_lengths[keep - 1])
+                  keep--;
+               if (keep > 1)
+                  line_count = keep - 1;
+               else if (line_count)
+               {
+                  char *s    = lines[line_count - 1];
+                  size_t len = line_lengths[line_count - 1];
+                  int dots_w = font_driver_get_message_width(
+                        font_data->font, "...", 3, 1.0f);
+                  /* The kept lines are cut: wrap again next frame */
+                  ozone->box_wrap.len = 0;
+                  while (len && font_driver_get_message_width(
+                        font_data->font, s, len, 1.0f) + dots_w
+                        > longest_width)
+                  {
+                     len--;
+                     while (len && (s[len] & 0xC0) == 0x80)
+                        len--;
+                  }
+                  while (len && s[len - 1] == ' ')
+                     len--;
+                  if ((size_t)(s - wrapped_message) + len + 4
+                        <= MENU_LABEL_MAX_LENGTH)
+                  {
+                     memcpy(s + len, "...", 4);
+                     line_lengths[line_count - 1] = len + 3;
+                  }
+               }
+            }
+         }
+      }
 
       gfx_display_blend_begin(dispctx, userdata);
 
@@ -8028,18 +8335,31 @@ OZONE_NOINLINE static void ozone_draw_messagebox(
       gfx_display_blend_end(dispctx, userdata);
    }
 
+   if (heading)
+      ozone_draw_messagebox_rules(ozone, menu_st, p_disp, userdata,
+            video_dims, font_data, lines, line_count, rule_line,
+            add_row, x - (longest_width / 2), y, longest_width,
+            line_height);
+
+   if (buttons.count && !row_y)
+      row_y = (int)(y + (line_count + add_row + 1) * line_height);
+
+   text_rgba = COLOR_TEXT_ALPHA(ozone->theme->text_rgba,
+         (uint32_t)(ozone->animations.messagebox_alpha * 255.0f));
+
    for (i = 0; i < line_count; i++)
    {
       const char *msg = lines[i];
+      unsigned row    = (add_row && i >= rule_line) ? i + 1 : i;
 
       if (msg)
          gfx_display_draw_text(
-               font_data.font,
+               font_data->font,
                msg,
                x - (longest_width / 2.0f),
-               y + (i * line_height) + font_data.line_ascender,
+               y + (row * line_height) + font_data->line_ascender,
                video_dims,
-               COLOR_TEXT_ALPHA(ozone->theme->text_rgba, (uint32_t)(ozone->animations.messagebox_alpha*255.0f)),
+               text_rgba,
                TEXT_ALIGN_LEFT,
                1.0f,
                false,
@@ -8047,139 +8367,119 @@ OZONE_NOINLINE static void ozone_draw_messagebox(
                false);
    }
 
-   if (confirm_dialog)
+   if (buttons.count)
    {
-      bool input_menu_swap_ok_cancel_buttons = video_info->input_menu_swap_ok_cancel_buttons;
-      float *col                             = ozone->theme_dynamic.entries_icon;
-      float scale_factor                     = ozone->last_scale_factor;
-      float icon_size                        = 50 * scale_factor;
-      float icon_padding                     = 10 * scale_factor;
-      float icon_x                           = x - (width / 2) + icon_size + (icon_padding * 3);
-      float icon_y                           = video_height - y + (height / 2) - icon_size - (icon_padding * 2);
-      float label_y                          = icon_y + (icon_size / 2.0f) + ozone->fonts.footer.line_centre_offset;
-      int cursor_x                           = icon_x - icon_padding;
-      int cursor_y                           = icon_y - icon_padding;
-      int cursor_w                           = icon_size + (icon_padding * 4) + ozone->footer_labels.cancel.width;
-      int cursor_h                           = icon_size + (icon_padding * 2);
+      bool swap          = video_info->input_menu_swap_ok_cancel_buttons;
+      float *col         = ozone->theme_dynamic.entries_icon;
+      float scale_factor = ozone->last_scale_factor;
+      float icon_size    = 50 * scale_factor;
+      float icon_padding = 10 * scale_factor;
+      int cursor_h       = (int)(icon_size + icon_padding * 2);
+      float label_y      = row_y + icon_padding + (icon_size / 2.0f)
+            + ozone->fonts.footer.line_centre_offset;
+      int hover          = -1;
+      unsigned b;
+
+      if (stacked)
+         for (b = 0; b < buttons.count; b++)
+         {
+            button_x[b] = (int)x - longest_width / 2;
+            button_w[b] = longest_width;
+         }
+      else
+         menu_dialog_buttons_layout(button_w, buttons.count,
+               (int)(icon_padding * 4), (int)x - longest_width / 2,
+               longest_width, button_x);
 
       gfx_display_set_alpha(col, 0.25f);
 
-      /* Back */
-      if (     VIDEO_POS_X(ozone->pointer.pos) >= cursor_x
-            && VIDEO_POS_X(ozone->pointer.pos) <= cursor_x + cursor_w
-            && VIDEO_POS_Y(ozone->pointer.pos) >= cursor_y
-            && VIDEO_POS_Y(ozone->pointer.pos) <= cursor_y + cursor_h)
+      for (b = 0; b < buttons.count; b++)
       {
-         menu_st->dialog_st.confirm_hover_back = true;
+         const char *str = msg_hash_to_str(
+               (enum msg_hash_enums)buttons.label[b]);
+         float label_x   = button_x[b] + icon_padding * 2;
+         float icon_x    = button_x[b] + icon_padding;
+         int dy          = stacked ? cursor_h * (int)b : 0;
 
-         ozone_draw_cursor(
-               ozone,
-               p_disp,
-               userdata,
+         /* Icon and label centred on what shows: the icon's ink is
+          * 7/46 of its width in from each edge, and the cursor reaches
+          * one scaled pixel further out on the left than the right.
+          * Stacked, the labels line up */
+         if (!buttons.classic && !text_only && !stacked)
+         {
+            float inset  = icon_size * 7.0f / 46.0f;
+            icon_x       = button_x[b] + (button_w[b] - label_w[b]
+                  - icon_size - icon_padding - inset - scale_factor) / 2.0f;
+            label_x      = icon_x + icon_padding;
+         }
+
+         if (     VIDEO_POS_X(ozone->pointer.pos) >= button_x[b]
+               && VIDEO_POS_X(ozone->pointer.pos) <= button_x[b] + button_w[b]
+               && VIDEO_POS_Y(ozone->pointer.pos) >= row_y + dy
+               && VIDEO_POS_Y(ozone->pointer.pos) <= row_y + dy + cursor_h)
+            hover = (int)b;
+
+         /* The highlighted button, and the one under the pointer */
+         if ((int)b == buttons.highlight || (int)b == hover)
+            ozone_draw_cursor(
+                  ozone,
+                  p_disp,
+                  userdata,
+                  video_dims,
+                  button_x[b],
+                  button_w[b],
+                  cursor_h,
+                  row_y + dy,
+                  ((int)b == buttons.highlight || buttons.highlight < 0)
+                        ? ozone->animations.cursor_alpha
+                        : ozone->animations.cursor_alpha * 0.5f,
+                  mymat);
+
+         gfx_display_blend_begin(dispctx, userdata);
+
+         if (buttons.icon[b] && !text_only)
+         {
+            bool ok = (buttons.icon[b] != MENU_DIALOG_ICON_CANCEL);
+            /* Dimmed as the cursor of a button not highlighted */
+            if (buttons.icon[b] == MENU_DIALOG_ICON_OK_DIM)
+               gfx_display_set_alpha(col, 0.125f);
+            ozone_draw_icon(
+                  p_disp,
+                  userdata,
+                  video_dims,
+                  icon_size,
+                  icon_size,
+                  (ok != swap)
+                        ? GFX_SURFACE_HANDLE(ozone->icons_textures[OZONE_ENTRIES_ICONS_TEXTURE_INPUT_BTN_R])
+                        : GFX_SURFACE_HANDLE(ozone->icons_textures[OZONE_ENTRIES_ICONS_TEXTURE_INPUT_BTN_D]),
+                  icon_x,
+                  row_y + dy + icon_padding,
+                  0.0f,
+                  1.0f,
+                  col,
+                  mymat);
+            gfx_display_set_alpha(col, 0.25f);
+         }
+         if (!text_only)
+            label_x += icon_size;
+
+         gfx_display_draw_text(
+               ozone->fonts.footer.font,
+               str,
+               label_x,
+               label_y + dy,
                video_dims,
-               cursor_x,
-               cursor_w,
-               cursor_h,
-               cursor_y,
-               ozone->animations.cursor_alpha,
-               mymat);
+               ozone->theme->text_rgba,
+               TEXT_ALIGN_LEFT,
+               1.0f,
+               false,
+               1.0f,
+               false);
+
+         gfx_display_blend_end(dispctx, userdata);
       }
-      else
-         menu_st->dialog_st.confirm_hover_back = false;
 
-      gfx_display_blend_begin(dispctx, userdata);
-
-      ozone_draw_icon(
-            p_disp,
-            userdata,
-            video_dims,
-            icon_size,
-            icon_size,
-            input_menu_swap_ok_cancel_buttons
-                  ? GFX_SURFACE_HANDLE(ozone->icons_textures[OZONE_ENTRIES_ICONS_TEXTURE_INPUT_BTN_R])
-                  : GFX_SURFACE_HANDLE(ozone->icons_textures[OZONE_ENTRIES_ICONS_TEXTURE_INPUT_BTN_D]),
-            icon_x,
-            icon_y,
-            0.0f,
-            1.0f,
-            col,
-            mymat);
-
-      gfx_display_draw_text(
-            ozone->fonts.footer.font,
-            ozone->footer_labels.cancel.str,
-            icon_x + icon_size + icon_padding,
-            label_y,
-            video_dims,
-            ozone->theme->text_rgba,
-            TEXT_ALIGN_LEFT,
-            1.0f,
-            false,
-            1.0f,
-            false);
-
-      gfx_display_blend_end(dispctx, userdata);
-
-      /* OK */
-      icon_x  += width - (icon_size * 2) - (icon_padding * 8) - margin - ozone->footer_labels.ok.width;
-
-      cursor_x = icon_x - icon_padding;
-      cursor_w = icon_size + (icon_padding * 4) + ozone->footer_labels.ok.width;
-
-      if (     VIDEO_POS_X(ozone->pointer.pos) >= cursor_x
-            && VIDEO_POS_X(ozone->pointer.pos) <= cursor_x + cursor_w
-            && VIDEO_POS_Y(ozone->pointer.pos) >= cursor_y
-            && VIDEO_POS_Y(ozone->pointer.pos) <= cursor_y + cursor_h)
-      {
-         menu_st->dialog_st.confirm_hover_ok = true;
-
-         ozone_draw_cursor(
-               ozone,
-               p_disp,
-               userdata,
-               video_dims,
-               cursor_x,
-               cursor_w,
-               cursor_h,
-               cursor_y,
-               ozone->animations.cursor_alpha,
-               mymat);
-      }
-      else
-         menu_st->dialog_st.confirm_hover_ok = false;
-
-      gfx_display_blend_begin(dispctx, userdata);
-
-      ozone_draw_icon(
-            p_disp,
-            userdata,
-            video_dims,
-            icon_size,
-            icon_size,
-            input_menu_swap_ok_cancel_buttons
-                  ? GFX_SURFACE_HANDLE(ozone->icons_textures[OZONE_ENTRIES_ICONS_TEXTURE_INPUT_BTN_D])
-                  : GFX_SURFACE_HANDLE(ozone->icons_textures[OZONE_ENTRIES_ICONS_TEXTURE_INPUT_BTN_R]),
-            icon_x,
-            icon_y,
-            0.0f,
-            1.0f,
-            col,
-            mymat);
-
-      gfx_display_draw_text(
-            ozone->fonts.footer.font,
-            ozone->footer_labels.ok.str,
-            icon_x + icon_size + icon_padding,
-            label_y,
-            video_dims,
-            ozone->theme->text_rgba,
-            TEXT_ALIGN_LEFT,
-            1.0f,
-            false,
-            1.0f,
-            false);
-
-      gfx_display_blend_end(dispctx, userdata);
+      menu_dialog_set_hover(menu_st, hover);
    }
 }
 
@@ -8338,7 +8638,7 @@ OZONE_NOINLINE static void ozone_draw_fullscreen_thumbnails(
       float right_thumbnail_draw_height = 0.0f;
       float left_thumbnail_draw_width   = 0.0f;
       float left_thumbnail_draw_height  = 0.0f;
-      float background_alpha            = 0.95f;
+      float background_alpha            = (ozone->flags & OZONE_FLAG_IS_FILE_LIST) ? 1.0f : 0.95f;
       float background_color[16] = {
          0.0f, 0.0f, 0.0f, 1.0f,
          0.0f, 0.0f, 0.0f, 1.0f,
@@ -8567,7 +8867,7 @@ OZONE_NOINLINE static void ozone_draw_fullscreen_thumbnails(
                NULL);
 
          /* Thumbnail */
-         gfx_thumbnail_draw(
+         gfx_thumbnail_draw_shader(
                userdata,
                video_dims,
                right_thumbnail,
@@ -8603,7 +8903,7 @@ OZONE_NOINLINE static void ozone_draw_fullscreen_thumbnails(
                NULL);
 
          /* Thumbnail */
-         gfx_thumbnail_draw(
+         gfx_thumbnail_draw_shader(
                userdata,
                video_dims,
                left_thumbnail,
@@ -9224,10 +9524,6 @@ static enum menu_action ozone_parse_menu_entry_action(
          ? (unsigned)ozone->horizontal_list.size
          : 0;
 
-   if (menu_input_dialog_get_display_kb())
-      ozone->flags           |=  OZONE_FLAG_MSGBOX_STATE;
-   else
-      ozone->flags           &= ~OZONE_FLAG_MSGBOX_STATE;
    selection_buf              = MENU_LIST_GET_SELECTION(menu_list, 0);
    tag                        = (uintptr_t)selection_buf;
    selection                  = menu_st->selection_ptr;
@@ -10113,7 +10409,6 @@ static void *ozone_init(void **userdata, bool video_is_threaded)
    ozone->flags                                |= OZONE_FLAG_DRAW_SIDEBAR;
    ozone->sidebar_offset                        = 0;
    ozone->categories_selection_ptr              = 0;
-   ozone->pending_message                       = NULL;
 
    ozone->flags                                |= OZONE_FLAG_FIRST_FRAME;
 
@@ -10285,9 +10580,6 @@ static void ozone_free(void *data)
          free(ozone->entries_old);
       ozone->entries_old      = NULL;
       ozone->entries_old_size = 0;
-
-      if (ozone->pending_message && *ozone->pending_message)
-         free(ozone->pending_message);
 
       menu_screensaver_free(ozone->screensaver);
    }
@@ -10549,6 +10841,10 @@ static void ozone_cache_footer_labels(ozone_handle_t *ozone)
    ozone_cache_footer_label(ozone,
          &ozone->footer_labels.combo_right,
          MSG_INPUT_COMBO_SET_BUTTONS);
+
+   ozone_cache_footer_label(ozone,
+         &ozone->footer_labels.pad_find,
+         MSG_INPUT_PAD_PRESS_TO_FIND);
 
    /* Record current language setting */
    ozone->footer_labels_language = *msg_hash_get_uint(MSG_HASH_USER_LANGUAGE);
@@ -10824,10 +11120,8 @@ static void ozone_context_reset(void *data, bool is_threaded)
                                             | OZONE_FLAG_FADE_DIRECTION
                                             | OZONE_FLAG_CURSOR_IN_SIDEBAR
                                             | OZONE_FLAG_CURSOR_IN_SIDEBAR_OLD
-                                            | OZONE_FLAG_MSGBOX_STATE
-                                            | OZONE_FLAG_MSGBOX_STATE_OLD
-                                            | OZONE_FLAG_SHOULD_DRAW_MSGBOX
                                              );
+      ozone->msgbox_shown                 = false;
 
       ozone->flags2                      &= ~OZONE_FLAG2_CURSOR_WIGGLING;
 
@@ -10840,7 +11134,6 @@ static void ozone_context_reset(void *data, bool is_threaded)
 
       /* Messagebox */
       ozone->animations.messagebox_alpha  = 0.0f;
-      ozone->pending_message              = NULL;
 
       /* Thumbnails */
       if (!runloop_is_content_switching())
@@ -10888,6 +11181,7 @@ static void ozone_unload_thumbnail_textures(void *data)
    gfx_thumbnail_reset(&ozone->thumbnails.right);
    gfx_thumbnail_reset(&ozone->thumbnails.left);
    gfx_thumbnail_reset(&ozone->thumbnails.savestate);
+   gfx_thumbnail_reset(&ozone->thumbnails.camera);
 }
 
 static INLINE void ozone_font_free(font_data_impl_t *font_data)
@@ -11361,7 +11655,10 @@ static void ozone_render(void *data,
               (ozone->flags  & OZONE_FLAG_CURSOR_MODE)
          && (!(ozone->flags2 & OZONE_FLAG2_SHOW_FULLSCREEN_THUMBNAILS))
          && !menu_input_dialog_get_display_kb()
-         && (!(ozone->flags & OZONE_FLAG_SHOULD_DRAW_MSGBOX));
+         && !(     menu_st->driver_data
+               && BIT64_GET(menu_st->driver_data->state,
+                  MENU_STATE_RENDER_MESSAGEBOX)
+               && *MENU_STATE_TEXT(menu_st->driver_data));
 
    /* Process pointer input, if required */
    if (pointer_enabled)
@@ -11993,18 +12290,14 @@ OZONE_NOINLINE static void ozone_draw_header(
    /* Timedate */
    if (timedate_enable)
    {
-      gfx_display_ctx_datetime_t datetime;
-      char timedate[256];
-      float icon_width  = 35 * scale_factor;
-      float text_offset = ozone->dimensions.entry_spacing * 3.0f;
+      float icon_width     = 35 * scale_factor;
+      float text_offset    = ozone->dimensions.entry_spacing * 3.0f;
+      const char *timedate = menu_display_timedate(
+            video_info->menu.timedate_style,
+            video_info->menu.timedate_date_separator, NULL, NULL);
 
       if (!timedate_offset)
          timedate_offset = header_margin;
-
-      datetime.time_mode      = video_info->menu.timedate_style;
-      datetime.date_separator = video_info->menu.timedate_date_separator;
-
-      menu_display_timedate(&datetime, timedate, sizeof(timedate));
 
       gfx_display_draw_text(
             ozone->fonts.time.font,
@@ -12083,6 +12376,50 @@ OZONE_NOINLINE static void ozone_draw_header(
          false,
          1.0f,
          false);
+}
+
+/* "Press to Find" left of Manage, while a list of the controllers is
+ * shown and two connected ones show one name: placed, and drawn, only
+ * then. Left out where it would run off the left edge; never shortened.
+ * Nothing it shares the footer with is shown on those lists, but the
+ * labels to its left still move over for it, and the core title runs
+ * up to it. Its text joins the footer's batch like the others'
+ * wherever it is drawn. */
+static OZONE_NOINLINE void ozone_draw_footer_pad_find(
+      ozone_handle_t *ozone, const uintptr_t *icons_tex,
+      gfx_display_t *p_disp, void *userdata, unsigned video_dims,
+      math_matrix_4x4 *mymat, float *col, float icon_size, float icon_y,
+      float icon_spacer, float icon_padding_small, float footer_text_y,
+      float footer_margin)
+{
+   gfx_display_ctx_driver_t *dispctx = p_disp->dispctx;
+   ozone_footer_label_t *label       = &ozone->footer_labels.pad_find;
+
+   label->x    = ozone->footer_labels.manage.x - label->width - icon_spacer;
+   label->show = label->x >= footer_margin;
+   if (!label->show)
+   {
+      /* the core title then runs where it would without it */
+      label->x = ozone->footer_labels.search.x;
+      return;
+   }
+
+   ozone->footer_labels.metadata_override.x -= label->width + icon_spacer;
+
+   if (dispctx && dispctx->draw)
+   {
+      gfx_display_blend_begin(dispctx, userdata);
+      gfx_display_set_alpha(col, 0.5f);
+      ozone_draw_icon(p_disp, userdata, video_dims, icon_size, icon_size,
+            icons_tex[OZONE_ENTRIES_ICONS_TEXTURE_INPUT_SETTINGS],
+            label->x, icon_y, 0.0f, 1.0f, col, mymat);
+      gfx_display_blend_end(dispctx, userdata);
+   }
+
+   gfx_display_draw_text(ozone->fonts.footer.font, label->str,
+         label->x + icon_size + icon_padding_small, footer_text_y,
+         video_dims, ozone->theme->text_rgba, TEXT_ALIGN_LEFT,
+         1.0f, false, 1.0f, false);
 }
 
 static void ozone_draw_footer(
@@ -12278,6 +12615,12 @@ static void ozone_draw_footer(
 
    ozone->footer_labels.metadata_override.x     = ozone->footer_labels.manage.x
          - ozone->footer_labels.metadata_override.width - icon_spacer;
+
+   /* > Press to find: the one test a frame it costs */
+   if (menu_st->pad_find_hint)
+      ozone_draw_footer_pad_find(ozone, icons_tex, p_disp, userdata,
+            video_dims, mymat, col, icon_size, icon_y, icon_spacer,
+            icon_padding_small, footer_text_y, footer_margin);
 
    /* Separator */
    if (separator)
@@ -12800,6 +13143,8 @@ static void ozone_draw_footer(
             ? ozone->footer_labels.metadata_override.x
             : ozone->footer_labels.fullscreen_thumbnails.show
             ? ozone->footer_labels.fullscreen_thumbnails.x
+            : menu_st->pad_find_hint
+            ? ozone->footer_labels.pad_find.x
             : ozone->footer_labels.search.x;
       usable_width -= footer_margin + (icon_padding * 2);
 
@@ -13027,15 +13372,6 @@ static void ozone_navigation_alphabet(void *data, size_t *unused)
    ozone_selection_changed(ozone, true);
 }
 
-static void ozone_messagebox_fadeout_cb(void *userdata)
-{
-   ozone_handle_t *ozone = (ozone_handle_t*)userdata;
-
-   free(ozone->pending_message);
-   ozone->pending_message        = NULL;
-   ozone->flags                 &= ~OZONE_FLAG_SHOULD_DRAW_MSGBOX;
-}
-
 static void ozone_frame(void *data, video_frame_info_t *video_info)
 {
    math_matrix_4x4 mymat                  = {{ 0.0f }};
@@ -13069,7 +13405,7 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
    if (!ozone)
       return;
 
-   messagebox_tag                         = (uintptr_t)ozone->pending_message;
+   messagebox_tag                         = (uintptr_t)&ozone->animations.messagebox_alpha;
 
    /* Snapshot context generation — if ozone_context_destroy()
     * runs on the main thread while we are mid-render on the
@@ -13129,9 +13465,7 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
       draw_osk_old = draw_osk;
       if (!draw_osk)
       {
-         ozone->flags                       &= ~(OZONE_FLAG_SHOULD_DRAW_MSGBOX
-                                               | OZONE_FLAG_MSGBOX_STATE
-                                               | OZONE_FLAG_MSGBOX_STATE_OLD);
+         ozone->msgbox_shown                 = false;
          ozone->animations.messagebox_alpha  = 0.0f;
       }
    }
@@ -13364,6 +13698,22 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
             menu_framebuffer_opacity,
             &mymat);
 
+   /* The camera preview, at the foot of the entries: the camera page
+    * is a few entries tall. */
+   if (     !(ozone->flags2 & OZONE_FLAG2_SHOW_FULLSCREEN_THUMBNAILS)
+         && menu_camera_preview_update(&ozone->thumbnails.camera))
+   {
+      unsigned w = (unsigned)(video_width * 0.4f);
+      unsigned h = w * 3 / 4;
+      int margin = ozone->dimensions.entry_padding_horizontal_full;
+      menu_camera_preview_draw(&ozone->thumbnails.camera, userdata,
+            VIDEO_SCALE_PACK(video_width, video_height),
+            (float)((int)video_width - (int)w - margin),
+            (float)((int)video_height - ozone->dimensions.footer_height
+               - (int)h - margin),
+            VIDEO_SCALE_PACK(w, h));
+   }
+
    if (dispctx && dispctx->scissor_end)
       dispctx->scissor_end(userdata, VIDEO_SCALE_PACK(video_width,
             video_height));
@@ -13390,17 +13740,12 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
    font_flush(video_info->dims, &ozone->fonts.footer);
 
    /* Message box & OSK - second layer of text */
-   if (    (ozone->flags & OZONE_FLAG_SHOULD_DRAW_MSGBOX)
-         || draw_osk)
+   if (video_info->menu.msgbox || draw_osk)
    {
       /* Fade in animation */
-      if (     (((ozone->flags & OZONE_FLAG_MSGBOX_STATE_OLD) > 0) != ((ozone->flags & OZONE_FLAG_MSGBOX_STATE) > 0))
-            && (((ozone->flags & OZONE_FLAG_MSGBOX_STATE) > 0)))
+      if (!ozone->msgbox_shown)
       {
-         if (ozone->flags & OZONE_FLAG_MSGBOX_STATE)
-            ozone->flags                   |=  OZONE_FLAG_MSGBOX_STATE_OLD;
-         else
-            ozone->flags                   &= ~OZONE_FLAG_MSGBOX_STATE_OLD;
+         ozone->msgbox_shown                = true;
 
          gfx_animation_kill_by_tag(&messagebox_tag);
          ozone->animations.messagebox_alpha = 0.0f;
@@ -13415,46 +13760,13 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
 
          gfx_animation_push(&entry);
       }
-      /* Fade out animation */
-      else if   (((ozone->flags & OZONE_FLAG_MSGBOX_STATE_OLD) > 0) != ((ozone->flags & OZONE_FLAG_MSGBOX_STATE) > 0)
-            &&  (!(ozone->flags & OZONE_FLAG_MSGBOX_STATE)))
-      {
-         bool animate = false;
-
-         if (ozone->flags & OZONE_FLAG_MSGBOX_STATE)
-            ozone->flags                   &= ~OZONE_FLAG_MSGBOX_STATE_OLD;
-         else
-            ozone->flags                   &= ~OZONE_FLAG_MSGBOX_STATE_OLD;
-         ozone->flags                      &= ~OZONE_FLAG_MSGBOX_STATE;
-
-         gfx_animation_kill_by_tag(&messagebox_tag);
-
-         if (animate)
-         {
-            ozone->animations.messagebox_alpha = 1.0f;
-
-            entry.cb                           = ozone_messagebox_fadeout_cb;
-            entry.duration                     = ANIMATION_PUSH_ENTRY_DURATION;
-            entry.easing_enum                  = OZONE_EASING_ALPHA;
-            entry.subject                      = &ozone->animations.messagebox_alpha;
-            entry.tag                          = messagebox_tag;
-            entry.target_value                 = 0.0f;
-            entry.userdata                     = ozone;
-
-            gfx_animation_push(&entry);
-         }
-         else
-         {
-            ozone->animations.messagebox_alpha = 0.0f;
-            ozone_messagebox_fadeout_cb(ozone);
-         }
-      }
 
       ozone_draw_backdrop(userdata,
             video_info->disp_userdata,
             VIDEO_SCALE_PACK(video_width, video_height),
             float_min(ozone->animations.messagebox_alpha,
-            (draw_osk) ? 0.95f : 0.75f));
+            (draw_osk) ? 0.95f : 0.75f),
+            video_info->menu.backdrop_blur);
 
       if (draw_osk)
       {
@@ -13468,13 +13780,13 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
                label,
                str);
       }
-      else if (*menu_st->driver_data->menu_state_msg)
+      else if (video_info->menu.msgbox)
          ozone_draw_messagebox(ozone,
                video_info,
                p_disp,
                userdata,
                VIDEO_SCALE_PACK(video_width, video_height),
-               ozone->pending_message,
+               video_info->menu.msgbox,
                &mymat);
 
       /* Guard: bail if context was destroyed during the draw pass */
@@ -13486,6 +13798,12 @@ static void ozone_frame(void *data, video_frame_info_t *video_info)
             video_height), &ozone->fonts.footer);
       font_flush(VIDEO_SCALE_PACK(video_width,
             video_height), &ozone->fonts.entries_label);
+   }
+   else if (ozone->msgbox_shown)
+   {
+      ozone->msgbox_shown                = false;
+      gfx_animation_kill_by_tag(&messagebox_tag);
+      ozone->animations.messagebox_alpha = 0.0f;
    }
 
    /* Cursor */
@@ -14299,24 +14617,6 @@ static int ozone_environ_cb(enum menu_environ_cb type, void *data, void *userdat
    return 0;
 }
 
-static void ozone_messagebox(void *data, const char *message)
-{
-   ozone_handle_t *ozone = (ozone_handle_t*) data;
-
-   if (!ozone || !message || !*message)
-      return;
-
-   if (ozone->pending_message)
-   {
-      free(ozone->pending_message);
-      ozone->pending_message     = NULL;
-   }
-
-   ozone->pending_message        = strdup(message);
-   ozone->flags                 |= OZONE_FLAG_SHOULD_DRAW_MSGBOX
-                                 | OZONE_FLAG_MSGBOX_STATE;
-}
-
 static int ozone_deferred_push_content_actions(menu_displaylist_info_t *info)
 {
    settings_t *settings         = config_get_ptr();
@@ -14406,6 +14706,10 @@ static int ozone_tap_footer(
       return ozone_menu_entry_action(ozone, entry, selection, MENU_ACTION_START);
    else if (ozone->footer_labels.manage.show && x > ozone->footer_labels.manage.x)
       return ozone_menu_entry_action(ozone, entry, selection, MENU_ACTION_START);
+   else if (   menu_state_get_ptr()->pad_find_hint
+            && ozone->footer_labels.pad_find.show
+            && x > ozone->footer_labels.pad_find.x)
+      return 0;
    else if (ozone->footer_labels.fullscreen_thumbnails.show && x > ozone->footer_labels.metadata_override.x)
       return ozone_menu_entry_action(ozone, entry, selection, MENU_ACTION_INFO);
    else
@@ -14607,7 +14911,7 @@ static int ozone_pointer_up(void *userdata,
 
 menu_ctx_driver_t menu_ctx_ozone = {
    NULL,                         /* set_texture */
-   ozone_messagebox,
+   NULL,                         /* render_messagebox */
    ozone_render,
    ozone_frame,
    ozone_init,

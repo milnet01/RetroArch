@@ -44,8 +44,17 @@
 #include "drivers/record_metal.h"
 #include "drivers/record_mediacodec.h"
 #include "drivers/record_avfoundation.h"
+#include "drivers/record_vulkan.h"
+#ifdef HAVE_PYROWAVE
+#include "drivers/record_pyrowave.h"
+#include "../record/record_pyrowave_receiver.h"
+#include "record_pyrowave_lan.h"
+#endif
 
 static recording_state_t recording_state = {0};
+#ifdef HAVE_RECORD_VULKAN
+static bool recording_core_frame;
+#endif
 
 static const record_driver_t record_null = {
    NULL, /* new */
@@ -73,12 +82,32 @@ const record_driver_t *record_drivers[] = {
 #ifdef HAVE_RECORD_NVENC
    &record_nvenc,
 #endif
+#ifdef HAVE_RECORD_VULKAN
+   &record_vulkan,
+#endif
+#ifdef HAVE_PYROWAVE
+   &record_pyrowave,
+#endif
    &record_null,
    NULL,
 };
 
 void recording_gpu_frame_info(struct video_frame_info *info,bool capture)
 {
+   info->recording_pyrowave_full_output = false;
+   info->recording_pyrowave_receive = false;
+   info->recording_pyrowave_clock_valid = false;
+#ifdef HAVE_PYROWAVE
+   if (record_pyrowave_receiver_frame_info(info, capture)) return;
+   if (record_pyrowave_frame_info(info, capture))
+      return;
+#else
+   info->recording_pyrowave = false;
+#endif
+#ifdef HAVE_RECORD_VULKAN
+   if (record_vulkan_frame_info(info, capture))
+      return;
+#endif
 #if defined(HAVE_RECORD_MEDIACODEC)
    record_mediacodec_frame_info(info, capture);
 #elif defined(HAVE_RECORD_METAL)
@@ -89,6 +118,10 @@ void recording_gpu_frame_info(struct video_frame_info *info,bool capture)
 }
 void recording_gpu_poll(void)
 {
+#ifdef HAVE_PYROWAVE
+   record_pyrowave_poll();
+   record_pyrowave_receiver_poll();
+#endif
    if (recording_state.start_pending)
    {
       runloop_state_t *loop = runloop_state_get_ptr();
@@ -98,31 +131,72 @@ void recording_gpu_poll(void)
    record_nvenc_poll();
    record_metal_poll();
    record_mediacodec_poll();
+#ifdef HAVE_RECORD_VULKAN
+   record_vulkan_poll();
+#endif
    recording_gpu_reinit_poll();
+#ifdef HAVE_PYROWAVE
+   record_pyrowave_lan_poll((uint64_t)runloop_state_get_ptr()->iter_time / 1000);
+#endif
 }
 void recording_start_frame(void)
 {
+   bool success;
    if (!recording_state.start_pending || runloop_is_content_switching()
          || content_load_state_in_progress(NULL)
          || runloop_state_get_ptr()->auto_state_load_pending)
       return;
    recording_state.start_pending = false;
-   if (!recording_init())
+#ifdef HAVE_RECORD_VULKAN
+   recording_core_frame = true;
+#endif
+   success = recording_init();
+#ifdef HAVE_RECORD_VULKAN
+   recording_core_frame = false;
+#endif
+   if (!success)
       command_event(CMD_EVENT_RECORD_DEINIT, NULL);
 }
 void recording_gpu_stop(void)
 {
+#ifdef HAVE_PYROWAVE
+   if (runloop_state_get_ptr()->quit_pending || !record_pyrowave_frontend_pause())
+   {
+      record_pyrowave_lan_stop();
+      record_pyrowave_stop();
+   }
+   record_pyrowave_receiver_stop();
+#endif
    record_nvenc_stop();
    record_metal_stop();
    record_mediacodec_stop();
+#ifdef HAVE_RECORD_VULKAN
+   record_vulkan_stop();
+#endif
 }
 bool recording_gpu_pending(void)
 {
+#ifdef HAVE_PYROWAVE
+   if (record_pyrowave_pending() || record_pyrowave_receiver_pending())
+      return true;
+#endif
+#ifdef HAVE_RECORD_VULKAN
+   if (record_vulkan_pending())
+      return true;
+#endif
    return record_nvenc_pending() || record_metal_pending()
       || record_mediacodec_pending();
 }
 bool recording_gpu_reset_pending(void)
 {
+#ifdef HAVE_PYROWAVE
+   if (record_pyrowave_reset_pending() || record_pyrowave_receiver_pending())
+      return true;
+#endif
+#ifdef HAVE_RECORD_VULKAN
+   if (record_vulkan_pending())
+      return true;
+#endif
    return record_nvenc_pending() || record_metal_pending()
       || record_mediacodec_reset_pending();
 }
@@ -132,10 +206,30 @@ bool recording_gpu_cancel_start(void)
    bool nvenc=record_nvenc_cancel_start();
    bool metal=record_metal_cancel_start();
    bool mediacodec = record_mediacodec_cancel_start();
-   return nvenc || metal || mediacodec;
+#ifdef HAVE_PYROWAVE
+   bool pyrowave = record_pyrowave_cancel_start();
+#endif
+#ifdef HAVE_RECORD_VULKAN
+   bool vulkan = record_vulkan_cancel_start();
+   if (vulkan)
+      return true;
+#endif
+   return nvenc || metal || mediacodec
+#ifdef HAVE_PYROWAVE
+      || pyrowave
+#endif
+      ;
 }
 bool recording_gpu_defer_start(const record_driver_t *driver)
 {
+#ifdef HAVE_PYROWAVE
+   if (driver == &record_pyrowave)
+      return record_pyrowave_defer_start();
+#endif
+#ifdef HAVE_RECORD_VULKAN
+   if (driver == &record_vulkan)
+      return record_vulkan_defer_start();
+#endif
    if (driver==&record_nvenc) return record_nvenc_defer_start();
    if (driver==&record_metal) return record_metal_defer_start();
    if (driver == &record_mediacodec) return record_mediacodec_defer_start();
@@ -177,10 +271,18 @@ bool recording_driver_can_stream(const char *ident)
       return false;
    if (strcmp(driver->ident, "ffmpeg") == 0)
       return true;
+#ifdef HAVE_PYROWAVE
+   if (driver == &record_pyrowave)
+      return true;
+#endif
    if (driver == &record_metal)
       return record_metal_can_stream();
    if (driver == &record_nvenc)
       return record_nvenc_can_stream();
+#ifdef HAVE_RECORD_VULKAN
+   if (driver == &record_vulkan)
+      return record_vulkan_can_stream();
+#endif
    return false;
 }
 
@@ -188,6 +290,8 @@ bool recording_driver_streaming_mode_supported(const char *ident, unsigned mode)
 {
    if (mode > STREAMING_MODE_CUSTOM || !recording_driver_can_stream(ident))
       return false;
+   if (strcmp(ident, "pyrowave") == 0)
+      return mode == STREAMING_MODE_CUSTOM;
    if (strcmp(ident, "ffmpeg") == 0)
       return true;
    if (mode == STREAMING_MODE_LOCAL)
@@ -199,12 +303,28 @@ bool recording_driver_streaming_mode_supported(const char *ident, unsigned mode)
    return true;
 }
 
+static const char *recording_capture_driver(const char *ident)
+{
+#if defined(HAVE_RECORD_NVENC) && defined(HAVE_RECORD_VULKAN)
+   if (string_is_equal(ident, "nvenc"))
+   {
+      video_device_info_t device;
+      if (video_driver_get_device(&device)
+            && device.api == VIDEO_DEVICE_VULKAN
+            && (device.recording_caps & VIDEO_DEVICE_CAP_VULKAN_ENCODE)
+            && device.recording)
+         return "vulkan";
+   }
+#endif
+   return ident;
+}
+
 static void find_record_driver(void)
 {
    settings_t *settings = config_get_ptr();
    int i                = (int)driver_find_index(
          "record_driver",
-         settings->arrays.record_driver);
+         recording_capture_driver(settings->arrays.record_driver));
 
    if (i >= 0)
       recording_state.driver = (const record_driver_t*)record_drivers[i];
@@ -245,7 +365,11 @@ static void find_record_driver(void)
 static bool record_driver_init(
       const struct record_params *params)
 {
-   find_record_driver();
+#ifdef HAVE_PYROWAVE
+   if (record_pyrowave_lan_sending()) recording_state.driver = &record_pyrowave;
+   else
+#endif
+      find_record_driver();
    if (!recording_state.driver)
       return false;
 
@@ -343,20 +467,46 @@ bool recording_init(void)
       video_driver_pix_fmt              = video_st->pix_fmt;
    recording_state_t *recording_st      = &recording_state;
    bool recording_enable                = recording_st->enable;
-   bool nvenc_native = string_is_equal(settings->arrays.record_driver,"nvenc");
-   bool metal_native = string_is_equal(settings->arrays.record_driver,"metal");
-   bool mc_native = string_is_equal(settings->arrays.record_driver,"mediacodec");
-   bool gpu_native = nvenc_native || metal_native || mc_native;
+#ifdef HAVE_PYROWAVE
+   const char *lan_target = record_pyrowave_lan_target();
+#else
+   const char *lan_target = NULL;
+#endif
+   const char *capture_driver = lan_target ? "pyrowave"
+      : recording_capture_driver(settings->arrays.record_driver);
+   bool nvenc_native = string_is_equal(capture_driver, "nvenc");
+   bool metal_native = string_is_equal(capture_driver, "metal");
+   bool mc_native = string_is_equal(capture_driver, "mediacodec");
+   bool vk_native = string_is_equal(capture_driver, "vulkan");
+   bool pyrowave_native = string_is_equal(capture_driver, "pyrowave");
+   bool gpu_native = nvenc_native || metal_native || mc_native || vk_native || pyrowave_native;
    bool menu_source = false;
+#ifdef HAVE_PYROWAVE
+   menu_source = pyrowave_native && settings->bools.pyrowave_full_output;
+#endif
 #ifdef HAVE_RECORD_MEDIACODEC
-   menu_source = mc_native && current_core_type == CORE_TYPE_DUMMY;
+   menu_source = menu_source || (mc_native && current_core_type == CORE_TYPE_DUMMY);
 #endif
 
    if (!recording_enable)
       return false;
+#ifdef HAVE_PYROWAVE
+   if (recording_st->data && record_pyrowave_frontend_active()) return true;
+   if (record_pyrowave_receiver_active()) return false;
+   if (record_pyrowave_receiver_pending())
+   {
+      record_pyrowave_receiver_stop();
+      recording_st->start_pending = true;
+      return true;
+   }
+#endif
 
    if (content_load_state_in_progress(NULL)
-         || runloop_st->auto_state_load_pending)
+         || runloop_st->auto_state_load_pending
+#ifdef HAVE_RECORD_VULKAN
+         || (vk_native && !recording_core_frame)
+#endif
+      )
    {
       recording_st->start_pending = true;
       return true;
@@ -367,6 +517,20 @@ bool recording_init(void)
    if (nvenc_native)
    {
       RARCH_ERR("[Recording] Native NVENC recording is unavailable in this build.\n");
+      return false;
+   }
+#endif
+#ifndef HAVE_RECORD_PYROWAVE_SOURCE
+   if (pyrowave_native)
+   {
+      RARCH_ERR("[Recording] PyroWave capture is unavailable for this build.\n");
+      return false;
+   }
+#endif
+#ifndef HAVE_RECORD_VULKAN
+   if (vk_native)
+   {
+      RARCH_ERR("[Recording] Native Vulkan recording is unavailable in this build.\n");
       return false;
    }
 #endif
@@ -385,7 +549,7 @@ bool recording_init(void)
    }
 #endif
    if (gpu_native) video_gpu_record = true;
-   if (video_driver_pix_fmt == RETRO_PIXEL_FORMAT_SCRGB_RGBA16F)
+   if (video_driver_pix_fmt == RETRO_PIXEL_FORMAT_SCRGB_RGBA16F && !pyrowave_native)
    {
       RARCH_ERR("[Recording] Native FP16 core recording is not supported.\n");
       return false;
@@ -412,7 +576,9 @@ bool recording_init(void)
          (float)av_info->timing.fps,
          (float)av_info->timing.sample_rate);
 
-   if (*recording_st->path)
+   if (lan_target)
+      strlcpy(output, lan_target, sizeof(output));
+   else if (*recording_st->path)
       strlcpy(output, recording_st->path, sizeof(output));
    else
    {
@@ -515,6 +681,8 @@ bool recording_init(void)
       if (!(params.fps > 0.0))
          params.fps = video_driver_get_window_refresh_rate();
       params.samplerate = audio_state_get_ptr()->out_rate;
+      /* A contentless frontend with audio disabled still has video to stream. */
+      if (pyrowave_native && !(params.samplerate >= 8000.0)) params.samplerate = 48000.0;
       params.channels = recording_st->channels = 2;
       recording_st->layout = AUDIO_LAYOUT_STEREO;
    }
@@ -546,21 +714,57 @@ bool recording_init(void)
       }
    }
 
+   if (lan_target) params.config = NULL;
+
    if (gpu_native)
    {
       struct video_viewport vp;
-      memset(&vp, 0, sizeof(vp));
-      if (!video_driver_get_viewport_info(&vp)) return false;
-      if (!VIDEO_SCALE_W(menu_source ? vp.full_dims : vp.dims)
-            || !VIDEO_SCALE_H(menu_source ? vp.full_dims : vp.dims))
+      vp.pos        = 0;
+      vp.dims       = 0;
+      vp.full_dims  = 0;
+      if (!video_driver_get_viewport_info(&vp))
+         return false;
+
+      if (menu_source)
       {
-         recording_st->driver = mc_native ? &record_mediacodec
+         if (!VIDEO_SCALE_W(vp.full_dims) || !VIDEO_SCALE_H(vp.full_dims))
+         {
+            recording_st->driver = mc_native ? &record_mediacodec
                : metal_native ? &record_metal : &record_nvenc;
-         return recording_gpu_defer_start(recording_st->driver);
+#ifdef HAVE_RECORD_VULKAN
+            if (vk_native)
+               recording_st->driver = &record_vulkan;
+#endif
+#ifdef HAVE_PYROWAVE
+            if (pyrowave_native)
+               recording_st->driver = &record_pyrowave;
+#endif
+            return recording_gpu_defer_start(recording_st->driver);
+         }
+         params.out_dims     = vp.full_dims;
+         params.fb_dims      = vp.full_dims;
       }
-      params.out_dims = params.fb_dims = menu_source ? vp.full_dims : vp.dims;
-      params.pix_fmt = FFEMU_PIX_ARGB8888;
-      params.aspect_ratio = (float)VIDEO_SCALE_W(params.out_dims)
+      else
+      {
+         if (!VIDEO_SCALE_W(vp.dims) || !VIDEO_SCALE_H(vp.dims))
+         {
+            recording_st->driver = mc_native ? &record_mediacodec
+               : metal_native ? &record_metal : &record_nvenc;
+#ifdef HAVE_RECORD_VULKAN
+            if (vk_native)
+               recording_st->driver = &record_vulkan;
+#endif
+#ifdef HAVE_PYROWAVE
+            if (pyrowave_native)
+               recording_st->driver = &record_pyrowave;
+#endif
+            return recording_gpu_defer_start(recording_st->driver);
+         }
+         params.out_dims     = vp.dims;
+         params.fb_dims      = vp.dims;
+      }
+      params.pix_fmt         = FFEMU_PIX_ARGB8888;
+      params.aspect_ratio    = (float)VIDEO_SCALE_W(params.out_dims)
             / VIDEO_SCALE_H(params.out_dims);
       recording_st->gpu_dims = params.out_dims;
       recording_st->gpu_bgrx = false;

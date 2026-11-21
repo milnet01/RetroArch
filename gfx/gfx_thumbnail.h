@@ -474,6 +474,25 @@ void gfx_thumbnail_flush_requests(void);
  * specified thumbnail */
 void gfx_thumbnail_reset(gfx_thumbnail_t *thumbnail);
 
+/* A thumbnail fed frames by a live source - the camera preview - one
+ * thumbnail at a time. _begin resets @thumbnail (and any thumbnail
+ * fed before) and leaves it PENDING; each frame goes up from where it
+ * lies, and the first to reach the texture makes it AVAILABLE. The
+ * reset that ends the thumbnail calls @end(@user), which stops the
+ * source and must not reset the thumbnail itself. Main thread. */
+typedef void (*gfx_thumbnail_live_end_t)(void *user);
+void gfx_thumbnail_live_begin(gfx_thumbnail_t *thumbnail,
+      gfx_thumbnail_live_end_t end, void *user);
+/* A 4:2:0 frame of @dims in @yuv (IMAGE_YUV_FLAG_*) as luma, Cb and
+ * Cr planes, chroma samples @chroma_step bytes apart; or XRGB words
+ * rows @pitch bytes apart, copied in opaque. False when the frame was not taken - a
+ * thumbnail no longer live, or the last frame still on its way. */
+bool gfx_thumbnail_live_planes(gfx_thumbnail_t *thumbnail,
+      const uint8_t *const planes[3], const size_t strides[3],
+      unsigned chroma_step, unsigned dims, unsigned yuv);
+bool gfx_thumbnail_live_pixels(gfx_thumbnail_t *thumbnail,
+      const uint32_t *pixels, unsigned dims, size_t pitch);
+
 /* Advances an animated thumbnail (animated WebP / WebM) by at most one frame,
  * if its frame duration has elapsed. Call once per frame, on the main
  * thread, for every on-screen thumbnail. Non-animated thumbnails and
@@ -511,6 +530,10 @@ bool gfx_thumbnail_get_playback_state(gfx_thumbnail_t *thumbnail,
 /* Main-thread absolute media seek, currently MP4. Latest request wins;
  * decoding and audio preparation use the existing player worker.
  * Keeps the last texture visible and preserves the user's pause state. */
+bool gfx_thumbnail_request_audio(gfx_thumbnail_t *thumbnail, int index);
+bool gfx_thumbnail_select_audio(gfx_thumbnail_t *thumbnail, int index,
+      retro_time_t current_time);
+
 bool gfx_thumbnail_seek(gfx_thumbnail_t *thumbnail, int64_t target_us,
       retro_time_t current_time);
 
@@ -643,6 +666,15 @@ void gfx_thumbnail_get_draw_dimensions(
  * thumbnail is fitted into, each with both axes in one word,
  * VIDEO_SCALE_PACK's layout. */
 void gfx_thumbnail_draw(
+      void *userdata,
+      unsigned video_dims,
+      gfx_thumbnail_t *thumbnail,
+      float x, float y, unsigned dims,
+      enum gfx_thumbnail_alignment alignment,
+      float alpha, float scale_factor,
+      gfx_thumbnail_shadow_t *shadow);
+
+void gfx_thumbnail_draw_shader(
       void *userdata,
       unsigned video_dims,
       gfx_thumbnail_t *thumbnail,

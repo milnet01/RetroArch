@@ -171,8 +171,10 @@ vulkan_encode_capture_t *vulkan_encode_capture_new(
        !pool->extent.width || !pool->extent.height ||
        pool->extent.width > INT32_MAX || pool->extent.height > INT32_MAX ||
        (pool->extent.width & 1) || (pool->extent.height & 1) ||
-       pool->format != VK_FORMAT_G8_B8R8_2PLANE_420_UNORM ||
-       (!pool->storage_images && (pool->extent.width & 3)) ||
+       (pool->format != VK_FORMAT_G8_B8R8_2PLANE_420_UNORM &&
+        pool->format != VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16) ||
+       (!pool->storage_images && pool->format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM &&
+          (pool->extent.width & 3)) ||
        !config->code || config->code_bytes < 20 || (config->code_bytes & 3) ||
        config->code[0] != 0x07230203 ||
        !ops->create_set_layout || !ops->destroy_set_layout ||
@@ -185,9 +187,9 @@ vulkan_encode_capture_t *vulkan_encode_capture_new(
        (!pool->storage_images && !ops->copy))
       return NULL;
    bytes = (VkDeviceSize)pool->extent.width * pool->extent.height;
-   if (bytes > UINT32_MAX / 3 * 2)
+   if (bytes > UINT32_MAX / 3 * (pool->format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM ? 2 : 1))
       return NULL;
-   bytes = bytes * 3 / 2;
+   bytes = bytes * 3 / (pool->format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM ? 2 : 1);
    for (i = 0; i < pool->count; i++)
       if (!pool->slot[i].image || (pool->storage_images
             ? !pool->slot[i].planes[0] || !pool->slot[i].planes[1]
@@ -297,7 +299,8 @@ static void vec_copy(vulkan_encode_capture_t *c, unsigned index,
    dependency->pBufferMemoryBarriers = NULL;
    for (i = 0; i < 2; i++)
    {
-      regions[i].bufferOffset = i ? (VkDeviceSize)c->pool->extent.width * c->pool->extent.height : 0;
+      regions[i].bufferOffset = i ? (VkDeviceSize)c->pool->extent.width * c->pool->extent.height *
+         (c->pool->format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM ? 1 : 2) : 0;
       regions[i].bufferRowLength = 0;
       regions[i].bufferImageHeight = 0;
       regions[i].imageSubresource.aspectMask = i ? VK_IMAGE_ASPECT_PLANE_1_BIT : VK_IMAGE_ASPECT_PLANE_0_BIT;
@@ -322,11 +325,16 @@ bool vulkan_encode_capture_record(vulkan_encode_capture_t *c,
    VkImageLayout sampled, destination;
    const vulkan_encode_pool_slot_t *slot;
    uint32_t push[8];
+   unsigned group_width;
    bool direct;
    if (!c || index >= c->pool->count || !command || !source ||
        !source->image || !source->view || !source->stage ||
-       (source->format != VK_FORMAT_R8G8B8A8_UNORM &&
-        source->format != VK_FORMAT_B8G8R8A8_UNORM) ||
+       source->output_mode > 2 ||
+       (source->output_mode && c->pool->format != VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16) ||
+       (source->output_mode == 2 ? source->format != VK_FORMAT_R16G16B16A16_SFLOAT
+        : source->output_mode == 1 ? (source->format != VK_FORMAT_A2B10G10R10_UNORM_PACK32 &&
+            source->format != VK_FORMAT_A2R10G10B10_UNORM_PACK32)
+        : (source->format != VK_FORMAT_R8G8B8A8_UNORM && source->format != VK_FORMAT_B8G8R8A8_UNORM)) ||
        (source->layout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
         source->layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
         source->layout != VK_IMAGE_LAYOUT_GENERAL) ||
@@ -371,12 +379,13 @@ bool vulkan_encode_capture_record(vulkan_encode_capture_t *c,
    push[4] = source->valid_width;
    push[5] = source->valid_height;
    push[6] = source->limited_range ? 1 : 0;
-   push[7] = source->flip_y ? 1 : 0;
+   push[7] = (source->flip_y ? 1u : 0u) | (source->output_mode << 1);
    c->ops->bind_pipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, c->pipeline);
    c->ops->bind_sets(command, VK_PIPELINE_BIND_POINT_COMPUTE,
          c->layout, 0, 1, &c->sets[index], 0, NULL);
    c->ops->push(command, c->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
-   c->ops->dispatch(command, (push[0] + (direct ? 15 : 31)) / (direct ? 16 : 32),
+   group_width = direct || c->pool->format != VK_FORMAT_G8_B8R8_2PLANE_420_UNORM ? 16 : 32;
+   c->ops->dispatch(command, (push[0] + group_width - 1) / group_width,
          (push[1] + 15) / 16, 1);
    if (!direct)
       vec_copy(c, index, command, &dependency);

@@ -975,6 +975,8 @@ struct gl3_common_resources
    /* Frames may come inside a larger texture: passes are built to read
     * them there, sampling as the first pass samples. */
    bool frame_rect;
+   bool viewer_colour;
+   float viewer_colour_rows[12];
    bool frame_linear;
    enum slang_rect_wrap frame_wrap;
 };
@@ -1304,6 +1306,7 @@ struct gl3_pass
    bool spirv_binary;
    /* Reads the frame in a way only a texture of its own serves. */
    bool frame_copy;
+   bool colour_tried;
 };
 
 static const struct gl3_framebuffer * gl3_pass_get_framebuffer(struct gl3_pass *pass);
@@ -1581,6 +1584,45 @@ static void gl3_pass_read_frame_in_place(struct gl3_pass *pass)
 #endif
 }
 
+static bool gl3_pass_colour_in_place(struct gl3_pass *pass)
+{
+#ifdef HAVE_RSLC
+   struct slang_text_target text;
+   struct slang_blob *vb = NULL, *fb = NULL;
+   char *vt = NULL, *ft = NULL;
+   enum slang_rect_result result;
+   const struct video_shader *preset = pass->common->shader_preset;
+   bool print = pass->vertex_text && pass->fragment_text;
+   if (pass->colour_tried) return true;
+   if (!preset) return false;
+   if (pass->pass_number >= preset->passes) return true;
+   gl3_text_target(&text);
+   if (!slang_compile_colour(preset->pass[pass->pass_number].source.path,
+            pass->vertex_shader, pass->num_vertex_shader,
+            pass->fragment_shader, pass->num_fragment_shader,
+            pass->pass_number == 0, print ? &text : NULL,
+            &result, &vb, &fb, &vt, &ft)) return false;
+   if (result == SLANG_RECT_UNSUPPORTED) return false;
+   if (vb)
+   {
+      gl3_pass_set_blob(pass, GL_VERTEX_SHADER, vb);
+      gl3_pass_set_shader_text(pass, GL_VERTEX_SHADER, vt);
+   }
+   if (fb)
+   {
+      gl3_pass_set_blob(pass, GL_FRAGMENT_SHADER, fb);
+      gl3_pass_set_shader_text(pass, GL_FRAGMENT_SHADER, ft);
+   }
+   free(vt);
+   free(ft);
+   pass->colour_tried = true;
+   return true;
+#else
+   (void)pass;
+   return false;
+#endif
+}
+
 static bool gl3_pass_build(struct gl3_pass *pass)
 {
    slang_semantic_name_map semantic_map = { 0 };
@@ -1589,6 +1631,8 @@ static bool gl3_pass_build(struct gl3_pass *pass)
 
    if (pass->common->frame_rect)
       gl3_pass_read_frame_in_place(pass);
+   if (pass->common->viewer_colour && !gl3_pass_colour_in_place(pass))
+      return false;
 
    gl3_framebuffer_delete(pass->framebuffer);
    pass->framebuffer          = NULL;
@@ -2574,6 +2618,7 @@ static void gl3_pass_free(struct gl3_pass *pass)
 static void gl3_pass_set_blob(struct gl3_pass *pass, GLenum stage,
       struct slang_blob *blob)
 {
+   pass->colour_tried = false;
    switch (stage)
    {
       case GL_VERTEX_SHADER:
@@ -2664,36 +2709,48 @@ static void gl3_pass_build_semantic_texture_array(struct gl3_pass *pass, uint8_t
    }
 }
 
+static void gl3_pass_build_mvp(struct gl3_pass *pass, uint8_t *buffer,
+      const float *mvp)
+{
+   slang_semantic_meta *meta = &pass->reflection.semantics[SLANG_SEMANTIC_MVP];
+   float fallback[16];
+   if (!mvp)
+   {
+      gl3_build_default_matrix(fallback);
+      mvp = fallback;
+   }
+   if (meta->uniform)
+   {
+      if (meta->location.ubo_vertex >= 0 || meta->location.ubo_fragment >= 0)
+      {
+         if (meta->location.ubo_vertex >= 0)
+            glUniformMatrix4fv(meta->location.ubo_vertex, 1, GL_FALSE, mvp);
+         if (meta->location.ubo_fragment >= 0)
+            glUniformMatrix4fv(meta->location.ubo_fragment, 1, GL_FALSE, mvp);
+      }
+      else if (buffer)
+         memcpy(buffer + meta->ubo_offset, mvp, sizeof(float) * 16);
+   }
+   if (meta->push_constant)
+   {
+      if (meta->location.push_vertex >= 0 || meta->location.push_fragment >= 0)
+      {
+         if (meta->location.push_vertex >= 0)
+            glUniformMatrix4fv(meta->location.push_vertex, 1, GL_FALSE, mvp);
+         if (meta->location.push_fragment >= 0)
+            glUniformMatrix4fv(meta->location.push_fragment, 1, GL_FALSE, mvp);
+      }
+      else if (pass->push_constant_buffer)
+         memcpy(pass->push_constant_buffer + meta->push_constant_offset,
+               mvp, sizeof(float) * 16);
+   }
+}
+
 static void gl3_pass_build_semantics(struct gl3_pass *pass, uint8_t *buffer,
       const float *mvp, const gl3_texture_t *original, const gl3_texture_t *source)
 {
    unsigned i;
-
-   /* MVP */
-   if (buffer && pass->reflection.semantics[SLANG_SEMANTIC_MVP].uniform)
-   {
-      size_t offset = pass->reflection.semantics[
-         SLANG_SEMANTIC_MVP].ubo_offset;
-      if (mvp)
-         memcpy(buffer + offset,
-               mvp, sizeof(float) * 16);
-      else
-         gl3_build_default_matrix((float*)(
-                  buffer + offset));
-   }
-
-   if (pass->reflection.semantics[SLANG_SEMANTIC_MVP].push_constant)
-   {
-      size_t offset = pass->reflection.semantics[
-         SLANG_SEMANTIC_MVP].push_constant_offset;
-
-      if (mvp)
-         memcpy(pass->push_constant_buffer + offset,
-               mvp, sizeof(float) * 16);
-      else
-         gl3_build_default_matrix((float*)(
-                  pass->push_constant_buffer + offset));
-   }
+   gl3_pass_build_mvp(pass, buffer, mvp);
 
    /* Output information */
    gl3_pass_build_semantic_vec4(pass, buffer, SLANG_SEMANTIC_OUTPUT,
@@ -2767,6 +2824,12 @@ static void gl3_pass_build_semantics(struct gl3_pass *pass, uint8_t *buffer,
 
    /* Standard inputs */
    gl3_pass_build_semantic_frame_rect(pass, buffer, &original->texture);
+   gl3_pass_build_semantic_vec4_values(pass, buffer,
+         SLANG_SEMANTIC_VIEWER_COLOUR0, pass->common->viewer_colour_rows);
+   gl3_pass_build_semantic_vec4_values(pass, buffer,
+         SLANG_SEMANTIC_VIEWER_COLOUR1, pass->common->viewer_colour_rows + 4);
+   gl3_pass_build_semantic_vec4_values(pass, buffer,
+         SLANG_SEMANTIC_VIEWER_COLOUR2, pass->common->viewer_colour_rows + 8);
    gl3_pass_build_semantic_texture(pass, buffer, SLANG_TEXTURE_SEMANTIC_ORIGINAL, original);
    gl3_pass_build_semantic_texture(pass, buffer, SLANG_TEXTURE_SEMANTIC_SOURCE, source);
 
@@ -4013,6 +4076,10 @@ static bool gl3_chain_compile_full_pass(struct gl3_filter_chain *chain, unsigned
             p_info.scale_x      = pass->fbo.scale_x;
             p_info.scale_type_x = GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT;
             break;
+         case RARCH_SCALE_ORIGINAL:
+            p_info.scale_x      = pass->fbo.scale_x;
+            p_info.scale_type_x = GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL;
+            break;
       }
 
       switch (pass->fbo.type_y)
@@ -4028,6 +4095,10 @@ static bool gl3_chain_compile_full_pass(struct gl3_filter_chain *chain, unsigned
          case RARCH_SCALE_VIEWPORT:
             p_info.scale_y      = pass->fbo.scale_y;
             p_info.scale_type_y = GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT;
+            break;
+         case RARCH_SCALE_ORIGINAL:
+            p_info.scale_y      = pass->fbo.scale_y;
+            p_info.scale_type_y = GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL;
             break;
       }
    }
@@ -4436,7 +4507,7 @@ gl3_filter_chain_t *gl3_filter_chain_create_shrink(void)
 
 gl3_filter_chain_t *gl3_filter_chain_create_from_preset(
       const char *path, glslang_filter_chain_filter filter, bool frame_rect,
-      bool replay)
+      bool replay, bool viewer_colour)
 {
    size_t j;
    unsigned i;
@@ -4476,6 +4547,10 @@ gl3_filter_chain_t *gl3_filter_chain_create_from_preset(
       }
    chain->common.sim_source_dims = shader->sim_source_dims;
    chain->common.frame_rect = frame_rect;
+   chain->common.viewer_colour = viewer_colour;
+#ifndef HAVE_RSLC
+   chain->common.viewer_colour = false;
+#endif
    chain->replay            = replay;
    chain->last_pass = last_pass;
 
@@ -4720,6 +4795,11 @@ gl3_filter_chain_t *gl3_filter_chain_create_from_preset(
                pass_info.scale_x      = pass->fbo.scale_x;
                pass_info.scale_type_x = GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT;
                break;
+
+            case RARCH_SCALE_ORIGINAL:
+               pass_info.scale_x      = pass->fbo.scale_x;
+               pass_info.scale_type_x = GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL;
+               break;
          }
 
          switch (pass->fbo.type_y)
@@ -4737,6 +4817,11 @@ gl3_filter_chain_t *gl3_filter_chain_create_from_preset(
             case RARCH_SCALE_VIEWPORT:
                pass_info.scale_y      = pass->fbo.scale_y;
                pass_info.scale_type_y = GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT;
+               break;
+
+            case RARCH_SCALE_ORIGINAL:
+               pass_info.scale_y      = pass->fbo.scale_y;
+               pass_info.scale_type_y = GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL;
                break;
          }
       }
@@ -4795,7 +4880,7 @@ gl3_filter_chain_t *gl3_filter_chain_create_deferred(
       const char *path,
       glslang_filter_chain_filter filter,
       bool frame_rect,
-      unsigned *out_num_passes)
+      unsigned *out_num_passes, bool viewer_colour)
 {
    unsigned i;
    unsigned total_passes;
@@ -4825,6 +4910,10 @@ gl3_filter_chain_t *gl3_filter_chain_create_deferred(
       }
    chain->common.sim_source_dims = shader->sim_source_dims;
    chain->common.frame_rect = frame_rect;
+   chain->common.viewer_colour = viewer_colour;
+#ifndef HAVE_RSLC
+   chain->common.viewer_colour = false;
+#endif
    chain->last_pass = last_pass;
 
    if (      shader->luts
@@ -4950,6 +5039,13 @@ void gl3_filter_chain_set_passthrough(
       gl3_filter_chain_t *chain, unsigned passthrough)
 {
    chain->common.passthrough = passthrough ? 1 : 0;
+}
+
+void gl3_filter_chain_set_viewer_colour(
+      gl3_filter_chain_t *chain, const float *rows)
+{
+   memcpy(chain->common.viewer_colour_rows, rows,
+         sizeof(chain->common.viewer_colour_rows));
 }
 
 void gl3_filter_chain_set_source_hdr(

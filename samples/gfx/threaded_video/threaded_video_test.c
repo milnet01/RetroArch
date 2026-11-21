@@ -38,6 +38,7 @@
 #include "../../../configuration.h"
 #include "../../../command.h"
 #include "../../../driver.h"
+#include "../../../audio/audio_driver.h"
 #include "../../../frontend/frontend_driver.h"
 #include "../../../frontend/frontend.h"
 #include "../../../gfx/video_driver.h"
@@ -105,6 +106,33 @@ void *__wrap_calloc(size_t nmemb, size_t size)
       return NULL;
    }
    return __real_calloc(nmemb, size);
+}
+
+/* cpu_features_get_time_usec() through the same --wrap: armed (1), the
+ * thread that armed it reads harness_clock_now, which the lane moves
+ * itself; counting (2), it reads the real clock; either way its reads
+ * are counted. Every other thread reads the real clock. */
+#define HARNESS_WRAP_CLOCK 1
+retro_time_t __real_cpu_features_get_time_usec(void);
+static retro_atomic_int_t harness_clock_armed;
+static uintptr_t harness_clock_owner;
+static retro_time_t harness_clock_now;
+/* Reads the armed thread made; that thread's own to count */
+static unsigned harness_clock_reads;
+/* Reads the other threads made while the clock was left running (2) */
+static retro_atomic_int_t harness_clock_reads_off;
+retro_time_t __wrap_cpu_features_get_time_usec(void)
+{
+   int armed = retro_atomic_load_acquire_int(&harness_clock_armed);
+   if (armed && sthread_get_current_thread_id() == harness_clock_owner)
+   {
+      harness_clock_reads++;
+      if (armed == 1)
+         return harness_clock_now;
+   }
+   else if (armed == 2)
+      retro_atomic_inc_int(&harness_clock_reads_off);
+   return __real_cpu_features_get_time_usec();
 }
 
 /* A GL driver whose own struct cannot be allocated returns no driver,
@@ -3939,6 +3967,53 @@ static void lane_av_info_recording(void)
       fprintf(stderr, "[pass] AV-info recording: ignored hints retain encoder; parameter changes restart\n");
 }
 
+static void lane_av_info_silent_audio(void)
+{
+   settings_t *settings = config_get_ptr();
+   audio_driver_state_t *audio_st = audio_state_get_ptr();
+   video_driver_state_t *video_st = video_state_get_ptr();
+   struct retro_system_av_info orig = video_st->av_info;
+   bool enabled = settings->bools.audio_enable;
+   unsigned th, off, timing, had = failures;
+   settings->bools.audio_enable = true;
+   command_event(CMD_EVENT_AUDIO_REINIT, NULL);
+   for (th = 0; th < 2; th++)
+   {
+      set_threaded_via_setting(th != 0);
+      run_frames(3);
+      video_thread_wait_idle();
+      CHECK(!audio_st->context_audio_data && !audio_st->resampler_data,
+            "silent AV info: unexpected live audio context");
+      for (off = 0; off < 2; off++)
+         for (timing = 0; timing < 2; timing++)
+         {
+            struct retro_system_av_info info = orig;
+            float *input = audio_st->input_data;
+            const float marker = 0.125f;
+            CHECK(input != NULL, "silent AV info: missing recording scratch");
+            if (!input)
+               continue;
+            settings->bools.audio_enable = off == 0;
+            input[0] = marker;
+            if (timing)
+               info.timing.fps *= 0.999;
+            else
+               info.timing.sample_rate += 44.0;
+            CHECK(runloop_environment_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info),
+                  "silent AV info: update rejected");
+            CHECK(audio_st->input_data == input && audio_st->input_data[0] == marker,
+                  "silent AV info: timing update recreated audio scratch");
+            runloop_environment_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &orig);
+         }
+   }
+   if (audio_st->input_data)
+      audio_st->input_data[0] = 0.0f;
+   settings->bools.audio_enable = enabled;
+   set_threaded_via_setting(false);
+   if (failures == had)
+      fprintf(stderr, "[pass] silent AV info: timing changes retain scratch, threaded and inline\n");
+}
+
 static void lane_av_info_changes(void)
 {
    settings_t *settings            = config_get_ptr();
@@ -4418,6 +4493,128 @@ static uintptr_t geometry_fence(void *data)
 {
    (void)data;
    return 0;
+}
+
+static unsigned nonblock_calls;
+static unsigned nonblock_values[8];
+static uintptr_t nonblock_thread;
+
+static void nonblock_record(void *data, bool state, bool adaptive,
+      unsigned interval)
+{
+   (void)data;
+   if (nonblock_calls < 8)
+      nonblock_values[nonblock_calls] = (interval << 2)
+         | (adaptive ? 2 : 0) | (state ? 1 : 0);
+   nonblock_calls++;
+   nonblock_thread = sthread_get_current_thread_id();
+}
+
+static uintptr_t nonblock_reentrant(void *data)
+{
+   video_driver_state_t *video_st = video_state_get_ptr();
+   (void)data;
+   video_st->current_video->set_nonblock_state(video_st->data, false, true, 3);
+   return nonblock_calls;
+}
+
+static uintptr_t nonblock_ring_swap(void *data)
+{
+   thread_video_t *thr = (thread_video_t*)video_state_get_ptr()->data;
+   thread_packet_t **ring = (thread_packet_t**)data;
+   thread_packet_t *saved = thr->deferred;
+   thr->deferred = *ring;
+   *ring = saved;
+   return 0;
+}
+
+static void lane_nonblock_queue(void)
+{
+   video_driver_state_t *video_st = video_state_get_ptr();
+   struct retro_system_av_info orig = video_st->av_info;
+   struct retro_system_av_info info = orig;
+   const video_driver_t *saved_driver;
+   video_driver_t driver;
+   geometry_gate_t gate;
+   thread_packet_t *ring = NULL;
+   thread_video_t *thr;
+   unsigned had = failures;
+   unsigned i;
+   int head;
+
+   set_threaded_via_setting(true);
+   run_frames(3);
+   video_thread_wait_idle();
+   thr = (thread_video_t*)video_st->data;
+   saved_driver = thr->driver;
+   driver = *saved_driver;
+   driver.set_nonblock_state = nonblock_record;
+   set_driver(thr, &driver);
+   nonblock_calls = 0;
+   memset(&gate, 0, sizeof(gate));
+   retro_atomic_int_init(&gate.held, 0);
+   retro_atomic_int_init(&gate.done, 0);
+   if (!retro_eventcount_init(&gate.event))
+   {
+      CHECK(false, "nonblock queue: eventcount allocation failed");
+      set_driver(thr, saved_driver);
+      set_threaded_via_setting(false);
+      return;
+   }
+   CHECK(video_thread_run_queued(geometry_park, &gate),
+         "nonblock queue: could not queue gate");
+   CHECK(geometry_gate_wait(&gate, &gate.held),
+         "nonblock queue: worker did not enter gate");
+   head = retro_atomic_load_acquire_int(&thr->deferred_head);
+   video_st->current_video->set_nonblock_state(thr, true, false, 1);
+   CHECK(thr->nonblock, "nonblock queue: producer state was not updated");
+   video_st->current_video->set_nonblock_state(thr, false, true, 2);
+   video_st->current_video->set_nonblock_state(thr, false, false, 1);
+   video_st->current_video->set_nonblock_state(thr, false, false, 1);
+   CHECK(!thr->nonblock, "nonblock queue: producer state was not restored");
+   info.timing.fps *= 0.999;
+   CHECK(runloop_environment_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info),
+         "nonblock queue: FPS update rejected");
+   CHECK(retro_atomic_load_acquire_int(&thr->deferred_head) == head + 5,
+         "nonblock queue: setters did not remain queued");
+   retro_atomic_store_release_int(&gate.done, 1);
+   retro_eventcount_notify(&gate.event);
+   video_thread_run_blocking(geometry_fence, NULL);
+   CHECK(gate.completed, "nonblock queue: setter waited for the worker");
+   CHECK(nonblock_calls == 5 && nonblock_values[0] == 5
+         && nonblock_values[1] == 10 && nonblock_values[2] == 4
+         && nonblock_values[3] == 4,
+         "nonblock queue: lost, reordered or coalesced settings");
+   CHECK(nonblock_thread == sthread_get_thread_id(thr->thread),
+         "nonblock queue: callback ran on the wrong thread");
+   CHECK(video_thread_run_blocking(nonblock_reentrant, NULL) == 6
+         && nonblock_values[5] == 14,
+         "nonblock queue: reentrant setter did not run inline");
+
+   retro_atomic_store_relaxed_int(&gate.held, 0);
+   retro_atomic_store_relaxed_int(&gate.done, 0);
+   CHECK(video_thread_run_queued(geometry_park, &gate),
+         "nonblock queue: could not queue full-ring gate");
+   CHECK(geometry_gate_wait(&gate, &gate.held),
+         "nonblock queue: full-ring worker did not enter gate");
+   for (i = 0; i < VIDEO_THREAD_DEFERRED_MAX - 1; i++)
+      CHECK(video_thread_run_queued(geometry_fence, NULL),
+            "nonblock queue: could not fill ring");
+   video_st->current_video->set_nonblock_state(thr, true, true, 4);
+   CHECK(nonblock_calls == 7 && nonblock_values[6] == 19,
+         "nonblock queue: full-ring fallback lost settings");
+   video_thread_run_blocking(nonblock_ring_swap, &ring);
+   video_st->current_video->set_nonblock_state(thr, false, false, 2);
+   CHECK(nonblock_calls == 8 && nonblock_values[7] == 8,
+         "nonblock queue: missing-ring fallback lost settings");
+   video_thread_run_blocking(nonblock_ring_swap, &ring);
+   set_driver(thr, saved_driver);
+   runloop_environment_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &orig);
+   video_thread_run_blocking(geometry_fence, NULL);
+   retro_eventcount_free(&gate.event);
+   set_threaded_via_setting(false);
+   if (failures == had)
+      fprintf(stderr, "[pass] nonblock queue: FPS update, FIFO, repeat, reentrant and fallback\n");
 }
 
 static void lane_geometry_burst(void)
@@ -5723,6 +5920,374 @@ static void lane_blocking_present(void)
 /*   and nothing should be dropped: N frames take about N periods.     */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Lane: display pacing on the display's vblank events                */
+/*   With its setting on, vsync off, fullscreen and a driver whose    */
+/*   present tears, the hold releases each frame on a vblank the      */
+/*   display server counted, at the content's rate whatever the       */
+/*   display's is. It stands aside wherever one of those is missing,  */
+/*   and stands down when the vblanks stop or keep no fixed rate.     */
+/* ------------------------------------------------------------------ */
+
+static video_poke_interface_t        vblane_poke;
+static const video_poke_interface_t *vblane_inner_poke;
+static retro_atomic_int_t            vblane_immediate;
+/* The display server's clock: a display at vblane_period from
+ * vblane_origin, stopped at vblane_stop. The hold's thread only. */
+static retro_time_t vblane_origin;
+static retro_time_t vblane_period;
+static retro_time_t vblane_stop;
+/* stop as the next wait starts: no vblank comes for it */
+static bool         vblane_stop_armed;
+static unsigned     vblane_asks;
+static unsigned     vblane_waits;
+
+static bool vblane_present_immediate(void *data)
+{
+   (void)data;
+   return retro_atomic_load_acquire_int(&vblane_immediate) != 0;
+}
+
+static unsigned vblane_count(retro_time_t now, retro_time_t *at)
+{
+   unsigned n;
+   if (vblane_stop && now > vblane_stop)
+      now = vblane_stop;
+   n   = (unsigned)((now - vblane_origin) / vblane_period);
+   *at = vblane_origin + (retro_time_t)n * vblane_period;
+   return n + 1;
+}
+
+static unsigned vblane_wait(unsigned seen, unsigned timeout_us,
+      retro_time_t *at)
+{
+   retro_time_t now = cpu_features_get_time_usec();
+   retro_time_t end = now + timeout_us;
+   unsigned n;
+   if (vblane_stop_armed && timeout_us)
+   {
+      vblane_stop       = now;
+      vblane_stop_armed = false;
+   }
+   n = vblane_count(now, at);
+   vblane_asks++;
+   if (n == seen && now < end)
+      vblane_waits++;
+   while (n == seen && now < end)
+   {
+      retro_time_t next = *at + vblane_period;
+      if (next > end || (vblane_stop && next > vblane_stop))
+         next = end;
+      if (next - now > 2500)
+         retro_sleep(1);
+      now = cpu_features_get_time_usec();
+      n   = vblane_count(now, at);
+   }
+   return n;
+}
+
+static void display_pacing_measure(float display_hz, unsigned n,
+      float expect_fps, const char *what);
+
+/* The hold as a driver just up has it */
+static void vblane_reset(thread_video_t *thr, float stub_hz)
+{
+   thr->vblank_off  = 0;
+   thr->vblank_held = 256;
+   thr->vblank_late = 0;
+   thr->vblank_due  = 0;
+   vblane_origin    = cpu_features_get_time_usec();
+   vblane_period    = (retro_time_t)(1000000.0f / stub_hz);
+   vblane_stop      = 0;
+   vblane_stop_armed = false;
+   vblane_asks      = 0;
+   vblane_waits     = 0;
+}
+
+static void lane_vblank_pacing(void)
+{
+   unsigned had                   = failures;
+   video_driver_state_t *video_st = video_state_get_ptr();
+   settings_t *settings           = config_get_ptr();
+   bool saved_pacing     = settings->bools.video_threaded_display_pacing;
+   bool saved_vblank     = settings->bools.video_threaded_pacing_vblank;
+   bool saved_fullscreen = settings->bools.video_fullscreen;
+   bool saved_vrr        = settings->bools.vrr_runloop_enable;
+   float saved_hz        = settings->floats.video_refresh_rate;
+   unsigned (*saved_wait)(unsigned, unsigned, retro_time_t*);
+   thread_video_t *thr;
+   unsigned i;
+
+   settings->bools.video_threaded_display_pacing = true;
+   settings->bools.video_threaded_pacing_vblank  = true;
+   settings->bools.video_fullscreen              = true;
+   settings->bools.vrr_runloop_enable            = false;
+   set_threaded_via_setting(true);
+   run_frames(10);
+   expect_wrapper(true, "vblank-pacing lane");
+   if (menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   run_frames(3);
+   video_thread_wait_idle();
+
+   thr = (thread_video_t*)video_st->data;
+   CHECK(thr->nonblock, "vblank-pacing lane: the harness runs with vsync off");
+   thr->driver->poke_interface(thr->driver_data, &vblane_inner_poke);
+   vblane_poke                   = *vblane_inner_poke;
+   vblane_poke.present_immediate = vblane_present_immediate;
+   retro_atomic_store_release_int(&vblane_immediate, 1);
+   set_poke(thr, &vblane_poke);
+   saved_wait       = thr->vblank_wait;
+   thr->vblank_wait = vblane_wait;
+
+   /* On the display's vblanks, at the content's rate: 60 fps on 60 Hz,
+    * on 120 Hz every other one, and on 144 Hz two and three in turn */
+   {
+      static const float hz[] = { 60.0f, 120.0f, 144.0f };
+      for (i = 0; i < ARRAY_SIZE(hz); i++)
+      {
+         vblane_reset(thr, hz[i]);
+         display_pacing_measure(hz[i], 60, 60.0f, "on vblank events");
+         CHECK(vblane_waits >= 40,
+               "vblank pacing at %.0f Hz: %u frames of 66 waited on a vblank",
+               hz[i], vblane_waits);
+         CHECK(!thr->vblank_off && thr->vblank_held == 256,
+               "vblank pacing at %.0f Hz stood down (off %u, late %u)",
+               hz[i], thr->vblank_off, thr->vblank_late);
+      }
+   }
+
+   /* Content faster than the display is due between its vblanks: the
+    * timer's to place */
+   settings->floats.video_refresh_rate = 30.0f;
+   run_frames(6);
+   video_thread_wait_idle();
+   run_frames(2);
+   vblane_reset(thr, 30.0f);
+   display_pacing_measure(30.0f, 30, 60.0f, "display slower than the content");
+   CHECK(!vblane_asks, "display slower than the content: the vblank clock was asked %u times",
+         vblane_asks);
+   settings->floats.video_refresh_rate = saved_hz;
+
+   /* A driver with no answer of its own - the GL drivers - leaves it
+    * to its context */
+   {
+      bool (*saved_ctx)(void*) =
+         video_st->current_video_context.present_immediate;
+      set_poke(thr, vblane_inner_poke);
+      CHECK(!vblane_inner_poke->present_immediate,
+            "vblank pacing: the harness driver has a present_immediate of its own");
+      video_thread_wait_idle();
+      video_st->current_video_context.present_immediate =
+         vblane_present_immediate;
+      run_frames(3);
+      video_thread_wait_idle();
+      vblane_reset(thr, 60.0f);
+      display_pacing_measure(60.0f, 30, 60.0f, "the context's present tears");
+      CHECK(vblane_waits >= 20,
+            "vblank pacing, the context's answer: %u frames of 36 waited on a vblank",
+            vblane_waits);
+      video_thread_wait_idle();
+      video_st->current_video_context.present_immediate = saved_ctx;
+      run_frames(3);
+      video_thread_wait_idle();
+      vblane_reset(thr, 60.0f);
+      display_pacing_measure(60.0f, 30, 60.0f, "neither driver nor context says");
+      CHECK(!vblane_asks,
+            "vblank pacing, no answer: the vblank clock was asked %u times",
+            vblane_asks);
+      set_poke(thr, &vblane_poke);
+      run_frames(3);
+      video_thread_wait_idle();
+   }
+
+   /* Wherever a present does not go straight out, or the setting is
+    * off, windowed, or a variable refresh rate is in use, the timer
+    * paces and the vblank clock is not asked */
+   for (i = 0; i < 4; i++)
+   {
+      static const char *const what[] = {
+         "present waits", "setting off", "windowed", "variable refresh" };
+      if (i == 0)
+         retro_atomic_store_release_int(&vblane_immediate, 0);
+      else if (i == 1)
+         settings->bools.video_threaded_pacing_vblank = false;
+      else if (i == 2)
+         settings->bools.video_fullscreen             = false;
+      else
+         settings->bools.vrr_runloop_enable           = true;
+      run_frames(3);
+      video_thread_wait_idle();
+      vblane_reset(thr, 60.0f);
+      display_pacing_measure(60.0f, 30, 60.0f, what[i]);
+      CHECK(!vblane_asks, "vblank pacing, %s: the vblank clock was asked %u times",
+            what[i], vblane_asks);
+      retro_atomic_store_release_int(&vblane_immediate, 1);
+      settings->bools.video_threaded_pacing_vblank = true;
+      settings->bools.video_fullscreen             = true;
+      settings->bools.vrr_runloop_enable           = false;
+   }
+   run_frames(3);
+   video_thread_wait_idle();
+
+   /* KMS shows nothing but fullscreen, whatever the setting says */
+   {
+      enum rarch_display_type saved_type = video_driver_display_type_get();
+      settings->bools.video_fullscreen   = false;
+      video_driver_display_type_set(RARCH_DISPLAY_KMS);
+      run_frames(3);
+      video_thread_wait_idle();
+      vblane_reset(thr, 60.0f);
+      display_pacing_measure(60.0f, 30, 60.0f, "KMS, fullscreen off");
+      CHECK(vblane_waits >= 20,
+            "vblank pacing on KMS: %u frames of 36 waited on a vblank",
+            vblane_waits);
+      video_driver_display_type_set(saved_type);
+      settings->bools.video_fullscreen   = true;
+      run_frames(3);
+      video_thread_wait_idle();
+   }
+
+   /* The vblanks stop - the display went to sleep: the wait is bounded,
+    * the hold stands down and the timer keeps the rate. Stopped again
+    * before it has held long, it stands down for good. */
+   vblane_reset(thr, 60.0f);
+   run_frames(10);
+   vblane_stop_armed = true;
+   display_pacing_measure(60.0f, 60, 60.0f, "vblanks stopped");
+   CHECK(vblane_stop && thr->vblank_off && thr->vblank_off != ~0u,
+         "vblanks stopped: the hold did not stand down (off %u)",
+         thr->vblank_off);
+   vblane_stop     = 0;
+   thr->vblank_off = 0;
+   run_frames(10);
+   CHECK(!thr->vblank_off, "vblanks back: the hold did not take them (off %u)",
+         thr->vblank_off);
+   vblane_stop_armed = true;
+   display_pacing_measure(60.0f, 30, 60.0f, "vblanks stopped again");
+   CHECK(vblane_stop && thr->vblank_off == ~0u,
+         "vblanks stopped twice: the hold is to stand down for good (off %u)",
+         thr->vblank_off);
+
+   /* Stopped before the hold asks - the display asleep all along - it
+    * neither waits nor releases frames on a vblank long past */
+   vblane_reset(thr, 60.0f);
+   vblane_stop = vblane_origin;
+   retro_sleep(100);
+   display_pacing_measure(60.0f, 30, 60.0f, "vblanks long stopped");
+   CHECK(!vblane_waits && thr->vblank_off != ~0u,
+         "vblanks long stopped: %u waits, off %u", vblane_waits,
+         thr->vblank_off);
+
+   /* Vblanks that keep no fixed rate - a variable refresh rate, where
+    * one comes only with a present: here 40 a second on what is said
+    * to be a 120 Hz display, each inside the wait's bound and late
+    * for its frame. The content's rate is kept by the timer once the
+    * hold has stood down. */
+   vblane_reset(thr, 40.0f);
+   settings->floats.video_refresh_rate = 120.0f;
+   run_frames(40);
+   CHECK(thr->vblank_off,
+         "vblanks off the display's grid: the hold did not stand down (late %u)",
+         thr->vblank_late);
+   display_pacing_measure(120.0f, 60, 60.0f, "vblanks off the grid");
+
+   video_thread_wait_idle();
+   thr->vblank_wait = saved_wait;
+   vblane_reset(thr, 60.0f);
+   set_poke(thr, vblane_inner_poke);
+   run_frames(3);
+   if (!menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   settings->bools.video_threaded_display_pacing = saved_pacing;
+   settings->bools.video_threaded_pacing_vblank  = saved_vblank;
+   settings->bools.video_fullscreen              = saved_fullscreen;
+   settings->bools.vrr_runloop_enable            = saved_vrr;
+   settings->floats.video_refresh_rate           = saved_hz;
+   if (failures == had)
+      fprintf(stderr, "[pass] vblank-pacing lane\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* Lane: display pacing before the first present                      */
+/*   With vsync off the present holds nothing, and until the video    */
+/*   thread's first completion the hold has no period from it: the    */
+/*   core ran every frame it could, thousands before a driver was up. */
+/* ------------------------------------------------------------------ */
+
+static video_driver_t        fplane_driver;
+static const video_driver_t *fplane_inner;
+static geometry_gate_t       fplane_gate;
+
+static bool fplane_frame(void *data, const void *frame, unsigned dims,
+      uint64_t frame_count, unsigned pitch, const char *msg,
+      video_frame_info_t *video_info)
+{
+   /* the first frame, still being drawn */
+   if (!retro_atomic_load_acquire_int(&fplane_gate.done))
+      geometry_park(&fplane_gate);
+   return fplane_inner->frame(data, frame, dims, frame_count, pitch,
+         msg, video_info);
+}
+
+static void lane_first_present_hold(void)
+{
+   unsigned had                   = failures;
+   const unsigned n               = 30;
+   int flags                      = DRIVER_VIDEO_MASK | DRIVER_INPUT_MASK;
+   video_driver_state_t *video_st = video_state_get_ptr();
+   settings_t *settings           = config_get_ptr();
+   bool saved_pacing = settings->bools.video_threaded_display_pacing;
+   retro_time_t t0, took, expect;
+   thread_video_t *thr;
+
+   settings->bools.video_threaded_display_pacing = true;
+   set_threaded_via_setting(true);
+   run_frames(10);
+   expect_wrapper(true, "first-present lane");
+   if (menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   run_frames(3);
+
+   /* A driver just made, its first frame not out yet */
+   command_event(CMD_EVENT_REINIT, &flags);
+   thr = (thread_video_t*)video_st->data;
+   memset(&fplane_gate, 0, sizeof(fplane_gate));
+   retro_eventcount_init(&fplane_gate.event);
+   fplane_inner        = thr->driver;
+   fplane_driver       = *thr->driver;
+   fplane_driver.frame = fplane_frame;
+   set_driver(thr, &fplane_driver);
+
+   t0     = cpu_features_get_time_usec();
+   run_frames(n);
+   took   = cpu_features_get_time_usec() - t0;
+   expect = (retro_time_t)n * 1000000 / 60;
+   CHECK(retro_atomic_load_acquire_int(&fplane_gate.held),
+         "first-present lane: no frame reached the driver");
+   CHECK(took > expect * 3 / 4,
+         "before the first present the hold did not hold: %u frames in %.1f ms, expected ~%.1f",
+         n, took / 1000.0, expect / 1000.0);
+   CHECK(took < expect * 3 / 2,
+         "before the first present the runloop stalled: %u frames in %.1f ms, expected ~%.1f",
+         n, took / 1000.0, expect / 1000.0);
+   fprintf(stderr, "   before the first present: %u frames in %.1f ms\n",
+         n, took / 1000.0);
+
+   retro_atomic_store_release_int(&fplane_gate.done, 1);
+   retro_eventcount_notify(&fplane_gate.event);
+   video_thread_wait_idle();
+   set_driver(thr, fplane_inner);
+   retro_eventcount_free(&fplane_gate.event);
+   run_frames(3);
+
+   if (!menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   settings->bools.video_threaded_display_pacing = saved_pacing;
+   if (failures == had)
+      fprintf(stderr, "[pass] first-present hold lane\n");
+}
+
 /* One measurement of the hold: n core frames with the display at
  * display_hz and the core at its own 60. The hold must pace to the
  * core's period on the display's grid: at 120 Hz a 60 fps core is due
@@ -6656,12 +7221,12 @@ static void lane_window_answers(void)
 /*   is run: the runloop's read alone has to bring the true answer.   */
 /* ------------------------------------------------------------------ */
 
-static volatile int prlane_presentable;
+static retro_atomic_int_t prlane_presentable;
 
 static bool prlane_presentable_cb(void *data)
 {
    (void)data;
-   return prlane_presentable != 0;
+   return retro_atomic_load_acquire_int(&prlane_presentable) != 0;
 }
 
 static void lane_presentable_refresh(void)
@@ -6680,7 +7245,7 @@ static void lane_presentable_refresh(void)
    saved    = video_st->current_video_context.presentable;
 
    /* The context goes away for a frame, which publishes it. */
-   prlane_presentable = 0;
+   retro_atomic_store_release_int(&prlane_presentable, 0);
    video_st->current_video_context.presentable = prlane_presentable_cb;
    run_frames(2);
    video_thread_wait_idle();
@@ -6688,7 +7253,7 @@ static void lane_presentable_refresh(void)
          "presentable refresh lane: a context that said false read true");
 
    /* It is back, and no frame comes. */
-   prlane_presentable = 1;
+   retro_atomic_store_release_int(&prlane_presentable, 1);
    frames = core_frames();
    for (i = 0; i < 1000 && !video_context_driver_presentable(); i++)
       retro_sleep(1);
@@ -7067,6 +7632,221 @@ static void skiplane_push(const void *pix, bool threaded)
       video_thread_wait_idle();
 }
 
+#ifdef HARNESS_WRAP_CLOCK
+/* The FPS counter over real, repeat pairs, the clock moved one period
+ * per push: enough pushes that the last window the counter closed lies
+ * wholly inside them. Read from the window title, where the counter
+ * puts it. */
+#define SKIPLANE_FPS_INTERVAL 8
+#define SKIPLANE_FPS_PERIOD   5000
+static double skiplane_fps(const void *pix, bool threaded)
+{
+   video_driver_state_t *video_st = video_state_get_ptr();
+   const char *fps;
+   unsigned i;
+
+   for (i = 0; i < 3 * SKIPLANE_FPS_INTERVAL; i++)
+   {
+      harness_clock_now += SKIPLANE_FPS_PERIOD;
+      skiplane_push((i & 1) ? NULL : pix, threaded);
+   }
+   fps = strstr(video_st->window_title, "FPS:");
+   return fps ? strtod(fps + 4, NULL) : -1.0;
+}
+#endif
+
+#if defined(__linux__) && !defined(ANDROID)
+#include <sys/prctl.h>
+/* The frontend's thread sleeps without the default timer slack, which
+ * the frame limiter would otherwise spin through every frame */
+static void lane_timer_slack(void)
+{
+#ifdef PR_GET_TIMERSLACK
+   int slack = prctl(PR_GET_TIMERSLACK, 0UL, 0UL, 0UL, 0UL);
+   CHECK(slack == 1, "timer slack lane: the frontend's thread has %d ns "
+         "of timer slack, want 1", slack);
+   if (slack == 1)
+      fprintf(stderr, "[pass] timer slack lane\n");
+#endif
+}
+#endif
+
+#ifdef HARNESS_WRAP_CLOCK
+/* The clock reads one frame's push makes on the main thread, with the
+ * video thread idle before it so the push neither waits for the ring
+ * nor holds for the display. */
+#define HANDOFF_CLOCK_PUSHES 16
+static unsigned handoff_clock_reads(bool threaded)
+{
+   static uint8_t pix[32 * 32 * sizeof(uint32_t)];
+   unsigned reads = 0;
+   unsigned i;
+
+   set_threaded_via_setting(threaded);
+   run_frames(3);
+   expect_wrapper(threaded, "handoff clock lane");
+   if (threaded)
+      video_thread_wait_idle();
+   harness_clock_now   = __real_cpu_features_get_time_usec();
+   harness_clock_owner = sthread_get_current_thread_id();
+   for (i = 0; i < HANDOFF_CLOCK_PUSHES; i++)
+   {
+      memset(pix, (int)i, sizeof(pix));
+      harness_clock_now  += 16667;
+      harness_clock_reads = 0;
+      retro_atomic_store_release_int(&harness_clock_armed, 1);
+      video_driver_frame(pix, 32, 32, 32 * sizeof(uint32_t));
+      retro_atomic_store_release_int(&harness_clock_armed, 0);
+      reads += harness_clock_reads;
+      if (threaded)
+         video_thread_wait_idle();
+   }
+   return reads;
+}
+
+/* The clock reads the main thread makes over @n runloop iterations,
+ * the clock left running */
+static unsigned runloop_clock_reads(unsigned n, bool vsync)
+{
+   settings_t *settings = config_get_ptr();
+   bool saved_vsync     = settings->bools.video_vsync;
+   unsigned reads;
+   /* With vsync on the display paces; with it off the runloop's own
+    * frame limiter does, sleeping and then spinning to its deadline.
+    * The frames before the count let the perf counter's rate settle. */
+   settings->bools.video_vsync = vsync;
+   run_frames(8);
+   harness_clock_owner = sthread_get_current_thread_id();
+   harness_clock_reads = 0;
+   retro_atomic_store_release_int(&harness_clock_armed, 2);
+   run_frames(n);
+   retro_atomic_store_release_int(&harness_clock_armed, 0);
+   reads = harness_clock_reads;
+   settings->bools.video_vsync = saved_vsync;
+   return reads;
+}
+
+/* A frame pushed inside an iteration reads no clock, and the handover
+ * to the video thread none either: what they want of "now" is the
+ * iteration's own reading moved on by the perf counter */
+static void lane_handoff_clock(void)
+{
+   unsigned had           = failures;
+   settings_t *settings   = config_get_ptr();
+   bool saved_pacing      = settings->bools.video_threaded_display_pacing;
+   unsigned direct, handed;
+
+   if (menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   settings->bools.video_threaded_display_pacing = false;
+   direct = handoff_clock_reads(false);
+   handed = handoff_clock_reads(true);
+   settings->bools.video_threaded_display_pacing = saved_pacing;
+   video_driver_cached_frame_invalidate();
+   if (!menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   run_frames(2);
+   CHECK(handed == 0 && direct == 0,
+         "handoff clock lane: %u pushes read the clock %u times threaded "
+         "and %u times direct, want none", HANDOFF_CLOCK_PUSHES,
+         handed, direct);
+   {
+      /* A whole iteration reads the clock once, for the runloop's
+       * anchor; the audio sink estimate, where it is on, once a window
+       * on top */
+      unsigned iter_reads;
+      set_threaded_via_setting(false);
+      run_frames(3);
+      iter_reads = runloop_clock_reads(HANDOFF_CLOCK_PUSHES, true);
+      CHECK(iter_reads <= HANDOFF_CLOCK_PUSHES + 2,
+            "handoff clock lane: %u iterations read the clock %u times, "
+            "want at most %u", HANDOFF_CLOCK_PUSHES, iter_reads,
+            HANDOFF_CLOCK_PUSHES + 2);
+      {
+         /* Automatic frame delay times each iteration's leftover from
+          * the iteration's own reading, moved on by a mark */
+         settings_t *st        = config_get_ptr();
+         bool saved_auto       = st->bools.video_frame_delay_auto;
+         unsigned saved_delay  = st->uints.video_frame_delay;
+         st->bools.video_frame_delay_auto = true;
+         st->uints.video_frame_delay      = 0;
+         iter_reads = runloop_clock_reads(HANDOFF_CLOCK_PUSHES, true);
+         st->bools.video_frame_delay_auto = saved_auto;
+         st->uints.video_frame_delay      = saved_delay;
+         CHECK(iter_reads <= HANDOFF_CLOCK_PUSHES + 2,
+               "handoff clock lane: %u iterations under automatic frame "
+               "delay read the clock %u times, want at most %u",
+               HANDOFF_CLOCK_PUSHES, iter_reads, HANDOFF_CLOCK_PUSHES + 2);
+      }
+#ifdef CPU_FEATURES_PERF_COUNTER_CHEAP
+      /* The frame limiter spins to its deadline on the perf counter:
+       * the clock is read for the sleep's own use at most (Windows and
+       * Darwin read it to arm the sleep), never once a turn of the spin */
+      iter_reads = runloop_clock_reads(HANDOFF_CLOCK_PUSHES, false);
+      CHECK(iter_reads <= 6 * HANDOFF_CLOCK_PUSHES,
+            "handoff clock lane: %u iterations paced by the frame limiter "
+            "read the clock %u times, want at most %u",
+            HANDOFF_CLOCK_PUSHES, iter_reads, 6 * HANDOFF_CLOCK_PUSHES);
+#endif
+   }
+   if (failures == had)
+      fprintf(stderr, "[pass] handoff clock lane (no clock read in %u "
+            "pushes, threaded or direct; one per iteration for the "
+            "runloop)\n", HANDOFF_CLOCK_PUSHES);
+}
+#endif
+
+#if defined(HARNESS_WRAP_CLOCK) && defined(CPU_FEATURES_PERF_COUNTER_CHEAP)
+/* Display pacing's hold and the presenter's repeat deadline pace on the
+ * clock without a reading of their own: the hold tells "now" from the
+ * frame's reading, the video thread from the one it takes at each
+ * present. */
+#define PACING_CLOCK_FRAMES 60
+static void lane_pacing_clock(void)
+{
+   unsigned had         = failures;
+   settings_t *settings = config_get_ptr();
+   bool saved_pacing    = settings->bools.video_threaded_display_pacing;
+   bool saved_repeat    = settings->bools.video_threaded_present_repeat;
+   int repeat;
+
+   if (menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   settings->bools.video_threaded_display_pacing = true;
+   for (repeat = 0; repeat < 2; repeat++)
+   {
+      unsigned main_reads;
+      int other_reads;
+      settings->bools.video_threaded_present_repeat = repeat != 0;
+      set_threaded_via_setting(true);
+      run_frames(30);
+      expect_wrapper(true, "pacing clock lane");
+      retro_atomic_store_release_int(&harness_clock_reads_off, 0);
+      main_reads  = runloop_clock_reads(PACING_CLOCK_FRAMES, true);
+      other_reads = retro_atomic_load_acquire_int(&harness_clock_reads_off);
+      CHECK(main_reads <= PACING_CLOCK_FRAMES + 2,
+            "pacing clock lane (repeat %d): %u held iterations read the "
+            "clock %u times on the main thread, want at most %u", repeat,
+            PACING_CLOCK_FRAMES, main_reads, PACING_CLOCK_FRAMES + 2);
+      /* The video thread reads it once a present, to hold the display's
+       * timestamp against, and tells its other instants from that: a
+       * frame and its repeats, not a reading at each wake besides */
+      CHECK(other_reads <= PACING_CLOCK_FRAMES * 5 / 2,
+            "pacing clock lane (repeat %d): the other threads read the "
+            "clock %d times over %u frames, want at most %u", repeat,
+            other_reads, PACING_CLOCK_FRAMES, PACING_CLOCK_FRAMES * 5 / 2);
+   }
+   settings->bools.video_threaded_display_pacing = saved_pacing;
+   settings->bools.video_threaded_present_repeat = saved_repeat;
+   video_driver_cached_frame_invalidate();
+   if (!menu_is_up())
+      command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+   run_frames(2);
+   if (failures == had)
+      fprintf(stderr, "[pass] pacing clock lane\n");
+}
+#endif
+
 static void lane_dupe_skip(bool threaded)
 {
    unsigned had                   = failures;
@@ -7133,6 +7913,39 @@ static void lane_dupe_skip(bool threaded)
          "the runloop would not pace it", mode,
          (unsigned)video_st->dupe_skip_hold);
 
+#ifdef HARNESS_WRAP_CLOCK
+   /* The FPS counter counts what was shown: half the pushes when every
+    * other one is a skipped repeat, all of them with the setting off */
+   {
+      bool saved_fps_show     = settings->bools.video_fps_show;
+      unsigned saved_interval = settings->uints.fps_update_interval;
+      double on, off;
+      runloop_state_t *runloop_st = runloop_state_get_ptr();
+      retro_time_t saved_iter     = runloop_st->iter_time;
+      settings->bools.video_fps_show      = true;
+      settings->uints.fps_update_interval = SKIPLANE_FPS_INTERVAL;
+      /* Outside an iteration: video_driver_frame() reads the clock the
+       * lane moves for the frame's time */
+      runloop_st->iter_time = 0;
+      harness_clock_now   = __real_cpu_features_get_time_usec();
+      harness_clock_owner = sthread_get_current_thread_id();
+      retro_atomic_store_release_int(&harness_clock_armed, 1);
+      on  = skiplane_fps(pix_a, threaded);
+      settings->bools.video_skip_dupe_frames = false;
+      off = skiplane_fps(pix_a, threaded);
+      retro_atomic_store_release_int(&harness_clock_armed, 0);
+      runloop_st->iter_time = saved_iter;
+      settings->bools.video_skip_dupe_frames = true;
+      settings->bools.video_fps_show      = saved_fps_show;
+      settings->uints.fps_update_interval = saved_interval;
+      video_st->dupe_skip_hold            = 0;
+      CHECK(on == 100.0 && off == 200.0,
+            "dupe skip lane (%s): FPS counter read %.2f with repeats "
+            "skipped and %.2f with them shown, want 100.00 and 200.00",
+            mode, on, off);
+   }
+#endif
+
    /* Black Frame Insertion: the presents are the effect */
    settings->uints.video_black_frame_insertion = 1;
    retro_atomic_store_release_size(&skiplane_count, 0);
@@ -7174,7 +7987,8 @@ static void lane_dupe_skip(bool threaded)
    run_frames(2);
    if (failures == had)
       fprintf(stderr, "[pass] dupe skip lane (%s: repeats unpresented, "
-            "BFI and setting off present them)\n", mode);
+            "FPS counts what was shown, BFI and setting off present "
+            "them)\n", mode);
 }
 
 /* ------------------------------------------------------------------ */
@@ -7320,11 +8134,21 @@ static int vshrink_find(char kind, unsigned value)
    return -1;
 }
 
+/* What video_driver_frame() stamps on the info it builds: the frame's
+ * time and its mark, which the handoff takes "now" from. A lane that
+ * pushes its own info takes them too. */
+static void harness_frame_stamp(video_frame_info_t *info)
+{
+   info->frame_time = cpu_features_get_time_usec();
+   info->frame_mark = CPU_FEATURES_MARK_WITH(info->frame_time);
+}
+
 static void vshrink_push(video_frame_info_t *info, uint32_t *pixels,
       unsigned frame, unsigned views)
 {
    video_driver_state_t *video = video_state_get_ptr();
    info->views.num_views = views;
+   harness_frame_stamp(info);
    video->current_video->frame(video->data, pixels,
          VIDEO_SCALE_PACK(8, 8), frame, 32, NULL, info);
 }
@@ -11602,6 +12426,7 @@ static void record_gpu_stop_in_flight(void)
    info.recording_gpu = &rstop_driver;
    retro_atomic_store_release_int(&rstop_held, 0);
    retro_atomic_store_release_int(&rstop_hold, 1);
+   harness_frame_stamp(&info);
    video->current_video->frame(video->data, pixels, VIDEO_SCALE_PACK(8, 8),
          0, 32, NULL, &info);
    for (i = 0; i < 1000 && !retro_atomic_load_acquire_int(&rstop_held); i++)
@@ -11613,6 +12438,7 @@ static void record_gpu_stop_in_flight(void)
          thr->frame.slot[0].video_info.recording_gpu,
          thr->frame.slot[1].video_info.recording_gpu, (void*)&rstop_driver);
    info.recording_gpu = &rstop_hold;
+   harness_frame_stamp(&info);
    video->current_video->frame(video->data, pixels, VIDEO_SCALE_PACK(8, 8),
          1, 32, NULL, &info);
    CHECK(video_thread_record_gpu_in_flight(thr, &rstop_hold),
@@ -14374,6 +15200,18 @@ int main(int argc, char *argv[])
       lane_pixel_format();
       goto shutdown;
    }
+   if (getenv("HARNESS_PACING_ONLY"))
+   {
+      lane_display_pacing();
+      lane_first_present_hold();
+      lane_vblank_pacing();
+      lane_blocking_present();
+      lane_pacing_queue_drain();
+      lane_pacing_fast_display();
+      lane_pacing_after_stall();
+      lane_pacing_rate();
+      goto shutdown;
+   }
    if (getenv("HARNESS_GEOMETRY_ONLY"))
    {
       set_threaded_via_setting(false);
@@ -14382,9 +15220,11 @@ int main(int argc, char *argv[])
       lane_square_pixel_geometry();
       lane_aspect_hint_changes();
       lane_av_info_recording();
+      lane_av_info_silent_audio();
       lane_av_info_changes();
       lane_max_geometry_capacity();
       lane_reinit_frame_ownership();
+      lane_nonblock_queue();
       lane_geometry_burst();
       lane_reentrant_from_frame();
       goto shutdown;
@@ -14426,12 +15266,14 @@ int main(int argc, char *argv[])
       lane_square_pixel_geometry();
       lane_aspect_hint_changes();
       lane_av_info_recording();
+      lane_av_info_silent_audio();
       lane_av_info_changes();
       lane_max_geometry_capacity();
       lane_reinit_frame_ownership();
    }
    if (real_driver() && video_state_get_ptr()->max_geometry_capacity)
       lane_max_geometry_live();
+   lane_nonblock_queue();
    lane_geometry_burst();
    lane_reentrant_from_frame();
    lane_window_thread_present();
@@ -14449,6 +15291,8 @@ int main(int argc, char *argv[])
    if (!real_driver())
    {
       lane_display_pacing();
+      lane_first_present_hold();
+      lane_vblank_pacing();
       lane_blocking_present();
       lane_pacing_queue_drain();
       lane_pacing_fast_display();
@@ -14529,6 +15373,15 @@ int main(int argc, char *argv[])
       lane_dupe_under_wrapper();
       lane_dupe_skip(false);
       lane_dupe_skip(true);
+#ifdef HARNESS_WRAP_CLOCK
+      lane_handoff_clock();
+#endif
+#if defined(__linux__) && !defined(ANDROID)
+      lane_timer_slack();
+#endif
+#if defined(HARNESS_WRAP_CLOCK) && defined(CPU_FEATURES_PERF_COUNTER_CHEAP)
+      lane_pacing_clock();
+#endif
       lane_view_count_shrink();
       lane_movie_ring();
       lane_suppress_screensaver();

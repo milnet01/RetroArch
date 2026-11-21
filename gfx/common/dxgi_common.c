@@ -13,6 +13,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdlib.h>
+
 #include <compat/strl.h>
 #include <retro_environment.h>
 #include <retro_atomic.h>
@@ -2517,6 +2519,38 @@ DXGI_FORMAT glslang_format_to_dxgi(glslang_format fmt)
    return DXGI_FORMAT_UNKNOWN;
 }
 
+bool dxgi_chain_flips_fullscreen(DXGISwapChain swap_chain)
+{
+   UINT support        = 0;
+   DXGIOutput output   = NULL;
+   DXGIOutput6 output6 = NULL;
+   if (     !swap_chain
+         || FAILED(DXGIGetContainingOutput(swap_chain, &output))
+         || !output)
+      return false;
+#ifdef __cplusplus
+   if (SUCCEEDED(output->QueryInterface(
+               libretro_IID_IDXGIOutput6, (void**)&output6)))
+   {
+      if (FAILED(output6->CheckHardwareCompositionSupport(&support)))
+         support = 0;
+      output6->Release();
+   }
+   output->Release();
+#else
+   if (SUCCEEDED(output->lpVtbl->QueryInterface(output,
+               &libretro_IID_IDXGIOutput6, (void**)&output6)))
+   {
+      if (FAILED(output6->lpVtbl->CheckHardwareCompositionSupport(
+                  output6, &support)))
+         support = 0;
+      Release(output6);
+   }
+   Release(output);
+#endif
+   return (support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN) != 0;
+}
+
 #ifdef HAVE_DXGI_HDR
 typedef struct display_chromaticities
 {
@@ -2593,6 +2627,16 @@ bool dxgi_check_display_hdr_support(DXGIFactory1 factory, HWND hwnd)
    UINT adapter_idx          = 0;
    bool supported            = false;
    float best_intersect_area = -1;
+
+#ifndef __WINRT__
+   /* RETROARCH_DXGI_HDR=1 takes the display as HDR-capable, so the HDR
+    * path can be drawn and checked where no output reports it (Wine) */
+   {
+      const char *want = getenv("RETROARCH_DXGI_HDR");
+      if (want && want[0] == '1')
+         return true;
+   }
+#endif
 
 #ifdef __WINRT__
 #ifdef __cplusplus

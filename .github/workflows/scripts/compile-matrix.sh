@@ -468,6 +468,12 @@ d3d_video "d3d12 XeSS backend" "$D3DDEFS -DHAVE_D3D12 -DHAVE_TEMPORAL_UPSCALER" 
    gfx/common/d3d12_xess.c
 d3d_video "d3d12 XeSS backend, no threads" \
    "$D3DDEFS -DHAVE_D3D12 -DHAVE_TEMPORAL_UPSCALER -UHAVE_THREADS" gfx/common/d3d12_xess.c
+# NVENC recording as a --disable-networking build has it: no
+# HAVE_NETWORKING and no HAVE_COMMAND, so nothing reaches command.h
+# through input_driver.h and the file has to include it itself.
+d3d_video "nvenc record, no networking" \
+   "$D3DDEFS -DHAVE_D3D12 -DHAVE_RAC3 -UHAVE_NETWORKING -UHAVE_COMMAND" \
+   record/drivers/record_nvenc.c
 # With the MP4 previews: frames from rh264's D3D11 video backend,
 # imported by D3D11 and D3D12 through shared handles and fences (11.4
 # interfaces from the bundled headers), and the backend itself.
@@ -765,6 +771,13 @@ check "features_cpu: ps3"        "$HOSTOFF -Itools/platform_stubs/ps3 -D__PS3__ 
 check "features_cpu: psl1ght"    "$HOSTOFF -Itools/platform_stubs/psl1ght -D__PS3__ -D__PSL1GHT__ -DRARCH_CONSOLE" $FCPU_TU
 check "features_cpu: emscripten" "$HOSTOFF -Itools/platform_stubs/emscripten -D__EMSCRIPTEN__ -DEMSCRIPTEN" $FCPU_TU
 
+# The Allegrex (VFPU) branches of the sample converters, which only the
+# PSP toolchain compiles. The host cannot assemble the VFPU, but the C
+# around it - alignment heads, loop selection - is checked here, with
+# the x86 SIMD paths that would otherwise take precedence shed.
+CONV_TUS="libretro-common/audio/conversion/float_to_s16.c libretro-common/audio/conversion/s16_to_float.c"
+check "conversion: allegrex" "$HOSTOFF -U__SSE__ -U__SSE2__ -U__AVX2__ -U__AVX512F__ -DPSP -D_MIPS_ARCH_ALLEGREX -DDEBUG -std=c89 -pedantic -Wno-long-long -Werror" $CONV_TUS
+
 # Shared menu and video code under the console platform macros. These
 # files are compiled by every desktop job, but the blocks inside them
 # that a console selects are not, and a change to a struct those blocks
@@ -873,6 +886,13 @@ for tu in libretro-common/crypto/crypto.c libretro-common/crypto/kdf.c libretro-
    android_clang "android clang/aarch64: $(basename $tu)" "$ANDROID_NET" "$tu"
 done
 android_clang "android clang/aarch64: camera" "-Itools/platform_stubs/android -DHAVE_OPENGLES -DHAVE_OPENGLES2 -DHAVE_CAMERA -DRARCH_INTERNAL -include tools/platform_stubs/android/jni.h -include frontend/drivers/platform_unix.h -include verbosity.h" camera/drivers/android.c
+# The core signature files' Android branches, otherwise compiled only inside
+# griffin on the Android job
+CORESIG_ANDROID="-Itools/platform_stubs/android -DHAVE_CRYPTO -DHAVE_DYNAMIC -DHAVE_CORE_SIGNATURES -DHAVE_CORE_LOAD_CHECK -DRARCH_INTERNAL -D_GNU_SOURCE -include tools/platform_stubs/android/jni.h"
+for tu in core_signature.c core_signature_io.c core_trust_runtime.c core_install_check.c core_load_file.c core_load_check.c; do
+   android_clang "android clang/aarch64: $tu" "$CORESIG_ANDROID" "$tu"
+   check "android: $tu" "-DANDROID -D__ANDROID__ $CORESIG_ANDROID $CDECL" "$tu"
+done
 # rwebaudio is its own translation unit in the emscripten build, not
 # part of griffin's, and nothing else compiles it at all.
 check "emscripten: rwebaudio"  "$HOSTOFF -Itools/platform_stubs/emscripten -D__EMSCRIPTEN__ -DEMSCRIPTEN -DHAVE_RWEBAUDIO $CDECL" audio/drivers/rwebaudio.c
@@ -940,6 +960,46 @@ for mk in Makefile.*.salamander Makefile.wiiu; do
       echo "ok    salamander link: $mk object set"
    fi
    rm -f /tmp/salamander_link_check
+done
+
+# The calendar reads in rtime.c and the snapshot behind them, down each
+# arm of rtime.c's ladder: POSIX with a looked-up clock_gettime on
+# Apple, the system property on Android, the plain time(NULL) arm every
+# other console takes, and Win32 desktop and WinRT through mingw-w64.
+# Orbis is FreeBSD to its compiler, so it is checked with that target.
+CALTU="libretro-common/time/rtime.c calendar_time.c"
+check "calendar: apple"   "$HOSTOFF -D__APPLE__ -D__MACH__ -Itools/platform_stubs/apple -Werror" $CALTU
+check "calendar: android" "$HOSTOFF -DANDROID -Itools/platform_stubs/android -Werror" $CALTU
+for plat in GEKKO _3DS __SWITCH__ VITA PSP DJGPP __EMSCRIPTEN__ __QNX__ _XBOX; do
+   check "calendar: $plat, C89" "$HOSTOFF -D$plat $C89" $CALTU
+done
+if command -v clang > /dev/null 2>&1 \
+      && clang --target=x86_64-scei-ps4 -x c -c -o /dev/null /dev/null \
+         > /dev/null 2>&1; then
+   CC_SAVED=$CC
+   CC="clang --target=x86_64-scei-ps4 -isystem tools/platform_stubs/sce -isystem /usr/include"
+   [ -d /usr/include/x86_64-linux-gnu ] \
+      && CC="$CC -isystem /usr/include/x86_64-linux-gnu"
+   check "calendar: orbis" "$HOSTOFF -DORBIS -Itools/platform_stubs/orbis -Werror" $CALTU
+   CC=$CC_SAVED
+else
+   echo "skip  calendar: orbis (no clang for x86_64-scei-ps4)"
+fi
+for mingw in x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc; do
+   if ! command -v $mingw > /dev/null 2>&1; then
+      echo "skip  calendar: $mingw"
+      continue
+   fi
+   for winrt in "" "-D__WINRT__ -D_WIN32_WINNT=0x0A00"; do
+      if ! out=$($mingw -std=gnu99 -Wall -Werror $INC $winrt \
+            -fsyntax-only $CALTU 2>&1); then
+         echo "FAIL  calendar: $mingw $winrt"
+         show_out "$out"
+         fail=1
+      else
+         echo "ok    calendar: $mingw $winrt"
+      fi
+   done
 done
 
 # runloop.c under Android: runloop_idle_wait's looper branch, and every
@@ -1183,9 +1243,11 @@ check "runahead: both"             "$RADEFS -DHAVE_DYNAMIC -DHAVE_DYLIB" runahea
 # macOS SDK it uses (tools/platform_stubs/metal). No runner here has the
 # SDK, so the Apple jobs used to be the first to compile it. A selector
 # the stand-ins do not declare is an error: a new Metal call needs its
-# declaration added there.
+# declaration added there. HAVE_SHADERPIPELINE reaches the menu effects'
+# calls into gfx_display (the glow prepass), which no other set compiles.
 if command -v clang > /dev/null 2>&1; then
-   for metal_features in "" "-DHAVE_RMP4 -DHAVE_THREADS" "-DHAVE_RWEBM -DHAVE_THREADS"; do
+   for metal_features in "" "-DHAVE_RMP4 -DHAVE_THREADS" "-DHAVE_RWEBM -DHAVE_THREADS" \
+         "-DHAVE_SHADERPIPELINE"; do
    for metal_ownership in "" "-fobjc-arc"; do
    if ! out=$(clang -x objective-c -fobjc-runtime=macosx-10.13 -fblocks $metal_ownership \
          -fsyntax-only -Wall -Wno-unused-function -Werror=objc-method-access \
@@ -1313,9 +1375,8 @@ check "image YUV: PS2 C89" "-DPS2 -DRARCH_CONSOLE $HOSTOFF -std=c89" \
    libretro-common/formats/image/image_yuv_blit.c
 
 echo "== screens' own windows: with HAVE_VIDEO_WINDOWS =="
-# Android builds the screens' windows and a desktop build does not, so
-# no other lane compiles the drivers' window code or the frontend's
-# with it; and without threads, as a --disable-threads build would.
+# The drivers' window code and the frontend's with GLES2, GLES3 and
+# without threads, which a default desktop build does not compile.
 WINDEFS="-DHAVE_VIDEO_WINDOWS -DHAVE_EGL"
 WINTU="gfx/video_driver.c gfx/video_thread_wrapper.c input/input_driver.c \
    configuration.c menu/menu_setting.c menu/menu_displaylist.c \
@@ -1358,7 +1419,7 @@ else
       | grep -vE '^(deps|samples|libretro-common/samples|tools|pkg|os|wiiu)/')
 fi
 SCE_CC=${SCE_CC:-clang}
-SCE_SYS="-isystem /usr/include"
+SCE_SYS="-isystem tools/platform_stubs/sce -isystem /usr/include"
 [ -d /usr/include/x86_64-linux-gnu ] \
    && SCE_SYS="$SCE_SYS -isystem /usr/include/x86_64-linux-gnu"
 SCE_DEFS="-DRARCH_INTERNAL -DHAVE_THREADS -DHAVE_REWIND -DHAVE_CHEATS -D_BSD_SOURCE"

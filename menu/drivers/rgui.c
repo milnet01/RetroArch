@@ -43,6 +43,8 @@
 #include "../../frontend/frontend_driver.h"
 
 #include "../menu_driver.h"
+#include "../../camera/camera_driver.h"
+#include <formats/image_yuv_blit.h>
 #include "../menu_media_controls.h"
 #include "../menu_media_browser.h"
 #include "../../gfx/gfx_media_cpu.h"
@@ -312,6 +314,9 @@ typedef struct
    retro_time_t draw_entry_hold_until;
    gfx_media_cpu_t *media_player;
    gfx_thumbnail_t media_gpu;
+   /* Settings > Camera > Preview: each frame point-sampled into a
+    * mini thumbnail, a source row at a time. */
+   uint32_t *camera_row;
    rgui_media_gpu_view_t media_gpu_views[3];
    retro_atomic_int_t media_gpu_states[3];
    rgui_media_gpu_view_t media_gpu_pending;
@@ -351,11 +356,20 @@ typedef struct
     * it (the output may be a loaned driver buffer, which is not read
     * back). Grown only when the output gets wider. */
    uint16_t *upscale_line;
+   /* The menu's own text, drawn by the next rgui_render() */
+   const char *msgbox;
+   /* The dialog's buttons as the framebuffer shows them */
+   int msgbox_highlight;
+   int msgbox_hover;
+   uint8_t msgbox_epoch;
    unsigned upscale_line_width;
+   unsigned upscale_map_src_width;
+   unsigned upscale_map_width;
 
    thumbnail_t fs_thumbnail;
    thumbnail_t mini_thumbnail;
    thumbnail_t mini_left_thumbnail;
+   thumbnail_t camera_thumbnail;
 
    rgui_video_settings_t menu_video_settings;
    /* Copy staged by a delay_update publish (the frame path under
@@ -372,6 +386,7 @@ typedef struct
 
    /* The cap a mini thumbnail is fitted into, one word. */
    unsigned mini_thumbnail_max_dims;
+   unsigned camera_row_len;
    unsigned mini_thumbnail_delay;
    /* The video size this was last laid out for, one word,
     * VIDEO_SCALE_PACK's layout. */
@@ -410,7 +425,8 @@ typedef struct
    char entry_index_offset;
 
    char menu_title[NAME_MAX_LENGTH];              /* Must be a fixed length array... */
-   char msgbox[1024];
+   /* The message box text the framebuffer shows, empty for none */
+   char msgbox_drawn[MENU_LABEL_MAX_LENGTH];
    char savestate_thumbnail_file_path[PATH_MAX_LENGTH];
    char theme_preset_path[PATH_MAX_LENGTH];       /* Must be a fixed length array... */
    char theme_dynamic_path[PATH_MAX_LENGTH];      /* Must be a fixed length array... */
@@ -3179,11 +3195,42 @@ static bool rgui_media_seek(void *user, int64_t target_us, int64_t now)
    if (!rgui->media_player)
       return gfx_thumbnail_seek(&rgui->media_gpu, target_us, now);
 #if (defined(HAVE_RWEBM) || defined(HAVE_RMP4)) && defined(HAVE_AUDIOMIXER) && \
-      (defined(HAVE_ROPUS) || defined(HAVE_RVORBIS) || defined(HAVE_RAAC))
+      (defined(HAVE_ROPUS) || defined(HAVE_RVORBIS) || defined(HAVE_RAAC) \
+       || defined(HAVE_RFLAC))
    if (config_get_ptr()->bools.menu_thumbnail_preview_audio)
       audio_driver_mixer_prepare_format(&rate, &s16);
 #endif
    return gfx_media_cpu_seek(((rgui_t*)user)->media_player, target_us, rate, s16, now);
+}
+
+static bool rgui_media_request_audio(void *user, int index)
+{
+   rgui_t *rgui = (rgui_t*)user;
+   return rgui->media_player ? gfx_media_cpu_request_audio(rgui->media_player, index)
+      : gfx_thumbnail_request_audio(&rgui->media_gpu, index);
+}
+
+static bool rgui_media_audio(void *user, int index, int64_t now)
+{
+   rgui_t *rgui = (rgui_t*)user;
+   unsigned rate = 0;
+   bool s16 = false;
+   if (!rgui->media_player) return gfx_thumbnail_select_audio(&rgui->media_gpu, index, now);
+#if (defined(HAVE_RWEBM) || defined(HAVE_RMP4)) && defined(HAVE_AUDIOMIXER) && \
+      (defined(HAVE_ROPUS) || defined(HAVE_RVORBIS) || defined(HAVE_RAAC) \
+       || defined(HAVE_RFLAC))
+   if (config_get_ptr()->bools.menu_thumbnail_preview_audio)
+      audio_driver_mixer_prepare_format(&rate, &s16);
+#endif
+   return gfx_media_cpu_select_audio(rgui->media_player, index, rate, s16, now);
+}
+
+static void rgui_media_audio_target(rgui_t *rgui, gfx_media_target_t *target)
+{
+   gfx_media_controls_audio_target(target, rgui->media_player
+         ? gfx_media_cpu_session(rgui->media_player)
+         : (const gfx_anim_preview_t*)rgui->media_gpu.anim_sess, rgui_media_audio,
+         rgui_media_request_audio);
 }
 
 static bool rgui_media_gpu_supported(void)
@@ -3324,9 +3371,11 @@ RGUI_NOINLINE static void rgui_media_update(rgui_t *rgui, unsigned dims)
       target.pause = rgui_media_pause;
       target.seek = rgui_media_seek;
       target.source_path = rgui->media_path;
+      rgui_media_audio_target(rgui, &target);
       menu_media_controls_resume(&rgui->media, &target, now);
       memset(&target, 0, sizeof(target));
    }
+   if (target.user) rgui_media_audio_target(rgui, &target);
    target.source_path = target.user ? rgui->media_path : NULL;
    menu_input_get_pointer_state(&rgui->media_pointer);
    rgui->media.settings_user = rgui;
@@ -3531,6 +3580,7 @@ RGUI_NOINLINE static void rgui_render_background(
 static void rgui_render_messagebox(
       rgui_t *rgui,
       const char *message,
+      bool heading,
       unsigned fb_dims);
 
 RGUI_NOINLINE static void rgui_render_fs_thumbnail(
@@ -3635,7 +3685,7 @@ RGUI_NOINLINE static void rgui_render_fs_thumbnail(
       if (     !(rgui->flags & RGUI_FLAG_ENTRY_HAS_THUMBNAIL)
             && !(rgui->flags & RGUI_FLAG_ENTRY_HAS_LEFT_THUMBNAIL))
          rgui_render_messagebox(rgui,
-            msg_hash_to_str(MSG_NO_THUMBNAIL_AVAILABLE), fb_dims);
+            msg_hash_to_str(MSG_NO_THUMBNAIL_AVAILABLE), false, fb_dims);
    }
 }
 
@@ -5266,24 +5316,38 @@ static void rgui_set_blit_functions(
  * rgui_blit_line/rgui_blit_symbol() END
  * ============================== */
 
+/* The button under the pointer, as the dialog's buttons show it */
+static int rgui_msgbox_hover(const menu_dialog_t *d)
+{
+   if (d->button_count)
+      return d->button_hover;
+   if (d->confirm_hover_back)
+      return 0;
+   return d->confirm_hover_ok ? 1 : -1;
+}
+
 static void rgui_set_message(void *data, const char *message)
 {
    rgui_t           *rgui = (rgui_t*)data;
+   const menu_dialog_t *d = &menu_state_get_ptr()->dialog_st;
 
    if (!rgui || !message)
       return;
 
-   rgui->msgbox[0] = '\0';
+   rgui->msgbox    = message;
 
-   if (message && *message)
-      strlcpy(rgui->msgbox, message, sizeof(rgui->msgbox));
-
-   rgui->flags |= RGUI_FLAG_FORCE_REDRAW;
+   /* The framebuffer keeps the box: drawn again only when it changed */
+   if (     rgui->msgbox_epoch     != d->button_epoch
+         || rgui->msgbox_highlight != d->button_highlight
+         || rgui->msgbox_hover     != rgui_msgbox_hover(d)
+         || strcmp(rgui->msgbox_drawn, message))
+      rgui->flags |= RGUI_FLAG_FORCE_REDRAW;
 }
 
 static void rgui_render_messagebox(
       rgui_t *rgui,
       const char *message,
+      bool heading,
       unsigned fb_dims)
 {
    unsigned fb_width  = VIDEO_SCALE_W(fb_dims);
@@ -5296,13 +5360,23 @@ static void rgui_render_messagebox(
    unsigned height            = 0;
    unsigned line_count        = 0;
    char *lines[128];
+   unsigned glyphs[128];
    size_t msg_len;
    size_t wrapped_len;
    uint16_t *frame_buf_data   = rgui->frame_buf.data;
    struct menu_state *menu_st = menu_state_get_ptr();
-   bool confirm_dialog        = (menu_st->dialog_st.confirm_cmd) ? true : false;
+   menu_dialog_buttons_t buttons;
+   int button_w[MENU_DIALOG_BUTTONS_MAX];
+   int button_x[MENU_DIALOG_BUTTONS_MAX];
+   unsigned button_rows       = 0;
+   int row_step               = 0;
+   int rows_y                 = 0;
+   unsigned firmware_line_state = 0;
+   unsigned rule_line         = 0;
+   bool add_row               = false;
 
    wrapped_message[0]         = '\0';
+   menu_dialog_get_buttons(menu_st, &buttons);
 
    msg_len                    = strlen(message);
 
@@ -5334,22 +5408,78 @@ static void rgui_render_messagebox(
    if (line_count == 0)
       return;
 
+   if (heading)
+      rule_line = menu_dialog_rule_line(message, wrapped_message,
+            wrapped_len, line_count);
+
    for (i = 0; i < line_count; i++)
    {
-      char     *msg         = lines[i];
-      unsigned msglen       = (unsigned)utf8len(msg);
+      unsigned msglen       = (unsigned)utf8len(lines[i]);
       unsigned line_width   = msglen * rgui->font_width_stride - 1 + 6 + 10;
+      glyphs[i]             = msglen;
       width                 = MAX(width, line_width);
       glyphs_width          = MAX(glyphs_width, msglen);
    }
 
+   /* The buttons: a glyph either side of each label, two between */
+   if (buttons.count)
+   {
+      int stride = (int)rgui->font_width_stride;
+      /* The most glyphs a box on this framebuffer can be wide */
+      int fit    = ((int)fb_width - 15) / stride;
+      int need;
+      unsigned b;
+      for (b = 0; b < buttons.count; b++)
+         button_w[b] = ((int)utf8len(msg_hash_to_str(
+               (enum msg_hash_enums)buttons.label[b])) + 2) * stride;
+      need        = menu_dialog_buttons_layout(button_w, buttons.count,
+            stride * 2, 0, 0, NULL);
+      row_step    = (int)rgui->font_height_stride + 2;
+      button_rows = 1;
+      /* Wider than the widest box: one button per line */
+      if (need > fit * stride)
+      {
+         button_rows = buttons.count;
+         need        = 0;
+         for (b = 0; b < buttons.count; b++)
+            need     = MAX(need, button_w[b]);
+      }
+      if (need > (int)glyphs_width * stride)
+      {
+         int cells = (need + stride - 1) / stride;
+         if (cells > fit)
+            cells  = fit;
+         if (cells > (int)glyphs_width)
+         {
+            glyphs_width = (unsigned)cells;
+            width        = glyphs_width * stride - 1 + 6 + 10;
+         }
+      }
+   }
+
    height                   = (unsigned)(rgui->font_height_stride * line_count + 6 + 10);
+
+   if (buttons.count)
+      height               += (unsigned)(row_step * (int)button_rows)
+            + rgui->font_height_stride;
+
+   /* The heading's rule, in the blank line under it or in a row added
+    * there, only while the box fits the screen with it */
+   if (rule_line)
+   {
+      unsigned row_h = (rule_line < line_count && !*lines[rule_line])
+            ? 0 : rgui->font_height_stride;
+      if (height + row_h > fb_height)
+         rule_line = 0;
+      else
+      {
+         height   += row_h;
+         add_row   = row_h > 0;
+      }
+   }
+
    x                        = ((int)fb_width  - (int)width) / 2;
    y                        = ((int)fb_height - (int)height) / 2;
-
-   /* Extra room for confirm buttons */
-   if (confirm_dialog)
-      height               += rgui->font_height_stride * 2;
 
    if (height > fb_height)
       height                = fb_height;
@@ -5357,6 +5487,9 @@ static void rgui_render_messagebox(
       x                     = 0;
    if (y < 0)
       y                     = 0;
+   if (buttons.count)
+      rows_y                = y + (int)height - row_step * (int)button_rows
+            - (int)(rgui->font_height_stride / 2) - 2;
 
    if (frame_buf_data)
    {
@@ -5408,8 +5541,11 @@ static void rgui_render_messagebox(
       for (i = 0; i < line_count; i++)
       {
          const char *msg = lines[i];
-         int offset_x    = (int)(rgui->font_width_stride * (glyphs_width - utf8len(msg)) / 2);
-         int offset_y    = (int)(rgui->font_height_stride * i);
+         const char *path = menu_dialog_firmware_path_line(menu_st,
+               msg, &firmware_line_state);
+         int offset_x    = (int)(rgui->font_width_stride * (glyphs_width - glyphs[i]) / 2);
+         int offset_y    = (int)(rgui->font_height_stride
+               * ((add_row && i >= rule_line) ? i + 1 : i));
          int text_x      = x + 8 + offset_x;
          int text_y      = y + 8 + offset_y;
 
@@ -5417,84 +5553,76 @@ static void rgui_render_messagebox(
           * framebuffer */
          if (text_y > (int)fb_height - 10 - (int)rgui->font_height_stride)
             break;
+         /* A box taller than the screen keeps its buttons */
+         if (buttons.count && text_y + (int)rgui->font_height_stride > rows_y)
+            break;
 
          rgui_blit_line(rgui, fb_width, text_x, text_y, msg,
                rgui->colors.normal_color, rgui->colors.shadow_color);
+
+         if (path)
+            rgui_color_rect(frame_buf_data, fb_dims,
+                  text_x + (path - msg) * rgui->font_width_stride,
+                  text_y + VIDEO_SCALE_H(rgui->font_dims),
+                  utf8len(path) * rgui->font_width_stride - 1, 1,
+                  rgui->colors.normal_color);
+
+         /* Centred between the heading's glyphs and the next line */
+         if (i + 1 == rule_line)
+            rgui_fill_rect(frame_buf_data, fb_dims,
+                  x + 8,
+                  y + 8 + (rgui->font_height_stride * (2 * rule_line)
+                     + VIDEO_SCALE_H(rgui->font_dims)) / 2 - 1,
+                  glyphs_width * rgui->font_width_stride - 1, 2,
+                  border_dark_color, border_light_color, border_thickness);
       }
 
-      if (confirm_dialog)
+      if (buttons.count)
       {
-         const char *str_back                   = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_BASIC_MENU_CONTROLS_CANCEL);
-         const char *str_ok                     = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_BASIC_MENU_CONTROLS_OK);
-         size_t str_back_width                  = strlen(str_back) * rgui->font_width_stride;
-         size_t str_ok_width                    = strlen(str_ok) * rgui->font_width_stride;
-         /* Every offset here is a whole number of framebuffer
-          * pixels: the half a glyph the padding used to be always
-          * appeared in pairs that added back up to one. The two
-          * that do not - the hit box's top edge and its height -
-          * are the halves the float arithmetic truncated away. */
-         unsigned icon_size                     = rgui->font_width_stride;
-         int icon_x                             = x + (int)(icon_size * 4);
-         int icon_y                             = (int)fb_height - y;
-         int cursor_x                           = icon_x - (int)icon_size;
-         int cursor_y                           = icon_y - (int)((icon_size + 1) / 2);
-         int cursor_w                           = (int)(icon_size * 2 + str_back_width);
-         int cursor_h                           = (int)((icon_size * 5) / 2);
+         int cursor_h = (int)rgui->font_height_stride;
+         int hover    = -1;
+         unsigned b;
 
-         /* Back */
-         if (     VIDEO_POS_X(rgui->pointer.pos) >= cursor_x
-               && VIDEO_POS_X(rgui->pointer.pos) <= cursor_x + cursor_w
-               && VIDEO_POS_Y(rgui->pointer.pos) >= cursor_y
-               && VIDEO_POS_Y(rgui->pointer.pos) <= cursor_y + cursor_h)
-         {
-            menu_st->dialog_st.confirm_hover_back = true;
-
-            rgui_fill_rect(frame_buf_data, fb_dims,
-                  cursor_x,
-                  cursor_y,
-                  cursor_w,
-                  cursor_h,
-                  rgui->colors.bg_dark_color, rgui->colors.bg_light_color,
-                  (rgui->flags & RGUI_FLAG_BG_THICKNESS) ? true : false);
-         }
+         if (button_rows == 1)
+            menu_dialog_buttons_layout(button_w, buttons.count,
+                  (int)rgui->font_width_stride * 2, x + 8,
+                  (int)(glyphs_width * rgui->font_width_stride), button_x);
          else
-            menu_st->dialog_st.confirm_hover_back = false;
+            for (b = 0; b < buttons.count; b++)
+               button_x[b] = x + ((int)width - button_w[b]) / 2;
 
-         rgui_blit_line(rgui, fb_width, icon_x, icon_y, str_back,
-               (menu_st->dialog_st.confirm_hover_back)
-                     ? rgui->colors.hover_color
-                     : rgui->colors.normal_color,
-               rgui->colors.shadow_color);
-
-         /* OK */
-         icon_x  += (int)width - (int)(icon_size * 8) - (int)str_ok_width;
-
-         cursor_x = icon_x - (int)icon_size;
-         cursor_w = (int)(icon_size * 2 + str_ok_width);
-
-         if (     VIDEO_POS_X(rgui->pointer.pos) >= cursor_x
-               && VIDEO_POS_X(rgui->pointer.pos) <= cursor_x + cursor_w
-               && VIDEO_POS_Y(rgui->pointer.pos) >= cursor_y
-               && VIDEO_POS_Y(rgui->pointer.pos) <= cursor_y + cursor_h)
+         for (b = 0; b < buttons.count; b++)
          {
-            menu_st->dialog_st.confirm_hover_ok = true;
+            const char *str = msg_hash_to_str(
+                  (enum msg_hash_enums)buttons.label[b]);
+            int label_y     = rows_y
+                  + ((button_rows == 1) ? 0 : row_step * (int)b);
+            int cursor_y    = label_y - 2;
+            /* A button wider than the screen is lit where it shows */
+            int fill_x      = MAX(button_x[b], 0);
+            bool lit;
 
-            rgui_fill_rect(frame_buf_data, fb_dims,
-                  cursor_x,
-                  cursor_y,
-                  cursor_w,
-                  cursor_h,
-                  rgui->colors.bg_dark_color, rgui->colors.bg_light_color,
-                  (rgui->flags & RGUI_FLAG_BG_THICKNESS) ? true : false);
+            if (     VIDEO_POS_X(rgui->pointer.pos) >= button_x[b]
+                  && VIDEO_POS_X(rgui->pointer.pos) <= button_x[b] + button_w[b]
+                  && VIDEO_POS_Y(rgui->pointer.pos) >= cursor_y
+                  && VIDEO_POS_Y(rgui->pointer.pos) <= cursor_y + cursor_h)
+               hover = (int)b;
+
+            lit = ((int)b == buttons.highlight) || ((int)b == hover);
+            if (lit)
+               rgui_fill_rect(frame_buf_data, fb_dims,
+                     fill_x, cursor_y, button_w[b] - (fill_x - button_x[b]),
+                     cursor_h,
+                     rgui->colors.bg_dark_color, rgui->colors.bg_light_color,
+                     (rgui->flags & RGUI_FLAG_BG_THICKNESS) ? true : false);
+
+            rgui_blit_line(rgui, fb_width,
+                  button_x[b] + (int)rgui->font_width_stride, label_y, str,
+                  lit ? rgui->colors.hover_color : rgui->colors.normal_color,
+                  rgui->colors.shadow_color);
          }
-         else
-            menu_st->dialog_st.confirm_hover_ok = false;
 
-         rgui_blit_line(rgui, fb_width, icon_x, icon_y, str_ok,
-               (menu_st->dialog_st.confirm_hover_ok)
-                     ? rgui->colors.hover_color
-                     : rgui->colors.normal_color,
-               rgui->colors.shadow_color);
+         menu_dialog_set_hover(menu_st, hover);
       }
    }
 }
@@ -5673,7 +5801,7 @@ RGUI_NOINLINE static void rgui_render_osk(
       strlcpy_append(msg, sizeof(msg), &_len, input_label);
       strlcpy_append(msg, sizeof(msg), &_len, "\n");
       strlcpy_append(msg, sizeof(msg), &_len, input_str);
-      rgui_render_messagebox(rgui, msg, fb_dims);
+      rgui_render_messagebox(rgui, msg, false, fb_dims);
       return;
    }
 
@@ -6199,10 +6327,11 @@ RGUI_NOINLINE static void rgui_media_draw(rgui_t *rgui, unsigned dims)
    gfx_media_rect_t bar;
    unsigned i, width = VIDEO_SCALE_W(dims);
    int64_t position;
-   char elapsed[24], duration[24], caption[56];
-   char seek_back[16], seek_forward[16];
+   char elapsed[24], duration[24], caption[128];
+   char seek_back[16], seek_forward[16], audio_label[16];
    size_t limit;
-   const char *labels[8];
+   const char *labels[10];
+   char label[64];
    gfx_media_controls_consume(&rgui->media.mailbox, view);
    rgui_media_subtitle_draw(rgui, dims);
    if (!view->visible || !view->layout.unit) return;
@@ -6210,10 +6339,11 @@ RGUI_NOINLINE static void rgui_media_draw(rgui_t *rgui, unsigned dims)
    rgui_color_rect(rgui->frame_buf.data, dims, bar.x, bar.y, bar.w, bar.h,
          rgui->colors.shadow_color);
    bar = view->layout.timeline;
-   rgui_color_rect(rgui->frame_buf.data, dims, bar.x, bar.y, bar.w, bar.h,
-         rgui->colors.bg_light_color);
+   if (!view->image)
+      rgui_color_rect(rgui->frame_buf.data, dims, bar.x, bar.y, bar.w, bar.h,
+            rgui->colors.bg_light_color);
    position = view->dragging ? view->drag_us : view->playback.position_us;
-   if (view->playback.duration_us > 0)
+   if (!view->image && view->playback.duration_us > 0)
    {
       double fraction = (double)position / (double)view->playback.duration_us;
       if (fraction < 0.0) fraction = 0.0;
@@ -6225,12 +6355,16 @@ RGUI_NOINLINE static void rgui_media_draw(rgui_t *rgui, unsigned dims)
    menu_media_controls_time(elapsed, sizeof(elapsed), position);
    menu_media_controls_time(duration, sizeof(duration), view->playback.duration_us);
    snprintf(caption, sizeof(caption), "%s / %s", elapsed, duration);
+   if (view->audio_track_number)
+      snprintf(caption, sizeof(caption), "%s / %s | A%u %s", elapsed, duration,
+            view->audio_track_number, view->audio_language);
    limit = rgui->font_width_stride
       ? (width - view->layout.timeline.x - 2) / rgui->font_width_stride : 0;
    if (limit < sizeof(caption)) caption[limit] = '\0';
-   rgui_blit_line(rgui, width, view->layout.timeline.x,
-         view->layout.panel.y + 1, caption, rgui->colors.normal_color,
-         rgui->colors.shadow_color);
+   if (!view->image)
+      rgui_blit_line(rgui, width, view->layout.timeline.x,
+            view->layout.panel.y + 1, caption, rgui->colors.normal_color,
+            rgui->colors.shadow_color);
    labels[0] = view->playback.paused ? ">" : "||";
    snprintf(seek_back, sizeof(seek_back), "-%u", view->seek_seconds);
    snprintf(seek_forward, sizeof(seek_forward), "+%u", view->seek_seconds);
@@ -6238,22 +6372,45 @@ RGUI_NOINLINE static void rgui_media_draw(rgui_t *rgui, unsigned dims)
    labels[4] = "|<";
    labels[5] = ">|";
    labels[6] = "...";
+   if (view->audio_tracks)
+   {
+      snprintf(audio_label, sizeof(audio_label), "A%u", view->audio_track_number);
+      labels[view->layout.button_count - (view->subtitle_tracks ? 2 : 1)
+         - (view->shaders ? 1 : 0)] = audio_label;
+   }
    if (view->subtitle_tracks)
-      labels[view->layout.button_count - 1] = "CC";
+      labels[view->layout.button_count - 1 - (view->shaders ? 1 : 0)] = "CC";
+   /* The last button, the only one an image has */
+   if (view->shaders)
+      labels[view->layout.button_count - 1] =
+         msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SHADER_OPTIONS);
    for (i = 0; i < view->layout.button_count; i++)
    {
       const gfx_media_rect_t *button = &view->layout.buttons[i];
       bool focused = (view->row_focus && view->focus == i) || view->hover == (int)i;
-      bool enabled = (view->subtitle_tracks && i + 1 == view->layout.button_count)
+      bool enabled = (view->audio_tracks
+            && i + (view->subtitle_tracks ? 2 : 1) + (view->shaders ? 1 : 0)
+               == view->layout.button_count)
+            || (view->subtitle_tracks
+               && i + 1 + (view->shaders ? 1 : 0) == view->layout.button_count)
+            || (view->shaders && i + 1 == view->layout.button_count)
             || i == 6 || (i >= 4
             ? (view->directions & (i == 4 ? 1u : 2u)) != 0
             : !i || view->playback.seekable);
-      int x = button->x + (button->w - (int)(strlen(labels[i]) * rgui->font_width_stride)) / 2;
-      int y = button->y + (button->h - (int)VIDEO_SCALE_H(rgui->font_dims)) / 2;
+      size_t columns = rgui->font_width_stride
+         ? (size_t)button->w / rgui->font_width_stride : 0;
+      int x, y;
+      /* Cut to the button, in characters, not bytes */
+      strlcpy(label, labels[i], sizeof(label));
+      if (utf8len(label) > columns)
+         *(char*)utf8skip(label, columns) = '\0';
+      x = button->x + (button->w
+            - (int)(utf8len(label) * rgui->font_width_stride)) / 2;
+      y = button->y + (button->h - (int)VIDEO_SCALE_H(rgui->font_dims)) / 2;
       rgui_color_rect(rgui->frame_buf.data, dims, button->x, button->y,
             button->w, button->h, focused ? rgui->colors.border_light_color
                : rgui->colors.bg_dark_color);
-      rgui_blit_line(rgui, width, x, y, labels[i], enabled
+      rgui_blit_line(rgui, width, x, y, label, enabled
             ? rgui->colors.normal_color : rgui->colors.disabled_color,
             rgui->colors.shadow_color);
    }
@@ -6270,6 +6427,131 @@ RGUI_NOINLINE static void rgui_media_draw(rgui_t *rgui, unsigned dims)
             track, rgui->colors.normal_color, rgui->colors.shadow_color);
    }
 
+}
+
+/* The size a camera frame of @w x @h fits the mini thumbnail at. */
+static unsigned rgui_camera_fit(const rgui_t *rgui, unsigned w, unsigned h)
+{
+   unsigned max_w = VIDEO_SCALE_W(rgui->camera_thumbnail.max_dims);
+   unsigned max_h = VIDEO_SCALE_H(rgui->camera_thumbnail.max_dims);
+   unsigned tw    = max_w;
+   unsigned th    = w ? (unsigned)(((uint64_t)h * max_w) / w) : 0;
+   if (th > max_h)
+   {
+      th = max_h;
+      tw = h ? (unsigned)(((uint64_t)w * max_h) / h) : 0;
+   }
+   return VIDEO_SCALE_PACK(MAX(tw, 1), MAX(th, 1));
+}
+
+static void rgui_camera_planar(void *user,
+      const struct retro_camera_planar_frame *f)
+{
+   rgui_t      *rgui = (rgui_t*)user;
+   thumbnail_t *t    = &rgui->camera_thumbnail;
+   unsigned flags    = 0;
+   unsigned dims, tw, th, x, y;
+   if (!t->data || !f->width || !f->height)
+      return;
+   if (rgui->camera_row_len < f->width)
+   {
+      uint32_t *row = (uint32_t*)realloc(rgui->camera_row,
+            f->width * sizeof(uint32_t));
+      if (!row)
+         return;
+      rgui->camera_row     = row;
+      rgui->camera_row_len = f->width;
+   }
+   if (f->flags & RETRO_CAMERA_PLANAR_FULL_RANGE)
+      flags |= IMAGE_YUV_FLAG_FULL_RANGE;
+   if (f->flags & RETRO_CAMERA_PLANAR_BT709)
+      flags |= IMAGE_YUV_FLAG_BT709;
+   dims = rgui_camera_fit(rgui, f->width, f->height);
+   tw   = VIDEO_SCALE_W(dims);
+   th   = VIDEO_SCALE_H(dims);
+   for (y = 0; y < th; y++)
+   {
+      unsigned sy = (unsigned)(((uint64_t)y * f->height) / th);
+      uint16_t *dst = t->data + (size_t)y * tw;
+      /* One source row, with the chroma row it shares */
+      image_yuv_420_to_rgb32(rgui->camera_row, f->width,
+            f->planes[0] + sy * f->strides[0], (unsigned)f->strides[0],
+            f->planes[1] + (sy >> 1) * f->strides[1], (unsigned)f->strides[1],
+            f->planes[2] + (sy >> 1) * f->strides[2], (unsigned)f->strides[2],
+            (unsigned)f->chroma_step, f->width, 1, flags);
+      for (x = 0; x < tw; x++)
+         dst[x] = argb32_to_pixel_platform_format(
+               rgui->camera_row[((uint64_t)x * f->width) / tw]);
+   }
+   t->dims      = dims;
+   t->is_valid  = true;
+   rgui->flags |= RGUI_FLAG_FORCE_REDRAW;
+}
+
+static void rgui_camera_raw(void *user, const uint32_t *buf,
+      unsigned width, unsigned height, size_t pitch)
+{
+   rgui_t      *rgui = (rgui_t*)user;
+   thumbnail_t *t    = &rgui->camera_thumbnail;
+   unsigned dims, tw, th, x, y;
+   if (!t->data || !width || !height)
+      return;
+   dims = rgui_camera_fit(rgui, width, height);
+   tw   = VIDEO_SCALE_W(dims);
+   th   = VIDEO_SCALE_H(dims);
+   for (y = 0; y < th; y++)
+   {
+      const uint32_t *src = (const uint32_t*)((const uint8_t*)buf
+            + (size_t)(((uint64_t)y * height) / th) * pitch);
+      uint16_t *dst = t->data + (size_t)y * tw;
+      for (x = 0; x < tw; x++)
+         dst[x] = argb32_to_pixel_platform_format(
+               src[((uint64_t)x * width) / tw] | 0xFF000000u);
+   }
+   t->dims      = dims;
+   t->is_valid  = true;
+   rgui->flags |= RGUI_FLAG_FORCE_REDRAW;
+}
+
+static void rgui_camera_close(rgui_t *rgui)
+{
+   if (!rgui->camera_thumbnail.data)
+      return;
+   camera_driver_preview_close();
+   free(rgui->camera_thumbnail.data);
+   rgui->camera_thumbnail.data     = NULL;
+   rgui->camera_thumbnail.is_valid = false;
+   rgui->flags                    |= RGUI_FLAG_FORCE_REDRAW;
+}
+
+/* Once a frame: the preview runs while its entry is selected. */
+static void rgui_camera_update(rgui_t *rgui)
+{
+   if (!menu_camera_preview_selected())
+   {
+      rgui_camera_close(rgui);
+      return;
+   }
+   if (!rgui->camera_thumbnail.data)
+   {
+      unsigned max_dims = rgui->mini_thumbnail_max_dims;
+      if (!VIDEO_SCALE_W(max_dims) || !VIDEO_SCALE_H(max_dims)
+            || !(rgui->camera_thumbnail.data = (uint16_t*)malloc(
+                  VIDEO_SCALE_AREA(max_dims) * sizeof(uint16_t))))
+         return;
+      rgui->camera_thumbnail.max_dims = max_dims;
+      rgui->camera_thumbnail.is_valid = false;
+   }
+   /* Opened here, and again after the menu closed it */
+   if (!camera_state_get_ptr()->preview_on)
+   {
+      camera_preview_sink_t sink;
+      sink.planar = rgui_camera_planar;
+      sink.raw    = rgui_camera_raw;
+      sink.user   = rgui;
+      camera_driver_preview_open(&sink);
+   }
+   menu_camera_preview_poll();
 }
 
 static void rgui_render(void *data, unsigned dims,
@@ -6313,10 +6595,21 @@ static void rgui_render(void *data, unsigned dims,
                                   = settings->bools.menu_rgui_particle_effect_screensaver;
    bool current_display_cb        = false;
    bool show_fs_thumbnail         = (rgui->flags & RGUI_FLAG_SHOW_FULLSCREEN_THUMBNAIL);
+   const char *msgbox             = NULL;
 
    /* Sanity check */
    if (!rgui || !rgui->frame_buf.data)
       return;
+
+   /* This iteration's box, if it has one; a box gone since it was
+    * drawn is painted over */
+   msgbox       = rgui->msgbox;
+   rgui->msgbox = NULL;
+   if (!msgbox && *rgui->msgbox_drawn)
+   {
+      rgui->msgbox_drawn[0] = '\0';
+      rgui->flags          |= RGUI_FLAG_FORCE_REDRAW;
+   }
 
    /* Show thumbnails only after certain period to prevent flashing */
    if (rgui->mini_thumbnail_delay > 0)
@@ -6718,12 +7011,13 @@ static void rgui_render(void *data, unsigned dims,
       /* Print clock (if required) */
       if (menu_timedate_enable)
       {
-         char timedate[20];
-         gfx_display_ctx_datetime_t datetime;
-         datetime.time_mode      = settings->uints.menu_timedate_style;
-         datetime.date_separator = settings->uints.menu_timedate_date_separator;
-
-         menu_display_timedate(&datetime, timedate, sizeof(timedate));
+         const char *timedate = menu_display_timedate(
+               MENU_TIMEDATE_RESOLVE_STYLE(
+                  settings->uints.menu_timedate_mode,
+                  settings->uints.menu_timedate_style,
+                  settings->bools.menu_timedate_12hour,
+                  menu_state_get_ptr()->timedate_zone_order),
+               settings->uints.menu_timedate_date_separator, NULL, NULL);
          timedate_len = utf8len(timedate);
 
          /* Add battery spacer */
@@ -7023,8 +7317,14 @@ static void rgui_render(void *data, unsigned dims,
                   entry_color, rgui->colors.shadow_color);
       }
 
-      /* Draw mini thumbnails, if required */
-      if (show_savestate_thumbnail)
+      /* Draw mini thumbnails, if required: the camera preview at the
+       * foot, clear of the camera page's few entries */
+      if (rgui->camera_thumbnail.data && rgui->camera_thumbnail.is_valid)
+         rgui_render_mini_thumbnail(rgui, &rgui->camera_thumbnail,
+               rgui->frame_buf.data, GFX_THUMBNAIL_LEFT,
+               p_disp->framebuf_dims, fb_pitch,
+               false, thumbnail_background, false);
+      else if (show_savestate_thumbnail)
       {
          thumbnail_t *thumbnail_savestate = &rgui->mini_left_thumbnail;
          if (show_savestate_thumbnail && thumbnail_savestate)
@@ -7152,13 +7452,18 @@ static void rgui_render(void *data, unsigned dims,
       menu_driver_media_startup_ready(menu_driver_media_startup_token());
    if (!show_fs_thumbnail)
       rgui_media_gpu_cutout(rgui, p_disp->framebuf_dims);
-   if (*rgui->msgbox)
+   if (msgbox && *msgbox)
    {
+      const menu_dialog_t *d = &menu_st->dialog_st;
       /* Draw popup directly on top of the menu; the messagebox
        * paints its own opaque background within its footprint. */
-      rgui_render_messagebox(rgui, rgui->msgbox, p_disp->framebuf_dims);
-      rgui->msgbox[0]    = '\0';
-      rgui->flags       |=  RGUI_FLAG_FORCE_REDRAW;
+      rgui_render_messagebox(rgui, msgbox, menu_st->dialog_st.heading,
+            p_disp->framebuf_dims);
+      if (strcmp(rgui->msgbox_drawn, msgbox))
+         strlcpy(rgui->msgbox_drawn, msgbox, sizeof(rgui->msgbox_drawn));
+      rgui->msgbox_epoch     = d->button_epoch;
+      rgui->msgbox_highlight = d->button_highlight;
+      rgui->msgbox_hover     = rgui_msgbox_hover(d);
    }
 
    if (rgui->flags & RGUI_FLAG_SHOW_MOUSE)
@@ -8011,12 +8316,18 @@ static void rgui_free(void *data)
       return;
 
    rgui_media_close(rgui, false);
+   rgui_camera_close(rgui);
+   free(rgui->camera_row);
+   rgui->camera_row     = NULL;
+   rgui->camera_row_len = 0;
    rgui_fonts_free(rgui);
    rgui_buffers_free(rgui);
    rgui_upscale_buf_free(&rgui->upscale_buf);
    free(rgui->upscale_line);
-   rgui->upscale_line       = NULL;
-   rgui->upscale_line_width = 0;
+   rgui->upscale_line          = NULL;
+   rgui->upscale_line_width    = 0;
+   rgui->upscale_map_src_width = 0;
+   rgui->upscale_map_width     = 0;
 }
 
 static void rgui_set_texture_frame(video_driver_state_t *video_st,
@@ -8027,6 +8338,21 @@ static void rgui_set_texture_frame(video_driver_state_t *video_st,
          && video_st->poke->set_texture_frame)
       video_st->poke->set_texture_frame(video_st->data,
             frame, rgb32, dims, alpha);
+}
+
+RGUI_NOINLINE static void rgui_upscale_map(rgui_t *rgui,
+      unsigned fb_width, unsigned out_width)
+{
+   unsigned x_dst, x_src, rem;
+   uint16_t *cols = rgui->upscale_line;
+   for (x_dst = 0, x_src = 0, rem = 0; x_dst < out_width; x_dst++)
+   {
+      cols[x_dst] = (uint16_t)x_src;
+      for (rem += fb_width; rem >= out_width; rem -= out_width)
+         x_src++;
+   }
+   rgui->upscale_map_src_width = fb_width;
+   rgui->upscale_map_width     = out_width;
 }
 
 static void rgui_set_texture(void *data)
@@ -8080,7 +8406,7 @@ static void rgui_set_texture(void *data)
       {
          unsigned out_width;
          unsigned out_height;
-         unsigned x_src, y_src, prev_y_src, rem;
+         unsigned y_src, prev_y_src, rem;
          unsigned x_dst, y_dst;
          size_t out_pitch;
          uint16_t *cols, *line;
@@ -8150,12 +8476,9 @@ static void rgui_set_texture(void *data)
          /* Source of each output pixel: floor(dst * fb / out),
           * stepped, so at a whole factor each source pixel is
           * repeated exactly that many times */
-         for (x_dst = 0, x_src = 0, rem = 0; x_dst < out_width; x_dst++)
-         {
-            cols[x_dst] = (uint16_t)x_src;
-            for (rem += fb_width; rem >= out_width; rem -= out_width)
-               x_src++;
-         }
+         if (     rgui->upscale_map_src_width != fb_width
+               || rgui->upscale_map_width != out_width)
+            rgui_upscale_map(rgui, fb_width, out_width);
 
          for (y_dst = 0, y_src = 0, rem = 0; y_dst < out_height; y_dst++)
          {
@@ -9225,10 +9548,12 @@ static void rgui_media_gpu_draw(rgui_t *rgui, video_frame_info_t *video_info)
       menu_driver_media_startup_ready(startup_token);
    if (!view->visible || rect->w <= 0 || rect->h <= 0
          || !VIDEO_SCALE_W(view->source_dims) || !VIDEO_SCALE_H(view->source_dims)) return;
-   memset(&vp, 0, sizeof(vp));
+   vp.pos       = 0;
+   vp.dims      = 0;
+   vp.full_dims = 0;
    if (!video_driver_get_viewport_info(&vp)
          || !VIDEO_SCALE_W(vp.dims) || !VIDEO_SCALE_H(vp.dims))
-      vp.dims = dims;
+      vp.dims   = dims;
    if (video_st->current_video && video_st->current_video->set_viewport)
       video_st->current_video->set_viewport(
             video_st->data, dims, true, false);
@@ -9240,7 +9565,7 @@ static void rgui_media_gpu_draw(rgui_t *rgui, video_frame_info_t *video_info)
    thumbnail.alpha = view->alpha;
    thumbnail.flags = view->flags;
    retro_atomic_store_release_int(&thumbnail.status, GFX_THUMBNAIL_STATUS_AVAILABLE);
-   gfx_thumbnail_draw(video_info->userdata, dims, &thumbnail,
+   gfx_thumbnail_draw_shader(video_info->userdata, dims, &thumbnail,
          VIDEO_POS_X(vp.pos) + rect->x * sx,
          VIDEO_POS_Y(vp.pos) + rect->y * sy,
          VIDEO_SCALE_PACK((unsigned)(rect->w * sx), (unsigned)(rect->h * sy)),
@@ -9267,6 +9592,8 @@ static void rgui_frame(void *data, video_frame_info_t *video_info)
    unsigned video_width                = VIDEO_SCALE_W(video_info->dims);
    unsigned video_height               = VIDEO_SCALE_H(video_info->dims);
    gfx_display_t *p_disp               = disp_get_ptr();
+
+   rgui_camera_update(rgui);
 
    if (bg_filler_thickness_enable != ((rgui->flags & RGUI_FLAG_BG_THICKNESS) > 0))
    {
@@ -9618,8 +9945,10 @@ static void rgui_toggle(void *userdata, bool menu_on)
          rgui->upscale_buf.data = NULL;
       }
       free(rgui->upscale_line);
-      rgui->upscale_line       = NULL;
-      rgui->upscale_line_width = 0;
+      rgui->upscale_line          = NULL;
+      rgui->upscale_line_width    = 0;
+      rgui->upscale_map_src_width = 0;
+      rgui->upscale_map_width     = 0;
    }
 }
 

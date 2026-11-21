@@ -225,6 +225,7 @@ check_enabled RWEBM WEBMPLAYER 'the WebM player' 'RWEBM is' false
 check_enabled RVP9 WEBMPLAYER 'the WebM player' 'RVP9 is' false
 
 check_enabled NETWORKING CHEEVOS cheevos 'Networking is' false
+check_enabled NETWORKING PYROWAVE 'PyroWave streaming' 'Networking is' false
 check_enabled NETWORKING DISCORD discord 'Networking is' false
 check_enabled NETWORKING SSL ssl 'Networking is' false
 check_enabled NETWORKING MCP 'the MCP server' 'Networking is' false
@@ -579,6 +580,10 @@ check_val '' FLAC '-lFLAC' '' flac '' '' false
 
 check_enabled SSL RETROSSL 'retro ssl' 'ssl is' false
 check_enabled CRYPTO RETROSSL 'retro ssl' 'crypto is' false
+check_enabled DYNAMIC CORE_SIGNATURES 'core signatures' 'dynamic loading is' false
+check_enabled CRYPTO CORE_SIGNATURES 'core signatures' 'crypto is' false
+check_enabled CORE_SIGNATURES CORE_LOAD_CHECK 'core load check' 'core signatures is' false
+check_enabled CORE_SIGNATURES CORE_SIGNING_TEST_KEY 'core signing test key' 'core signatures is' false
 check_enabled SSL MBEDTLS 'system mbedtls' 'ssl is' false
 check_enabled SSL BEARSSL 'system bearssl' 'ssl is' false
 
@@ -623,6 +628,7 @@ if [ "$SSL_BACKEND_CHOSEN" = "no" ] && [ "$HAVE_RETROSSL" = "auto" ]; then
   SSL_BACKEND_CHOSEN=yes
 fi
 if [ "$HAVE_RETROSSL" = "auto" ]; then HAVE_RETROSSL=no; fi
+check_enabled RETROSSL SYSTEM_CA 'system CA bundle' 'retro ssl is' false
 if [ "$HAVE_MBEDX509" = "auto" ]; then HAVE_MBEDX509=no; fi
 if [ "$HAVE_MBEDCRYPTO" = "auto" ]; then HAVE_MBEDCRYPTO=no; fi
 
@@ -1059,21 +1065,25 @@ HAVE_CRTSWITCHRES="$HAVE_MODELINE"
 
 check_enabled SLANG GLSLANG glslang 'slang is' false
 check_enabled SLANG SPIRV_CROSS SPIRV-Cross 'slang is' false
-check_enabled SLANG OPENGL_CORE 'OpenGL core' 'slang is' false
+check_enabled 'SLANG GLSL' OPENGL_CORE 'OpenGL core' 'slang and GLSL are' false
 check_enabled SLANG VULKAN vulkan 'slang is' false
 check_enabled SLANG METAL metal 'slang is' false
 
 check_enabled 'GLSLANG RSLC' SLANG slang 'glslang is' false
 check_enabled GLSLANG SPIRV_CROSS SPIRV-Cross 'glslang is' false
-check_enabled 'GLSLANG RSLC' OPENGL_CORE 'OpenGL core' 'glslang is' false
+check_enabled 'GLSLANG RSLC GLSL' OPENGL_CORE 'OpenGL core' 'glslang and GLSL are' false
 check_enabled 'GLSLANG RSLC' VULKAN vulkan 'glslang is' false
 check_enabled 'GLSLANG RSLC' METAL metal 'glslang is' false
 
 check_enabled 'SPIRV_CROSS RSLC' SLANG slang 'SPIRV-Cross is' false
 check_enabled SPIRV_CROSS GLSLANG glslang 'SPIRV-Cross is' false
-check_enabled 'SPIRV_CROSS RSLC' OPENGL_CORE 'OpenGL core' 'SPIRV-Cross is' false
+check_enabled 'SPIRV_CROSS RSLC GLSL' OPENGL_CORE 'OpenGL core' 'SPIRV-Cross and GLSL are' false
 check_enabled 'SPIRV_CROSS RSLC' VULKAN vulkan 'SPIRV-Cross is' false
 check_enabled 'SPIRV_CROSS RSLC' METAL metal 'SPIRV-Cross is' false
+
+check_platform 'Linux Win32 Darwin' VULKAN_CUSTOM_DRIVER 'Custom Vulkan drivers are' true
+check_enabled VULKAN VULKAN_CUSTOM_DRIVER 'custom Vulkan drivers' 'Vulkan is' false
+check_enabled DYLIB VULKAN_CUSTOM_DRIVER 'custom Vulkan drivers' 'Dynamic loading is' false
 
 check_enabled 'OPENGL_CORE METAL VULKAN' SLANG slang '' user
 check_enabled 'OPENGL_CORE METAL VULKAN' GLSLANG glslang '' user
@@ -1086,6 +1096,15 @@ add_define MAKEFILE OS "$OS"
 if [ "$ARCHITECTURE_NAME" = 'Power Macintosh' ]; then
    HAVE_LANGEXTRA='no'
 fi
+
+# glcore needs a GL 3.2 core context, which no PowerPC Mac OS X has
+# (Leopard stops at GL 2.1). Without slang it was dropped before GLSL
+# could keep it; this keeps it off there, native or cross-built.
+case "$ARCHITECTURE_NAME:${CROSS_COMPILE:-}" in
+   'Power Macintosh:'*|*:powerpc*-apple-darwin*)
+      HAVE_OPENGL_CORE='no'
+      ;;
+esac
 
 if [ "$HAVE_DEBUG" = 'yes' ]; then
    add_define MAKEFILE DEBUG 1
@@ -1112,6 +1131,22 @@ fi
 
 check_enabled NETWORKING RETRONFS 'built-in NFS client' 'Networking is' false
 if [ "$HAVE_RETRONFS" = 'auto' ]; then HAVE_RETRONFS=yes; fi
+
+# Native recording is optional; Vulkan device admission still requires the
+# encode extensions and a separate queue, without changing renderer fallback.
+check_platform 'Linux Win32' RECORD_VULKAN 'Vulkan recording is' true
+case "$OS" in
+   Linux|Win32) ;;
+   *) HAVE_RECORD_VULKAN=no ;;
+esac
+check_enabled VULKAN RECORD_VULKAN 'Vulkan recording' 'Vulkan is' false
+check_enabled THREADS RECORD_VULKAN 'Vulkan recording' 'Threads are' false
+check_enabled CONFIGFILE RECORD_VULKAN 'Vulkan recording' 'Configuration files are' false
+check_enabled RMP4 RECORD_VULKAN 'Vulkan recording' 'RMP4 is' false
+check_enabled RSLC RECORD_VULKAN 'Vulkan recording' 'RSLC is' false
+if [ "$HAVE_RECORD_VULKAN" = 'auto' ]; then
+   HAVE_RECORD_VULKAN=yes
+fi
 
 check_enabled NETWORKING RTMP 'RTMP publishing' 'Networking is' false
 check_enabled CRYPTO RTMP 'RTMP publishing' 'crypto is' false
@@ -1191,4 +1226,14 @@ if [ "$HAVE_SELF_UPDATER" != 'no' ]; then
       HAVE_SELF_UPDATER=no
    fi
    rm -f -- "$TEMP_C" "$TEMP_EXE"
+fi
+# The screens' own windows need a desktop window system to make them
+# in: X11, Wayland or SDL (not SDL under Cocoa), or Win32's own.
+if [ "$HAVE_VIDEO_WINDOWS" != 'no' ] && [ "$OS" != 'Win32' ]; then
+   if [ "$OS" = 'Darwin' ] || [ "$OS" = 'Haiku' ]; then
+      HAVE_VIDEO_WINDOWS=no
+   else
+      check_enabled 'X11 WAYLAND SDL2 SDL3' VIDEO_WINDOWS \
+         "screens' own windows" 'X11, Wayland and SDL are' false
+   fi
 fi

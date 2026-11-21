@@ -1417,3 +1417,15 @@ endif
 
 print-%:
 	@echo '$*=$($*)'
+
+ifeq ($(HAVE_PYROWAVE),1)
+include Makefile.pyrowave
+CFLAGS += -I$(PYROWAVE_GENERATED_DIR)
+griffin/griffin.o: $(PYROWAVE_GENERATED_HEADER)
+endif
+
+ifneq ($(filter 1,$(HAVE_D3D10) $(HAVE_D3D11) $(HAVE_D3D12)),)
+include Makefile.d3d_shaders
+CFLAGS += -I$(D3D_SHADER_GENERATED_DIR)
+griffin/griffin.o: $(D3D_SHADER_GENERATED_HEADER)
+endif

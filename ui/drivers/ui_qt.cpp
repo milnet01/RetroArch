@@ -97,6 +97,9 @@ companion_core_t *ui_companion_qt_core(void)
 #include "../../msg_hash.h"
 #include "../../tasks/task_content.h"
 #include "../../tasks/tasks_internal.h"
+#ifdef HAVE_CORE_LOAD_CHECK
+#include "../../core_load_check.h"
+#endif
 #ifdef HAVE_GIT_VERSION
 #include "../../version_git.h"
 #endif
@@ -1624,7 +1627,6 @@ MainWindow::MainWindow(QWidget *parent) :
    ,m_downloadingPlaylistThumbnails(false)
    ,m_thumbnailDownloadProgressDialog(new QProgressDialog(this))
    ,m_pendingThumbnailDownloadTypes()
-   ,m_thumbnailPackDownloadProgressDialog(new QProgressDialog(this))
    ,m_playlistThumbnailDownloadProgressDialog(new QProgressDialog(this))
    ,m_pendingPlaylistThumbnails()
    ,m_downloadedThumbnails(0)
@@ -1657,7 +1659,6 @@ MainWindow::MainWindow(QWidget *parent) :
    /* Cancel all progress dialogs immediately since
     * they show as soon as they're constructed. */
    m_thumbnailDownloadProgressDialog->cancel();
-   m_thumbnailPackDownloadProgressDialog->cancel();
    m_playlistThumbnailDownloadProgressDialog->cancel();
 
    /* m_playlistViewsAndFooter holds the playlist/grid views on top
@@ -2046,11 +2047,6 @@ void MainWindow::setupSignalConnections()
          m_thumbnailDownloadProgressDialog, SLOT(cancel()));
    connect(m_thumbnailDownloadProgressDialog, SIGNAL(canceled()),
          this, SLOT(onThumbnailDownloadCanceled()));
-
-   connect(m_thumbnailPackDownloadProgressDialog, SIGNAL(canceled()),
-         m_thumbnailPackDownloadProgressDialog, SLOT(cancel()));
-   connect(m_thumbnailPackDownloadProgressDialog, SIGNAL(canceled()),
-         this, SLOT(onThumbnailPackDownloadCanceled()));
 
    connect(this, SIGNAL(itemChanged()), this, SLOT(onItemChanged()));
 
@@ -4693,16 +4689,6 @@ static void ui_companion_qt_core_on_thumbnail_downloaded(void *ud,
             QString::fromUtf8(path ? path : ""), success);
 }
 
-static void ui_companion_qt_core_on_thumbnail_pack_finished(void *ud,
-      enum companion_download_result result)
-{
-   ui_companion_qt_t *handle  = (ui_companion_qt_t*)ud;
-   ui_window_qt_t *win_handle = NULL;
-   if (handle && (win_handle = (ui_window_qt_t*)handle->window)
-         && win_handle->qtWindow)
-      win_handle->qtWindow->onCoreThumbnailPackFinished((int)result);
-}
-
 static void ui_companion_qt_core_on_browse_changed(void *ud)
 {
    (void)ud;
@@ -4718,7 +4704,6 @@ static const companion_callbacks_t ui_companion_qt_core_callbacks = {
    NULL, /* on_notify_refresh */
    ui_companion_qt_core_on_scan_finished,
    ui_companion_qt_core_on_thumbnail_downloaded,
-   ui_companion_qt_core_on_thumbnail_pack_finished,
    ui_companion_qt_core_on_browse_changed
 };
 
@@ -4982,11 +4967,12 @@ static void qt_companion_build_menubar(MainWindow *mainwindow)
             SLOT(onListViewClicked()));
    viewMenu->addSeparator();
    viewMenu->addAction(msg_hash_to_str(
-            MENU_ENUM_LABEL_VALUE_QT_MENU_VIEW_OPTIONS),
-            mainwindow->viewOptionsDialog(), SLOT(showDialog()));
-   viewMenu->addAction(msg_hash_to_str(
             MENU_ENUM_LABEL_VALUE_QT_MENU_VIEW_CONTROLLER_SHORTCUTS),
             mainwindow->shortcutsDialog(), SLOT(showDialog()));
+   viewMenu->addSeparator();
+   viewMenu->addAction(msg_hash_to_str(
+            MENU_ENUM_LABEL_VALUE_QT_MENU_VIEW_OPTIONS),
+            mainwindow->viewOptionsDialog(), SLOT(showDialog()));
 
    helpMenu = menu->addMenu(msg_hash_to_str(
             MENU_ENUM_LABEL_VALUE_QT_MENU_HELP));
@@ -5612,6 +5598,11 @@ void LoadCoreWindow::loadCore(const char *path)
 #ifdef HAVE_DYNAMIC
    if (!companion_core_load_core(qt_companion_core, path))
    {
+#ifdef HAVE_CORE_LOAD_CHECK
+      /* Held back by the load check, which says why */
+      if (core_load_check_refused(path))
+         return;
+#endif
       QMessageBox::critical(this, msg_hash_to_str(MSG_ERROR),
             msg_hash_to_str(MSG_FAILED_TO_OPEN_LIBRETRO_CORE));
       return;

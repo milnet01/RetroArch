@@ -261,7 +261,6 @@ static const struct
 #ifndef HAVE_DYNAMIC
    char s_e011fe61[45];
 #endif
-   char s_4e447c6c[49];
    char s_d9a51d02[21];
    char s_12e77e8f[8];
    char s_98760b94[28];
@@ -354,7 +353,9 @@ static const struct
    char s_314539a4[25];
    char s_8fc168f0[7];
    char s_213c44cf[17];
+   char s_4f4b0d00[12];
    char s_502f623c[8];
+   char s_223dfc81[8];
    char s_b6cd2ff0[48];
    char s_40e7aacd[7];
    char s_fe2b08f2[20];
@@ -1242,9 +1243,7 @@ static const struct
    char s_dcbf8b04[25];
    char s_dcbffdfe[23];
    char s_7816d5d5[32];
-   char s_2b1f17e8[29];
    char s_36c3acc7[20];
-   char s_b4c3612a[30];
    char s_f638f238[17];
    char s_f3358a59[30];
    char s_f8098721[57];
@@ -1598,7 +1597,6 @@ static const struct
    char s_a38500d8[14];
    char s_9544161a[9];
    char s_76ac1944[34];
-   char s_ded7e809[41];
    char s_d8820ed7[69];
    char s_4c11d465[18];
    char s_50a04cd9[19];
@@ -1606,8 +1604,6 @@ static const struct
    char s_11121f30[31];
    char s_01badaa0[24];
    char s_6127cc52[30];
-   char s_9d52f73c[16];
-   char s_bc30b87a[27];
    char s_2fd5302f[33];
    char s_2dff21ec[25];
    char s_a2a28187[20];
@@ -1669,7 +1665,6 @@ static const struct
    char s_f24476fa[7];
    char s_97d90c67[6];
    char s_6d08238d[5];
-   char s_033bf99f[13];
    char s_8076aea7[27];
    char s_a00583cf[33];
    char s_e8a86d57[9];
@@ -1710,7 +1705,6 @@ static const struct
    char s_b71e6907[25];
    char s_d725639f[8];
    char s_ea5b5020[9];
-   char s_fef383d2[41];
    char s_4707850d[20];
    char s_cbddcf50[20];
    char s_9abb40fc[38];
@@ -1806,6 +1800,7 @@ static const struct
    char s_9329c64c[12];
    char s_f8883f70[17];
    char s_09ba892e[8];
+   char s_047623ff[9];
    char s_58b9d895[20];
    char s_80a2b273[10];
    char s_91dd478e[29];
@@ -2166,6 +2161,7 @@ static const struct
    char s_61b5b9d0[20];
    char s_313e6a7a[28];
    char s_579c3ea7[25];
+   char s_e29ee11f[12];
    char s_ccf131c5[22];
    char s_e5124bba[8];
    char s_875bc33e[11];
@@ -2374,6 +2370,8 @@ static const struct
    char s_69b801ef[9];
    char s_a40653a7[42];
    char s_52e3d6ea[40];
+   char s_34a16f69[17];
+   char s_7706edf0[16];
    char s_3253994e[7];
    char s_c992346c[34];
    char s_580e244f[7];
@@ -3132,9 +3130,7 @@ static const struct
    char s_c5a76d72[54];
    char s_c5a7e06c[52];
    char s_37d36d03[61];
-   char s_eadbaf16[58];
    char s_54eaf5f5[30];
-   char s_7de5d198[59];
    char s_3b573ee6[27];
    char s_dc1d6cc7[58];
    char s_28543dcf[79];
@@ -4838,7 +4834,6 @@ static const struct
 #ifndef HAVE_DYNAMIC
    "Recarga sempre o n\303\272cleo ao executar contido",
 #endif
-   "Soluci\303\263n alternativa de desconexi\303\263n de Android",
    "Icona da aplicaci\303\263n",
    "Activos",
    "Abrir panel de control ASIO",
@@ -4931,6 +4926,8 @@ static const struct
    "Identificador do paquete",
    "Cach\303\251",
    "Permitir c\303\241mara",
+   "Dispositivo",
+   "C\303\241mara",
    "C\303\241mara",
    "Os logros non se poden activar con este n\303\272cleo",
    "Trucos",
@@ -5823,9 +5820,7 @@ static const struct
    "Mostrar \"Cargar n\303\272cleo\"",
    "Mostrar \"Cargar disco\"",
    "Mostrar \"Actualizador en li\303\261a\"",
-   "Mostrar \"Sa\303\255r de RetroArch\"",
    "Mostrar \"Reiniciar\"",
-   "Mostrar \"Reiniciar RetroArch\"",
    "Mostrar \"Apagar\"",
    "Mostrar subetiquetas do men\303\272",
    "Amosar subt\303\255tulos do men\303\272 s\303\263 para a selecci\303\263n actual",
@@ -6182,7 +6177,6 @@ static const struct
    "<Preg\303\272ntame>",
    "Versi\303\263n",
    "Non se puido eliminar o ficheiro.",
-   "Non se puido cambiar o nome do ficheiro.",
    "Produciuse un erro ao actualizar a entrada da lista de reproduci\303\263n.",
    "Sombreador actual",
    "Tema personalizado",
@@ -6190,8 +6184,6 @@ static const struct
    "Eliminar lista de reproduci\303\263n",
    "Non amosar isto de novo",
    "Descargar todas as miniaturas",
-   "Sistema enteiro",
-   "Esta lista de reproduci\303\263n",
    "Xa est\303\241 en curso unha descarga.",
    "Con \303\251xito: %1 Fallo: %2",
    "Descargar miniatura",
@@ -6253,7 +6245,6 @@ static const struct
    "Baixar",
    "Subir",
    "Nome",
-   "Erro de rede",
    "Nova lista de reproduci\303\263n",
    "Entrada na lista de reproduci\303\263n",
    "N\303\272cleo:",
@@ -6301,7 +6292,6 @@ static const struct
    "Listaxes de reproduci\303\263n",
    "Portada",
    "Logotipo",
-   "As miniaturas descargadas correctamente.",
    "Captura de pantalla",
    "Pantalla de t\303\255tulo",
    "Produciuse un erro na actualizaci\303\263n.",
@@ -6398,6 +6388,7 @@ static const struct
    "Puntuaci\303\263n",
    "N\303\272mero de serie",
    "Axustes",
+   "Etiqueta",
    "Clasificaci\303\263n TGDB",
    "Reiniciar",
    "Configuraci\303\263n de gravaci\303\263n",
@@ -6758,6 +6749,7 @@ static const struct
    "MM-DD-AAAA HH:MM:SS",
    "MM-DD-AAAA HH:MM:SS (AM/PM)",
    "MM-DD-AAAA HH:MM (AM/PM)",
+   "Autom\303\241tico",
    "Estilo de data e hora",
    "AAAA-MM",
    "AAAA-MM-DD",
@@ -6968,6 +6960,8 @@ static const struct
    "Escalado",
    "Sincronizaci\303\263n por li\303\261a de exploraci\303\263n",
    "Simulaci\303\263n de li\303\261a de escaneo rodante",
+   "Altura da xanela",
+   "Ancho da xanela",
    "Escala",
    "Cambio de modo de pantalla de SDL",
    "V\303\255deo",
@@ -8096,9 +8090,7 @@ static const struct
    "Mostra a opci\303\263n \"Cargar n\303\272cleo\" no men\303\272 principal.",
    "Mostra a opci\303\263n \"Cargar disco\" no men\303\272 principal.",
    "Mostra a opci\303\263n \"Actualizador en li\303\261a\" no men\303\272 principal.",
-   "Mostra a opci\303\263n \"Sa\303\255r de RetroArch\" no men\303\272 principal.",
    "Mostra a opci\303\263n \"Reiniciar\".",
-   "Mostra a opci\303\263n \"Reiniciar RetroArch\" no men\303\272 principal.",
    "Mostra a opci\303\263n \"Apagar\".",
    "Mostra informaci\303\263n adicional para os elementos do men\303\272.",
    "Amosar un subt\303\255tulo unicamente para a entrada do men\303\272 actualmente resaltada.",
@@ -9770,7 +9762,7 @@ static const struct
  * compiler that pads this struct fails here instead of
  * misindexing at runtime. */
 typedef char msg_hash_gl_blob_check[
-      (sizeof(msg_hash_gl_blob) == (210552u
+      (sizeof(msg_hash_gl_blob) == (210263u
 #ifdef ANDROID
        + 365u
 #endif
@@ -10473,7 +10465,6 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
 #ifndef HAVE_DYNAMIC
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_ALWAYS_RELOAD_CORE_ON_RUN_CONTENT,
 #endif
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_ANDROID_INPUT_DISCONNECT_WORKAROUND,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_APPICON_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_ASSETS_DIRECTORY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_AUDIO_ASIO_CONTROL_PANEL,
@@ -10566,7 +10557,9 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_BUNDLE_IDENTIFIER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CACHE_DIRECTORY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CAMERA_ALLOW,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CAMERA_DEVICE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CAMERA_DRIVER,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CAMERA_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CANNOT_ACTIVATE_ACHIEVEMENTS_WITH_THIS_CORE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CHEAT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_CHEAT_ADDRESS,
@@ -11454,9 +11447,7 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_LOAD_CORE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_LOAD_DISC,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_ONLINE_UPDATER,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_QUIT_RETROARCH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_REBOOT,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_RESTART_RETROARCH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_SHUTDOWN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_SUBLABELS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_MENU_SHOW_SUBLABELS_CURRENT_SELECTION_ONLY,
@@ -11810,7 +11801,6 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_CORE_SELECTION_ASK,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_CORE_VERSION,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_COULD_NOT_DELETE_FILE,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_COULD_NOT_RENAME_FILE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_COULD_NOT_UPDATE_PLAYLIST_ENTRY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_CURRENT_SHADER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_CUSTOM_THEME,
@@ -11818,8 +11808,6 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DELETE_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DONT_SHOW_AGAIN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS_ENTIRE_SYSTEM,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALL_THUMBNAILS_THIS_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_ALREADY_IN_PROGRESS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_PLAYLIST_THUMBNAIL_PROGRESS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_DOWNLOAD_THUMBNAIL,
@@ -11881,7 +11869,6 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_MOVE_DOWN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_MOVE_UP,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_NAME,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_NETWORK_ERROR,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_NEW_PLAYLIST,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_PLAYLIST_ENTRY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_PLAYLIST_ENTRY_CORE,
@@ -11921,7 +11908,6 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_TAB_PLAYLISTS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_BOXART,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_LOGO,
-   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_PACK_DOWNLOADED_SUCCESSFULLY,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_SCREENSHOT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_TITLE_SCREEN,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_QT_UPDATE_RETROARCH_FAILED,
@@ -12017,6 +12003,7 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_SCORE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_SERIAL,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_SETTING,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_TAGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RDB_ENTRY_TGDB_RATING,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_REBOOT,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_RECORDING_CONFIG_DIRECTORY,
@@ -12377,6 +12364,7 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MDYYYY_HMS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MDYYYY_HMS_AMPM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MDYYYY_HM_AMPM,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_MODE_AUTOMATIC,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_STYLE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_YM,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_TIMEDATE_YMD,
@@ -12585,6 +12573,8 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCALING_SETTINGS,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCANLINE_SYNC,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCAN_SUBFRAMES,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_HEIGHT,
+   (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_PAGE_WINDOW_WIDTH,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SCREEN_XR_SCALE,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SDL_DISPLAY_SERVER,
    (msg_hash_id_t)MENU_ENUM_LABEL_VALUE_VIDEO_SETTINGS,
@@ -13337,9 +13327,7 @@ static const msg_hash_id_t msg_hash_gl_ids[] =
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_LOAD_CORE,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_LOAD_DISC,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_ONLINE_UPDATER,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_QUIT_RETROARCH,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_REBOOT,
-   (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_RESTART_RETROARCH,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_SHUTDOWN,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_SUBLABELS,
    (msg_hash_id_t)MENU_ENUM_SUBLABEL_MENU_SHOW_SUBLABELS_CURRENT_SELECTION_ONLY,

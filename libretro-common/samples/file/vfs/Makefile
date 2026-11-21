@@ -22,6 +22,9 @@ TARGET_TEST18 := vfs_positional_ntverify_test
 TARGET_TEST19 := vfs_positional_wide_test
 TARGET_TEST20 := vfs_seek_read_mix_test
 TARGET_TEST21 := vfs_write_mix_test
+TARGET_TEST22 := vfs_stable_test
+TARGET_TEST23 := vfs_size_contract_test
+TARGET_TEST24 := vfs_positional_size_test
 BENCH_CRT     := vfs_native_bench
 BENCH_NATIVE  := vfs_native_bench_native
 
@@ -121,6 +124,7 @@ CLOSE_OBJS    := $(filter-out %/vfs_implementation.o,$(COMMON_OBJS)) \
 UNAME_S := $(shell uname -s 2>/dev/null)
 ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME_S)))
    MMAP ?= 0
+   $(call sample_objs,$(LIBRETRO_COMM_DIR)/vfs/vfs_implementation.o): CFLAGS += -Wframe-larger-than=2048 -Werror=frame-larger-than=2048
 else
    MMAP ?= 1
 endif
@@ -184,7 +188,7 @@ all: $(TARGET) $(TARGET_TEST) $(TARGET_TEST2) $(TARGET_TEST3) $(TARGET_TEST4) \
 	$(TARGET_TEST5) $(TARGET_TEST6) $(TARGET_TEST8) $(TARGET_TEST9) \
 	$(TARGET_TEST10) $(TARGET_TEST11) $(TARGET_TEST12) $(TARGET_TEST13) \
 	$(TARGET_TEST14) $(TARGET_TEST15) $(TARGET_TEST16) $(TARGET_TEST17) \
-	$(TARGET_TEST18) $(TARGET_TEST19) $(TARGET_TEST20) $(TARGET_TEST21) $(BENCH_CRT) $(BENCH_NATIVE) \
+	$(TARGET_TEST18) $(TARGET_TEST19) $(TARGET_TEST20) $(TARGET_TEST21) $(TARGET_TEST22) $(TARGET_TEST23) $(TARGET_TEST24) $(BENCH_CRT) $(BENCH_NATIVE) \
 	$(RENAME_TARGET)
 
 %.o: %.c
@@ -278,6 +282,16 @@ $(TARGET_TEST20): vfs_seek_read_mix_test.o $(COMMON_OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(TARGET_TEST21): vfs_write_mix_test.o $(COMMON_OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+$(TARGET_TEST22): vfs_stable_test.o $(COMMON_OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+$(TARGET_TEST23): vfs_size_contract_test.o $(COMMON_OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+$(TARGET_TEST24): vfs_positional_size_test.o $(COMMON_OBJS) \
+	rthreads_ra.o retro_eventcount_ra.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 # vfs_native_bench / vfs_native_bench_native: read-only stream timings
@@ -381,6 +395,9 @@ clean:
 		$(TARGET_TEST11) $(TARGET_TEST12) $(TARGET_TEST13) $(TARGET_TEST14) $(TARGET_TEST15) $(TARGET_TEST16) $(TARGET_TEST17) $(TARGET_TEST18) $(TARGET_TEST19) \
 	$(TARGET_TEST20) vfs_seek_read_mix_test.o \
 	$(TARGET_TEST21) vfs_write_mix_test.o \
+	$(TARGET_TEST22) vfs_stable_test.o \
+	$(TARGET_TEST23) vfs_size_contract_test.o \
+	$(TARGET_TEST24) vfs_positional_size_test.o \
 	$(BENCH_CRT) $(BENCH_NATIVE) vfs_positional_wide.o \
 	vfs_native_bench.o vfs_native_bench_crt.o $(CRT_VFS_OBJ) $(CLOSE_VFS_OBJ) \
 		$(OBJS) $(FAULT_FS_OBJ) $(RENAME_VFS_OBJ) \
@@ -399,3 +416,7 @@ clean:
 		bulk_binary.bin bulk_threads.bin
 
 .PHONY: clean
+
+win32-stat-contract-check:
+	python3 win32_stat_test.py --cc "$(CC)" --sanitizer "$(SANITIZER)"
+.PHONY: win32-stat-contract-check

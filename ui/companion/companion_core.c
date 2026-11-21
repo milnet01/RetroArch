@@ -66,6 +66,7 @@
 #include "../../version.h"
 #include "../../tasks/task_content.h"
 #include "../../tasks/tasks_internal.h"
+#include "../../tasks/task_file_transfer.h"
 #ifdef HAVE_MENU
 #include "../../menu/menu_driver.h"
 #endif
@@ -1726,6 +1727,10 @@ bool companion_core_request_load_content(companion_core_t *core,
 
    if (!core || string_is_empty(core_path) || string_is_empty(content_path))
       return false;
+#ifdef HAVE_CORE_LOAD_CHECK
+   if (task_content_warning_waits(core_path))
+      return false;
+#endif
 
    /* Search for the specified core - ensures the path is sanitised. */
    if (core_info_find(core_path, &info) && !string_is_empty(info->path))
@@ -1769,25 +1774,33 @@ bool companion_core_start_core(companion_core_t *core)
    content_ctx_info_t content_info;
    if (!core)
       return false;
+#ifdef HAVE_CORE_LOAD_CHECK
+   if (task_content_warning_waits(path_get(RARCH_PATH_CORE)))
+      return false;
+#endif
    memset(&content_info, 0, sizeof(content_info));
-   path_clear(RARCH_PATH_BASENAME);
    return task_push_start_current_core(&content_info);
 }
 
 bool companion_core_load_core(companion_core_t *core, const char *path)
 {
 #ifdef HAVE_DYNAMIC
+   content_ctx_info_t content_info;
    if (!core || string_is_empty(path))
       return false;
-
-   path_set(RARCH_PATH_CORE, path);
-
-   command_event(CMD_EVENT_CORE_INFO_DEINIT, NULL);
-   command_event(CMD_EVENT_CORE_INFO_INIT, NULL);
-
-   core_info_init_current_core();
-
-   return command_event(CMD_EVENT_LOAD_CORE, NULL);
+#ifdef HAVE_CORE_LOAD_CHECK
+   if (task_content_warning_waits(path))
+      return false;
+#endif
+   memset(&content_info, 0, sizeof(content_info));
+   /* As the menu's Load Core: the probe loads the core's info */
+   if (task_push_load_new_core(path, NULL, &content_info,
+            CORE_TYPE_PLAIN, NULL, NULL))
+      return true;
+#ifdef HAVE_CORE_LOAD_CHECK
+   task_content_park_core_load(path);
+#endif
+   return false;
 #else
    (void)core;
    (void)path;
@@ -3605,12 +3618,10 @@ bool companion_core_playlist_push(companion_core_t *core,
 
 #ifdef HAVE_NETWORKING
 
-#define COMPANION_DL_USER_AGENT   "RetroArch-WIMP/" PACKAGE_VERSION
-#define COMPANION_DL_PARTIAL_EXT  ".partial"
-#define COMPANION_DL_TEMP_EXT     ".tmp"
-#define COMPANION_DL_PACK_URL     "http://thumbnailpacks.libretro.com/"
-#define COMPANION_DL_PACK_EXT     ".zip"
-#define COMPANION_DL_THUMB_URL    "https://thumbnails.libretro.com/"
+/* Sent as a request header: the download keeps its own User-Agent */
+#define COMPANION_DL_USER_AGENT   "User-Agent: RetroArch-WIMP/" \
+   PACKAGE_VERSION "\r\n"
+#define COMPANION_DL_THUMB_URL    FILE_PATH_CORE_THUMBNAILS_URL "/"
 #define COMPANION_DL_THUMB_EXT    ".png"
 
 /* Task user data. Owned by the task chain; the core only points at it
@@ -3624,8 +3635,7 @@ typedef struct companion_download
    char db_name[NAME_MAX_LENGTH];
    char label[NAME_MAX_LENGTH];
    char subdir[64];
-   char output_path[PATH_MAX_LENGTH];   /* .partial file */
-   bool is_pack;
+   char output_path[PATH_MAX_LENGTH];
 } companion_download_t;
 
 static void companion_core_download_orphan(companion_core_t *core)
@@ -3639,13 +3649,12 @@ static void companion_core_download_orphan(companion_core_t *core)
 
 static companion_download_t *companion_core_download_new(
       companion_core_t *core, const char *db_name, const char *label,
-      const char *subdir, bool is_pack)
+      const char *subdir)
 {
    companion_download_t *d = (companion_download_t*)calloc(1, sizeof(*d));
    if (!d)
       return NULL;
-   d->core    = core;
-   d->is_pack = is_pack;
+   d->core = core;
    strlcpy(d->db_name, db_name ? db_name : "", sizeof(d->db_name));
    strlcpy(d->label,   label   ? label   : "", sizeof(d->label));
    strlcpy(d->subdir,  subdir  ? subdir  : "", sizeof(d->subdir));
@@ -3671,181 +3680,31 @@ static void companion_core_download_scrub(char *s)
       string_replace_all_chars(s, chars[i], '_');
 }
 
-/* Write the transfer to .partial, then move it over the final name.
- * Returns the result code; @final receives the final path. */
-static enum companion_download_result companion_core_download_commit(
-      const companion_download_t *d, const http_transfer_data_t *data,
-      const char *err, char *final, size_t len)
-{
-   char *ext;
-   char dir[PATH_MAX_LENGTH];
-
-   if (!data || !data->data || data->status != 200 || err)
-   {
-      RARCH_ERR("[Companion] Download failed (HTTP %d).\n",
-            data ? data->status : 0);
-      return COMPANION_DL_ERR_NETWORK;
-   }
-
-   strlcpy(dir, d->output_path, sizeof(dir));
-   path_basedir_wrapper(dir);
-   path_mkdir(dir);
-
-   if (!filestream_write_file(d->output_path, data->data, data->len))
-   {
-      RARCH_ERR("[Companion] Could not write \"%s\".\n", d->output_path);
-      return COMPANION_DL_ERR_WRITE;
-   }
-
-   strlcpy(final, d->output_path, len);
-   if ((ext = strstr(final, COMPANION_DL_PARTIAL_EXT)))
-      *ext = '\0';
-
-   if (path_is_valid(final))
-      filestream_delete(final);
-
-   if (filestream_rename(d->output_path, final) != 0)
-   {
-      RARCH_ERR("[Companion] Could not rename \"%s\".\n", d->output_path);
-      return COMPANION_DL_ERR_RENAME;
-   }
-   return COMPANION_DL_OK;
-}
-
+/* The transfer streamed the image to d->output_path as it arrived and
+ * replaced any file there only if it finished cleanly with a 2xx. */
 static void companion_core_download_http_cb(retro_task_t *task,
       void *task_data, void *user_data, const char *err)
 {
-   char final[PATH_MAX_LENGTH];
-   companion_download_t *d   = (companion_download_t*)user_data;
+   const http_transfer_data_t *data = (const http_transfer_data_t*)task_data;
+   companion_download_t *d          = (companion_download_t*)user_data;
    companion_core_t *core;
-   enum companion_download_result r;
+   bool ok;
 
    (void)task;
    if (!d)
       return;
 
-   final[0] = '\0';
-   r        = companion_core_download_commit(d,
-         (const http_transfer_data_t*)task_data, err, final, sizeof(final));
-   core     = d->core;
+   ok   = data && data->status >= 200 && data->status <= 299
+      && (!err || !*err);
+   if (!ok)
+      RARCH_ERR("[Companion] Download failed (HTTP %d)%s%s.\n",
+            data ? data->status : 0, err && *err ? ": " : "",
+            err ? err : "");
+   core = d->core;
 
    if (core && core->cb.on_thumbnail_downloaded)
       core->cb.on_thumbnail_downloaded(core->ud, d->db_name, d->label,
-            d->subdir, r == COMPANION_DL_OK ? final : NULL,
-            r == COMPANION_DL_OK);
-   companion_core_download_done(d);
-}
-
-/* Existing files the pack will overwrite are deleted first, or renamed
- * aside with .tmp when they cannot be (extraction does not replace
- * in place). */
-static enum companion_download_result companion_core_pack_prepare(
-      const char *archive)
-{
-   size_t i;
-   struct string_list *list = file_archive_get_file_list(archive, NULL);
-   enum companion_download_result r = COMPANION_DL_OK;
-
-   if (!list || list->size == 0)
-   {
-      if (list)
-         string_list_free(list);
-      RARCH_ERR("[Companion] Downloaded archive is empty.\n");
-      return COMPANION_DL_ERR_ARCHIVE_EMPTY;
-   }
-
-   for (i = 0; i < list->size && r == COMPANION_DL_OK; i++)
-   {
-      char tmp[PATH_MAX_LENGTH];
-      size_t _len;
-      const char *target = list->elems[i].data;
-
-      if (!filestream_exists(target))
-         continue;
-      if (filestream_delete(target) == 0)
-         continue;
-
-      _len = strlcpy(tmp, target, sizeof(tmp));
-      strlcpy(tmp + _len, COMPANION_DL_TEMP_EXT, sizeof(tmp) - _len);
-
-      if (filestream_exists(tmp) && filestream_delete(tmp) != 0)
-      {
-         RARCH_ERR("[Companion] Could not delete \"%s\".\n", target);
-         r = COMPANION_DL_ERR_DELETE;
-      }
-      else if (filestream_rename(target, tmp) != 0)
-      {
-         RARCH_ERR("[Companion] Could not rename \"%s\".\n", target);
-         r = COMPANION_DL_ERR_RENAME;
-      }
-   }
-
-   string_list_free(list);
-   return r;
-}
-
-static void companion_core_pack_extract_cb(retro_task_t *task,
-      void *task_data, void *user_data, const char *err)
-{
-   decompress_task_data_t *dec = (decompress_task_data_t*)task_data;
-   companion_download_t *d     = (companion_download_t*)user_data;
-   companion_core_t *core;
-
-   (void)task;
-   if (err)
-      RARCH_ERR("[Companion] %s", err);
-
-   if (dec)
-   {
-      if (filestream_exists(dec->source_file))
-         filestream_delete(dec->source_file);
-      free(dec->source_file);
-      free(dec);
-   }
-
-   if (!d)
-      return;
-   core = d->core;
-   if (core && core->cb.on_thumbnail_pack_finished)
-      core->cb.on_thumbnail_pack_finished(core->ud,
-            (!err || !*err) ? COMPANION_DL_OK : COMPANION_DL_ERR_EXTRACT);
-   companion_core_download_done(d);
-}
-
-static void companion_core_pack_http_cb(retro_task_t *task,
-      void *task_data, void *user_data, const char *err)
-{
-   char final[PATH_MAX_LENGTH];
-   companion_download_t *d = (companion_download_t*)user_data;
-   companion_core_t *core;
-   enum companion_download_result r;
-
-   (void)task;
-   if (!d)
-      return;
-
-   final[0] = '\0';
-   r        = companion_core_download_commit(d,
-         (const http_transfer_data_t*)task_data, err, final, sizeof(final));
-   core     = d->core;
-
-   if (r == COMPANION_DL_OK)
-      r = companion_core_pack_prepare(final);
-
-   if (r == COMPANION_DL_OK && core)
-   {
-      RARCH_LOG("[Companion] Thumbnail pack downloaded, extracting.\n");
-      d->task = (retro_task_t*)task_push_decompress(final,
-            config_get_ptr()->paths.directory_thumbnails,
-            NULL, NULL, NULL, companion_core_pack_extract_cb, d, NULL,
-            false);
-      if (d->task)
-         return; /* d lives on into the extract callback */
-      r = COMPANION_DL_ERR_EXTRACT;
-   }
-
-   if (core && core->cb.on_thumbnail_pack_finished)
-      core->cb.on_thumbnail_pack_finished(core->ud, r);
+            d->subdir, ok ? d->output_path : NULL, ok);
    companion_core_download_done(d);
 }
 
@@ -3866,20 +3725,20 @@ bool companion_core_thumbnail_download(companion_core_t *core,
    strlcpy(name, label, sizeof(name));
    companion_core_download_scrub(name);
 
-   d = companion_core_download_new(core, db_name, name, subdir, false);
+   d = companion_core_download_new(core, db_name, name, subdir);
    if (!d)
       return false;
 
-   /* <thumbnails>/<db>/<subdir>/<name>.png.partial */
+   /* <thumbnails>/<db>/<subdir>/<name>.png */
    companion_core_thumbnail_dir(core, db_name, subdir,
          d->output_path, sizeof(d->output_path));
    path_mkdir(d->output_path);
    _len = fill_pathname_join_special(d->output_path, d->output_path, name,
          sizeof(d->output_path));
-   strlcpy(d->output_path + _len, COMPANION_DL_THUMB_EXT COMPANION_DL_PARTIAL_EXT,
+   strlcpy(d->output_path + _len, COMPANION_DL_THUMB_EXT,
          sizeof(d->output_path) - _len);
 
-   /* https://thumbnails.libretro.com/<db>/<subdir>/<name>.png, each path
+   /* <thumbnail server>/<db>/<subdir>/<name>.png, each path
     * component percent-encoded. */
    _len  = strlcpy(url, COMPANION_DL_THUMB_URL, sizeof(url));
    net_http_urlencode(&encoded, db_name);
@@ -3895,8 +3754,9 @@ bool companion_core_thumbnail_download(companion_core_t *core,
 
    RARCH_LOG("[Companion] Downloading \"%s\".\n", url);
 
-   d->task = (retro_task_t*)task_push_http_transfer_with_user_agent(url, true,
-         NULL, COMPANION_DL_USER_AGENT, companion_core_download_http_cb, d);
+   d->task = (retro_task_t*)task_push_http_download_file_with_headers(url,
+         d->output_path, true, NULL, COMPANION_DL_USER_AGENT,
+         companion_core_download_http_cb, d);
    if (!d->task)
    {
       RARCH_ERR("[Companion] Failed to start thumbnail transfer.\n");
@@ -3905,49 +3765,6 @@ bool companion_core_thumbnail_download(companion_core_t *core,
    }
    core->download = d;
    (void)settings;
-   return true;
-}
-
-bool companion_core_thumbnail_pack_download(companion_core_t *core,
-      const char *db_name)
-{
-   char url[PATH_MAX_LENGTH];
-   char *encoded = NULL;
-   size_t _len;
-   companion_download_t *d;
-   settings_t *settings = config_get_ptr();
-
-   if (!core || core->download || string_is_empty(db_name))
-      return false;
-
-   d = companion_core_download_new(core, db_name, NULL, NULL, true);
-   if (!d)
-      return false;
-
-   /* <thumbnails>/<db>.zip.partial */
-   path_mkdir(settings->paths.directory_thumbnails);
-   _len = fill_pathname_join_special(d->output_path,
-         settings->paths.directory_thumbnails, db_name, sizeof(d->output_path));
-   strlcpy(d->output_path + _len, COMPANION_DL_PACK_EXT COMPANION_DL_PARTIAL_EXT,
-         sizeof(d->output_path) - _len);
-
-   _len  = strlcpy(url, COMPANION_DL_PACK_URL, sizeof(url));
-   net_http_urlencode(&encoded, db_name);
-   _len += strlcpy(url + _len, encoded ? encoded : db_name, sizeof(url) - _len);
-   free(encoded);
-   strlcpy(url + _len, COMPANION_DL_PACK_EXT, sizeof(url) - _len);
-
-   RARCH_LOG("[Companion] Downloading \"%s\".\n", url);
-
-   d->task = (retro_task_t*)task_push_http_transfer_with_user_agent(url, true,
-         NULL, COMPANION_DL_USER_AGENT, companion_core_pack_http_cb, d);
-   if (!d->task)
-   {
-      RARCH_ERR("[Companion] Failed to start thumbnail pack transfer.\n");
-      free(d);
-      return false;
-   }
-   core->download = d;
    return true;
 }
 
@@ -3973,13 +3790,6 @@ bool companion_core_thumbnail_download(companion_core_t *core,
       const char *db_name, const char *label, const char *subdir)
 {
    (void)core; (void)db_name; (void)label; (void)subdir;
-   return false;
-}
-
-bool companion_core_thumbnail_pack_download(companion_core_t *core,
-      const char *db_name)
-{
-   (void)core; (void)db_name;
    return false;
 }
 

@@ -24,6 +24,11 @@ on:
       - 'samples/menu/playlist_nav/**'
       - 'samples/network/command_frames/**'
       - 'samples/menu/nav_repeat_stall/**'
+      - 'samples/menu/pad_tag_rows/**'
+      - 'input/input_pad_tag.h'
+      - 'input/input_driver.c'
+      - 'input/drivers_joypad/test_joypad.c'
+      - 'tasks/task_autodetect.c'
       - 'samples/menu/mouse_click/**'
       - 'samples/menu/menu_icon_ownership/**'
       - 'samples/menu/ozone_sublabel_scroll/**'
@@ -38,6 +43,26 @@ on:
       - 'samples/menu/setting_command/**'
       - 'samples/menu/core_info_page/**'
       - 'samples/menu/load_content_filter/**'
+      - 'samples/menu/core_warning/**'
+      - 'samples/tasks/core_load_paths/**'
+      - 'samples/tasks/content_load/harness_core.c'
+      - 'core_load_check.c'
+      - 'core_load_check.h'
+      - 'core_load_file.c'
+      - 'core_load_file.h'
+      - 'runahead.c'
+      - 'retroarch.c'
+      - 'core_trust_runtime.c'
+      - 'core_trust_runtime.h'
+      - 'core_signature.c'
+      - 'core_signing_keys.h'
+      - 'core_signature.h'
+      - 'core_signature_io.c'
+      - 'runahead.h'
+      - 'Makefile.common'
+      - 'qb/config.libs.sh'
+      - 'qb/config.params.sh'
+      - 'tasks/task_netplay_find_content.c'
       - 'samples/settings/packed_rows/**'
       - 'setting_list.h'
       - 'gfx/video_defines.h'
@@ -51,6 +76,11 @@ on:
       - 'samples/menu/playlist_nav/**'
       - 'samples/network/command_frames/**'
       - 'samples/menu/nav_repeat_stall/**'
+      - 'samples/menu/pad_tag_rows/**'
+      - 'input/input_pad_tag.h'
+      - 'input/input_driver.c'
+      - 'input/drivers_joypad/test_joypad.c'
+      - 'tasks/task_autodetect.c'
       - 'samples/menu/mouse_click/**'
       - 'samples/menu/menu_icon_ownership/**'
       - 'samples/menu/ozone_sublabel_scroll/**'
@@ -65,6 +95,26 @@ on:
       - 'samples/menu/setting_command/**'
       - 'samples/menu/core_info_page/**'
       - 'samples/menu/load_content_filter/**'
+      - 'samples/menu/core_warning/**'
+      - 'samples/tasks/core_load_paths/**'
+      - 'samples/tasks/content_load/harness_core.c'
+      - 'core_load_check.c'
+      - 'core_load_check.h'
+      - 'core_load_file.c'
+      - 'core_load_file.h'
+      - 'runahead.c'
+      - 'retroarch.c'
+      - 'core_trust_runtime.c'
+      - 'core_trust_runtime.h'
+      - 'core_signature.c'
+      - 'core_signing_keys.h'
+      - 'core_signature.h'
+      - 'core_signature_io.c'
+      - 'runahead.h'
+      - 'Makefile.common'
+      - 'qb/config.libs.sh'
+      - 'qb/config.params.sh'
+      - 'tasks/task_netplay_find_content.c'
       - 'samples/settings/packed_rows/**'
       - 'setting_list.h'
       - 'gfx/video_defines.h'
@@ -228,6 +278,27 @@ jobs:
           ./samples/menu/nav_repeat_stall/menu_nav_repeat_stall_test
           make -C samples/menu/nav_repeat_stall clean
 
+      - name: Build and run pad_tags_test
+        shell: bash
+        run: |
+          set -eu
+          # Two controllers shown with one name: each is told apart by
+          # a tag hashed from its own identity (its serial or address,
+          # none of which is shown, else its port, never the slot),
+          # numbered when two tags are the same, "#N" with no identity
+          # where no slot number is beside it. While two share a name,
+          # a press of a button or a pull of a trigger marks the pad's
+          # rows "Pressed" for a second and the rows' sublabels say a
+          # press finds one, except in Ozone, whose footer hint is up on
+          # the controller pages only. Test joypad pads through the real
+          # frame loop. Shares the non-Qt build made above. --bridge
+          # runs it all again with the pads read through the snapshot
+          # bridge, where a press is found in the view the poll left.
+          samples/menu/pad_tag_rows/build.sh
+          ./samples/menu/pad_tag_rows/pad_tags_test
+          ./samples/menu/pad_tag_rows/pad_tags_test --bridge
+          make -C samples/menu/pad_tag_rows clean
+
       - name: Build and run menu_icon_ownership_test
         shell: bash
         run: |
@@ -251,6 +322,45 @@ jobs:
           ./samples/menu/menu_icon_ownership/menu_icon_ownership_test contentless
           ./samples/menu/menu_icon_ownership/menu_icon_ownership_test rgui
           make -C samples/menu/menu_icon_ownership clean
+
+      - name: Build and run msgbox_layout_test
+        shell: bash
+        run: |
+          set -eu
+          # A confirm box drawn by Ozone, XMB and MaterialUI through a
+          # recording font: its words all drawn, in order, on the
+          # screen and above the buttons; the next frame drawn the same,
+          # from the wrap the driver kept; and a frame at another size
+          # laid out as afresh. The tall lane fills the box on a small
+          # screen, where Ozone and MaterialUI cut the text short.
+          # Shares the non-Qt build made above.
+          samples/menu/msgbox_layout/build.sh
+          for d in ozone xmb materialui; do
+            ./samples/menu/msgbox_layout/msgbox_layout_test "$d" short
+            ./samples/menu/msgbox_layout/msgbox_layout_test "$d" tall
+            ./samples/menu/msgbox_layout/msgbox_layout_test "$d" firmware
+          done
+          # A rule under the confirm box's heading, under its last line
+          # when it wraps; none without a heading, or where the box fits
+          # only without the rule's line, or under the input dialog's
+          # label.
+          for d in ozone xmb materialui; do
+            for l in heading heading_wrap heading_none heading_fit; do
+              ./samples/menu/msgbox_layout/msgbox_layout_test "$d" "$l"
+            done
+          done
+          ./samples/menu/msgbox_layout/msgbox_layout_test xmb heading_osk
+          ./samples/menu/msgbox_layout/msgbox_layout_test materialui heading_osk
+          # The input dialog's caret, at the wrap's line breaks too.
+          ./samples/menu/msgbox_layout/msgbox_layout_test xmb caret
+          ./samples/menu/msgbox_layout/msgbox_layout_test materialui caret
+          # The input dialog opened again draws only its own text.
+          ./samples/menu/msgbox_layout/msgbox_layout_test xmb reopen
+          ./samples/menu/msgbox_layout/msgbox_layout_test materialui reopen
+          # RGUI uploads its framebuffer once per change to the box,
+          # not every frame the box is up.
+          ./samples/menu/msgbox_layout/msgbox_layout_test rgui redraw
+          make -C samples/menu/msgbox_layout clean
 
       - name: Build and run ozone_sublabel_scroll_test
         shell: bash
@@ -474,6 +584,51 @@ jobs:
           samples/menu/load_content_filter/build.sh
           ./samples/menu/load_content_filter/load_content_filter_test
           make -C samples/menu/load_content_filter clean
+
+      - name: Build and run core_warning_test
+        shell: bash
+        run: |
+          set -eu
+          # The Security Warning is a confirm box with named buttons:
+          # Cancel starts highlighted, Left/Right stop at the ends, OK
+          # presses the highlighted button, Back and Info cancel, a
+          # press on a box an older request put up chooses nothing,
+          # and synthetic input can't answer it. Turning Check Core
+          # Signatures off always asks first.
+          samples/menu/core_warning/build.sh
+          ./samples/menu/core_warning/core_warning_test
+          make -C samples/menu/core_warning clean
+
+      - name: Build and run core_load_paths_test
+        shell: bash
+        run: |
+          set -eu
+          # Real loads through the load check, on this build with the
+          # public test key, one mode a run (MODES in its Makefile): a
+          # startup -L answered from the menu (Load Once, Always Trust,
+          # outside the cores folder, there with its probe cached, with
+          # content, a core that needs content, a core changed before
+          # Load Once) or refused with no menu; staged loads (task
+          # worker, a core changed before its open); playlist and
+          # subsystem loads, playlist and netplay subsystem refusals and
+          # netplay lobby joins, probe cached or not; a quiet probe;
+          # Load Core (started, changed before Load Once, failing to
+          # open after it, refused again with no menu); the first run's
+          # seed, with and without a menu and a refusal it holds;
+          # run-ahead's copy; Load Once lasting until another core
+          # loads; another load ending a waiting park; a built-in
+          # core's load, which ends a park as another core's load does;
+          # and the firmware box, whose answer keeps the menu's level,
+          # which a contentless core's refused probe still shows, and
+          # whose wait behind a confirm opens the menu to show it; with
+          # a null menu the load runs and says what firmware is missing;
+          # a load the Security Warning re-runs does not ask again; the
+          # box's Cancel leaves the running game as it was and spends a
+          # Load Once; a built-in core's start asks for no other core's
+          # firmware; and a load asked for while the box waits is turned
+          # away before it can change what the box's answer loads.
+          make -C samples/tasks/core_load_paths check
+          make -C samples/tasks/core_load_paths clean
 
       - name: Build and run explore_build_test
         shell: bash

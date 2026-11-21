@@ -2,6 +2,7 @@
 bool	accessibility_enable	1	0
 bool	load_dummy_on_core_shutdown	1	1
 bool	core_info_cache_enable	1	0
+bool	core_firmware_notification_enable	1	1
 bool	core_set_supports_no_game_enable	1	1
 bool	builtin_mediaplayer_enable	1	0
 bool	builtin_imageviewer_enable	1	1
@@ -46,6 +47,7 @@ bool	video_waitable_swapchains	1	1
 bool	video_d3d9ex_present	1	0
 bool	video_threaded_present_repeat	1	0
 bool	video_threaded_display_pacing	1	0
+bool	video_threaded_pacing_vblank	1	0
 bool	video_present_timing_from_display	1	1
 bool	video_skip_dupe_frames	1	0
 bool	video_hard_sync	1	0
@@ -177,6 +179,9 @@ bool	content_show_explore	1	1
 bool	xmb_entry_icons	1	1
 bool	xmb_switch_icons	1	1
 bool	xmb_shadows_enable	1	1
+bool	xmb_plastic_effect_enable	1	0
+bool	xmb_ribbon_bloom_enable	1	0
+bool	xmb_ribbon_particles_enable	1	0
 bool	playlist_show_entry_idx	1	1
 bool	playlist_fuzzy_archive_match	1	0
 bool	scan_without_core_match	1	0
@@ -195,6 +200,8 @@ bool	menu_texture_mipmapping	1	1
 bool	menu_pause_libretro	1	1
 bool	menu_savestate_resume	1	1
 bool	menu_insert_disk_resume	1	1
+bool	menu_timedate_12hour	1	0
+bool	menu_backdrop_blur	1	1
 bool	menu_mouse_enable	1	0
 bool	menu_pointer_enable	1	1
 bool	netplay_nat_traversal	1	1
@@ -238,6 +245,7 @@ bool	settings_show_smb_client	1	1
 bool	network_on_demand_thumbnails	1	0
 bool	location_allow	1	0
 bool	camera_allow	1	0
+bool	camera_pip	1	0
 bool	menu_show_core_updater	1	1
 bool	menu_show_restart_retroarch	1	1
 bool	menu_thumbnail_background_enable	1	0
@@ -269,7 +277,7 @@ bool	video_window_show_decorations	1	1
 bool	video_force_srgb_disable	1	0
 bool	video_shader_watch_files	1	0
 bool	video_shader_remember_last_dir	1	1
-bool	android_input_disconnect_workaround	1	0
+bool	android_input_disconnect_workaround	1	1
 bool	video_frame_time_sample_from_display	1	0
 bool	video_frame_time_sample_gated	1	0
 bool	video_adaptive_vsync	1	0
@@ -417,7 +425,6 @@ bool	keyboard_gamepad_enable	1	1
 bool	menu_swap_ok_cancel_buttons	1	1
 bool	menu_swap_scroll_buttons	1	0
 bool	input_android_system_keyboard	1	1
-bool	input_sdl3_system_keyboard	1	0
 bool	stdin_cmd_enable	1	0
 bool	netplay_request_device_p1	1	0
 bool	netplay_request_device_p2	1	0
@@ -490,8 +497,6 @@ uint	input_bind_hold	1	1
 uint	netplay_chat_color_name	1	0x008000
 uint	netplay_chat_color_msg	1	0xFFFFFF
 uint	playlist_entry_remove_enable	1	PLAYLIST_ENTRY_REMOVE_ENABLE_ALL
-uint	menu_timedate_style	1	MENU_TIMEDATE_STYLE_YMD_HM
-uint	menu_timedate_date_separator	1	MENU_TIMEDATE_DATE_SEPARATOR_HYPHEN
 uint	rgui_particle_effect	1	RGUI_PARTICLE_EFFECT_NONE
 uint	cloud_sync_sync_mode	1	CLOUD_SYNC_MODE_AUTOMATIC
 uint	fps_update_interval	1	256
@@ -572,6 +577,9 @@ uint	playlist_show_inline_core_name	1	PLAYLIST_INLINE_CORE_DISPLAY_HIST_FAV
 uint	cheevos_visibility_summary	1	1
 uint	quit_on_close_content	1	QUIT_ON_CLOSE_CONTENT_DISABLED
 uint	menu_screensaver_timeout	1	0
+uint	menu_timedate_mode	1	MENU_TIMEDATE_MODE_MANUAL
+uint	menu_timedate_style	1	MENU_TIMEDATE_STYLE_YMD_HM
+uint	menu_timedate_date_separator	1	MENU_TIMEDATE_DATE_SEPARATOR_HYPHEN
 uint	menu_remember_selection	1	MENU_REMEMBER_SELECTION_ALWAYS
 uint	menu_startup_page	1	MENU_STARTUP_PAGE_MAIN_MENU
 uint	netplay_share_digital	1	RARCH_NETPLAY_SHARE_DIGITAL_NO_SHARING
@@ -582,6 +590,7 @@ uint	video_stereo_mode	1	0
 uint	video_screen_layout	1	0
 uint	video_menu_follows	1	0
 uint	video_notifications_window	1	0
+uint	video_blank_unused_screens	1	0
 uint	video_openxr_refresh_rate	1	0
 uint	video_openxr_placement	1	0
 uint	video_openxr_controllers	1	0
@@ -632,6 +641,8 @@ uint	ai_service_mode	1	1
 uint	audio_format_negotiation	1	AUDIO_FORMAT_NEGOTIATION_FLOAT
 uint	audio_output_layout	1	0
 uint	microphone_block_frames	1	0
+uint	camera_pip_corner	1	3
+uint	camera_pip_size	1	25
 uint	menu_thumbnail_preview_threads	1	1
 uint	menu_file_browser_extension_display	1	MENU_FILE_BROWSER_EXTENSION_DISPLAY_ALWAYS
 uint	media_player_seek_seconds	1	5
@@ -741,6 +752,7 @@ size	rewind_buffer_size	1	(20 << 20)
 bool	accessibility_enable	1	0
 bool	load_dummy_on_core_shutdown	1	0
 bool	core_info_cache_enable	1	0
+bool	core_firmware_notification_enable	1	1
 bool	core_set_supports_no_game_enable	1	1
 bool	builtin_mediaplayer_enable	1	0
 bool	builtin_imageviewer_enable	1	1
@@ -785,6 +797,7 @@ bool	video_waitable_swapchains	1	1
 bool	video_d3d9ex_present	1	0
 bool	video_threaded_present_repeat	1	0
 bool	video_threaded_display_pacing	1	0
+bool	video_threaded_pacing_vblank	1	0
 bool	video_present_timing_from_display	1	1
 bool	video_skip_dupe_frames	1	0
 bool	video_hard_sync	1	0
@@ -916,6 +929,9 @@ bool	content_show_explore	1	1
 bool	xmb_entry_icons	1	1
 bool	xmb_switch_icons	1	1
 bool	xmb_shadows_enable	1	1
+bool	xmb_plastic_effect_enable	1	0
+bool	xmb_ribbon_bloom_enable	1	0
+bool	xmb_ribbon_particles_enable	1	0
 bool	playlist_show_entry_idx	1	1
 bool	playlist_fuzzy_archive_match	1	0
 bool	scan_without_core_match	1	0
@@ -934,6 +950,8 @@ bool	menu_texture_mipmapping	1	1
 bool	menu_pause_libretro	1	1
 bool	menu_savestate_resume	1	1
 bool	menu_insert_disk_resume	1	1
+bool	menu_timedate_12hour	1	0
+bool	menu_backdrop_blur	1	1
 bool	menu_mouse_enable	1	1
 bool	menu_pointer_enable	1	0
 bool	netplay_nat_traversal	1	1
@@ -976,6 +994,7 @@ bool	settings_show_smb_client	1	1
 bool	network_on_demand_thumbnails	1	0
 bool	location_allow	1	0
 bool	camera_allow	1	0
+bool	camera_pip	1	0
 bool	menu_show_core_updater	1	1
 bool	menu_show_restart_retroarch	1	1
 bool	menu_thumbnail_background_enable	1	0
@@ -1153,8 +1172,6 @@ bool	input_overlay_show_mouse_cursor	1	0
 bool	keyboard_gamepad_enable	1	1
 bool	menu_swap_ok_cancel_buttons	1	1
 bool	menu_swap_scroll_buttons	1	0
-bool	input_android_system_keyboard	1	1
-bool	input_sdl3_system_keyboard	1	0
 bool	stdin_cmd_enable	1	0
 bool	netplay_request_device_p1	1	0
 bool	netplay_request_device_p2	1	0
@@ -1223,8 +1240,6 @@ uint	input_bind_hold	1	0
 uint	netplay_chat_color_name	1	0x008000
 uint	netplay_chat_color_msg	1	0xFFFFFF
 uint	playlist_entry_remove_enable	1	PLAYLIST_ENTRY_REMOVE_ENABLE_ALL
-uint	menu_timedate_style	1	MENU_TIMEDATE_STYLE_YMD_HM
-uint	menu_timedate_date_separator	1	MENU_TIMEDATE_DATE_SEPARATOR_HYPHEN
 uint	rgui_particle_effect	1	RGUI_PARTICLE_EFFECT_NONE
 uint	cloud_sync_sync_mode	1	CLOUD_SYNC_MODE_AUTOMATIC
 uint	fps_update_interval	1	256
@@ -1305,6 +1320,9 @@ uint	playlist_show_inline_core_name	1	PLAYLIST_INLINE_CORE_DISPLAY_HIST_FAV
 uint	cheevos_visibility_summary	1	1
 uint	quit_on_close_content	1	QUIT_ON_CLOSE_CONTENT_DISABLED
 uint	menu_screensaver_timeout	1	0
+uint	menu_timedate_mode	1	MENU_TIMEDATE_MODE_MANUAL
+uint	menu_timedate_style	1	MENU_TIMEDATE_STYLE_YMD_HM
+uint	menu_timedate_date_separator	1	MENU_TIMEDATE_DATE_SEPARATOR_HYPHEN
 uint	menu_remember_selection	1	MENU_REMEMBER_SELECTION_ALWAYS
 uint	menu_startup_page	1	MENU_STARTUP_PAGE_MAIN_MENU
 uint	netplay_share_digital	1	RARCH_NETPLAY_SHARE_DIGITAL_NO_SHARING
@@ -1360,6 +1378,8 @@ uint	rewind_buffer_size_step	1	10
 uint	ai_service_mode	1	1
 uint	audio_format_negotiation	1	AUDIO_FORMAT_NEGOTIATION_FLOAT
 uint	audio_output_layout	1	0
+uint	camera_pip_corner	1	3
+uint	camera_pip_size	1	25
 uint	menu_thumbnail_preview_threads	1	1
 uint	menu_file_browser_extension_display	1	MENU_FILE_BROWSER_EXTENSION_DISPLAY_ALWAYS
 uint	media_player_seek_seconds	1	5
@@ -1467,6 +1487,7 @@ size	rewind_buffer_size	1	(20 << 20)
 bool	accessibility_enable	1	0
 bool	load_dummy_on_core_shutdown	1	1
 bool	core_info_cache_enable	1	0
+bool	core_firmware_notification_enable	1	1
 bool	core_set_supports_no_game_enable	1	1
 bool	builtin_mediaplayer_enable	1	0
 bool	builtin_imageviewer_enable	1	1
@@ -1513,6 +1534,7 @@ bool	video_waitable_swapchains	1	1
 bool	video_d3d9ex_present	1	0
 bool	video_threaded_present_repeat	1	0
 bool	video_threaded_display_pacing	1	0
+bool	video_threaded_pacing_vblank	1	0
 bool	video_present_timing_from_display	1	1
 bool	video_skip_dupe_frames	1	0
 bool	video_hard_sync	1	0
@@ -1652,6 +1674,9 @@ bool	content_show_explore	1	1
 bool	xmb_entry_icons	1	1
 bool	xmb_switch_icons	1	1
 bool	xmb_shadows_enable	1	1
+bool	xmb_plastic_effect_enable	1	0
+bool	xmb_ribbon_bloom_enable	1	0
+bool	xmb_ribbon_particles_enable	1	0
 bool	playlist_show_entry_idx	1	1
 bool	playlist_fuzzy_archive_match	1	0
 bool	scan_without_core_match	1	0
@@ -1670,6 +1695,8 @@ bool	menu_texture_mipmapping	1	1
 bool	menu_pause_libretro	1	1
 bool	menu_savestate_resume	1	1
 bool	menu_insert_disk_resume	1	1
+bool	menu_timedate_12hour	1	0
+bool	menu_backdrop_blur	1	1
 bool	menu_mouse_enable	1	1
 bool	menu_pointer_enable	1	0
 bool	netplay_nat_traversal	1	1
@@ -1677,6 +1704,7 @@ bool	ozone_show_sidebar	1	1
 bool	ozone_collapse_sidebar	1	0
 bool	video_hdr_scanlines	1	1
 bool	video_stereo_swap_eyes	1	0
+bool	video_windows_enable	1	0
 bool	video_openxr_enable	1	0
 bool	video_openxr_menu_follow	1	0
 bool	video_openxr_perf_boost	1	0
@@ -1713,6 +1741,7 @@ bool	network_on_demand_thumbnails	1	0
 bool	discord_allow	1	0
 bool	location_allow	1	0
 bool	camera_allow	1	0
+bool	camera_pip	1	0
 bool	menu_show_core_updater	1	1
 bool	menu_show_restart_retroarch	1	1
 bool	menu_thumbnail_background_enable	1	0
@@ -1890,8 +1919,6 @@ bool	input_overlay_show_mouse_cursor	1	0
 bool	keyboard_gamepad_enable	1	1
 bool	menu_swap_ok_cancel_buttons	1	1
 bool	menu_swap_scroll_buttons	1	0
-bool	input_android_system_keyboard	1	1
-bool	input_sdl3_system_keyboard	1	0
 bool	stdin_cmd_enable	1	0
 bool	netplay_request_device_p1	1	0
 bool	netplay_request_device_p2	1	0
@@ -1965,8 +1992,6 @@ uint	input_bind_hold	1	0
 uint	netplay_chat_color_name	1	0x008000
 uint	netplay_chat_color_msg	1	0xFFFFFF
 uint	playlist_entry_remove_enable	1	PLAYLIST_ENTRY_REMOVE_ENABLE_ALL
-uint	menu_timedate_style	1	MENU_TIMEDATE_STYLE_YMD_HM
-uint	menu_timedate_date_separator	1	MENU_TIMEDATE_DATE_SEPARATOR_HYPHEN
 uint	rgui_particle_effect	1	RGUI_PARTICLE_EFFECT_NONE
 uint	cloud_sync_sync_mode	1	CLOUD_SYNC_MODE_AUTOMATIC
 uint	fps_update_interval	1	256
@@ -2057,6 +2082,9 @@ uint	playlist_show_inline_core_name	1	PLAYLIST_INLINE_CORE_DISPLAY_HIST_FAV
 uint	cheevos_visibility_summary	1	1
 uint	quit_on_close_content	1	QUIT_ON_CLOSE_CONTENT_DISABLED
 uint	menu_screensaver_timeout	1	0
+uint	menu_timedate_mode	1	MENU_TIMEDATE_MODE_MANUAL
+uint	menu_timedate_style	1	MENU_TIMEDATE_STYLE_YMD_HM
+uint	menu_timedate_date_separator	1	MENU_TIMEDATE_DATE_SEPARATOR_HYPHEN
 uint	menu_remember_selection	1	MENU_REMEMBER_SELECTION_ALWAYS
 uint	menu_startup_page	1	MENU_STARTUP_PAGE_MAIN_MENU
 uint	netplay_share_digital	1	RARCH_NETPLAY_SHARE_DIGITAL_NO_SHARING
@@ -2065,6 +2093,8 @@ uint	keyboard_gamepad_mapping_type	1	1
 uint	video_hdr_subpixel_layout	1	0
 uint	video_stereo_mode	1	0
 uint	video_screen_layout	1	0
+uint	video_menu_follows	1	0
+uint	video_notifications_window	1	0
 uint	video_openxr_refresh_rate	1	0
 uint	video_openxr_placement	1	0
 uint	video_openxr_controllers	1	0
@@ -2113,6 +2143,8 @@ uint	rewind_buffer_size_step	1	10
 uint	ai_service_mode	1	1
 uint	audio_format_negotiation	1	AUDIO_FORMAT_NEGOTIATION_FLOAT
 uint	audio_output_layout	1	0
+uint	camera_pip_corner	1	3
+uint	camera_pip_size	1	25
 uint	menu_thumbnail_preview_threads	1	1
 uint	menu_file_browser_extension_display	1	MENU_FILE_BROWSER_EXTENSION_DISPLAY_ALWAYS
 uint	media_player_seek_seconds	1	5

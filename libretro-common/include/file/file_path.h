@@ -301,7 +301,9 @@ size_t fill_pathname(char *s, const char *in_path,
  * - Calls strlcpy
  *
  **/
+#ifndef RETRO_DISABLE_HOST_CLOCK
 size_t fill_dated_filename(char *s, const char *ext, size_t len);
+#endif
 
 /**
  * fill_str_dated_filename:
@@ -324,7 +326,9 @@ size_t fill_dated_filename(char *s, const char *ext, size_t len);
  *
  * @return Length of the string copied into @s
  **/
+#ifndef RETRO_DISABLE_HOST_CLOCK
 size_t fill_str_dated_filename(char *s, const char *in_str, const char *ext, size_t len);
+#endif
 
 /**
  * find_last_slash:
@@ -731,9 +735,11 @@ bool path_is_empty_directory(const char *dir);
  */
 int64_t path_get_free_space(const char *path);
 
-/* Time format strings with AM-PM designation require special
- * handling due to platform dependence
- * @return Length of the string written to @s
+/* strftime() under the host's LC_TIME, which the first call sets, so
+ * %p and the names come out localized; the result is UTF-8. Allocates
+ * nothing; any thread.
+ * @return Length of the string written to @s, or 0 with @s empty when
+ * it does not fit
  */
 size_t strftime_am_pm(char *s, size_t len, const char* format,
       const void* timeptr);

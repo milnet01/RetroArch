@@ -51,9 +51,170 @@
 #include "driver.h"
 #include "audio/audio_driver.h"
 #include "gfx/video_driver.h"
+#ifdef HAVE_THREADS
+#include "gfx/video_thread_wrapper.h"
+#endif
 #include "paths.h"
 #include "runloop.h"
 #include "verbosity.h"
+#ifdef HAVE_CORE_LOAD_CHECK
+#include "core_load_check.h"
+#include "core_load_file.h"
+#endif
+
+static struct retro_savestate_lifetime serialization_interface;
+static enum retro_execution_phase serialization_phase_value;
+static bool serialization_managed;
+static bool serialization_secondary_logged;
+
+enum retro_execution_phase runahead_get_execution_phase(void)
+{
+   return serialization_phase_value;
+}
+
+bool serialization_lifetime_active(void)
+{
+   return serialization_interface.release != NULL;
+}
+
+bool serialization_owned_context(void)
+{
+   return serialization_managed;
+}
+
+bool serialization_register(const struct retro_savestate_lifetime *iface)
+{
+   /* Version 1 is all there is: a later one copies only its own members. */
+   if (!iface || iface->version < 1
+         || iface->version > RETRO_SAVESTATE_LIFETIME_VERSION
+         || !iface->release
+         || serialization_interface.release
+         || (runloop_state_get_ptr()->current_core.flags & RETRO_CORE_FLAG_INITED))
+      return false;
+   serialization_interface = *iface;
+   return true;
+}
+
+static void serialization_release_buffer(void *data, size_t size, bool *owned)
+{
+   if (!*owned)
+      return;
+   *owned = false;
+#ifdef HAVE_THREADS
+   video_thread_core_context_take();
+#endif
+   serialization_interface.release(data, size);
+#ifdef HAVE_THREADS
+   video_thread_core_context_release();
+#endif
+}
+
+void serialization_clear_history(void)
+{
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   preempt_t *preempt = runloop_st->preempt_data;
+   retro_ctx_serialize_info_t *ra = &runloop_st->runahead_savestate_info;
+   unsigned i;
+   if (!serialization_interface.release)
+      return;
+   serialization_release_buffer(ra->data, ra->size, &runloop_st->runahead_state_owned);
+   if (!preempt)
+      return;
+   for (i = 0; i < preempt->frames; i++)
+      serialization_release_buffer(preempt->buffer[i], preempt->state_size,
+            &preempt->state_owned[i]);
+   preempt->frame_count = 0;
+   preempt->start_ptr = 0;
+   preempt->replay_ptr = 0;
+}
+
+void serialization_close(void)
+{
+   serialization_clear_history();
+   memset(&serialization_interface, 0, sizeof(serialization_interface));
+   serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
+   serialization_managed = false;
+   serialization_secondary_logged = false;
+}
+
+/* The state a buffer holds is released before the new one is saved
+ * into it, in place: no copy, and the core may reuse what it frees. */
+static bool serialization_save(void *data, size_t size, bool *owned)
+{
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   bool ret;
+   bool special = (runloop_st->flags & RUNLOOP_FLAG_REQUEST_SPECIAL_SAVESTATE) != 0;
+   if (!serialization_interface.release)
+      return runloop_st->current_core.retro_serialize(data, size);
+
+   runloop_st->flags |= RUNLOOP_FLAG_REQUEST_SPECIAL_SAVESTATE;
+#ifdef HAVE_THREADS
+   video_thread_core_context_take();
+#endif
+   if (*owned)
+   {
+      *owned = false;
+      serialization_interface.release(data, size);
+   }
+   serialization_managed = true;
+   ret = runloop_st->current_core.retro_serialize(data, size);
+   serialization_managed = false;
+   *owned = ret;
+#ifdef HAVE_THREADS
+   video_thread_core_context_release();
+#endif
+   if (!special)
+      runloop_st->flags &= ~RUNLOOP_FLAG_REQUEST_SPECIAL_SAVESTATE;
+   return ret;
+}
+
+static bool serialization_load(const void *data, size_t size)
+{
+   runloop_state_t *runloop_st = runloop_state_get_ptr();
+   bool ret;
+   bool special = (runloop_st->flags & RUNLOOP_FLAG_REQUEST_SPECIAL_SAVESTATE) != 0;
+   if (!serialization_interface.release)
+      return runloop_st->current_core.retro_unserialize(data, size);
+
+   runloop_st->flags |= RUNLOOP_FLAG_REQUEST_SPECIAL_SAVESTATE;
+#ifdef HAVE_THREADS
+   video_thread_core_context_take();
+#endif
+   serialization_managed = true;
+   ret = runloop_st->current_core.retro_unserialize(data, size);
+   serialization_managed = false;
+#ifdef HAVE_THREADS
+   video_thread_core_context_release();
+#endif
+   if (!special)
+      runloop_st->flags &= ~RUNLOOP_FLAG_REQUEST_SPECIAL_SAVESTATE;
+   return ret;
+}
+
+static void serialization_run(struct retro_core_t *core)
+{
+   if (!serialization_interface.release)
+   {
+      core->retro_run();
+      return;
+   }
+#ifdef HAVE_THREADS
+   video_thread_core_context_take();
+#endif
+   core->retro_run();
+#ifdef HAVE_THREADS
+   video_thread_core_context_release();
+#endif
+}
+
+static size_t serialization_size(void)
+{
+   size_t size;
+   serialization_managed = serialization_interface.release != NULL;
+   size = core_serialize_size_special();
+   serialization_managed = false;
+   return size;
+}
 
 /* ===== BEGIN runahead dense input cache =====
  * The last value each input tuple returned, for the dirty comparison
@@ -502,6 +663,13 @@ static bool runahead_tmp_dir_private(const char *dir)
  * shared per-frame I/O window, not this. */
 #define RUNAHEAD_COPY_STEP_BYTES ((int64_t)4 * 1024 * 1024)
 
+/* Android 6+ maps the second instance from the running core's own
+ * file instead: no copy, nothing to hash */
+#if defined(ANDROID) && defined(HAVE_CORE_LOAD_CHECK) \
+      && !defined(RUNAHEAD_INSTANCE_LOAD)
+#define RUNAHEAD_INSTANCE_LOAD 1
+#endif
+
 /* Result slot, published by the task callback (main thread) */
 static char *runahead_copy_slot_path     = NULL;
 static char *runahead_copy_slot_src      = NULL; /* identity of the copy */
@@ -539,6 +707,17 @@ typedef struct runahead_copy_handle
    char *copy_dst;   /* destination the open copy is writing to */
    dylib_t lib;      /* out_path opened by the task; NULL if it
                       * could not be, and the caller opens it */
+#ifdef RUNAHEAD_INSTANCE_LOAD
+   core_file_t *instance;     /* the running core's file, loaded again */
+   char *instance_path;       /* the path it was loaded by */
+   function_t primary_run;    /* the running instance's retro_run */
+#endif
+#ifdef HAVE_CORE_LOAD_CHECK
+   core_load_match_t *match;  /* the copy against the running core */
+   struct core_load_source src;
+   bool check;                /* the copy loads only once it matches */
+   bool mismatch;
+#endif
    bool  started;    /* the open was attempted (once, on pass one) */
    bool  failed;
    unsigned generation;
@@ -582,6 +761,9 @@ static int runahead_copy_step(struct retro_vfs_copy_handle *copy)
    return -1;
 }
 
+/* Coprime to 100000 (prime, neither 2 nor 5) */
+#define RUNAHEAD_NAME_STRIDE 7919u
+
 /* Opens a VFS copy to a randomly named destination under @tmp_path,
  * used when the plain basename is taken (another instance holds it).
  * Only begin() runs here: no bytes move, so this cannot block.
@@ -597,9 +779,11 @@ static struct retro_vfs_copy_handle *copy_begin_with_random_name(
    const char *prefix       = "tmp";
    char *ext                = NULL;
    time_t time_value        = time(NULL);
-   /* The generator's state, advanced for every candidate: unsigned,
-    * so the wrap is defined. */
-   uint32_t lcg             = (uint32_t)time_value;
+   /* The first candidate's number, from the time; each next one steps
+    * by a stride coprime to the 100000 names, so no two tries repeat.
+    * Unsigned, so the wrap is defined. */
+   uint32_t lcg             = (uint32_t)time_value * 214013u + 2531011u;
+   unsigned number          = (lcg >> 14) % 100000u;
    const char *src          = path_get_extension(*temp_dll_path);
 
    if (src)
@@ -626,9 +810,8 @@ static struct retro_vfs_copy_handle *copy_begin_with_random_name(
    /* Try up to 30 'random' filenames before giving up */
    for (i = 0; i < 30; i++)
    {
-      unsigned number;
-      lcg    = lcg * 214013u + 2531011u;
-      number = (lcg >> 14) % 100000u;
+      if (i)
+         number = (number + RUNAHEAD_NAME_STRIDE) % 100000u;
 
       snprintf(number_buf, sizeof(number_buf), "%05u", number);
 
@@ -703,6 +886,30 @@ static void runahead_copy_task_begin(runahead_copy_handle_t *h)
    free(tmpdir);
 }
 
+#ifdef RUNAHEAD_INSTANCE_LOAD
+/* A second instance from the running core's file, with no copy and
+ * nothing to hash. False to make the copy: an older linker refused,
+ * or one that ignored the request handed back the running instance,
+ * which its retro_run gives away. */
+static bool runahead_instance_load(runahead_copy_handle_t *h)
+{
+   dylib_t lib = core_load_file_instance(h->instance, h->instance_path);
+   core_file_close(h->instance);
+   h->instance = NULL;
+   if (!lib)
+      return false;
+   if (     !h->primary_run
+         || dylib_proc(lib, "retro_run") == h->primary_run)
+   {
+      dylib_close(lib);
+      return false;
+   }
+   h->lib    = lib;
+   h->failed = false;
+   return true;
+}
+#endif
+
 /* Advances the copy by one share of the shared per-frame I/O window
  * and returns.  The task is re-entered next tick until the copy
  * finishes, so a 40MB core never holds the handler for more than a
@@ -723,6 +930,13 @@ static void runahead_copy_task_handler(retro_task_t *task)
 
    if (!h->started)
    {
+#ifdef RUNAHEAD_INSTANCE_LOAD
+      if (h->instance && runahead_instance_load(h))
+      {
+         task_set_flags(task, RETRO_TASK_FLG_FINISHED, true);
+         return;
+      }
+#endif
       runahead_copy_task_begin(h);
       if (!h->copy)
       {
@@ -732,6 +946,33 @@ static void runahead_copy_task_handler(retro_task_t *task)
       /* Opening is this pass's work; the first bytes move next tick. */
       return;
    }
+
+#ifdef HAVE_CORE_LOAD_CHECK
+   if (h->match)
+   {
+      nbio_budget_t budget;
+      st = 1;
+      task_nbio_slice_open(&budget);
+      while (st > 0 && task_nbio_slice_within_budget(&budget, 0, 0))
+         st = core_load_match_step(h->match);
+      task_nbio_slice_close(&budget);
+      if (st > 0)
+         return;
+      if (st == 0)
+         h->lib = core_load_match_load(h->match);
+      /* No second instance from a copy that doesn't match, or won't
+       * load: the main thread never opens it by path */
+      if (!h->lib)
+      {
+         h->mismatch = (st != 0);
+         h->failed   = true;
+      }
+      core_load_match_free(h->match);
+      h->match = NULL;
+      task_set_flags(task, RETRO_TASK_FLG_FINISHED, true);
+      return;
+   }
+#endif
 
    if (!h->copy)
    {
@@ -753,10 +994,22 @@ static void runahead_copy_task_handler(retro_task_t *task)
       h->copy_dst = NULL;
       h->failed   = false;
       /* On the worker under the threaded queue: the frame loop goes
-       * on while the loader maps the copy. A copy that will not
-       * open is still published; the main thread's own open of it
-       * then reports why. */
-      h->lib      = runloop_core_dylib_load(h->out_path, true);
+       * on while the loader maps the copy. Unchecked, a copy that
+       * will not open is still published; the main thread's own open
+       * of it then reports why. */
+#ifdef HAVE_CORE_LOAD_CHECK
+      if (h->check)
+      {
+         /* Hashed over the next ticks, then loaded from the file hashed */
+         if ((h->match = core_load_match_new(h->out_path, h->src_path,
+                     &h->src)))
+            return;
+         h->mismatch = true;
+         h->failed   = true;
+      }
+      else
+#endif
+      h->lib      = runloop_core_dylib_open(h->out_path, true);
    }
    else
    {
@@ -783,6 +1036,19 @@ static void runahead_copy_task_cb(retro_task_t *task,
    /* The pipeline is free again in every case below - including
     * the discard path: that task is done. */
    runahead_copy_task_pending = false;
+
+#ifdef HAVE_CORE_LOAD_CHECK
+   if (h->failed && h->out_path)
+   {
+      if (h->mismatch)
+         RARCH_WARN("[Run-Ahead] The core's copy doesn't match the running core: one instance.\n");
+      else
+         RARCH_WARN("[Run-Ahead] The core's copy won't load: one instance.\n");
+      filestream_delete(h->out_path);
+      free(h->out_path);
+      h->out_path = NULL;
+   }
+#endif
 
    if (h->generation != runahead_copy_generation)
    {
@@ -816,6 +1082,13 @@ static void runahead_copy_task_free(retro_task_t *task)
       return;
    if ((h = (runahead_copy_handle_t*)task->state))
    {
+#ifdef HAVE_CORE_LOAD_CHECK
+      core_load_match_free(h->match);
+#endif
+#ifdef RUNAHEAD_INSTANCE_LOAD
+      core_file_close(h->instance);
+      free(h->instance_path);
+#endif
       /* A task cancelled mid-copy still has one open: closing an
        * unfinished copy removes the partial destination. */
       if (h->copy)
@@ -881,10 +1154,12 @@ static void runahead_copy_reset(bool delete_file)
  * - finished ok           -> READY; ownership of the temp path is
  *                            transferred to *out_path, and of its
  *                            open handle (NULL if the task could not
- *                            open it) to *out_lib */
+ *                            open it) to *out_lib; *out_path is NULL
+ *                            for an instance of the core's own file
+ * primary_run is the running instance's retro_run. */
 static enum runahead_copy_status runahead_copy_poll(
       const char *core_path, const char *dir_libretro,
-      char **out_path, dylib_t *out_lib)
+      function_t primary_run, char **out_path, dylib_t *out_lib)
 {
    /* A published result for a different core binary is stale
     * (e.g. core switched without an intervening teardown, or any
@@ -916,6 +1191,29 @@ static enum runahead_copy_status runahead_copy_poll(
          h->src_path     = strdup(core_path);
          h->dir_libretro = dir_libretro ? strdup(dir_libretro) : NULL;
          h->generation   = runahead_copy_generation;
+#ifdef HAVE_CORE_LOAD_CHECK
+         switch (core_load_check_copy_source(core_path, &h->src))
+         {
+            case CORE_LOAD_COPY_NONE:
+               free(h->src_path);
+               free(h->dir_libretro);
+               free(h);
+               free(task);
+               return RUNAHEAD_COPY_UNAVAILABLE;
+            case CORE_LOAD_COPY_CHECK:
+               h->check = true;
+               break;
+            default:
+               break;
+         }
+#endif
+#ifdef RUNAHEAD_INSTANCE_LOAD
+         h->instance     = core_load_check_instance_file(core_path,
+               &h->instance_path);
+         h->primary_run  = primary_run;
+#else
+         (void)primary_run;
+#endif
 
          task->handler   = runahead_copy_task_handler;
          task->state     = h;
@@ -967,6 +1265,7 @@ static int runahead_secondary_env_filter(unsigned cmd)
       case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_HW_RENDER):
       case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE):
       case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT):
+      case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_SAVESTATE_LIFETIME):
          return 0;
       case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE):
       case RUNAHEAD_ENV_BASE(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE):
@@ -1055,12 +1354,14 @@ static enum runahead_copy_status secondary_core_create(
     * single-instance fallback for the frame - no stall. */
    copy_status = runahead_copy_poll(
          path_get(RARCH_PATH_CORE), path_directory_libretro,
+         (function_t)runloop_st->current_core.retro_run,
          &copied_path, &copied_lib);
    if (copy_status != RUNAHEAD_COPY_READY)
       return copy_status;
 
    if (runloop_st->secondary_library_path)
       free(runloop_st->secondary_library_path);
+   /* NULL for an instance of the core's own file: nothing to delete */
    runloop_st->secondary_library_path = copied_path;
    /* Opened by the task; runloop_init_libretro_symbols takes it as
     * it is and opens the path itself only when this is NULL. */
@@ -1069,7 +1370,7 @@ static enum runahead_copy_status secondary_core_create(
    /* Load Core */
    if (!runloop_init_libretro_symbols(runloop_st,
             CORE_TYPE_PLAIN, &runloop_st->secondary_core,
-            runloop_st->secondary_library_path,
+            copied_path ? copied_path : path_get(RARCH_PATH_CORE),
             &runloop_st->secondary_lib_handle))
       return false;
 
@@ -1376,6 +1677,7 @@ static bool runahead_savestate_info_init(
     * matching invariant (data NULL when nothing allocated) lets the
     * per-frame save_state/load_state path use the buffer pointer as
     * its readiness check. */
+   serialization_release_buffer(info->data, info->size, &runloop_st->runahead_state_owned);
    free(info->data);
    info->data       = NULL;
    info->data_const = NULL;
@@ -1396,6 +1698,7 @@ static bool runahead_savestate_info_init(
 static void runahead_savestate_info_free(runloop_state_t *runloop_st)
 {
    retro_ctx_serialize_info_t *info = &runloop_st->runahead_savestate_info;
+   serialization_release_buffer(info->data, info->size, &runloop_st->runahead_state_owned);
    free(info->data);
    info->data       = NULL;
    info->data_const = NULL;
@@ -1482,7 +1785,7 @@ static bool runahead_create(runloop_state_t *runloop_st)
 {
    /* get savestate size and allocate buffer */
    video_driver_state_t *video_st = video_state_get_ptr();
-   size_t info_size               = core_serialize_size_special();
+   size_t info_size               = serialization_size();
 
    if (!runahead_savestate_info_init(runloop_st, info_size))
    {
@@ -1511,23 +1814,37 @@ static bool runahead_save_state(runloop_state_t *runloop_st)
        * so a grown size means retro_serialize() would write past
        * our heap allocation.  Re-query and tear runahead down
        * cleanly rather than risk heap corruption. */
-      if (core_serialize_size_special() > info->size)
+      if (serialization_size() > info->size)
       {
          runahead_err(runloop_st);
          return false;
       }
-      if (core_serialize_special(info))
+      if (serialization_interface.release
+            ? serialization_save(info->data, info->size, &runloop_st->runahead_state_owned)
+            : core_serialize_special(info))
          return true;
       runahead_err(runloop_st);
    }
    return false;
 }
 
-static bool runahead_load_state(runloop_state_t *runloop_st)
+/* @reset: set when the core had to be reset */
+static bool runahead_load_state(runloop_state_t *runloop_st, bool *reset)
 {
    retro_ctx_serialize_info_t *info = &runloop_st->runahead_savestate_info;
    bool last_dirty                  = (runloop_st->flags & RUNLOOP_FLAG_INPUT_IS_DIRTY) ? true : false;
-   bool ret                         = core_unserialize_special(info);
+   bool ret;
+   if (serialization_interface.release)
+   {
+      /* A load does not consume the state, so it is tried twice.
+       * Refused both times, the core is left on a speculative frame's
+       * state, which it need not be able to go on from: it is reset. */
+      ret    =  serialization_load(info->data_const, info->size)
+             || serialization_load(info->data_const, info->size);
+      *reset = !ret;
+   }
+   else
+      ret = core_unserialize_special(info);
    if (last_dirty)
       runloop_st->flags             |=  RUNLOOP_FLAG_INPUT_IS_DIRTY;
    else
@@ -1535,6 +1852,9 @@ static bool runahead_load_state(runloop_state_t *runloop_st)
 
    if (!ret)
       runahead_err(runloop_st);
+
+   if (*reset)
+      core_reset();
 
    return ret;
 }
@@ -1568,7 +1888,7 @@ static void runahead_core_run_use_last_input(runloop_state_t *runloop_st)
    runloop_st->current_core.retro_set_input_poll(cbs->poll_cb);
    runloop_st->current_core.retro_set_input_state(cbs->state_cb);
 
-   runloop_st->current_core.retro_run();
+   serialization_run(&runloop_st->current_core);
    if (runloop_st->auto_state_load_pending)
       runloop_st->auto_state_load_core_ran = true;
    audio_driver_frame_end();
@@ -1590,7 +1910,7 @@ static void runahead_core_run_use_last_input(runloop_state_t *runloop_st)
    runloop_st->current_core.retro_set_input_state(cbs->state_cb);
 }
 
-bool runahead_run(void *data,
+static bool runahead_run_impl(void *data,
       int runahead_count,
       bool runahead_hide_warnings,
       bool use_secondary)
@@ -1706,6 +2026,8 @@ bool runahead_run(void *data,
             video_st->main_flags &= ~VIDEO_FLAG_ACTIVE;
          }
 
+         serialization_phase_value = frame_number == 0
+               ? RETRO_EXECUTION_PHASE_RETAINED : RETRO_EXECUTION_PHASE_SPECULATIVE;
          if (frame_number == 0)
             advanced = core_run();
          else
@@ -1739,11 +2061,15 @@ bool runahead_run(void *data,
 
          if (last_frame)
          {
-            if (!runahead_load_state(runloop_st))
+            bool reset = false;
+            serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
+            if (!runahead_load_state(runloop_st, &reset))
             {
-               const char *_msg = msg_hash_to_str(MSG_RUNAHEAD_FAILED_TO_LOAD_STATE);
+               const char *_msg = msg_hash_to_str(reset
+                     ? MSG_RUNAHEAD_CORE_RESET : MSG_RUNAHEAD_FAILED_TO_LOAD_STATE);
                runloop_msg_queue_push(_msg, strlen(_msg), 0, 3 * 60, true, NULL,
-                     MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
+                     MESSAGE_QUEUE_ICON_DEFAULT, reset
+                     ? MESSAGE_QUEUE_CATEGORY_ERROR : MESSAGE_QUEUE_CATEGORY_INFO);
                RARCH_WARN("[Run-Ahead] %s\n", _msg);
                return advanced;
             }
@@ -1756,6 +2082,7 @@ bool runahead_run(void *data,
       /* sec_status == RUNAHEAD_COPY_READY here (checked above) */
 
       /* run main core with video suspended */
+      serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
       video_st->main_flags &= ~VIDEO_FLAG_ACTIVE;
       advanced = core_run();
       if ((uint32_t)retro_atomic_load_relaxed_int(&video_st->flags) & VIDEO_FLAG_RUNAHEAD_IS_ACTIVE)
@@ -1780,6 +2107,7 @@ bool runahead_run(void *data,
             return advanced;
          }
 
+         serialization_phase_value = RETRO_EXECUTION_PHASE_SPECULATIVE;
          if (!runahead_load_state_secondary(runloop_st, settings))
          {
             const char *_msg = msg_hash_to_str(MSG_RUNAHEAD_FAILED_TO_LOAD_STATE);
@@ -1804,6 +2132,7 @@ bool runahead_run(void *data,
                video_st->main_flags &= ~VIDEO_FLAG_ACTIVE;
          }
       }
+      serialization_phase_value = RETRO_EXECUTION_PHASE_SPECULATIVE;
       AUDIO_FLAGS_SET(audio_st, AUDIO_FLAG_SUSPENDED | AUDIO_FLAG_HARD_DISABLE);
       if (secondary_core_run_use_last_input(runloop_st))
          runloop_st->flags              |=  RUNLOOP_FLAG_RUNAHEAD_SECONDARY_CORE_AVAILABLE;
@@ -1816,6 +2145,7 @@ bool runahead_run(void *data,
    return advanced;
 
 force_input_dirty:
+   serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
    advanced = core_run();
    runloop_st->flags |=  RUNLOOP_FLAG_RUNAHEAD_FORCE_INPUT_DIRTY;
    return advanced;
@@ -1916,7 +2246,7 @@ static const char* preempt_allocate(runloop_state_t *runloop_st,
    if (!(runloop_st->preempt_data = preempt))
       return msg_hash_to_str(MSG_PREEMPT_FAILED_TO_ALLOCATE);
 
-   info_size = core_serialize_size_special();
+   info_size = serialization_size();
    if (!info_size)
       return msg_hash_to_str(MSG_PREEMPT_CORE_DOES_NOT_SUPPORT_SAVESTATES);
 
@@ -1943,7 +2273,13 @@ void preempt_deinit(void *data)
    if (!preempt)
       return;
 
-   /* One slab; buffer[0] is its base. */
+   {
+      unsigned i;
+      for (i = 0; i < preempt->frames; i++)
+         serialization_release_buffer(preempt->buffer[i], preempt->state_size,
+               &preempt->state_owned[i]);
+   }
+   /* buffer[0] owns the slab. */
    free(preempt->buffer[0]);
 
    free(preempt);
@@ -1996,7 +2332,7 @@ bool preempt_init(void *data)
     * retro_serialize_size or retro_serialize */
    if (video_state_get_ptr()->frame_count == 0)
    {
-      runloop_st->current_core.retro_run();
+      serialization_run(&runloop_st->current_core);
       if (runloop_st->auto_state_load_pending)
          runloop_st->auto_state_load_core_ran = true;
       audio_driver_frame_end();
@@ -2152,7 +2488,7 @@ static INLINE void preempt_input_poll(preempt_t *preempt,
  *
  * Call in place of core_run() for preemptive frames.
  **/
-bool preempt_run(preempt_t *preempt, void *data)
+static bool preempt_run_impl(preempt_t *preempt, void *data)
 {
    runloop_state_t     *runloop_st   = (runloop_state_t*)data;
    struct retro_core_t *current_core = &runloop_st->current_core;
@@ -2161,6 +2497,9 @@ bool preempt_run(preempt_t *preempt, void *data)
    settings_t *settings              = config_get_ptr();
    unsigned input_max_users          = settings->uints.input_max_users;
    bool run_ahead_hide_warnings      = settings->bools.run_ahead_hide_warnings;
+   bool replay_save_failed          = false;
+
+   serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
 
    /* Poll and check for dirty input */
    preempt_input_poll(preempt, runloop_st, input_max_users);
@@ -2185,28 +2524,35 @@ bool preempt_run(preempt_t *preempt, void *data)
       AUDIO_FLAGS_SET(audio_st, AUDIO_FLAG_SUSPENDED);
       video_state_get_ptr()->main_flags &= ~VIDEO_FLAG_ACTIVE;
 
-      if (!current_core->retro_unserialize(
+      /* A refused load leaves the live, kept state as it was. */
+      if (!serialization_load(
             preempt->buffer[preempt->start_ptr], preempt->state_size))
       {
          _msg = msg_hash_to_str(MSG_PREEMPT_FAILED_TO_LOAD_STATE);
          goto error;
       }
 
-      current_core->retro_run();
+      /* The frames since start_ptr again, with the input that changed:
+       * kept in place of their first run. */
+      serialization_phase_value = RETRO_EXECUTION_PHASE_REPLAY;
+      serialization_run(current_core);
       if (runloop_st->auto_state_load_pending)
          runloop_st->auto_state_load_core_ran = true;
       preempt->replay_ptr = PREEMPT_NEXT_PTR(preempt->start_ptr);
 
       while (preempt->replay_ptr != preempt->start_ptr)
       {
-         if (!current_core->retro_serialize(
-               preempt->buffer[preempt->replay_ptr], preempt->state_size))
+         if (!replay_save_failed && !serialization_save(
+               preempt->buffer[preempt->replay_ptr], preempt->state_size,
+               &preempt->state_owned[preempt->replay_ptr]))
          {
             _msg = msg_hash_to_str(MSG_PREEMPT_FAILED_TO_SAVE_STATE);
-            goto error;
+            if (!serialization_interface.release)
+               goto error;
+            replay_save_failed = true;
          }
 
-         current_core->retro_run();
+         serialization_run(current_core);
          if (runloop_st->auto_state_load_pending)
             runloop_st->auto_state_load_core_ran = true;
          preempt->replay_ptr = PREEMPT_NEXT_PTR(preempt->replay_ptr);
@@ -2214,14 +2560,30 @@ bool preempt_run(preempt_t *preempt, void *data)
 
       AUDIO_FLAGS_CLEAR(audio_st, AUDIO_FLAG_SUSPENDED);
       video_state_get_ptr()->main_flags |=  VIDEO_FLAG_ACTIVE;
+      if (replay_save_failed)
+         goto error;
    }
 
-   /* Save current state and set start_ptr to oldest state */
-   if (!current_core->retro_serialize(
-         preempt->buffer[preempt->start_ptr], preempt->state_size))
+   serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
+   /* Save current state and set start_ptr to oldest state. A rewind
+    * push left for this point serializes it for both; a managed state
+    * is no rewind state, so a core that registered lifetime callbacks
+    * has its push made after the frame. */
    {
-      _msg = msg_hash_to_str(MSG_PREEMPT_FAILED_TO_SAVE_STATE);
-      goto error;
+      bool saved = false;
+#ifdef HAVE_REWIND
+      if (!serialization_interface.release)
+         saved   = state_manager_push_deferred(&runloop_st->rewind_st,
+               preempt->buffer[preempt->start_ptr], preempt->state_size);
+#endif
+      if (     !saved
+            && !serialization_save(
+               preempt->buffer[preempt->start_ptr], preempt->state_size,
+               &preempt->state_owned[preempt->start_ptr]))
+      {
+         _msg = msg_hash_to_str(MSG_PREEMPT_FAILED_TO_SAVE_STATE);
+         goto error;
+      }
    }
 
    preempt->start_ptr = PREEMPT_NEXT_PTR(preempt->start_ptr);
@@ -2229,7 +2591,7 @@ bool preempt_run(preempt_t *preempt, void *data)
          | RUNLOOP_FLAG_INPUT_IS_DIRTY);
 
    /* Run normal frame */
-   current_core->retro_run();
+   serialization_run(current_core);
    if (runloop_st->auto_state_load_pending)
       runloop_st->auto_state_load_core_ran = true;
    audio_driver_frame_end();
@@ -2247,6 +2609,12 @@ error:
       runloop_msg_queue_push(_msg, strlen(_msg), 0, 2 * 60, true, NULL,
             MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
    RARCH_ERR("[Run-Ahead Preemptive] %s\n", _msg);
+   /* A refused save leaves replay intact; finish it before falling back. */
+   if (replay_save_failed)
+   {
+      serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
+      return core_run();
+   }
    return false;
 }
 
@@ -2259,4 +2627,28 @@ void runahead_clear_variables(void *data)
                                           | RUNLOOP_FLAG_RUNAHEAD_SECONDARY_CORE_AVAILABLE
                                           | RUNLOOP_FLAG_RUNAHEAD_FORCE_INPUT_DIRTY;
    runloop_st->runahead_last_frame_count  = 0;
+}
+
+bool runahead_run(void *data, int count, bool hide, bool secondary)
+{
+   bool result;
+   /* Managed states belong to one core instance. */
+   if (secondary && serialization_interface.release)
+   {
+      if (!serialization_secondary_logged)
+      {
+         RARCH_LOG("[Run-Ahead] Core keeps its states in one instance; not using a second instance.\n");
+         serialization_secondary_logged = true;
+      }
+      secondary = false;
+   }
+   result = runahead_run_impl(data, count, hide, secondary);
+   serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
+   return result;
+}
+bool preempt_run(preempt_t *preempt, void *data)
+{
+   bool result = preempt_run_impl(preempt, data);
+   serialization_phase_value = RETRO_EXECUTION_PHASE_RETAINED;
+   return result;
 }

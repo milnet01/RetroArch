@@ -134,7 +134,8 @@ static const gfx_widget_t* const widgets[] = {
    &gfx_widget_generic_message,
    &gfx_widget_libretro_message,
    &gfx_widget_progress_message,
-   &gfx_widget_load_content_animation
+   &gfx_widget_load_content_animation,
+   &gfx_widget_camera_pip
 };
 
 #if defined(HAVE_MENU) && defined(HAVE_XMB)
@@ -1059,6 +1060,7 @@ void gfx_widgets_draw_icon(
    draw.matrix_data     = &mymat;
    draw.texture         = texture;
    draw.pipeline_id     = 0;
+   draw.effect          = NULL;
 
    if (VIDEO_SCALE_H(draw.dims) > 0 && VIDEO_SCALE_W(draw.dims) > 0)
       gfx_display_draw(dispctx, &draw, userdata,
@@ -3140,7 +3142,7 @@ void gfx_widgets_worker_step(void *data,
    }
    /* What the frame carried, not what the setting says now: this runs
     * on the video thread under the threaded wrapper. */
-   gfx_animation_update_widgets(cpu_features_get_time_usec(),
+   gfx_animation_update_widgets(video_info->frame_time,
          video_info->menu_ticker_speed,
          widget_dims);
    /* What the frame carried, not the settings the main thread writes:

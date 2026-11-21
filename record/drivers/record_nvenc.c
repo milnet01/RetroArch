@@ -18,6 +18,7 @@
 #include "../../audio/audio_driver.h"
 #include "../../audio/audio_upmix.h"
 #include "../../configuration.h"
+#include "../../command.h"
 #include "../../retroarch.h"
 #include "../../runloop.h"
 #include "../../defaults.h"
@@ -414,7 +415,9 @@ void record_nvenc_poll(void)
    if (record_nvenc_start_requested)
    {
       struct video_viewport vp;
-      memset(&vp, 0, sizeof(vp));
+      vp.pos         = 0;
+      vp.dims        = 0;
+      vp.full_dims   = 0;
       if (!recording_state_get_ptr()->enable)
          record_nvenc_start_requested = false;
       else if (video_driver_get_viewport_info(&vp) && VIDEO_SCALE_W(vp.dims)

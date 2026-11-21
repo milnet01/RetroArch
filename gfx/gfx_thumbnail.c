@@ -47,7 +47,8 @@
 
 #if (defined(HAVE_RWEBM) || defined(HAVE_RMP4)) && \
       defined(HAVE_AUDIOMIXER) && \
-      (defined(HAVE_ROPUS) || defined(HAVE_RVORBIS) || defined(HAVE_RAAC))
+      (defined(HAVE_ROPUS) || defined(HAVE_RVORBIS) || defined(HAVE_RAAC) \
+       || defined(HAVE_RFLAC))
 #ifdef HAVE_RWEBM
 #include <formats/rwebm_audio.h>
 #endif
@@ -464,7 +465,8 @@ static void gfx_thumbnail_init_fade(
  * it through the audio mixer while the animation is shown. */
 #if (defined(HAVE_RWEBM) || defined(HAVE_RMP4)) && \
       defined(HAVE_AUDIOMIXER) && \
-      (defined(HAVE_ROPUS) || defined(HAVE_RVORBIS) || defined(HAVE_RAAC))
+      (defined(HAVE_ROPUS) || defined(HAVE_RVORBIS) || defined(HAVE_RAAC) \
+       || defined(HAVE_RFLAC))
 #define GFX_THUMB_PREVIEW_AUDIO 1
 /* The mixer streams the audio track and decodes on the flush, so no
  * PCM is buffered up front and the clip is not length-capped. */
@@ -923,6 +925,119 @@ static void gfx_thumbnail_still_release(void *user, gfx_surface_t *s,
    gfx_thumbnail_anim_shown(thumbnail, s);
 }
 
+/* The thumbnail a live source feeds, one at a time, and what ends the
+ * source when the thumbnail resets. */
+static gfx_thumbnail_t           *gfx_thumb_live;
+static gfx_thumbnail_live_end_t   gfx_thumb_live_end;
+static void                      *gfx_thumb_live_user;
+
+static void gfx_thumbnail_live_release(void *user, gfx_surface_t *s,
+      unsigned slot)
+{
+   gfx_thumbnail_t *thumbnail = (gfx_thumbnail_t*)user;
+   (void)slot;
+   if (thumbnail == gfx_thumb_live && thumbnail->anim_surface == s)
+      gfx_thumbnail_anim_shown(thumbnail, s);
+}
+
+/* The surface for frames of @dims in @pixfmt; a different size or
+ * format replaces it, and the thumbnail waits for its first frame. */
+static gfx_surface_t *gfx_thumbnail_live_surface(gfx_thumbnail_t *thumbnail,
+      unsigned dims, uint32_t pixfmt)
+{
+   gfx_surface_t *s = (gfx_surface_t*)thumbnail->anim_surface;
+   if (s && (s->dims != dims || s->pixfmt != pixfmt))
+   {
+      gfx_surface_free(s);
+      thumbnail->anim_surface = NULL;
+      thumbnail->texture      = 0;
+      GFX_THUMB_STATUS_STORE(&thumbnail->status,
+            GFX_THUMBNAIL_STATUS_PENDING);
+      s = NULL;
+   }
+   if (!s && (s = gfx_surface_new(dims, 1, pixfmt, TEXTURE_FILTER_LINEAR,
+               gfx_thumbnail_live_release, thumbnail)))
+      thumbnail->anim_surface = s;
+   return s;
+}
+
+static bool gfx_thumbnail_live_submitted(gfx_thumbnail_t *thumbnail,
+      gfx_surface_t *s, enum gfx_surface_submit_result r)
+{
+   if (r == GFX_SURFACE_SUBMIT_DONE)
+      gfx_thumbnail_anim_shown(thumbnail, s);
+   return r == GFX_SURFACE_SUBMIT_DONE || r == GFX_SURFACE_SUBMIT_QUEUED;
+}
+
+void gfx_thumbnail_live_begin(gfx_thumbnail_t *thumbnail,
+      gfx_thumbnail_live_end_t end, void *user)
+{
+   if (!thumbnail)
+      return;
+   gfx_thumbnail_reset(thumbnail);
+   /* Another thumbnail's source ends with it. */
+   if (gfx_thumb_live)
+      gfx_thumbnail_reset(gfx_thumb_live);
+   gfx_thumb_live      = thumbnail;
+   gfx_thumb_live_end  = end;
+   gfx_thumb_live_user = user;
+   GFX_THUMB_STATUS_STORE(&thumbnail->status, GFX_THUMBNAIL_STATUS_PENDING);
+}
+
+bool gfx_thumbnail_live_planes(gfx_thumbnail_t *thumbnail,
+      const uint8_t *const planes[3], const size_t strides[3],
+      unsigned chroma_step, unsigned dims, unsigned yuv)
+{
+   gfx_surface_planes_t p;
+   gfx_surface_t *s;
+   unsigned i;
+   if (!thumbnail || thumbnail != gfx_thumb_live
+         || (chroma_step != 1 && chroma_step != 2)
+         || !VIDEO_SCALE_W(dims) || !VIDEO_SCALE_H(dims))
+      return false;
+   for (i = 0; i < 3; i++)
+   {
+      p.planes[i]  = planes[i];
+      p.strides[i] = (unsigned)strides[i];
+   }
+   p.chroma_step = chroma_step;
+   if (!(s = gfx_thumbnail_live_surface(thumbnail, dims,
+               chroma_step == 1 ? IMAGE_PIXFMT_I420 : IMAGE_PIXFMT_NV12)))
+      return false;
+   gfx_surface_set_yuv(s, yuv);
+   /* The planes are the source's again once this returns. */
+   return gfx_thumbnail_live_submitted(thumbnail, s,
+         gfx_surface_submit_planes(s, &p, gfx_surface_wants_rgba()));
+}
+
+bool gfx_thumbnail_live_pixels(gfx_thumbnail_t *thumbnail,
+      const uint32_t *pixels, unsigned dims, size_t pitch)
+{
+   gfx_surface_t *s;
+   unsigned w = VIDEO_SCALE_W(dims);
+   unsigned h = VIDEO_SCALE_H(dims);
+   unsigned y;
+   if (!thumbnail || thumbnail != gfx_thumb_live || !pixels || !w || !h
+         || pitch < (size_t)w * 4)
+      return false;
+   if (     !(s = gfx_thumbnail_live_surface(thumbnail, dims, IMAGE_PIXFMT_8888))
+         || !gfx_surface_slot_writable(s, 0))
+      return false;
+   /* The X of XRGB is no alpha: copied in opaque. */
+   for (y = 0; y < h; y++)
+   {
+      const uint32_t *src = (const uint32_t*)((const uint8_t*)pixels
+            + (size_t)y * pitch);
+      uint32_t       *dst = (uint32_t*)((uint8_t*)s->slots[0]
+            + (size_t)y * s->pitch[0]);
+      unsigned x;
+      for (x = 0; x < w; x++)
+         dst[x] = src[x] | 0xFF000000u;
+   }
+   return gfx_thumbnail_live_submitted(thumbnail, s,
+         gfx_surface_submit(s, 0, false));
+}
+
 /* Main thread, from a later frame's poll: the video thread has taken
  * the frame in @slot. The animation may have closed meanwhile, in
  * which case the surface simply keeps its last frame. */
@@ -1080,6 +1195,35 @@ bool gfx_thumbnail_get_playback_state(gfx_thumbnail_t *thumbnail,
    }
    return gfx_media_player_state(session, player ? player->vp : NULL,
          (int64_t)current_time, state);
+}
+
+bool gfx_thumbnail_request_audio(gfx_thumbnail_t *thumbnail, int index)
+{
+   return thumbnail && gfx_anim_preview_audio_set_track(
+         (gfx_anim_preview_t*)thumbnail->anim_sess, index);
+}
+
+bool gfx_thumbnail_select_audio(gfx_thumbnail_t *thumbnail, int index,
+      retro_time_t current_time)
+{
+   gfx_surface_player_t *player;
+   gfx_anim_preview_t *session;
+   unsigned rate = 0;
+   bool s16 = false;
+   bool result;
+   if (!thumbnail || thumbnail->anim_read_pending
+         || !(thumbnail->flags & GFX_THUMB_FLAG_ANIM_ACTIVE)
+         || !(player = (gfx_surface_player_t*)thumbnail->anim_player)
+         || !(session = (gfx_anim_preview_t*)thumbnail->anim_sess)) return false;
+#ifdef GFX_THUMB_PREVIEW_AUDIO
+   if (config_get_ptr()->bools.menu_thumbnail_preview_audio)
+      audio_driver_mixer_prepare_format(&rate, &s16);
+#endif
+   result = gfx_media_player_select_audio(session, player->vp, index, rate,
+         s16, (int64_t)current_time);
+   if (result)
+      thumbnail->flags &= ~(GFX_THUMB_FLAG_MEDIA_ENDED | GFX_THUMB_FLAG_MEDIA_COMPLETED);
+   return result;
 }
 
 bool gfx_thumbnail_seek(gfx_thumbnail_t *thumbnail, int64_t target_us,
@@ -1959,6 +2103,18 @@ void gfx_thumbnail_reset(gfx_thumbnail_t *thumbnail)
    if (!thumbnail)
       return;
 
+   /* A live source ends with its thumbnail. */
+   if (thumbnail == gfx_thumb_live)
+   {
+      gfx_thumbnail_live_end_t end = gfx_thumb_live_end;
+      void *user                   = gfx_thumb_live_user;
+      gfx_thumb_live               = NULL;
+      gfx_thumb_live_end           = NULL;
+      gfx_thumb_live_user          = NULL;
+      if (end)
+         end(user);
+   }
+
    /* Release any animation state (decoder + file buffer) */
    gfx_thumbnail_anim_close(thumbnail);
 
@@ -2453,14 +2609,14 @@ void gfx_thumbnail_get_draw_dimensions(
  *       (width x height) rectangle (alignment + aspect
  *       correct scaling is preserved). Use with caution */
 
-void gfx_thumbnail_draw(
+static void gfx_thumbnail_draw_internal(
       void *userdata,
       unsigned video_dims,
       gfx_thumbnail_t *thumbnail,
       float x, float y, unsigned dims,
       enum gfx_thumbnail_alignment alignment,
       float alpha, float scale_factor,
-      gfx_thumbnail_shadow_t *shadow)
+      gfx_thumbnail_shadow_t *shadow, bool shader)
 {
    unsigned video_width              = VIDEO_SCALE_W(video_dims);
    unsigned video_height             = VIDEO_SCALE_H(video_dims);
@@ -2582,6 +2738,7 @@ void gfx_thumbnail_draw(
       draw.matrix_data     = &mymat;
       draw.texture         = thumb_texture;
       draw.pipeline_id     = 0;
+      draw.effect          = NULL;
 
       /* Set thumbnail alignment within bounding box */
       switch (alignment)
@@ -2674,13 +2831,34 @@ void gfx_thumbnail_draw(
       draw.dims    = VIDEO_SCALE_PACK((unsigned)draw_width, (unsigned)draw_height);
       draw.pos     = VIDEO_POS_PACK(VIDEO_PX(draw_x), VIDEO_PX(draw_y));
 
-      /* Draw thumbnail */
-      if (VIDEO_SCALE_H(draw.dims) > 0 && VIDEO_SCALE_W(draw.dims) > 0)
-         gfx_display_draw(dispctx, &draw, userdata,
-               VIDEO_SCALE_PACK(video_width, video_height));
+      /* The surface owns this texture through the draw, as for a plain quad. */
+      if (VIDEO_SCALE_H(draw.dims) > 0 && VIDEO_SCALE_W(draw.dims) > 0
+            && !(shader && dispctx->media_shader_draw && thumbnail_alpha >= 0.9999f
+               && gfx_display_draw_media_shader(dispctx, userdata, thumb_texture,
+                  VIDEO_SCALE_PACK(thumb_width, thumb_height), video_dims,
+                  draw.pos, draw.dims)))
+         gfx_display_draw(dispctx, &draw, userdata, video_dims);
 
       gfx_display_blend_end(dispctx, userdata);
    }
+}
+
+void gfx_thumbnail_draw(void *userdata, unsigned video_dims,
+      gfx_thumbnail_t *thumbnail, float x, float y, unsigned dims,
+      enum gfx_thumbnail_alignment alignment, float alpha, float scale_factor,
+      gfx_thumbnail_shadow_t *shadow)
+{
+   gfx_thumbnail_draw_internal(userdata, video_dims, thumbnail, x, y, dims,
+         alignment, alpha, scale_factor, shadow, false);
+}
+
+void gfx_thumbnail_draw_shader(void *userdata, unsigned video_dims,
+      gfx_thumbnail_t *thumbnail, float x, float y, unsigned dims,
+      enum gfx_thumbnail_alignment alignment, float alpha, float scale_factor,
+      gfx_thumbnail_shadow_t *shadow)
+{
+   gfx_thumbnail_draw_internal(userdata, video_dims, thumbnail, x, y, dims,
+         alignment, alpha, scale_factor, shadow, true);
 }
 
 /* Returns currently set thumbnail 'type' (Named_Snaps,

@@ -87,6 +87,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Windows stat normalization and conversion ownership
+        shell: bash
+        working-directory: libretro-common/samples/file/vfs
+        env:
+          ASAN_OPTIONS: ${{ matrix.asan_opts }}
+        run: make win32-stat-contract-check SANITIZER=address,undefined
+
       - name: Build and run
         shell: bash
         working-directory: libretro-common/samples/file/vfs
@@ -243,6 +250,12 @@ jobs:
           # writes, seeks, reads, truncates and holes in every write
           # mode through the stream's own buffer, checked against a copy
           ./vfs_write_mix_test.exe
+          # a stable open shuts out writers; identity and mapping on demand
+          ./vfs_stable_test.exe
+          # a write stream's size, through every kind of write
+          ./vfs_size_contract_test.exe
+          # and after positional writes, four threads at once
+          ./vfs_positional_size_test.exe
           # The same with streams on the C runtime (VFS_WIN32_NO_NATIVE):
           # the stream contract, the path an open takes, large files,
           # offsets from threads, writes.
@@ -256,6 +269,9 @@ jobs:
           ./vfs_positional_test.exe
           ./vfs_positional_nommap_test.exe
           ./vfs_write_mix_test.exe
+          ./vfs_stable_test.exe
+          ./vfs_size_contract_test.exe
+          ./vfs_positional_size_test.exe
 
       # The Win64 fastjmp_set stores xmm6-xmm15 with movaps and faults
       # on a misaligned buffer. Linux has no such stores, so the Linux

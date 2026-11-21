@@ -23,6 +23,9 @@
 
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <stdio.h>
 
 #ifdef HAVE_CONFIG_H
 #include "../../config.h"
@@ -36,6 +39,10 @@
 #include "../../command.h"
 #include "../video_crt_switch.h" /* Needed to set aspect for low resolution in Linux */
 #include "../common/drm_common.h"
+#ifndef DRM_VBLANK_IOCTL
+#define DRM_VBLANK_IOCTL drmIoctl
+#endif
+#include "../common/drm_vblank.h"
 #include "../../verbosity.h"
 #include "edid_sysfs.h"
 
@@ -214,9 +221,12 @@ static void* kms_display_server_init(void)
    return NULL;
 }
 
+static void kms_vblank_close(void);
+
 static void kms_display_server_destroy(void *data)
 {
    dispserv_kms_t *dispserv       = (dispserv_kms_t*)data;
+   kms_vblank_close();
    if (dispserv)
       free(dispserv);
 }
@@ -564,6 +574,56 @@ static int kms_display_server_get_scanline(void *data)
          (int64_t)(now_ns - line0_ns), frame_ns, g_drm_mode->vtotal);
 }
 
+/* The vblank clock (drm_vblank.h), its sequence events on a file
+ * description of its own so that they do not land among the context's
+ * page flips. */
+#ifdef DRM_VBLANK_CLOCK
+#define KMS_VBLANK_CLOCK
+/* fd: -1 not open, -2 cannot be */
+static drm_vblank_t kms_vblank = { -1, 0, false };
+/* the device it was opened for */
+static int      kms_vblank_of = -1;
+static bool     kms_vblank_vrr;
+
+static void kms_vblank_close(void)
+{
+   if (kms_vblank.fd >= 0)
+      close(kms_vblank.fd);
+   kms_vblank.fd     = -1;
+   kms_vblank_of     = -1;
+   kms_vblank.crtc   = 0;
+   kms_vblank.queued = false;
+}
+
+static bool kms_vblank_open(void)
+{
+   char path[32];
+   if (     kms_vblank_of == g_drm_fd
+         && kms_vblank.crtc == g_crtc_id)
+      return kms_vblank.fd >= 0 && !kms_vblank_vrr;
+   kms_vblank_close();
+   kms_vblank_of   = g_drm_fd;
+   kms_vblank.crtc = g_crtc_id;
+   /* A variable refresh rate has no vblanks to count on */
+   kms_vblank_vrr  = kms_display_server_crtc_vrr(g_drm_fd, g_crtc_id);
+   snprintf(path, sizeof(path), "/proc/self/fd/%d", g_drm_fd);
+   kms_vblank.fd   = open(path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+   if (kms_vblank.fd < 0)
+      kms_vblank.fd = -2;
+   return kms_vblank.fd >= 0 && !kms_vblank_vrr;
+}
+
+static unsigned kms_display_server_wait_vblank(void *data, unsigned seen,
+      unsigned timeout_us, retro_time_t *at)
+{
+   if (g_drm_fd < 0 || !g_crtc_id || !kms_vblank_open())
+      return 0;
+   return drm_vblank_wait(&kms_vblank, g_drm_fd, seen, timeout_us, at);
+}
+#else
+static void kms_vblank_close(void) { }
+#endif
+
 const video_display_server_t dispserv_kms = {
    kms_display_server_init,
    kms_display_server_destroy,
@@ -582,7 +642,11 @@ const video_display_server_t dispserv_kms = {
    kms_display_server_get_metrics,
    kms_display_server_get_flags,
    kms_display_server_get_scanline,
+#ifdef KMS_VBLANK_CLOCK
+   kms_display_server_wait_vblank,
+#else
    NULL, /* wait_vblank */
+#endif
    kms_display_server_modeline_list_outputs,
    kms_display_server_modeline_open,
    kms_display_server_modeline_close,

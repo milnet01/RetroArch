@@ -60,6 +60,9 @@
 
 /* Forward declarations */
 int action_ok_core_lock(const char *path, const char *label, unsigned type, size_t idx, size_t entry_idx);
+#ifdef HAVE_CORE_SIGNATURES
+int action_ok_core_signature_check(const char *path, const char *label, unsigned type, size_t idx, size_t entry_idx);
+#endif
 int action_ok_core_set_standalone_exempt(const char *path, const char *label, unsigned type, size_t idx, size_t entry_idx);
 
 extern struct key_desc key_descriptors[RARCH_MAX_KEYS];
@@ -1189,6 +1192,14 @@ static int action_right_core_lock(unsigned type, const char *label,
    return action_ok_core_lock(label, label, type, 0, 0);
 }
 
+#ifdef HAVE_CORE_SIGNATURES
+static int action_right_core_signature_check(unsigned type, const char *label,
+      bool wraparound)
+{
+   return action_ok_core_signature_check(label, label, type, 0, 0);
+}
+#endif
+
 static int action_right_core_set_standalone_exempt(unsigned type, const char *label,
       bool wraparound)
 {
@@ -1322,6 +1333,7 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
          case FILE_TYPE_AUDIOFILTER:
          case FILE_TYPE_CONFIG:
          case FILE_TYPE_USE_DIRECTORY:
+         case FILE_TYPE_VULKAN_DRIVER_SYSTEM:
          case FILE_TYPE_PLAYLIST_ENTRY:
          case MENU_INFO_MESSAGE:
          case FILE_TYPE_DOWNLOAD_CORE:
@@ -1333,7 +1345,6 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
          case FILE_TYPE_PLAYLIST_COLLECTION:
          case FILE_TYPE_DOWNLOAD_CORE_CONTENT:
          case FILE_TYPE_DOWNLOAD_CORE_SYSTEM_FILES:
-         case FILE_TYPE_DOWNLOAD_THUMBNAIL_CONTENT:
          case FILE_TYPE_DOWNLOAD_URL:
          case FILE_TYPE_SCAN_DIRECTORY:
          case FILE_TYPE_MANUAL_SCAN_DIRECTORY:
@@ -1369,6 +1380,11 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
          case MENU_SETTING_ACTION_CORE_LOCK:
             BIND_ACTION_RIGHT(cbs, action_right_core_lock);
             break;
+#ifdef HAVE_CORE_SIGNATURES
+         case MENU_SETTING_ACTION_CORE_SIGNATURE_CHECK:
+            BIND_ACTION_RIGHT(cbs, action_right_core_signature_check);
+            break;
+#endif
          case MENU_SETTING_ACTION_CORE_SET_STANDALONE_EXEMPT:
             BIND_ACTION_RIGHT(cbs, action_right_core_set_standalone_exempt);
             break;

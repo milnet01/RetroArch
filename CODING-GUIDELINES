@@ -316,8 +316,17 @@ while the menu is up or a core runs, each commented where it is:
   * the save/load state waits on exit, at startup and when an init
     fails (content_wait_for_save_state_task() and
     content_wait_for_load_state_task());
+  * the core check of a startup load (-L, a launcher's intent): the
+    unstaged load runs every stage before the frame loop, so a core no
+    record or exemption passes is hashed in place
+    (core_load_check_inline()); only rarch_main() starts that load, and
+    an Android intent naming other content restarts the process;
   * the cloud sync worker on exit, bounded, so no blocking driver
     call runs into the teardown (cloud_sync_deinit());
+  * the upscaler SDK worker on process exit, after video teardown:
+    vendor initialization cannot be cancelled safely, and its retained
+    devices and DLL callbacks must retire before DLL detach. Core unload
+    and video teardown only transfer ownership; they never join it;
   * the Wii U main loop's vsync wait (platform_wiiu.c).
 Win32 file dialogs are modal by nature and stay so.
 

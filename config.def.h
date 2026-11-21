@@ -571,6 +571,11 @@
  * times. Off: the fixed-timer pacing threaded video always had. */
 #define DEFAULT_VIDEO_THREADED_DISPLAY_PACING false
 
+/* With display pacing, vsync off and a present that tears: release
+ * each core frame on the display's vblank events instead of a timer.
+ * Off: the timer. */
+#define DEFAULT_VIDEO_THREADED_PACING_VBLANK false
+
 /* Leave a frame the core marks as a repeat unpresented, so the display
  * sees the content's own frame rate. Off: every repeat is presented. */
 #define DEFAULT_VIDEO_SKIP_DUPE_FRAMES false
@@ -1005,7 +1010,12 @@
  * will display a screensaver after SCREENSAVER_TIMEOUT
  * seconds of inactivity. A timeout of zero disables
  * the screensaver */
+#if defined(WEBOS)
+/* OLED TVs: blank an idle menu after 3 minutes */
+#define DEFAULT_MENU_SCREENSAVER_TIMEOUT 180
+#else
 #define DEFAULT_MENU_SCREENSAVER_TIMEOUT 0
+#endif
 
 #if defined(HAVE_MATERIALUI) || defined(HAVE_XMB) || defined(HAVE_OZONE)
 /* When menu screensaver is enabled, specifies
@@ -1071,6 +1081,9 @@
 #endif
 #define DEFAULT_XMB_ICON_THEME XMB_ICON_THEME_MONOCHROME
 #define DEFAULT_XMB_THEME XMB_THEME_ELECTRIC_BLUE
+#define DEFAULT_XMB_PLASTIC_EFFECT_ENABLE false
+#define DEFAULT_XMB_RIBBON_BLOOM_ENABLE false
+#define DEFAULT_XMB_RIBBON_PARTICLES_ENABLE false
 
 #if defined(HAVE_LAKKA) || defined(__arm__) || defined(__PPC64__) || defined(__ppc64__) || defined(__powerpc64__) || defined(__powerpc__) || defined(__ppc__) || defined(__POWERPC__)
 #define DEFAULT_XMB_SHADOWS_ENABLE false
@@ -1364,6 +1377,12 @@
 /* Display a notification when applying an
  * IPS/BPS/UPS/Xdelta patch file */
 #define DEFAULT_NOTIFICATION_SHOW_PATCH_APPLIED true
+
+#ifdef HAVE_CORE_SIGNING_TEST_KEY
+/* Display the reminder that this build trusts
+ * a test signing key */
+#define DEFAULT_NOTIFICATION_SHOW_CORE_SIGNING_TEST_KEY true
+#endif
 
 /* Display a notification when loading an
  * input remap file */
@@ -2085,7 +2104,10 @@
 #define DEFAULT_MENU_TIMEDATE_ENABLE true
 #endif
 #define DEFAULT_MENU_TIMEDATE_STYLE          MENU_TIMEDATE_STYLE_YMD_HM
+#define DEFAULT_MENU_TIMEDATE_MODE           MENU_TIMEDATE_MODE_MANUAL
+#define DEFAULT_MENU_TIMEDATE_12HOUR         false
 #define DEFAULT_MENU_TIMEDATE_DATE_SEPARATOR MENU_TIMEDATE_DATE_SEPARATOR_HYPHEN
+#define DEFAULT_MENU_BACKDROP_BLUR true
 #define DEFAULT_MENU_REMEMBER_SELECTION      MENU_REMEMBER_SELECTION_ALWAYS
 #define DEFAULT_MENU_STARTUP_PAGE            MENU_STARTUP_PAGE_MAIN_MENU
 #endif
@@ -2317,6 +2339,8 @@
 #endif
 #elif defined(WIIU)
 #define DEFAULT_BUILDBOT_SERVER_URL "http://buildbot.libretro.com/nightly/nintendo/wiiu/latest/"
+#elif defined(__SWITCH2__)
+#define DEFAULT_BUILDBOT_SERVER_URL "http://buildbot.libretro.com/nightly/nintendo/switch2/libounce/latest/"
 #elif defined(HAVE_LIBNX)
 #define DEFAULT_BUILDBOT_SERVER_URL "http://buildbot.libretro.com/nightly/nintendo/switch/libnx/latest/"
 #elif defined(_3DS)
