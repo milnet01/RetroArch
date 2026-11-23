@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=76 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=77 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -284,6 +284,12 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   with the run it came from. Key on the act image digest (`{{.Id}}`),
   not its tag, plus anything a job reads from outside the tree (act
   version). Never reuse a failure. No change to § 7.1.
+  2026-11-23: built in df52933153 on local/fixes-2026-09, not yet
+  pushed. Checked with LOCAL_CI_REUSE=1 over config-fuzz and
+  act:Overlap-Copy-Check.yml: run 1 recorded both, run 2 reused both,
+  LOCAL_CI_REUSE=0 and LC_TIME=C each ran it. The first gated push was
+  stopped partway (Wine load on the desktop); its passes so far are
+  recorded for reuse. The push waits on RETR-0077 by the user's choice.
   **Layman:** After one check fails, the next push re-runs all 30-odd checks even though the code is identical; it could re-run only the one that failed.
   Kind: perf.
   Source: user-request-2026-11-15.
@@ -340,6 +346,22 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Source: retr-0073-measurement-2026-11-16.
   Lanes: local-CI.sh.
   Splits-from: RETR-0073.
+
+- 📋 [RETR-0077] **The push gate runs its Windows test programs on the Windows machine, not under Wine here.**
+  local-CI.sh's native samples-tasks job runs Linux-samples-tasks.yml's
+  Wine steps here (`wine ./cloudsync_commit_test.exe`, bsv_replay_init_test,
+  the `RUNNER="timeout 600 wine"` checks, each sourcing
+  .github/workflows/scripts/wine-server.sh). The user saw it load the desktop
+  on 2026-11-23 and chose the Windows machine (`ssh wintest`) over dropping
+  the steps or pushing only when idle.
+  Plan: keep building the .exe files here with MinGW; run each Wine step's
+  programs on wintest instead, copying in what they read, and fail the job
+  on their failure. Other native jobs: check them for `wine` too.
+  Blocks the push of df52933153 (RETR-0074), held at the user's choice
+  until this lands.
+  **Layman:** The pre-push checks stop running Windows programs under Wine on the desktop, which slows it; they run on the Windows 10 box instead.
+  Kind: perf.
+  Source: user-request-2026-11-23.
 
 ### Spec-needed
 
