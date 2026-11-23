@@ -347,7 +347,7 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Lanes: local-CI.sh.
   Splits-from: RETR-0073.
 
-- 📋 [RETR-0077] **The push gate runs its Windows test programs on the Windows machine, not under Wine here.**
+- ✅ [RETR-0077] **The push gate runs its Windows test programs on the Windows machine, not under Wine here.**
   local-CI.sh's native samples-tasks job runs Linux-samples-tasks.yml's
   Wine steps here (`wine ./cloudsync_commit_test.exe`, bsv_replay_init_test,
   the `RUNNER="timeout 600 wine"` checks, each sourcing
@@ -359,6 +359,16 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   on their failure. Other native jobs: check them for `wine` too.
   Blocks the push of df52933153 (RETR-0074), held at the user's choice
   until this lands.
+  Built 2026-11-23, de6ea6cd9d on local/fixes-2026-09 (not yet pushed).
+  For native workflow steps, `wine`/`wine64` on PATH copy the working
+  directory to wintest, run the .exe there with its arguments and the
+  step's variables, and return its output and status; `wineserver -p`
+  fails, so wine-server.sh starts nothing here. LOCAL_CI_WINE=local
+  restores real Wine. Proved: `--worktree samples-tasks` PASS, its nine
+  Windows programs in wintest's Prefetch at the run's times. No other
+  native job runs Wine. The act workflows using Wine still run it in
+  their containers; none of the 13 act jobs the pending push selects
+  uses it.
   **Layman:** The pre-push checks stop running Windows programs under Wine on the desktop, which slows it; they run on the Windows 10 box instead.
   Kind: perf.
   Source: user-request-2026-11-23.
