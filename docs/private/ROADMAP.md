@@ -277,6 +277,13 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   followed a fix, so the tree changed each time. Tell claude-config
   before building (a skip is the hook's to take,
   standards/local-gate.md).
+  2026-11-23: unblocked. claude-config (session_message 2450) answered
+  2432: per-job pass reuse is allowed under local-gate.md § 7.1 and
+  counts as a full run. Do not list reused jobs in ANTS_GATE_SKIPPED;
+  let the hook write its ants-gate-passed record; print each reused job
+  with the run it came from. Key on the act image digest (`{{.Id}}`),
+  not its tag, plus anything a job reads from outside the tree (act
+  version). Never reuse a failure. No change to § 7.1.
   **Layman:** After one check fails, the next push re-runs all 30-odd checks even though the code is identical; it could re-run only the one that failed.
   Kind: perf.
   Source: user-request-2026-11-15.
