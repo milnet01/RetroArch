@@ -28,7 +28,9 @@
 #   GitHub, from a cache of their own under the trees' directory (below). A
 #   job using a workflow feature the runner does not honour (a template
 #   expression, GITHUB_ENV, an `if:` or matrix outside the forms
-#   workflow_tool names) is refused rather than run differently.
+#   workflow_tool names) is refused rather than run differently. A step's
+#   `wine` runs its Windows program on the Windows machine over ssh, not
+#   under Wine here (WINE_MODE, below).
 #
 #   linux-i686 runs Linux.yml's steps in the same container image CI uses.
 #   The rest run natively with this host's toolchain, so `./configure` can
@@ -562,6 +564,105 @@ printf '#!/bin/sh\ncase "$1" in _NPROCESSORS_ONLN|_NPROCESSORS_CONF) echo "${LOC
     "$JOBS" >"$CPU_SHIM/getconf"
 chmod +x "$CPU_SHIM/nproc" "$CPU_SHIM/getconf"
 
+# Windows programs run on the Windows machine, not under Wine here: Wine
+# loads this shared desktop (RETR-0077). For the native workflow steps,
+# `wine` and `wine64` copy the working directory to $WINTEST_HOST over ssh,
+# run the program there with its arguments and the variables the step set,
+# and return its output and exit status. `wineserver -p` fails, so
+# wine-server.sh starts no server here. Nothing is copied back. A program
+# or argument outside the working directory is refused, not run some other
+# way. LOCAL_CI_WINE=local runs real Wine instead.
+WINE_MODE="${LOCAL_CI_WINE:-wintest}"
+WINTEST_HOST="${LOCAL_CI_WINTEST_HOST:-wintest}"
+WINTEST_TIMEOUT="${LOCAL_CI_WINTEST_TIMEOUT:-900}"   # seconds, per program
+WINE_SHIM=""
+if [ "$WINE_MODE" = wintest ]; then
+    WINE_SHIM="$LOGDIR/wine-shim"
+    mkdir -p "$WINE_SHIM/stage"
+    printf '#!/bin/sh\n# no Wine server here (local-CI.sh, RETR-0077)\nexit 1\n' >"$WINE_SHIM/wineserver"
+    cat >"$WINE_SHIM/run.ps1" <<'PS1'
+# Runs on the Windows machine from <dir>\.ra-gate\: the program in <dir>
+# with the arguments and variables written beside this, then removes <dir>.
+param([int]$Cap)
+$meta = $PSScriptRoot
+$root = Split-Path -Parent $meta
+foreach ($l in [IO.File]::ReadAllLines("$meta\env.txt")) {
+    $i = $l.IndexOf('=')
+    if ($i -gt 0) { [Environment]::SetEnvironmentVariable($l.Substring(0, $i), $l.Substring($i + 1), 'Process') }
+}
+function Quote([string]$a) {
+    if ($a -eq '') { return '""' }
+    if ($a -notmatch '[\s"]') { return $a }
+    $s = $a -replace '(\\*)"', '$1$1\"'
+    $s = $s -replace '(\\+)$', '$1$1'
+    return '"' + $s + '"'
+}
+$psi = New-Object Diagnostics.ProcessStartInfo
+$psi.FileName = Join-Path $root ([IO.File]::ReadAllText("$meta\prog.txt").Trim())
+$psi.Arguments = (@([IO.File]::ReadAllLines("$meta\args.txt")) | ForEach-Object { Quote $_ }) -join ' '
+$psi.WorkingDirectory = $root
+$psi.UseShellExecute = $false
+$p = [Diagnostics.Process]::Start($psi)
+if ($p.WaitForExit($Cap * 1000)) { $code = $p.ExitCode }
+else { $p.Kill(); $code = 124; [Console]::Error.WriteLine("wintest: killed after $Cap s") }
+Set-Location $env:TEMP
+Remove-Item -Recurse -Force -LiteralPath $root -ErrorAction SilentlyContinue
+if ($code -lt 0 -or $code -gt 255) {
+    [Console]::Error.WriteLine(('wintest: exit code 0x{0:X8}' -f $code)); $code = 1
+}
+exit $code
+PS1
+    { printf '#!/bin/bash\nhost=%q cap=%q shim=%q\n' "$WINTEST_HOST" "$WINTEST_TIMEOUT" "$WINE_SHIM"
+      cat <<'SH'
+# wine <program.exe> [args...], run on $host (local-CI.sh, RETR-0077).
+set -uo pipefail
+me="wine (local-CI.sh)"
+[ $# -ge 1 ] || { echo "$me: no program named" >&2; exit 2; }
+dir="$(pwd -P)"
+real="$(realpath -e -- "$1")" || { echo "$me: no program $1" >&2; exit 2; }
+case "$real" in
+    "$dir"/*.exe|"$dir"/*.EXE) prog="${real#"$dir"/}" ;;
+    *) echo "$me: $1 is not a .exe inside $dir; only those run on $host" >&2; exit 2 ;;
+esac
+shift
+stage="$(mktemp -d "$shim/stage/XXXXXX")" || exit 2
+trap 'rm -rf "$stage"' EXIT
+m="$stage/.ra-gate"
+mkdir "$m" && cp "$shim/run.ps1" "$m/" || exit 2
+printf '%s\n' "${prog//\//\\}" >"$m/prog.txt"
+: >"$m/args.txt"
+for a in "$@"; do
+    case "$a" in
+        "$dir"/*) a="${a#"$dir"/}" ;;
+        /*|../*|*/../*) echo "$me: argument $a is outside $dir" >&2; exit 2 ;;
+    esac
+    case "$a" in *$'\n'*) echo "$me: argument with a newline" >&2; exit 2 ;; esac
+    printf '%s\n' "$a" >>"$m/args.txt"
+done
+# The variables the step or make set, against the step's starting set.
+declare -A base=()
+while IFS= read -r -d '' e; do base["$e"]=1; done <"${LOCAL_CI_WINE_BASE:?}"
+while IFS= read -r -d '' e; do
+    [ -n "${base["$e"]:-}" ] && continue
+    case "${e%%=*}" in
+        PWD|OLDPWD|SHLVL|_|PATH|WINEDEBUG|WINEPREFIX|MAKEFLAGS|MFLAGS|MAKELEVEL|MAKE_TERM*) continue ;;
+    esac
+    case "$e" in *$'\n'*) echo "$me: not passing ${e%%=*}: its value has a newline" >&2; continue ;; esac
+    printf '%s\n' "$e"
+done < <(env -0) >"$m/env.txt"
+r="ra-gate-$(date +%s)-$$-$RANDOM"
+tar -cf - --exclude='*.o' -C "$dir" . -C "$stage" .ra-gate \
+    | ssh -o BatchMode=yes -o ConnectTimeout=15 "$host" \
+        "mkdir %TEMP%\\ra-gate\\$r && tar -xf - -C %TEMP%\\ra-gate\\$r && powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File %TEMP%\\ra-gate\\$r\\.ra-gate\\run.ps1 -Cap $cap"
+rc=$?
+[ "$rc" -eq 255 ] && echo "$me: ssh to $host failed" >&2
+exit "$rc"
+SH
+    } >"$WINE_SHIM/wine"
+    ln -s wine "$WINE_SHIM/wine64"
+    chmod +x "$WINE_SHIM/wine" "$WINE_SHIM/wineserver"
+fi
+
 echo "== local-CI.sh =="
 echo "repo:   $ROOT"
 echo "ref:    $REF  ($(git -C "$ROOT" rev-parse --short "$ARCHIVE_REF" 2>/dev/null || echo '?'))"
@@ -686,11 +787,14 @@ run_workflow_job() {
         echo "== step: $name"
         [ -n "${TIMING_STEPS[$name]:-}" ] && wait_quiet
         # A private Wine prefix, not the user's; no core dump pop-up when a
-        # test crashes.
-        ( ulimit -c 0; cd "$w" && PATH="$CPU_SHIM${CCACHE_WRAP:+:$CCACHE_WRAP}:$PATH" \
+        # test crashes. The wine stand-in passes on what differs from the
+        # variables saved here, the ones the step itself sets.
+        ( ulimit -c 0; cd "$w" && export PATH="${WINE_SHIM:+$WINE_SHIM:}$CPU_SHIM${CCACHE_WRAP:+:$CCACHE_WRAP}:$PATH" \
             CCACHE_DIR="$CI_CCACHE" CCACHE_CONFIGPATH="$CI_CCACHE/ccache.conf" \
             CCACHE_BASEDIR="$w" CCACHE_NOHASHDIR=1 RUNNER_TEMP="$w.tmp" \
-            GITHUB_WORKSPACE="$w" WINEPREFIX="$w.tmp/wine" bash "$st" ) || { echo "== step FAILED: $name"; return 1; }
+            GITHUB_WORKSPACE="$w" WINEPREFIX="$w.tmp/wine" \
+            LOCAL_CI_WINE_BASE="$w.tmp/wine-base.env" &&
+          env -0 >"$LOCAL_CI_WINE_BASE" && bash "$st" ) || { echo "== step FAILED: $name"; return 1; }
     done
 }
 
