@@ -1852,6 +1852,14 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Branches pr/mpeg2-setfield-tff and pr/cloud-sync-test-stubs (local and
   origin) are now redundant; not deleted (each is held by libretro's
   refs/pull/N/head), left for a branch tidy.
+  2026-11-23: opened libretro/RetroArch #20166 (pr/strftime-am-pm-24h,
+  d91e5487bf; user approved 2026-11-23), carrying the fork's 9e89dd8caf:
+  strftime_am_pm_test passes in a 24-hour locale. Red under
+  LC_ALL=en_ZA.UTF-8 on upstream master, green under en_ZA and C.
+  Readability lane: three LOW findings; two on upstream's own lines
+  (header comment, repeat count) left out of the PR, one on the changed
+  line declined (the format sits two lines above); return in
+  docs/private/reviews/2026-11-23-findings/.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
