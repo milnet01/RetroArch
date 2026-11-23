@@ -3272,6 +3272,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   for them yet. 2026-11-15)
   Decided 2026-11-23: the user approved one libretro issue giving
   both findings and no code. Show the user the text before posting.
+  2026-11-23: filed libretro/RetroArch#20171 (both findings, no code;
+  user approved the text). The HOST_SKIP_STEPS entries stay until
+  libretro answers.
   **Layman:** One of libretro's new music-file checks disagrees with the newer FFmpeg on this computer, so our push check skips it for now.
   Kind: investigate.
   Source: user-decision-2026-11-12.
