@@ -17180,23 +17180,37 @@ static bool menu_displaylist_ctl_internal(
             }
             break;
          case DISPLAYLIST_CORE_SYSTEM_FILES:
-            menu_entries_clear(info->list);
+            {
+               /* Opening the list and refreshing it both land here.
+                * A refresh (a core download or backup finishing) finds
+                * this list's own entries still on screen: keep the
+                * cursor then, unless it is now past the end. */
+               bool refresh = info->list->size
+                  && info->list->list[0].type
+                     == FILE_TYPE_DOWNLOAD_CORE_SYSTEM_FILES;
+
+               menu_entries_clear(info->list);
 #ifdef HAVE_NETWORKING
-            count = (unsigned)print_buf_lines(info->list, "", menu->core_buf,
-                  menu->core_len, FILE_TYPE_DOWNLOAD_CORE_SYSTEM_FILES,
-                  true);
-            /* Mark entries with "[#]" once downloaded: the archive is
-             * extracted into the system folder and deleted, so the
-             * download is also recorded there. */
-            menu_content_downloads_mark(info->list, count,
-                  settings->paths.directory_system);
+               count = (unsigned)print_buf_lines(info->list, "", menu->core_buf,
+                     menu->core_len, FILE_TYPE_DOWNLOAD_CORE_SYSTEM_FILES,
+                     true);
+               /* Mark entries with "[#]" once downloaded: the archive is
+                * extracted into the system folder and deleted, so the
+                * download is also recorded there. */
+               menu_content_downloads_mark(info->list, count,
+                     settings->paths.directory_system);
 
-            menu_displaylist_no_entries_fallback(info->list, count, FILE_TYPE_NONE);
+               menu_displaylist_no_entries_fallback(info->list, count, FILE_TYPE_NONE);
 
-            info->flags       |= MD_FLAG_NEED_REFRESH
-                               | MD_FLAG_NEED_PUSH
-                               | MD_FLAG_NEED_CLEAR;
+               if (!refresh || menu_st->selection_ptr >= count)
+                  info->flags |= MD_FLAG_NEED_CLEAR;
+
+               info->flags    |= MD_FLAG_NEED_REFRESH
+                               | MD_FLAG_NEED_PUSH;
+#else
+               (void)refresh;
 #endif
+            }
             break;
          case DISPLAYLIST_CORES_UPDATER:
             menu_entries_clear(info->list);
