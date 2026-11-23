@@ -1,6 +1,6 @@
 <!-- ants-roadmap-format: 1 -->
 <!-- Generated from the Ants Terminal roadmap store. Edit it with roadmap_log; hand edits are discarded by the next write. -->
-<!-- ants-roadmap-id-high-water: RETR=77 RETR#S=160 -->
+<!-- ants-roadmap-id-high-water: RETR=78 RETR#S=160 -->
 
 # RetroArch Fork — Roadmap
 
@@ -3061,7 +3061,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: chore.
   Source: user-decision-2026-11-04.
 
-- 📋 [RETR-0065] **FIX — While a download runs, the downloader list's cursor keeps jumping back to the first entry.**
+- ✅ [RETR-0065] **FIX — While a download runs, the downloader list's cursor keeps jumping back to the first entry.**
   Reported 2026-11-04 on the installed 625d5e3417 build, with a
   screenshot of Core System Files Downloader showing "Updating core:
   Commodore - Amiga (PUAE 2021)" at 22%. Scrolling works again once the
@@ -3112,6 +3112,16 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Next: check upstream/master, then drop the unconditional
   NEED_CLEAR on the fixes branch and prove it with the same run.
   The Waiting-on above is answered.
+  Shipped 2026-11-23 in 96975ec899 (local/fixes-2026-09, pushed, gate
+  all PASS) and installed in RetroArch/retroarch (previous build kept as
+  retroarch.2026-11-21). DISPLAYLIST_CORE_SYSTEM_FILES now clears the
+  cursor only when opened (the selection buffer does not hold its own
+  entries) or when the cursor is past the new end. Red/green headless
+  (ra-cursor/cursor-test.sh, 24 cores updated, 113 down presses):
+  7ded07d8c7 jumped 4 times; the fix 0 times in three runs, the last on
+  the installed copy with 17 refresh rebuilds. Upstream has the same
+  code: an upstream PR candidate. The separate Main Menu observation
+  moved to its own item.
   **Layman:** While something downloads, you can't scroll down the download lists: the cursor keeps going back to the top.
   Kind: fix.
   Source: user-report-2026-11-04.
@@ -3278,6 +3288,15 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   **Layman:** One of libretro's new music-file checks disagrees with the newer FFmpeg on this computer, so our push check skips it for now.
   Kind: investigate.
   Source: user-decision-2026-11-12.
+
+- 📋 [RETR-0078] **INVESTIGATE — Going back to Main Menu lands on its first entry, not the one you left from.**
+  Split from RETR-0065 (noted there 2026-11-04, not yet looked at).
+  Reproduce headless first with the ra-cursor harness (MENU a / b,
+  then MENU show's SELECTED), and check upstream behaviour before
+  treating it as a defect.
+  **Layman:** When you back out to the Main Menu, the cursor starts at the top instead of on the item you came from.
+  Kind: investigate.
+  Source: user-report-2026-11-04.
 
 ### 📝 Cold-eyes 2026-07-04
 
