@@ -266,7 +266,7 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   Kind: perf.
   Source: user-request-2026-11-15.
 
-- 📋 [RETR-0074] **Re-run only the failed jobs when the gate re-checks a tree it already checked.**
+- ✅ [RETR-0074] **Re-run only the failed jobs when the gate re-checks a tree it already checked.**
   Today's retry re-ran the whole 93-minute gate for one failed TSan job on an unchanged commit.
   Proposal: local-CI.sh records each passing job against the tree hash, the act image tag and the job's workflow file hash. A later run on the same tree hash, image and workflow reuses those passes and runs only the rest. Any change to the tree, image or workflow re-runs everything.
   Not flaky: a reused pass covers byte-identical inputs. It never turns a failure into a pass.
@@ -290,6 +290,8 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   LOCAL_CI_REUSE=0 and LC_TIME=C each ran it. The first gated push was
   stopped partway (Wine load on the desktop); its passes so far are
   recorded for reuse. The push waits on RETR-0077 by the user's choice.
+  Pushed 2026-11-23 with RETR-0077 (982799c8cf..de6ea6cd9d), gate all
+  PASS.
   **Layman:** After one check fails, the next push re-runs all 30-odd checks even though the code is identical; it could re-run only the one that failed.
   Kind: perf.
   Source: user-request-2026-11-15.
@@ -369,6 +371,8 @@ Tool gaps: clang-tidy + clazy not run (no `compile_commands.json` — install `b
   native job runs Wine. The act workflows using Wine still run it in
   their containers; none of the 13 act jobs the pending push selects
   uses it.
+  Pushed 2026-11-23 (982799c8cf..de6ea6cd9d) through the full gate:
+  every native and selected act job PASS, no Wine run here.
   **Layman:** The pre-push checks stop running Windows programs under Wine on the desktop, which slows it; they run on the Windows 10 box instead.
   Kind: perf.
   Source: user-request-2026-11-23.
