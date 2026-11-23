@@ -55,6 +55,13 @@
 #   failed run keeps its logs. Container images and act's volumes stay in
 #   podman's own storage, wherever this points.
 #
+#   A job that already passed with the same inputs is not run again: the
+#   tree, this script, the host's packages and the container images are
+#   among them (pass_key). Its pass is reused, and the summary says when it
+#   passed. A default run reuses; LOCAL_CI_REUSE=1 makes a run naming its
+#   jobs reuse too, and LOCAL_CI_REUSE=0 or --pull runs every job. A
+#   failure is never reused.
+#
 # USAGE
 #   ./local-CI.sh                 # run every runnable Linux job against HEAD,
 #                                 # and the act jobs covering unpushed commits
@@ -974,10 +981,70 @@ LANE_WORKFLOWS=(Compile-Matrix.yml Linux-qnx-standin.yml Overlap-Copy-Check.yml
     Samples-Objdir-Check.yml Msg-Hash-Packed-Check.yml Win-Macro-Names-Check.yml)
 LANES="${LOCAL_CI_LANES:-2}"
 
-# report <job> <rc> <log> : print a job's verdict and add it to RESULTS.
+# Pass reuse (RETR-0074). A job that passed with the same key is not run
+# again: its pass is reused, and the summary says which run it came from.
+# The key covers what a job reads: the tree, this script, whether the run is
+# a default one and the files the unpushed commits change (they pick the
+# TIMING_STEPS left out), the host's packages and kernel, the PATH
+# directories outside /usr, the locale and LOCAL_CI_* settings; and for a
+# container job its image's digest (a tag can move to a new image), and for
+# act its version. Only passes are recorded: a failure always runs again. A
+# default run (the push gate) reuses; a run naming its jobs runs them unless
+# LOCAL_CI_REUSE=1; LOCAL_CI_REUSE=0 never reuses, nor does --pull, which
+# replaces the images. A reused job ran on this exact tree, so it counts
+# toward a full run (claude-config, 2026-11-23).
+PASS_DIR="$CI_TMP/passes"
+REUSE="${LOCAL_CI_REUSE:-$DEFAULT_RUN}"
+[ "$DO_PULL" -eq 1 ] && REUSE=0
+command -v rpm >/dev/null || REUSE=0
+PASS_BASE=""
+declare -A PASS_KEY=()
+if [ "$REUSE" = 1 ] && tree="$(git -C "$ROOT" rev-parse "$ARCHIVE_REF^{tree}")"; then
+    mkdir -p "$PASS_DIR"
+    find "$PASS_DIR" -type f -mtime +30 -delete
+    PASS_BASE="$( {
+        echo "tree $tree"
+        echo "script $(sha256sum <"${BASH_SOURCE[0]}")"
+        echo "default $DEFAULT_RUN"
+        [ "$DEFAULT_RUN" -eq 1 ] && unpushed_files
+        echo "kernel $(uname -r)"
+        rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort
+        echo "PATH $PATH"
+        tr : '\n' <<<"$PATH" | while read -r d; do
+            case "$d" in /usr/local/*|/usr/local) ;; /usr/*|/bin|/sbin|"") continue ;; esac
+            ls -lL --time-style=+%s "$d" 2>/dev/null
+        done
+        env | grep -E '^(LANG|LC_[A-Z]+|TZ|ACT_BIN|LOCAL_CI_[A-Z_]+)=' \
+            | grep -v '^LOCAL_CI_REUSE=' | sort
+    } | sha256sum | cut -c1-64)"
+fi
+
+# pass_key <job> : print the job's reuse key; fail where there is none (reuse
+# off, or a container job whose image cannot be read), and the job then runs
+# and records nothing.
+pass_key() {
+    local extra="" img
+    [ -n "$PASS_BASE" ] || return 1
+    case "$1" in
+        act:*)
+            [ -n "$ACT_RUN_IMAGE" ] || return 1
+            img="$(podman image inspect --format '{{.Id}}' "$ACT_RUN_IMAGE" 2>/dev/null)" || return 1
+            extra="act $("$ACT_BIN" --version) $img" ;;
+        linux-i686|headless-i686)
+            img="$(podman image inspect --format '{{.Id}}' "$IMG_I686" 2>/dev/null)" || return 1
+            extra="$img" ;;
+    esac
+    printf '%s %s %s\n' "$PASS_BASE" "$1" "$extra" | sha256sum | cut -c1-64
+}
+
+# report <job> <rc> <log> : print a job's verdict and add it to RESULTS; a
+# pass with a reuse key is recorded under it.
 report() {
     if [ "$2" -eq 0 ]; then
         echo "PASS"; RESULTS+=("PASS  $1")
+        [ -n "${PASS_KEY[$1]:-}" ] && printf '%s, %s, run %s\n' "$(date '+%Y-%m-%d %H:%M')" \
+            "$(git -C "$ROOT" rev-parse --short "$ARCHIVE_REF")" "${LOGDIR##*/}" \
+            >"$PASS_DIR/${PASS_KEY[$1]}"
     else
         echo "FAIL  (see $3)"; RESULTS+=("FAIL  $1 -> $3")
         echo "   --- last 20 log lines ---"
@@ -987,6 +1054,16 @@ report() {
 }
 
 declare -a SERIAL=() LANED=()
+# An act job's key needs its run image, which act setup builds; set up here,
+# as the lanes do below, so the setup's EXIT trap belongs to this shell.
+if [ -n "$PASS_BASE" ] && [ "$NO_CONTAINER" -eq 0 ]; then
+    for job in "${SELECTED[@]}"; do
+        [ "${job#act:}" != "$job" ] || continue
+        act_setup >>"$LOGDIR/act-setup.log" 2>&1 \
+            || echo "!! act setup failed — see $LOGDIR/act-setup.log"
+        break
+    done
+fi
 for job in "${SELECTED[@]}"; do
     fn="${DISPATCH[$job]:-}"; arg=""
     [ "${job#act:}" != "$job" ] && { fn=job_act; arg="${job#act:}"; }
@@ -1005,6 +1082,15 @@ for job in "${SELECTED[@]}"; do
             continue 2
         done
     fi
+    if key="$(pass_key "$job")"; then
+        PASS_KEY[$job]="$key"
+        if [ -f "$PASS_DIR/$key" ]; then
+            from="$(cat "$PASS_DIR/$key")"
+            printf '>> %-14s ... PASS (reused: passed %s)\n' "$job" "$from"
+            RESULTS+=("PASS  $job (reused: passed $from)")
+            continue
+        fi
+    fi
     for a in "${LANE_WORKFLOWS[@]}"; do
         [ "$a" = "${arg%%:*}" ] && { LANED+=("$job"); continue 2; }
     done
@@ -1017,7 +1103,7 @@ fi
 if [ "${#LANED[@]}" -gt 0 ]; then
     # Set up act here, not in a lane: its EXIT trap stops the podman
     # service, and a lane's subshell would fire it when the lane ends.
-    act_setup >"$LOGDIR/act-setup.log" 2>&1 \
+    act_setup >>"$LOGDIR/act-setup.log" 2>&1 \
         || echo "!! act setup failed — see $LOGDIR/act-setup.log"
     echo ">> ${#LANED[@]} compile-only act jobs, $LANES at a time ..."
     lane_pids=()
