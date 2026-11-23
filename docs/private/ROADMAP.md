@@ -1903,6 +1903,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   (header comment, repeat count) left out of the PR, one on the changed
   line declined (the format sits two lines above); return in
   docs/private/reviews/2026-11-23-findings/.
+  2026-11-23: the Waiting-on above was answered 2026-11-11 (#20069
+  opened, user-approved); nothing waits on the user here.
   **Layman:** Many fork fixes would help the official project too; sending them upstream shrinks the gap we have to maintain.
   Kind: chore.
 
@@ -2294,7 +2296,7 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Kind: feature.
   Source: user-request-2026-10-02.
 
-- 🚧 [RETR-0026] **FEATURE — Cheats: offer the exact-match cheat file for the running game and open it directly.**
+- ✅ [RETR-0026] **FEATURE — Cheats: offer the exact-match cheat file for the running game and open it directly.**
   User request 2026-10-03. Today the user must download cheats from the
   Online Updater, start the game, open the Quick Menu, open Cheats, pick
   the system from a long list, then the game from a longer one, before
@@ -2328,6 +2330,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   match, which is the agreed design and covers most games, 2026-11-15)
   2026-11-15: pushed and installed in RetroArch/retroarch (built from
   ff002ee15a). The Waiting-on above still stands: try it in play.
+  Decided 2026-11-23: the user chose exact match only (the agreed
+  design). Shipped as built.
   **Layman:** When a cheat file exists for the game you are playing, RetroArch should say so and take you straight to switching cheats on and off, instead of making you dig through long lists.
   Kind: feature.
   Source: user-request-2026-10-03.
@@ -2423,6 +2427,10 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Recommendation: build it for both screens, from the playlist's
   db_name against each core's .info databases, falling back to today's
   extension-filtered list with a one-line note. 2026-11-05)
+  Decided 2026-11-23: the user chose both screens, as recommended:
+  Set Core Association and Load Content's load-with-core list,
+  filtered by the playlist db_name against each core's .info
+  databases, with today's list plus a one-line note as fallback.
   **Layman:** When you pick a core to run a game, RetroArch should only offer cores that emulate that game's console, not every core you have installed.
   Kind: feature.
   Source: user-request-2026-10-20.
@@ -2717,6 +2725,9 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   every caller that wants an end already asks, and state that rule in
   one comment; then offer it upstream, which has the same split.
   2026-11-05)
+  Decided 2026-11-23 by me under the user's 2026-11-21 delegation
+  of technical questions: take the recommendation (end playback only
+  when the caller asks).
   **Layman:** When a replay file is damaged, some kinds of damage stop playback at once and others leave it to the caller, and nothing says why.
   Kind: review-fix.
   Source: close-findings 2026-10-22 (replay/input group).
@@ -3082,6 +3093,25 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   Waiting-on: user (say when a core update is next run, so the gdb
   script in ra-cursor/ can watch it; recommendation: run "Update
   Installed Cores" once with me attached, 2026-11-05)
+  2026-11-23: reproduced headless, no user run needed. User approved (2026-11-23)
+  the test; then asked me to run such tests myself. Harness:
+  Scratchpad/RetroArch/ra-cursor/ (headless.sh runs the installed
+  binary under gdb with its own HOME, null video, Ozone, network
+  commands on port 55399; down.py presses MENU down and reads
+  SELECTED). Recipe: copy cores into the scratch cores folder,
+  append a byte to each so Update Installed Cores re-downloads them,
+  include a large one (puae2021), start the update, enter Core
+  System Files Downloader, press down. Result: the cursor went
+  10 -> 0 and 1 -> 0 with no input while cores finished.
+  Cause: each finished core runs cb_task_core_backup, which sets
+  MENU_ST_FLAG_ENTRIES_NEED_REFRESH; the refresh rebuilds
+  DISPLAYLIST_CORE_SYSTEM_FILES (deferred_push_core_system_files_list),
+  which always sets MD_FLAG_NEED_CLEAR, so the selection goes to 0.
+  DISPLAYLIST_CORES_UPDATER sets NEED_CLEAR only conditionally, so
+  Core Downloader keeps its cursor (checked: no jump there).
+  Next: check upstream/master, then drop the unconditional
+  NEED_CLEAR on the fixes branch and prove it with the same run.
+  The Waiting-on above is answered.
   **Layman:** While something downloads, you can't scroll down the download lists: the cursor keeps going back to the top.
   Kind: fix.
   Source: user-report-2026-11-04.
@@ -3240,6 +3270,8 @@ Forward-looking workstreams surfaced while reviewing the 88-bundle audit history
   answer (accept a padded WMA end, pin FFmpeg, or skip on FFmpeg 9) is
   the test author's choice; their runners use 6.1.1, so nothing fails
   for them yet. 2026-11-15)
+  Decided 2026-11-23: the user approved one libretro issue giving
+  both findings and no code. Show the user the text before posting.
   **Layman:** One of libretro's new music-file checks disagrees with the newer FFmpeg on this computer, so our push check skips it for now.
   Kind: investigate.
   Source: user-decision-2026-11-12.
